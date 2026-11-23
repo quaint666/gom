@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Gom: invite, sign-in, friends, group members</title>
+<style>
+@font-face{font-family:"Be Vietnam Pro";font-weight:400;font-display:swap;src:url("fonts/BeVietnamPro-Regular.woff2") format("woff2")}
+@font-face{font-family:"Be Vietnam Pro";font-weight:600;font-display:swap;src:url("fonts/BeVietnamPro-SemiBold.woff2") format("woff2")}
+@font-face{font-family:"Be Vietnam Pro";font-weight:700;font-display:swap;src:url("fonts/BeVietnamPro-Bold.woff2") format("woff2")}
+.export .frame{border-radius:0!important;box-shadow:none!important;border:0!important}
+
+.frame[data-th="light"]{color-scheme:light;
+  --page:#E9E6DC;--bg:#F7F5EF;--surface:#FFFFFF;--text:#1F2A24;--muted:#4A5650;--border:#DAD6C9;--link:#3F6B57;--btn:#3F6B57;--on-btn:#FFFFFF;--btn-hover:#2C4D3E;
+  --tint:#E3EFE7;--tint-text:#25513E;--bar:#3F6B57;--out:#DCEBE1;--out-text:#1F2A24;--out-muted:#4A5650;--in:#FFFFFF;--hover:#F1F6F2;
+  --badge:#3F6B57;--badge-text:#FFFFFF;--badge-muted:#6B756F;--quote:rgba(63,107,87,.10);--quote-name:#3F6B57;
+  --av1:#E3EFE7;--av1t:#25513E;--av2:#E8E5DC;--av2t:#3A3F3B;--av3:#DFDDD4;--av3t:#3A3F3B;--av4:#EFEDE6;--av4t:#3A3F3B;
+  --s1:#1F2A24;--s2:#1F2A24;--s3:#1F2A24;--ph1:#D8E6DC;--ph2:#EFE6D2;--ring:#3F6B57;
+  --err-bg:#FBE4E0;--err-text:#7A1F14;--err-border:#A32A1E;--ok:#25513E;--scrim:rgba(20,26,22,.45)}
+.frame[data-th="dark"]{color-scheme:dark;
+  --page:#0B0D0C;--bg:#121513;--surface:#1B201C;--text:#EEF0EA;--muted:#AEB5AC;--border:#343B36;--link:#9EC3A5;--btn:#3F6B57;--on-btn:#FFFFFF;--btn-hover:#4A7A64;
+  --tint:#1D2B24;--tint-text:#BFE3CF;--bar:#3F6B57;--out:#24382D;--out-text:#EEF0EA;--out-muted:#AEB5AC;--in:#1B201C;--hover:#202428;
+  --badge:#3F6B57;--badge-text:#FFFFFF;--badge-muted:#4A524C;--quote:rgba(158,195,165,.10);--quote-name:#9EC3A5;
+  --av1:#24382D;--av1t:#BFE3CF;--av2:#262B27;--av2t:#D9DDD6;--av3:#2D332E;--av3t:#D9DDD6;--av4:#222723;--av4t:#D9DDD6;
+  --s1:#EEF0EA;--s2:#EEF0EA;--s3:#EEF0EA;--ph1:#26332B;--ph2:#332E22;--ring:#9EC3A5;
+  --err-bg:#3A1F1B;--err-text:#F4B8AF;--err-border:#F4B8AF;--ok:#9EC3A5;--scrim:rgba(0,0,0,.6)}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.4;padding:18px 24px 56px;transition:none}
+body[data-th="light"]{background:#E9E6DC;color:#1F2A24}
+body[data-th="dark"]{background:#0B0D0C;color:#EEF0EA}
+.meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.meta h1{font-size:16px;margin:0;font-weight:600}
+.seg{display:inline-flex;border:1px solid #888;border-radius:999px;overflow:hidden}
+.seg button{border:0;background:transparent;color:inherit;padding:8px 16px;font:inherit;font-size:13px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:#3F6B57;color:#fff;font-weight:600}
+.sub{font-size:13px;opacity:.85;margin-bottom:4px;max-width:1180px}
+h2.cap{font-size:13px;font-weight:600;opacity:.85;text-transform:uppercase;letter-spacing:.06em;margin:26px 0 6px}
+.cap2{font-size:13px;opacity:.85;margin:0 0 10px}
+.row{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.wrap{display:flex;flex-direction:column;gap:6px}
+.lbl{font-size:12px;opacity:.85}
+.frame{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.12);position:relative}
+.frame.phone{width:390px;height:780px;display:flex;flex-direction:column}
+.frame.phone.tall{height:960px}
+.frame.desktop{width:1180px;height:700px;display:grid;grid-template-columns:340px 1fr}
+svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+button{font-family:inherit}
+.ib{width:44px;height:44px;border:0;background:transparent;color:var(--muted);border-radius:50%;display:inline-grid;place-items:center;flex:none}
+:focus-visible{outline:3px solid var(--ring);outline-offset:2px}
+/* app bar */
+.bar{display:flex;align-items:center;gap:6px;padding:8px 10px 8px 8px;background:var(--surface);border-bottom:1px solid var(--border);border-top:3px solid var(--btn);min-height:62px}
+.bar b{font-size:17px;font-weight:600;flex:1}
+.body{flex:1;min-height:0;overflow:hidden;padding:18px 18px 12px;display:flex;flex-direction:column;gap:14px}
+.body.flush{padding:0;gap:0}
+/* auth */
+.auth{justify-content:center}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:26px;justify-content:center;margin-bottom:2px}
+.logo svg{width:34px;height:34px;color:var(--link)}
+h3{margin:0;font-size:22px;font-weight:700}
+.lead{color:var(--muted);margin:0;font-size:15px}
+.invbox{display:flex;gap:10px;background:var(--tint);color:var(--tint-text);border-radius:12px;padding:12px 14px;font-size:14px}
+.fld label{display:block;font-weight:600;font-size:14px;margin-bottom:6px}
+.inp{height:48px;border:1px solid var(--border);border-radius:10px;background:var(--surface);display:flex;align-items:center;padding:0 14px;gap:8px;color:var(--muted)}
+.inp.val{color:var(--text)}
+.inp.focus{border:2px solid var(--btn);box-shadow:0 0 0 3px color-mix(in srgb,var(--ring) 28%,transparent);padding:0 13px}
+.inp .pre{color:var(--muted)}
+.inp.err{border:2px solid var(--err-border);padding:0 13px}
+.help{font-size:13px;color:var(--muted);margin-top:6px;display:flex;gap:6px;align-items:flex-start}
+.ok{color:var(--ok);font-weight:600}
+.help svg{width:16px;height:16px;margin-top:2px}
+.btn{height:48px;border-radius:10px;border:0;background:var(--btn);color:var(--on-btn);font-size:16px;font-weight:600;width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.sec{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+.btn.sm{height:44px;width:auto;padding:0 16px;font-size:14px;flex:none}
+.btn.danger{background:transparent;color:var(--err-border);border:0;justify-content:flex-start;padding:0 18px}
+.foot{text-align:center;color:var(--muted);font-size:14px}
+.foot a{color:var(--link);font-weight:600}
+.errbanner{display:flex;gap:10px;background:var(--err-bg);color:var(--err-text);border:1px solid var(--err-border);border-radius:10px;padding:10px 12px;font-size:14px}
+.big-ic{width:72px;height:72px;border-radius:50%;background:var(--tint);color:var(--tint-text);display:grid;place-items:center;margin:0 auto}
+.big-ic svg{width:34px;height:34px}
+.center{text-align:center}
+/* lists */
+.sec-h{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:14px 18px 6px}
+.li{display:flex;align-items:center;gap:12px;padding:8px 18px;min-height:64px;background:var(--surface);border-bottom:1px solid var(--border)}
+.li.nb{border-bottom:0}
+.li .t{flex:1;min-width:0}
+.li .t b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li .t small{color:var(--muted);font-size:13px}
+.av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:15px;flex:none}
+.av.lg{width:88px;height:88px;font-size:30px}
+.av.sq{border-radius:12px}
+.a1{background:var(--av1);color:var(--av1t)}.a2{background:var(--av2);color:var(--av2t)}.a3{background:var(--av3);color:var(--av3t)}.a4{background:var(--av4);color:var(--av4t)}
+.ico-b{width:44px;height:44px;border-radius:12px;background:var(--tint);color:var(--tint-text);display:grid;place-items:center;flex:none}
+.tag{font-size:11px;font-weight:600;letter-spacing:.03em;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:0 6px;line-height:18px;margin-left:6px;vertical-align:middle}
+.pend{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;flex:none}
+.cb{width:24px;height:24px;border-radius:7px;border:2px solid var(--muted);flex:none;display:grid;place-items:center;color:#fff}
+.cb.on{background:var(--btn);border-color:var(--btn)}
+.cb.dis{opacity:.45}
+.cb svg{width:16px;height:16px;stroke-width:3}
+.dim{opacity:.6}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.qrrow{display:flex;gap:14px;align-items:center}
+.qr{width:112px;height:112px;background:#fff;border-radius:8px;padding:6px;flex:none;border:1px solid var(--border)}
+.qr svg{width:100%;height:100%;display:block}
+.acts{display:flex;gap:8px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:flex;align-items:center;gap:6px;background:var(--tint);color:var(--tint-text);border-radius:999px;padding:4px 6px 4px 4px;font-size:14px}
+.chip .av{width:28px;height:28px;font-size:11px}
+.cta{padding:12px 16px;background:var(--surface);border-top:1px solid var(--border)}
+.actrow{display:flex;gap:8px;padding:14px 18px;background:var(--surface);border-bottom:1px solid var(--border)}
+.act{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:13px;color:var(--text);min-height:64px;justify-content:center;border-radius:10px}
+.act .ico-b{width:44px;height:44px}
+/* desktop panes (copied from the approved main chat) */
+.list-pane{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.lp-head{display:flex;align-items:center;gap:6px;padding:10px 10px 6px 16px;border-top:3px solid var(--btn)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:20px;flex:1}
+.brand svg{color:var(--link);width:26px;height:26px}
+.search{margin:6px 14px 8px;display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:12px;height:44px;padding:0 12px;color:var(--muted)}
+.item{display:flex;gap:12px;align-items:center;padding:10px 14px;min-height:72px;border-left:3px solid transparent}
+.item.active{background:var(--tint);border-left-color:var(--bar)}
+.item .av{width:48px;height:48px}
+.im{flex:1;min-width:0}
+.nm{font-weight:600}
+.pv{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.thread-pane{background:var(--bg);display:flex;flex-direction:column;min-height:0}
+.th-head{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;background:var(--surface);border-bottom:1px solid var(--border);border-top:3px solid var(--btn);min-height:66px}
+.th-head b{font-size:16px;font-weight:600;flex:1}
+.ghost{flex:1;padding:20px 28px;display:flex;flex-direction:column;gap:10px}
+.gb{height:40px;border-radius:16px;background:var(--in);border:1px solid var(--border);width:46%}
+.gb.o{align-self:flex-end;background:var(--out);border-color:transparent;width:38%}
+.scrim{position:absolute;inset:0;background:var(--scrim);display:grid;place-items:center}
+.dialog{width:520px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 16px 48px rgba(0,0,0,.3);overflow:hidden}
+.dialog .dh{display:flex;align-items:center;padding:8px 8px 8px 20px;border-bottom:1px solid var(--border)}
+.dialog .dh b{flex:1;font-size:18px;font-weight:600}
+.dialog .db{padding:16px 20px 18px;display:flex;flex-direction:column;gap:14px}
+.two{display:flex;gap:10px}
+.two .inp{flex:1}
+</style>
+</head>
+<body data-th="light">
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+<symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3.5"/><path d="M2.5 19c.6-3.3 3.1-5 6.5-5s5.9 1.7 6.5 5"/><path d="M16 5.6a3.5 3.5 0 010 6.8M18 14.4c2 .6 3.2 2.2 3.5 4.6"/></symbol>
+<symbol id="i-userplus" viewBox="0 0 24 24"><circle cx="10" cy="8.5" r="3.7"/><path d="M3 20c.6-3.7 3.2-5.6 7-5.6s6.4 1.9 7 5.6"/><path d="M19 7v6M16 10h6"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-bellx" viewBox="0 0 24 24"><path d="M6 9a6 6 0 0110-4.2M18 9c0 5 2 6 2 6H8M10 19a2 2 0 004 0M3 3l18 18"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6zM10 19a2 2 0 004 0"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="18.5" r="1"/></symbol>
+<symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 5h16v11H11l-4 4v-4H4z"/><path d="M8 10h8"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/></symbol>
+</defs></svg>
+
+<div class="meta">
+  <h1>Gom: invite, sign-in, friends, group members</h1>
+  <div class="seg" role="group" aria-label="Theme">
+    <button type="button" data-set="light" aria-pressed="true">Light</button>
+    <button type="button" data-set="dark" aria-pressed="false">Dark</button>
+  </div>
+</div>
+<div class="sub">Names, IDs and the QR code are samples. The password field is a placeholder: how people sign in (password, passkey, other) is not decided yet.</div>
+
+<h2 class="cap">1. Invite and sign-in</h2>
+<p class="cap2">Sign-up from an invite link (it also joins a group), sign-in with a wrong-password state, and a dead invite link. On desktop these are the same centred column.</p>
+<div class="row" id="r1"></div>
+
+<h2 class="cap">2. Starting a conversation and adding friends</h2>
+<p class="cap2">The pencil button opens the picker. "Thêm bạn" opens the add-friend screen: exact Gom ID, your own QR and link, incoming and sent requests.</p>
+<div class="row" id="r2"></div>
+
+<h2 class="cap">3. Group members</h2>
+<p class="cap2">Members you are not yet friends with show "Thêm bạn". "Thêm thành viên" offers only your own friends.</p>
+<div class="row" id="r3"></div>
+
+<h2 class="cap">4. Desktop: add friend as a dialog over the chat</h2>
+<div class="row" id="r4"></div>
+
+<script>
+const I = n => `<svg class="i"><use href="#i-${n}"/></svg>`;
+const S = (n,sz) => `<svg class="i" style="width:${sz}px;height:${sz}px"><use href="#i-${n}"/></svg>`;
+const F = (th, cls, inner) => `<div class="frame ${cls}" data-th="${th}">${inner}</div>`;
+const W = (label, html) => `<div class="wrap"><div class="lbl">${label}</div>${html}</div>`;
+const bar = (t, right='') => `<div class="bar"><button class="ib" aria-label="Quay lại">${I('back')}</button><b>${t}</b>${right}</div>`;
+
+/* --- fake QR --- */
+function qr(){
+  const n=25, cells=[]; let s=7;
+  const rnd=()=>{s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff};
+  const inFinder=(x,y)=>(x<8&&y<8)||(x>n-9&&y<8)||(x<8&&y>n-9);
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++) if(!inFinder(x,y)&&rnd()>.52) cells.push(`<rect x="${x}" y="${y}" width="1" height="1"/>`);
+  const fin=(x,y)=>`<rect x="${x}" y="${y}" width="7" height="7" fill="#111"/><rect x="${x+1}" y="${y+1}" width="5" height="5" fill="#fff"/><rect x="${x+2}" y="${y+2}" width="3" height="3" fill="#111"/>`;
+  return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><g fill="#111">${cells.join('')}</g>${fin(0,0)}${fin(n-7,0)}${fin(0,n-7)}</svg>`;
+}
+
+/* --- 1. auth --- */
+const signup = `
+<div class="body auth">
+  <div class="logo">${I('logo')}<span>Gom</span></div>
+  <div><h3>Bạn được mời vào Gom</h3><p class="lead" style="margin-top:6px">Gom là nơi trò chuyện riêng của gia đình và bạn bè.</p></div>
+  <div class="invbox">${S('users',22)}<div>Sau khi tạo tài khoản, bạn sẽ vào nhóm <b>Gia đình</b> và kết bạn với người mời.</div></div>
+  <div class="fld"><label>Tên hiển thị</label><div class="inp val">Minh Tâm</div></div>
+  <div class="fld"><label>Gom ID</label><div class="inp val focus"><span class="pre">@</span>minh_tam</div>
+    <div class="help ok">${S('check',16)}Có thể dùng</div>
+    <div class="help">Chữ thường, số và dấu gạch dưới, 3 đến 20 ký tự. Bạn bè dùng ID này để tìm bạn.</div></div>
+  <div class="fld"><label>Mật khẩu</label><div class="inp">Ít nhất 10 ký tự<span style="margin-left:auto">${I('eye')}</span></div></div>
+  <button class="btn">Tạo tài khoản</button>
+  <div class="foot">Đã có tài khoản? <a>Đăng nhập</a></div>
+</div>`;
+const signin = `
+<div class="body auth">
+  <div class="logo">${I('logo')}<span>Gom</span></div>
+  <h3 class="center">Đăng nhập</h3>
+  <div class="errbanner" role="alert">${S('alert',20)}<div>Gom ID hoặc mật khẩu không đúng. Hãy thử lại.</div></div>
+  <div class="fld"><label>Gom ID</label><div class="inp val err"><span class="pre">@</span>minh_tam</div></div>
+  <div class="fld"><label>Mật khẩu</label><div class="inp err">••••••••••<span style="margin-left:auto">${I('eye')}</span></div></div>
+  <button class="btn">Đăng nhập</button>
+  <div class="foot">Chưa có tài khoản? Gom chỉ dành cho người được mời.</div>
+</div>`;
+const expired = `
+<div class="body auth">
+  <div class="logo">${I('logo')}<span>Gom</span></div>
+  <div class="big-ic">${S('clock',34)}</div>
+  <div class="center"><h3>Lời mời không dùng được nữa</h3><p class="lead" style="margin-top:8px">Lời mời này có thể đã hết hạn hoặc đã được dùng. Hãy nhờ người mời gửi cho bạn lời mời mới.</p></div>
+  <button class="btn sec">Đăng nhập</button>
+</div>`;
+
+/* --- 2. picker and add friend --- */
+const friends = [['Anh Hai','AH','a2','anh_hai'],['Chị Ba','B3','a2','chi_ba'],['Chú Tư','CT','a3','chu_tu'],['Cô Lan','CL','a1','co_lan'],['Mẹ','M','a1','me_yeu'],['Minh','MN','a3','minh_cap3']];
+const picker = `
+${bar('Cuộc trò chuyện mới','')}
+<div class="body flush">
+  <div style="padding:12px 14px;background:var(--surface)"><div class="search" style="margin:0">${I('search')}<span>Tìm bạn bè</span></div></div>
+  <div class="li"><div class="ico-b">${I('users')}</div><div class="t"><b>Nhóm mới</b></div></div>
+  <div class="li"><div class="ico-b">${I('userplus')}</div><div class="t"><b>Thêm bạn</b><small>Bằng Gom ID, mã QR hoặc liên kết</small></div></div>
+  <div class="sec-h">Bạn bè (${friends.length})</div>
+  ${friends.map(f=>`<div class="li"><div class="av ${f[2]}">${f[1]}</div><div class="t"><b>${f[0]}</b><small>@${f[3]}</small></div></div>`).join('')}
+</div>`;
+const addfriend = `
+${bar('Thêm bạn','')}
+<div class="body" style="gap:16px;padding-bottom:0">
+  <div class="fld"><label>Gom ID của bạn bè</label>
+    <div class="two"><div class="inp val"><span class="pre">@</span>minh_tam</div><button class="btn sm">Tìm</button></div>
+    <div class="help">Tìm theo ID chính xác. Bạn cũng có thể quét mã hoặc mở liên kết của bạn bè.</div></div>
+  <div class="card" style="flex-direction:row;align-items:center">
+    <div class="av a3">MT</div><div style="flex:1;min-width:0"><b>Minh Tâm</b><div style="color:var(--muted);font-size:13px">@minh_tam</div></div>
+    <button class="btn sm">Gửi lời mời</button></div>
+  <div class="card"><b>Mã của bạn</b>
+    <div class="qrrow"><div class="qr">${qr()}</div>
+      <div style="font-size:14px;color:var(--muted)">Cho bạn bè quét mã này hoặc gửi liên kết bên dưới.<div style="color:var(--text);font-weight:600;margin-top:6px">@nguoi_dung</div></div></div>
+    <div class="acts"><button class="btn sec sm" style="flex:1">${S('link',18)}Sao chép liên kết</button><button class="btn sec sm" style="flex:1">${S('share',18)}Chia sẻ</button></div></div>
+  <div style="margin:0 -18px"><div class="sec-h" style="padding-top:2px">Lời mời kết bạn (2)</div>
+    <div class="li"><div class="av a4">C5</div><div class="t"><b>Chị Năm</b><small>@chi_nam</small></div><button class="btn sm">Chấp nhận</button><button class="btn sec sm">Từ chối</button></div>
+    <div class="li"><div class="av a2">B6</div><div class="t"><b>Bác Sáu</b><small>@bac_sau</small></div><button class="btn sm">Chấp nhận</button><button class="btn sec sm">Từ chối</button></div>
+    <div class="sec-h">Đã gửi</div>
+    <div class="li"><div class="av a3">CB</div><div class="t"><b>Cậu Bảy</b><small>@cau_bay</small></div><span class="pend">${S('clock',16)}Đang chờ</span><button class="btn sec sm">Thu hồi</button></div></div>
+</div>`;
+
+/* --- 3. group --- */
+const groupinfo = `
+${bar('Thông tin nhóm', `<button class="ib" aria-label="Thêm">${I('more')}</button>`)}
+<div class="body flush">
+  <div style="background:var(--surface);padding:20px 18px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;border-bottom:0">
+    <div class="av lg a1">GĐ</div><b style="font-size:20px">Gia đình</b><span style="color:var(--muted);font-size:14px">5 thành viên</span></div>
+  <div class="actrow">
+    <div class="act"><div class="ico-b">${I('userplus')}</div>Thêm thành viên</div>
+    <div class="act"><div class="ico-b">${I('bellx')}</div>Tắt thông báo</div>
+    <div class="act"><div class="ico-b">${I('search')}</div>Tìm tin nhắn</div></div>
+  <div class="sec-h">Thành viên (5)</div>
+  <div class="li"><div class="av a1">B</div><div class="t"><b>Bạn</b></div></div>
+  <div class="li"><div class="av a1">M</div><div class="t"><b>Mẹ<span class="tag">Người tạo nhóm</span></b><small>Bạn bè</small></div></div>
+  <div class="li"><div class="av a2">B3</div><div class="t"><b>Chị Ba</b><small>Bạn bè</small></div></div>
+  <div class="li"><div class="av a3">DU</div><div class="t"><b>Dì Út</b></div><button class="btn sec sm">${S('userplus',18)}Thêm bạn</button></div>
+  <div class="li"><div class="av a4">CH</div><div class="t"><b>Chú Hai</b></div><span class="pend">${S('clock',16)}Đã gửi</span></div>
+  <div style="height:10px"></div>
+  <button class="btn danger" style="background:var(--surface);border-top:1px solid var(--border);border-radius:0;height:56px">Rời nhóm</button>
+</div>`;
+const addmembers = `
+${bar('Thêm thành viên','')}
+<div class="body flush">
+  <div style="padding:12px 14px 8px;background:var(--surface)"><div class="search" style="margin:0">${I('search')}<span>Tìm bạn bè</span></div></div>
+  <div style="background:var(--surface);padding:0 14px 12px;border-bottom:1px solid var(--border)"><div class="chips"><span class="chip"><span class="av a2">AH</span>Anh Hai${S('x',16)}</span></div></div>
+  <div class="sec-h">Bạn bè</div>
+  <div class="li"><div class="av a2">AH</div><div class="t"><b>Anh Hai</b><small>@anh_hai</small></div><div class="cb on">${S('check',16)}</div></div>
+  <div class="li"><div class="av a3">CT</div><div class="t"><b>Chú Tư</b><small>@chu_tu</small></div><div class="cb"></div></div>
+  <div class="li"><div class="av a1">CL</div><div class="t"><b>Cô Lan</b><small>@co_lan</small></div><div class="cb"></div></div>
+  <div class="li dim"><div class="av a1">M</div><div class="t"><b>Mẹ</b><small>Đã trong nhóm</small></div><div class="cb on dis">${S('check',16)}</div></div>
+  <div class="li dim"><div class="av a2">B3</div><div class="t"><b>Chị Ba</b><small>Đã trong nhóm</small></div><div class="cb on dis">${S('check',16)}</div></div>
+</div>
+<div class="cta"><button class="btn">Thêm (1)</button></div>`;
+
+/* --- 4. desktop dialog --- */
+function panes(){
+  return `
+  <section class="list-pane">
+    <div class="lp-head"><div class="brand">${I('logo')}<span>Gom</span></div><button class="ib">${I('moon')}</button><button class="ib">${I('pencil')}</button></div>
+    <div class="search">${I('search')}<span>Tìm kiếm</span></div>
+    ${[['Gia đình','GĐ','a1','Mẹ: Tối nay cả nhà ăn cơm nhé',1],['Anh Hai','AH','a2','Ok, mai anh qua đón'],['Bạn cấp 3','BC','a3','Minh đã gửi một hình ảnh'],['Cô Lan','CL','a1','Cảm ơn con nhé']].map(x=>`
+    <div class="item${x[4]?' active':''}"><div class="av ${x[2]}">${x[1]}</div><div class="im"><div class="nm">${x[0]}</div><span class="pv">${x[3]}</span></div></div>`).join('')}
+  </section>
+  <section class="thread-pane">
+    <div class="th-head"><div class="av a1" style="width:40px;height:40px">GĐ</div><b>Gia đình</b></div>
+    <div class="ghost"><div class="gb"></div><div class="gb o"></div><div class="gb" style="width:30%"></div></div>
+  </section>`;
+}
+const dialog = `
+<div class="scrim"><div class="dialog" role="dialog" aria-label="Thêm bạn">
+  <div class="dh"><b>Thêm bạn</b><button class="ib" aria-label="Đóng">${I('x')}</button></div>
+  <div class="db">
+    <div class="fld"><label>Gom ID của bạn bè</label><div class="two"><div class="inp val focus"><span class="pre">@</span>minh_tam</div><button class="btn sm">Tìm</button></div></div>
+    <div class="card" style="flex-direction:row;align-items:center;background:var(--bg)"><div class="av a3">MT</div><div style="flex:1"><b>Minh Tâm</b><div style="color:var(--muted);font-size:13px">@minh_tam</div></div><button class="btn sm">Gửi lời mời</button></div>
+    <div class="qrrow"><div class="qr">${qr()}</div><div style="flex:1;font-size:14px;color:var(--muted)">Mã của bạn: <b style="color:var(--text)">@nguoi_dung</b><div class="acts" style="margin-top:10px"><button class="btn sec sm">${S('link',18)}Sao chép liên kết</button></div></div></div>
+    <div style="margin:0 -20px;border-top:1px solid var(--border)"><div class="sec-h" style="padding-top:10px">Lời mời kết bạn (2)</div>
+      <div class="li nb"><div class="av a4">C5</div><div class="t"><b>Chị Năm</b><small>@chi_nam</small></div><button class="btn sm">Chấp nhận</button><button class="btn sec sm">Từ chối</button></div></div>
+  </div></div></div>`;
+
+function render(th){
+  document.getElementById('r1').innerHTML =
+    W('Sign up from an invite', F(th,'phone',signup)) + W('Sign in, wrong password', F(th,'phone',signin)) + W('Invite expired or already used', F(th,'phone',expired));
+  document.getElementById('r2').innerHTML =
+    W('New conversation picker', F(th,'phone',picker)) + W('Add friend', F(th,'phone tall',addfriend));
+  document.getElementById('r3').innerHTML =
+    W('Group info with members', F(th,'phone',groupinfo)) + W('Add members (own friends only)', F(th,'phone',addmembers));
+  document.getElementById('r4').innerHTML = W('Add friend dialog, desktop', F(th,'desktop',panes()+dialog));
+}
+function setTheme(t){
+  document.body.dataset.th=t;
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.set===t));
+  render(t);
+}
+document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.set)));
+setTheme('light');
+</script>
+<script>
+/* Export mode: ?frame=<index>&theme=light|dark shows one frame alone, for the PNG/WebP exports. */
+(()=>{const q=new URLSearchParams(location.search),f=q.get('frame');if(f===null)return;
+setTheme(q.get('theme')||'light');
+const fr=document.querySelectorAll('.frame')[Number(f)];
+document.documentElement.classList.add('export');
+document.body.replaceChildren(...document.querySelectorAll('body > svg'),fr);
+document.body.style.cssText='margin:0;padding:0;background:transparent';})();
+</script>
+</body>
+</html>

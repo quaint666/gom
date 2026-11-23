@@ -14,4 +14,4 @@ Needs the .NET 10 SDK and Docker.
     dotnet run --project src/Gom.Web --urls http://127.0.0.1:5080
     curl -sf http://127.0.0.1:5080/healthz
 
-Decisions and their reasons are in `docs/decisions.md`.
+Decisions and their reasons are in `docs/decisions.md`. The mockups and design notes are in `design/`.

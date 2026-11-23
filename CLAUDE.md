@@ -12,7 +12,8 @@ See `README.md`. `dotnet test` needs `ConnectionStrings__Default` pointing at a 
 - Sockets: one bounded queue and one writer loop per socket; a slow client is closed and resyncs from its cursor.
 - Auth: cookie `__Host-` prefix, `HttpOnly`, `Secure`, `SameSite=Lax`; an Origin check on every state-changing request and on the WebSocket upgrade; no state change on GET; membership checked on every send and on delivery.
 - Queries: LINQ by default; interpolated `FromSql` / `ExecuteSql` only for atomic steps; never string-built SQL.
-- No direct edits to `main`: one branch and one pull request per change, about 300 changed lines or fewer (say why if more). Decisions are one line in `docs/decisions.md`.
+- No direct edits to `main`: one branch and one pull request per change, about 1,500 changed lines or fewer, not counting images and fonts (say why if more). Decisions are one line in `docs/decisions.md`.
 
 ## Docs
 - `docs/decisions.md`: what was decided, and why.
+- `design/`: the mockups (images and HTML sources) and `design-notes.md`, the look and the product rules the screens assume.
