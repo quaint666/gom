@@ -73,11 +73,9 @@ Be Vietnam Pro (400, 600, 700), self-hosted from `design/source/fonts/`. Body 15
 8. **Avatars are initials** in the first version. Group links, avatar images and profile customization come later.
 9. **Loading** uses skeleton rows, not a spinner; with "reduce motion" the shimmer stops.
 10. **Errors** say what is wrong in words, with an icon, never colour alone. The sign-in error does not say whether the ID exists.
+11. **Accounts.** Sign-in is Gom ID plus password (at least 10 characters). A Gom ID is lowercase letters, digits and underscore, 3 to 20 characters, and cannot change; the display name is a nickname that defaults to the ID. Only the owner resets a password. An invite lasts 7 days. Each person can see and end their own other sessions.
 
 ## Not decided yet
-- How people sign in (password, passkey or something else). The password field and its "at least 10 characters" hint are placeholders.
-- The Gom ID rules (the mockups assume lowercase letters, digits and underscore, 3 to 20 characters), and how long an invite lasts.
-- Whether recall has a time limit, and whether staff can chat in an Ops room.
 - The desktop version of the message menu (right-click or hover), and the block control (it would sit in a member's menu).
 - Hover, focus and pressed looks per control: they follow the Peekbox interaction rules and are not drawn here.
 
