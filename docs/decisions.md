@@ -15,3 +15,11 @@ One line each: the decision, then the reason.
 - 2026-11-24: Shop alerts carry no customer details, and only staff-only "ops" rooms receive them.
 - 2026-11-24: This repository is public. No secrets, hostnames or home-lab details in any commit.
 - 2026-11-24: MIT licence, the same as Peekbox and Bloomy.
+- 2026-11-24: Friends are added by exact Gom ID, a link or a QR code, as a request the other person accepts; signing up through an invite makes you friends with the inviter. No phone-number lookup in version 1: it needs verified numbers (an SMS provider), stores personal data, and lets people find out who is on Gom.
+- 2026-11-24: Only the owner invites, with a single-use link that expires; an invite can also put the new member in a group. Invite-only stays true because nobody else can open the door.
+- 2026-11-24: Any member can create a group and add their own friends; members who are not friends need a friend request before a one-to-one message. Group links, avatar images and profile customization come after version 1 (a group link would let people in without an invite).
+- 2026-11-24: Read receipts are in version 1 as one read position per member per conversation (`last_read_seq`), with an opt-out that hides yours and theirs; typing indicators and online status are not in version 1 (they would live in memory only). A position is one write however many messages it covers, and the other two need no storage.
+- 2026-11-24: Ops rooms show in a staff member's list, are muted for push by default and are read-only (the shop posts alerts as a bot). Staff talk elsewhere; one rule for the room is simpler than two.
+- 2026-11-24: A message sent while the connection is down waits and goes out when it returns; a failed send is retried with the same `client_id`, so a retry cannot duplicate it.
+- 2026-11-24: Recall ("thu hồi") replaces a message with a placeholder for everyone, with no time limit in version 1.
+- 2026-11-24: The look is Peekbox's sage and cream in Be Vietnam Pro, with avatars and sender names neutral so the colour stays one hue; light and dark follow the system and can be toggled. Mockups, tokens and notes are in `design/`.
