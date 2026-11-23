@@ -109,6 +109,33 @@ public sealed class AppFixture : IAsyncLifetime
         return client.SendAsync(request);
     }
 
+    private (User User, string Cookie)? _owner;
+
+    /// <summary>The one owner of this database, signed in. Made on first use.</summary>
+    public async Task<(User User, string Cookie)> Owner()
+    {
+        if (_owner is null)
+        {
+            var user = await AddUser("the_owner", owner: true);
+            _owner = (user, await SignIn(user.GomId));
+        }
+        return _owner.Value;
+    }
+
+    public async Task<HttpResponseMessage> Call(HttpMethod method, string path, object? body = null, string? cookie = null, string? origin = Origin)
+    {
+        using var client = Client();
+        return await Send(client, method, path, body, cookie, origin);
+    }
+
+    public async Task<string> NewInviteToken()
+    {
+        var (_, cookie) = await Owner();
+        using var response = await Call(HttpMethod.Post, "/api/invites", cookie: cookie);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("token").GetString()!;
+    }
+
     public Task<List<Session>> SessionsOf(Guid userId) => ReadSessions(userId);
 
     private async Task<List<Session>> ReadSessions(Guid userId)

@@ -65,18 +65,25 @@ public static class AuthEndpoints
         }
 
         var now = clock.GetUtcNow();
+        var started = StartSession(http, db, user.Id, now, options.Value);
+        await db.SaveChangesAsync(ct);
+
+        SessionCookie.Set(http.Response, started.Token, started.Expires);
+        return Results.Ok(new { gomId = user.GomId, displayName = user.DisplayName, isOwner = user.IsOwner });
+    }
+
+    /// <summary>Adds a new session for the user to the context; the caller saves it, then sets the cookie.</summary>
+    internal static (string Token, DateTimeOffset Expires) StartSession(HttpContext http, GomDbContext db, Guid userId, DateTimeOffset now, AuthOptions options)
+    {
         var issued = Tokens.New();
-        var expires = now.AddDays(options.Value.SessionDays);
+        var expires = now.AddDays(options.SessionDays);
         db.Sessions.Add(new Session
         {
-            Id = Guid.NewGuid(), UserId = user.Id, TokenHash = issued.Hash,
+            Id = Guid.NewGuid(), UserId = userId, TokenHash = issued.Hash,
             DeviceLabel = DeviceLabel.From(http.Request.Headers.UserAgent.ToString()),
             CreatedAt = now, LastSeenAt = now, ExpiresAt = expires,
         });
-        await db.SaveChangesAsync(ct);
-
-        SessionCookie.Set(http.Response, issued.Token, expires);
-        return Results.Ok(new { gomId = user.GomId, displayName = user.DisplayName, isOwner = user.IsOwner });
+        return (issued.Token, expires);
     }
 
     private static async Task<IResult> SignOut(HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
