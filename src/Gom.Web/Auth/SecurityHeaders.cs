@@ -1,0 +1,28 @@
+namespace Gom.Web.Auth;
+
+/// <summary>
+/// Headers on every response. The policy lets the page run only its own script and styles (no inline), talk only to
+/// itself, and never be framed. Pages and API answers are never cached, and no page leaks its address (it can contain
+/// an invite token) through the Referer header.
+/// </summary>
+public sealed class SecurityHeaders(RequestDelegate next)
+{
+    private const string Policy =
+        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; " +
+        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+
+    public Task Invoke(HttpContext context)
+    {
+        context.Response.OnStarting(() =>
+        {
+            var headers = context.Response.Headers;
+            headers.ContentSecurityPolicy = Policy;
+            headers.XContentTypeOptions = "nosniff";
+            headers["Referrer-Policy"] = "no-referrer";
+            if (context.Request.Path.StartsWithSegments("/api") || (context.Response.ContentType?.StartsWith("text/html") ?? false))
+                headers.CacheControl = "no-store";
+            return Task.CompletedTask;
+        });
+        return next(context);
+    }
+}
