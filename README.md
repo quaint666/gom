@@ -8,8 +8,8 @@ Status: scaffolding (M0). Nothing to use yet.
 
 Needs the .NET 10 SDK and Docker.
 
-    docker run -d --name gom-local-pg -p 127.0.0.1:5434:5432 -e POSTGRES_PASSWORD=dev postgres:19
-    export ConnectionStrings__Default="Host=127.0.0.1;Port=5434;Username=postgres;Password=dev;Database=postgres"
+    docker run -d --name gom-local-pg -p 127.0.0.1:5435:5432 -e POSTGRES_PASSWORD=dev postgres:19
+    export ConnectionStrings__Default="Host=127.0.0.1;Port=5435;Username=postgres;Password=dev;Database=postgres"
     dotnet test
     dotnet run --project src/Gom.Web --urls http://127.0.0.1:5080
     curl -sf http://127.0.0.1:5080/healthz
