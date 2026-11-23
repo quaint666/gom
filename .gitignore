@@ -1,0 +1,24 @@
+# Secrets and local config: never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+CLAUDE.local.md
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+bin/
+obj/
+*.tsbuildinfo
+# The TypeScript build output (from M1)
+src/Gom.Web/wwwroot/js/
+
+# Logs and editor/OS files
+*.log
+.DS_Store
+.vscode/
+.idea/
