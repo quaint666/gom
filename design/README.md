@@ -42,6 +42,6 @@ Window sizes: phone 390 x 780 (screen 08 is 390 x 960, screens 02 and 03 are 390
 
 ## Things that are not obvious
 - **Each screen shows one moment, not behaviour.** Hover, focus and pressed looks follow the Peekbox rules in `design-notes.md` and are not drawn per screen. Animation, tablet width and the desktop message menu are not drawn.
-- **Sign-in method is not decided.** The password field is a placeholder; see "Not decided yet" in `design-notes.md`.
+- **No screen shows the password reset, the list of your sessions, or the display-name field yet.** Rule 11 in `design-notes.md` says they exist; they are not drawn.
 - **The QR code is a fake pattern** and does not scan.
 - **Contrast** of the colour pairs was calculated (see the notes); it was not tested on real screens or with a screen reader.
