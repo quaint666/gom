@@ -1,6 +1,8 @@
 using Gom.Web.Auth;
 using Gom.Web.Data;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,9 +13,24 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
 builder.Services.AddDbContext<GomDbContext>(options => options.UseNpgsql(connectionString));
 
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PasswordService>();
+builder.Services.AddSingleton<SignInThrottle>(sp => new SignInThrottle(sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton<HashLimiter>(sp =>
+{
+    var o = sp.GetRequiredService<IOptions<AuthOptions>>().Value;
+    var slots = o.MaxConcurrentHashes > 0 ? o.MaxConcurrentHashes : Math.Max(1, Environment.ProcessorCount / 2);
+    return new HashLimiter(slots, TimeSpan.FromSeconds(o.HashWaitSeconds));
+});
+builder.Services.AddAuthentication(GomClaims.Scheme).AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(GomClaims.Scheme, null);
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+app.UseMiddleware<OriginCheck>();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapAuth();
 
 // 200 only when the database answers; a monitor or a proxy can poll this.
 app.MapGet("/healthz", async (GomDbContext db, CancellationToken ct) =>
