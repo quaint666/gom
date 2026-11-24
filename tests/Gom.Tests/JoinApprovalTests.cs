@@ -159,7 +159,9 @@ public class JoinApprovalTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
         Assert.True(await IsMember(t, t.D));
         using var history = await app.Call(Get, $"/api/conversations/{t.Chat}/messages", cookie: t.CD);
-        Assert.Empty((await AppFixture.Json(history)).GetProperty("messages").EnumerateArray());
+        // All they see is the line that says they were added; "chuyện cũ" is not theirs.
+        var seen = (await AppFixture.Json(history)).GetProperty("messages").EnumerateArray().ToList();
+        Assert.Equal("added", Assert.Single(seen).GetProperty("notice").GetProperty("type").GetString());
         using var left = await Requests(t, t.CA);
         Assert.Empty((await AppFixture.Json(left)).GetProperty("requests").EnumerateArray());
     }

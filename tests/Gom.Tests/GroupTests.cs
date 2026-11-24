@@ -332,7 +332,10 @@ public class GroupTests(AppFixture app) : IClassFixture<AppFixture>
         using var after = await Send(k.CB, id, "sau khi D vào");
 
         using var history = await app.Call(Get, $"/api/conversations/{id}/messages", cookie: k.CD);
-        var bodies = (await AppFixture.Json(history)).GetProperty("messages").EnumerateArray().Select(m => m.GetProperty("body").GetString()).ToArray();
+        var all = (await AppFixture.Json(history)).GetProperty("messages").EnumerateArray().ToList();
+        // Their own "added" line is theirs to see; what was said before they came is not.
+        Assert.Equal("added", Assert.Single(all, m => m.TryGetProperty("notice", out var added) && added.ValueKind == JsonValueKind.Object).GetProperty("notice").GetProperty("type").GetString());
+        var bodies = all.Where(m => !(m.TryGetProperty("notice", out var notice) && notice.ValueKind == JsonValueKind.Object)).Select(m => m.GetProperty("body").GetString()).ToArray();
         var entry = (await List(k.CD)).Single();
 
         Assert.Equal("sau khi D vào", Assert.Single(bodies));

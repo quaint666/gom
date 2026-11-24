@@ -3076,3 +3076,57 @@ describe('chat: the card under a message for its address', () => {
     expect(root.querySelector('[data-preview]')).not.toBeNull();
   });
 });
+
+describe('chat: notices in a group', () => {
+  const G = '33333333-3333-4333-8333-333333333333';
+  const group = (extra: Partial<Conversation> = {}): Conversation => ({ id: G, kind: 'group', title: 'Nhóm', peer: null, lastSeq: 2, lastReadSeq: 2, unread: 0, lastMessage: { seq: 1, body: 'tin cuối', createdAt: at(10), sender: { id: 'u-minh', displayName: 'Minh' } }, memberCount: 3, ...extra });
+  const notice = (seq: number, type: 'added' | 'left' | 'renamed', by: 'mom' | 'minh' = 'minh', target?: { id: string; displayName: string }, title?: string): ChatMessage =>
+    ({ ...msg(seq, by, '', at(10, seq), G), notice: { type, target: target ?? null, title: title ?? null } });
+  const open = (history: ChatMessage[]) => start({ path: `/c/${G}`, chats: [group()], history: { [G]: history } });
+
+  it('draws a notice as a line between the messages, in words, not as a bubble', async () => {
+    open([msg(1, 'minh', 'tin', at(10), G), notice(2, 'added', 'minh', { id: 'u-bao', displayName: 'Bảo' })]);
+    await flush();
+    const line = root.querySelector('[data-notice]')!;
+    expect(text(line)).toBe('Minh đã thêm Bảo vào nhóm');
+    expect(root.querySelectorAll('[data-msg]')).toHaveLength(1);   // the notice is not a bubble
+    expect(root.querySelector('[data-notice] .tools, [data-notice] .menu-btn')).toBeNull();
+  });
+
+  it('says "Bạn" and "bạn" when it is about you', async () => {
+    open([notice(1, 'added', 'mom', { id: 'u-mom', displayName: 'Mẹ' }), notice(2, 'renamed', 'mom', undefined, 'Nhà mình')]);
+    await flush();
+    expect([...root.querySelectorAll('[data-notice]')].map((n) => text(n))).toEqual(['Bạn đã thêm bạn vào nhóm', 'Bạn đã đổi tên nhóm thành "Nhà mình"']);
+  });
+
+  it('puts no tick or seen line on a notice of yours, even when it is the newest thing you did', async () => {
+    const h = start({
+      path: `/c/${G}`, chats: [group()], history: { [G]: [msg(1, 'mom', 'tin', at(10), G), notice(2, 'renamed', 'mom', undefined, 'Tên mới')] },
+      api: { reads: vi.fn(async () => ok({ enabled: true, reads: [{ userId: 'u-a', seq: 9 }] })) },
+    });
+    await flush();
+    expect(root.querySelector('[data-notice] .tick')).toBeNull();
+    expect(text(root.querySelector('.seen')!)).toBe('Đã xem bởi 1');
+    expect(root.querySelector('[data-msg="id1"] .tick')).not.toBeNull();
+    expect(h.api.reads).toHaveBeenCalled();
+  });
+
+  it('does not change the list preview, count as unread, or offer "new messages" when a notice arrives live', async () => {
+    const h = start({ chats: [group()], history: {} });
+    await flush();
+    const before = text(rows()[0]!.querySelector('.pv')!);
+    h.handlers().event(G, created(notice(3, 'left', 'minh')));
+    await flush();
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe(before);
+    expect(rows()[0]!.querySelector('.badge')).toBeNull();
+  });
+
+  it('shows a notice that arrives live in the open thread without a "new messages" jump button', async () => {
+    const h = open([msg(1, 'minh', 'tin', at(10), G)]);
+    await flush();
+    h.handlers().event(G, created(notice(2, 'left', 'minh')));
+    await flush();
+    expect(text(root.querySelector('[data-notice]')!)).toBe('Minh đã rời nhóm');
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+});

@@ -410,6 +410,14 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("edited_at");
 
+                    b.Property<int?>("Notice")
+                        .HasColumnType("integer")
+                        .HasColumnName("notice");
+
+                    b.Property<Guid?>("NoticeTargetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("notice_target_id");
+
                     b.Property<Guid?>("ReplyToId")
                         .HasColumnType("uuid")
                         .HasColumnName("reply_to_id");
@@ -425,6 +433,9 @@ namespace Gom.Web.Migrations
                     b.HasKey("Id")
                         .HasName("pk_messages");
 
+                    b.HasIndex("NoticeTargetId")
+                        .HasDatabaseName("ix_messages_notice_target_id");
+
                     b.HasIndex("ReplyToId")
                         .HasDatabaseName("ix_messages_reply_to_id");
 
@@ -438,6 +449,10 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4)");
+
+                            t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
+
                             t.HasCheckConstraint("ck_messages_seq", "seq > 0");
                         });
                 });
@@ -957,6 +972,12 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_messages_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("NoticeTargetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_messages_notice_target_id");
 
                     b.HasOne("Gom.Web.Data.Message", null)
                         .WithMany()

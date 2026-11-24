@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -180,8 +181,10 @@ public class GroupRoleTests(AppFixture app) : IClassFixture<AppFixture>
 
         using var history = await History(t, t.CB);
 
-        var bodies = (await AppFixture.Json(history)).GetProperty("messages").EnumerateArray().Select(m => m.GetProperty("body").GetString()).ToArray();
+        var all = (await AppFixture.Json(history)).GetProperty("messages").EnumerateArray().ToList();
+        var bodies = all.Where(m => !(m.TryGetProperty("notice", out var notice) && notice.ValueKind == JsonValueKind.Object)).Select(m => m.GetProperty("body").GetString()).ToArray();
         Assert.Equal(new[] { "sau khi quay lại" }, bodies);
+        Assert.Single(all, m => m.TryGetProperty("notice", out var added) && added.ValueKind == JsonValueKind.Object);   // and the line that says they came back
         Assert.Equal(GroupRole.Member, (await Roles(t))[t.B.Id]);
     }
 

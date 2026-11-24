@@ -19,7 +19,7 @@ public static class MessageEndpoints
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, PreviewDto? Preview = null);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, PreviewDto? Preview = null, NoticeDto? Notice = null);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -45,8 +45,8 @@ public static class MessageEndpoints
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
     internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null, MessageExtras? extras = null) =>
-        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt,
-            m.DeletedAt != null ? null : extras?.Attachments, m.DeletedAt != null ? null : extras?.Preview);
+        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Notice is null ? m.Body : "", m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt,
+            m.DeletedAt != null ? null : extras?.Attachments, m.DeletedAt != null ? null : extras?.Preview, extras?.Notice);
 
     // ---- what a message may contain
 
@@ -96,7 +96,7 @@ public static class MessageEndpoints
         long? parentSeq = null;
         if (request.ReplyTo is { } parentId)
         {
-            parentSeq = await db.Messages.Where(m => m.Id == parentId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null)
+            parentSeq = await db.Messages.Where(m => m.Id == parentId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null)
                 .Select(m => (long?)m.Seq).SingleOrDefaultAsync(ct);
             if (parentSeq is null) return Error(StatusCodes.Status400BadRequest, "invalid_reply");
         }
@@ -188,7 +188,7 @@ public static class MessageEndpoints
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
 
-        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq).SingleOrDefaultAsync(ct);
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.Notice == null).SingleOrDefaultAsync(ct);
         if (found is null) return Results.NotFound();
         if (found.SenderId != me) return Error(StatusCodes.Status403Forbidden, "not_your_message");
 
@@ -246,7 +246,7 @@ public static class MessageEndpoints
         var pattern = "%" + text.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
         var rows = await (
             from m in db.Messages.AsNoTracking()
-            where m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null
+            where m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
                 && EF.Functions.ILike(EF.Functions.Unaccent(m.Body), EF.Functions.Unaccent(pattern), "\\")
             orderby m.Seq descending
@@ -283,7 +283,7 @@ public static class MessageEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
-        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null
+        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct)) return Results.NotFound();
         if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
 
@@ -323,7 +323,7 @@ public static class MessageEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
-        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null).SingleOrDefaultAsync(ct);
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null).SingleOrDefaultAsync(ct);
         if (found is null) return Results.NotFound();
         if (found.SenderId != me) return Error(StatusCodes.Status403Forbidden, "not_your_message");
         var (body, problem) = Clean(request.Body, options.Value.MaxChars);
@@ -376,7 +376,7 @@ public static class MessageEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
-        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null).SingleOrDefaultAsync(ct);
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null).SingleOrDefaultAsync(ct);
         if (found is null) return Results.NotFound();
         if (found.SenderId != me) return Error(StatusCodes.Status403Forbidden, "not_your_message");
 
@@ -448,7 +448,7 @@ public static class MessageEndpoints
     {
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return (Results.NotFound(), null);
-        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null
             && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)).SingleOrDefaultAsync(ct);
         if (found is null) return (Results.NotFound(), null);
         if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return (Error(StatusCodes.Status403Forbidden, "not_friends"), null);
@@ -496,7 +496,7 @@ public static class MessageEndpoints
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
         // Only what this person can see: "not yours to see" and "no such message" look the same.
-        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq, ct)) return Results.NotFound();
+        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.Notice == null, ct)) return Results.NotFound();
 
         var now = clock.GetUtcNow();
         await db.Database.ExecuteSqlAsync($"INSERT INTO message_hides (user_id, message_id, created_at) VALUES ({me}, {messageId}, {now}) ON CONFLICT DO NOTHING", ct);

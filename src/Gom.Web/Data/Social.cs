@@ -68,6 +68,9 @@ public class ConversationMember
 }
 
 /// <summary>The materialized state of one message. The event stream (<see cref="MessageEvent"/>) is what clients follow.</summary>
+/// <summary>What a notice in a thread says happened. A notice is a line in the conversation, not something a person wrote.</summary>
+public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4 }
+
 public class Message
 {
     public Guid Id { get; set; }
@@ -84,6 +87,10 @@ public class Message
     public DateTimeOffset? DeletedAt { get; set; }
     /// <summary>When its words were last changed by the sender; null if never. The old words are not kept.</summary>
     public DateTimeOffset? EditedAt { get; set; }
+    /// <summary>Set when this is a notice ("Bảo added Mai to the group"), not a message: <see cref="SenderId"/> is who did it.</summary>
+    public NoticeKind? Notice { get; set; }
+    /// <summary>The person a notice is about (who was added or removed).</summary>
+    public Guid? NoticeTargetId { get; set; }
 }
 
 public enum EventKind { Created, Deleted, Updated }

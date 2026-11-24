@@ -6,6 +6,7 @@ export type Shown = ChatMessage & { state?: 'sending' | 'queued' | 'failed'; err
 export type ThreadItem =
   | { kind: 'day'; key: string; label: string }
   | { kind: 'new'; key: string; count: number }
+  | { kind: 'notice'; key: string; msg: Shown }
   | { kind: 'msg'; key: string; msg: Shown; mine: boolean; first: boolean; last: boolean };
 
 const RUN_GAP_MS = 5 * 60 * 1000;
@@ -74,14 +75,22 @@ export function buildThread(
   const items: ThreadItem[] = [];
   let dividerPlaced = false;
   let previous: { sender: string; at: number; day: string } | null = null;
+  let lastDay: string | null = null;
 
   const add = (m: Shown, key: string): void => {
     const when = new Date(m.createdAt);
     const day = dayKey(when);
     const mine = m.sender.id === me;
-    if (previous === null || previous.day !== day) {
+    if (lastDay !== day) {
       items.push({ kind: 'day', key: `d:${day}`, label: dayLabel(m.createdAt, now) });
+      lastDay = day;
       previous = null;
+    }
+    if (m.notice) {
+      // A notice is a line between messages: it breaks a run, and is never "new" in the sense of the divider.
+      items.push({ kind: 'notice', key, msg: m });
+      previous = null;
+      return;
     }
     if (!dividerPlaced && lastReadAtOpen !== null && unreadCount > 0 && m.seq > lastReadAtOpen && !mine) {
       items.push({ kind: 'new', key: 'new', count: unreadCount });
@@ -102,4 +111,18 @@ export function buildThread(
     if (a.kind === 'msg' && b.kind === 'msg' && !b.first) a.last = false;
   }
   return items;
+}
+
+/** A notice in words, from the point of view of whoever reads it ("Bạn" and "bạn" for yourself). */
+export function noticeText(m: ChatMessage, me: string): string {
+  const notice = m.notice;
+  if (!notice) return '';
+  const who = m.sender.id === me ? 'Bạn' : m.sender.displayName;
+  const target = notice.target ? (notice.target.id === me ? 'bạn' : notice.target.displayName) : '';
+  switch (notice.type) {
+    case 'added': return `${who} đã thêm ${target} vào nhóm`;
+    case 'removed': return `${who} đã xóa ${target} khỏi nhóm`;
+    case 'left': return `${who} đã rời nhóm`;
+    case 'renamed': return `${who} đã đổi tên nhóm thành "${notice.title ?? ''}"`;
+  }
 }
