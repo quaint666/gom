@@ -1810,3 +1810,85 @@ describe('chat: deleting a message for yourself', () => {
     expect(root.querySelector('[data-replybar]')).toBeNull();
   });
 });
+
+describe('chat: where reading starts', () => {
+  const scrolled: Element[] = [];
+  beforeEach(() => {
+    scrolled.length = 0;
+    (Element.prototype as unknown as { scrollIntoView: (o?: unknown) => void }).scrollIntoView = function (this: Element) { scrolled.push(this); };
+  });
+  const history = { [C1]: [msg(1, 'mom'), msg(2, 'minh'), msg(3, 'minh')] };
+  const unreadChats = [withLast(msg(3, 'minh'), { lastReadSeq: 1, unread: 2 }), chat(C2, 'Lan')];
+
+  it('scrolls to the first unread message when a conversation with unread messages is opened', async () => {
+    start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    expect(scrolled).toHaveLength(1);
+    expect(scrolled[0]!.classList.contains('newdiv')).toBe(true);
+  });
+
+  it('does not scroll to a divider when nothing is unread', async () => {
+    start({ path: `/c/${C1}`, chats: [withLast(msg(3, 'minh'), { lastReadSeq: 3, unread: 0 })], history });
+    await flush();
+    expect(scrolled).toHaveLength(0);
+  });
+
+  it('jumps once, and a new message afterwards does not drag you back to the divider', async () => {
+    const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
+    await flush();
+    expect(scrolled).toHaveLength(1);
+  });
+
+  it('also jumps when you open a conversation you had already loaded', async () => {
+    const h = start({ chats: unreadChats, history });
+    await flush();
+    root.querySelectorAll<HTMLAnchorElement>('a[data-chat]')[0]!.click();
+    await flush();
+    expect(scrolled).toHaveLength(1);
+    expect(h.nav.push).toHaveBeenCalledWith(`/c/${C1}`);
+  });
+
+  it('says how many new messages arrived while you read further up, and the button takes you down', async () => {
+    const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+    h.handlers().event(C1, created(msg(4, 'minh', 'mới một')));
+    h.handlers().event(C1, created(msg(5, 'minh', 'mới hai')));
+    await flush();
+    const pill = root.querySelector<HTMLButtonElement>('[data-jump-bottom]')!;
+    expect(text(pill)).toContain('2 tin mới');
+    pill.click();
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+
+  it('does not count your own messages or a repeat of one already shown', async () => {
+    const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    h.handlers().event(C1, created(msg(4, 'mom', 'của mẹ')));
+    h.handlers().event(C1, created(msg(3, 'minh')));
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+
+  it('takes the button away when you scroll down to the end yourself', async () => {
+    const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).not.toBeNull();
+    root.querySelector('.msgs')!.dispatchEvent(new Event('scroll'));   // jsdom has no layout: every box is "at the bottom"
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+
+  it('shows no button while you are at the bottom', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [withLast(msg(3, 'minh'), { lastReadSeq: 3, unread: 0 })], history });
+    await flush();
+    h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+});

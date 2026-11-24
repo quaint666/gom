@@ -38,6 +38,10 @@ interface Thread {
   /** What you had read, and how many were new, when you opened it: the "new messages" divider. */
   lastReadAtOpen: number;
   unreadAtOpen: number;
+  /** Opened with unread messages: the next time the divider is drawn, scroll to it instead of to the bottom. */
+  jump: boolean;
+  /** Messages from others that arrived while you were reading further up. */
+  below: number;
   draft: string;
   /** The message the next one will answer, shown above the composer. */
   replying: Reply | null;
@@ -83,7 +87,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -224,6 +228,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
         </div>
+        ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${t.replying === null ? nothing : html`
           <div class="replybar" data-replybar>
@@ -258,8 +263,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const after = root.querySelector<HTMLElement>('.msgs');
     if (after === null || openId === null) return;
     const t = threadOf(openId);
-    if (scrollAnchor !== null) { after.scrollTop += after.scrollHeight - scrollAnchor; scrollAnchor = null; }
-    else if (t.stick) after.scrollTop = after.scrollHeight;
+    if (scrollAnchor !== null) { after.scrollTop += after.scrollHeight - scrollAnchor; scrollAnchor = null; return; }
+    if (t.jump) {
+      // The first unread message is where reading starts. It can be drawn only once the history is here.
+      const divider = after.querySelector<HTMLElement>('.newdiv');
+      if (divider !== null) { t.jump = false; t.stick = false; divider.scrollIntoView?.({ block: 'start' }); return; }
+      if (t.loaded) t.jump = false;   // the first unread one is further back than what was loaded: read from the end
+    }
+    if (t.stick) after.scrollTop = after.scrollHeight;
   }
 
   // ---- the person's actions
@@ -279,7 +290,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   function onScroll(id: string, box: HTMLElement): void {
-    threadOf(id).stick = box.scrollHeight - box.scrollTop - box.clientHeight < GAP_NEAR_BOTTOM_PX;
+    const t = threadOf(id);
+    t.stick = box.scrollHeight - box.scrollTop - box.clientHeight < GAP_NEAR_BOTTOM_PX;
+    if (t.stick && t.below > 0) { t.below = 0; update(); }
   }
 
   function onDraft(e: Event): void {
@@ -308,6 +321,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const c = chatOf(id);
     if (c !== undefined) { t.lastReadAtOpen = c.lastReadSeq; t.unreadAtOpen = c.unread; }
     t.stick = true;
+    t.jump = t.unreadAtOpen > 0;
+    t.below = 0;
     update();
     if (!t.loaded) void loadHistory(id);
     else markRead(id);
@@ -386,7 +401,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       t.pending = t.pending.filter((p) => p.clientId !== message.clientId);
       // The message being answered was taken back: there is nothing left to answer.
       if (event.kind === 'deleted' && t.replying?.id === message.id) t.replying = null;
+      const had2 = t.messages.length;
       t.messages = mergeMessages(t.messages, [message]);
+      // Something new from someone else while you are reading further up: say so, and offer the way down.
+      if (event.kind === 'created' && t.loaded && !t.stick && t.messages.length > had2 && message.sender.id !== me?.id && conversation === openId) t.below++;
       // A number is missing: ask the server to fill in from the last step we knew of.
       if (t.loaded && event.seq > had + 1) live?.sync(conversation, had);
       t.cursor = Math.max(t.cursor, event.seq);
