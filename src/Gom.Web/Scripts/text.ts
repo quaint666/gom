@@ -45,6 +45,7 @@ export function errorText(failure: Failure): string {
     case 'use_leave': return 'Muốn ra khỏi nhóm thì chọn "Rời nhóm".';
     case 'not_your_message': return 'Chỉ thu hồi được tin nhắn của chính bạn.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
+    case 'invalid_invite': return 'Lời mời chỉ có hiệu lực từ 1 đến 30 ngày và cho tối đa 100 người.';
     case 'too_large': return 'Tệp quá lớn (ảnh tối đa 10 MB, tệp tối đa 25 MB).';
     case 'image_dimensions': return 'Ảnh có kích thước quá lớn.';
     case 'invalid_image': return 'Không đọc được ảnh này.';

@@ -31,7 +31,7 @@ public class Session
 
 public enum LinkKind { Invite, Reset }
 
-/// <summary>A single-use link: an invite (no target) or a password reset (for one existing user).</summary>
+/// <summary>A link: an invite (no target; it may let in several people) or a password reset (for one existing user, used once).</summary>
 public class OneTimeLink
 {
     public Guid Id { get; set; }
@@ -44,4 +44,16 @@ public class OneTimeLink
     public DateTimeOffset? ConsumedAt { get; set; }
     public Guid? ConsumedBy { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
+    /// <summary>For an invite: how many people may join through it (null: any number, until it expires or is revoked).</summary>
+    public int? MaxUses { get; set; }
+    /// <summary>For an invite: how many have joined through it. Taken in one atomic step, so a link with 3 uses left is never used a 4th time.</summary>
+    public int Uses { get; set; }
+}
+
+/// <summary>Who joined through which invite, and when.</summary>
+public class InviteUse
+{
+    public Guid LinkId { get; set; }
+    public Guid UserId { get; set; }
+    public DateTimeOffset UsedAt { get; set; }
 }

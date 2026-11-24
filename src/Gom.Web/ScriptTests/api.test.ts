@@ -51,11 +51,14 @@ describe('api', () => {
   it('uses the right verb and path for each call', async () => {
     const fetchFn = vi.fn(async () => json([]));
     const api = createApi(fetchFn);
-    await api.sessions(); await api.endSession('s1'); await api.createInvite(); await api.invites();
+    await api.sessions(); await api.endSession('s1'); await api.createInvite(); await api.createInvite({ days: 30, uses: 0 }); await api.invites();
     await api.revokeInvite('i1'); await api.members(); await api.resetLink('mom'); await api.signOut();
+    const bodies = fetchFn.mock.calls.map((c) => (c as unknown as [string, RequestInit])[1].body);
+    expect(bodies[2]).toBeUndefined();
+    expect(JSON.parse(bodies[3] as string)).toEqual({ days: 30, uses: 0 });
     const calls = fetchFn.mock.calls.map((c) => { const [url, init] = c as unknown as [string, RequestInit]; return `${init.method ?? 'GET'} ${url}`; });
     expect(calls).toEqual([
-      'GET /api/sessions', 'DELETE /api/sessions/s1', 'POST /api/invites', 'GET /api/invites',
+      'GET /api/sessions', 'DELETE /api/sessions/s1', 'POST /api/invites', 'POST /api/invites', 'GET /api/invites',
       'DELETE /api/invites/i1', 'GET /api/users', 'POST /api/users/mom/reset-link', 'DELETE /api/session',
     ]);
   });

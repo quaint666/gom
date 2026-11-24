@@ -324,6 +324,29 @@ namespace Gom.Web.Migrations
                     b.ToTable("group_bans", (string)null);
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.InviteUse", b =>
+                {
+                    b.Property<Guid>("LinkId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("link_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.HasKey("LinkId", "UserId")
+                        .HasName("pk_invite_uses");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_invite_uses_user_id");
+
+                    b.ToTable("invite_uses", (string)null);
+                });
+
             modelBuilder.Entity("Gom.Web.Data.JoinRequest", b =>
                 {
                     b.Property<Guid>("ConversationId")
@@ -613,6 +636,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("character varying(10)")
                         .HasColumnName("kind");
 
+                    b.Property<int?>("MaxUses")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_uses");
+
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("revoked_at");
@@ -625,6 +652,10 @@ namespace Gom.Web.Migrations
                         .IsRequired()
                         .HasColumnType("bytea")
                         .HasColumnName("token_hash");
+
+                    b.Property<int>("Uses")
+                        .HasColumnType("integer")
+                        .HasColumnName("uses");
 
                     b.HasKey("Id")
                         .HasName("pk_one_time_links");
@@ -647,6 +678,8 @@ namespace Gom.Web.Migrations
                             t.HasCheckConstraint("ck_links_kind", "kind IN ('invite', 'reset')");
 
                             t.HasCheckConstraint("ck_links_target", "(kind = 'reset') = (target_user_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_links_uses", "uses >= 0 AND (max_uses IS NULL OR (max_uses >= 1 AND uses <= max_uses))");
                         });
                 });
 
@@ -873,6 +906,23 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_group_bans_user_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.InviteUse", b =>
+                {
+                    b.HasOne("Gom.Web.Data.OneTimeLink", null)
+                        .WithMany()
+                        .HasForeignKey("LinkId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_invite_uses_link_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_invite_uses_user_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.JoinRequest", b =>

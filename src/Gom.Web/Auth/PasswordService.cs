@@ -28,6 +28,9 @@ public sealed class AuthOptions
     /// <summary>How long an invite link works.</summary>
     public int InviteDays { get; set; } = 7;
 
+    /// <summary>How many people one invite lets in unless the owner chose otherwise.</summary>
+    public int InviteMaxUses { get; set; } = 10;
+
     /// <summary>How long a password-reset link works.</summary>
     public int ResetHours { get; set; } = 24;
 }

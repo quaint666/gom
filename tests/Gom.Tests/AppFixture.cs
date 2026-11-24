@@ -149,10 +149,11 @@ public sealed class AppFixture : IAsyncLifetime
         return await client.SendAsync(request);
     }
 
-    public async Task<string> NewInviteToken()
+    /// <summary>A new invite link. For one person unless said otherwise, which is what most tests want.</summary>
+    public async Task<string> NewInviteToken(int uses = 1)
     {
         var (_, cookie) = await Owner();
-        using var response = await Call(HttpMethod.Post, "/api/invites", cookie: cookie);
+        using var response = await Call(HttpMethod.Post, "/api/invites", new { uses }, cookie: cookie);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("token").GetString()!;
     }

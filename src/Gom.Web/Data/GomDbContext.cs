@@ -8,6 +8,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<OneTimeLink> Links => Set<OneTimeLink>();
+    public DbSet<InviteUse> InviteUses => Set<InviteUse>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<Block> Blocks => Set<Block>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
@@ -53,12 +54,21 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             {
                 t.HasCheckConstraint("ck_links_kind", "kind IN ('invite', 'reset')");
                 t.HasCheckConstraint("ck_links_target", "(kind = 'reset') = (target_user_id IS NOT NULL)");
+                t.HasCheckConstraint("ck_links_uses", "uses >= 0 AND (max_uses IS NULL OR (max_uses >= 1 AND uses <= max_uses))");
             });
             e.Property(x => x.Kind).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<LinkKind>(v, true)).HasMaxLength(10);
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.TargetUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ConsumedBy).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<InviteUse>(e =>
+        {
+            e.ToTable("invite_uses");
+            e.HasKey(x => new { x.LinkId, x.UserId });
+            e.HasOne<OneTimeLink>().WithMany().HasForeignKey(x => x.LinkId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
 
         b.Entity<Friendship>(e =>
