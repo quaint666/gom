@@ -1,5 +1,6 @@
 using Gom.Web.Auth;
 using Gom.Web.Data;
+using Gom.Web.Social;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -38,6 +39,8 @@ app.UseAuthorization();
 app.MapAuth();
 app.MapLinks();
 app.MapAccount();
+app.MapFriends();
+app.MapConversations();
 
 // One small HTML file per page; the script in /js/main.js picks the page from data-page.
 void MapPage(string route, string file) => app.MapGet(route, (IWebHostEnvironment env) =>

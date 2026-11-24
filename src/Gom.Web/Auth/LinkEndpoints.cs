@@ -157,6 +157,13 @@ public static class LinkEndpoints
         // Someone else may have used this invite since we looked: then nothing of ours is kept.
         if (await Consume(db, link.Id, user.Id, now, ct) == 0) return InvalidLink();
 
+        // Whoever invited you is your first friend.
+        var (low, high) = Friendship.Order(link.CreatedBy, user.Id);
+        db.Friendships.Add(new Friendship
+        {
+            UserLow = low, UserHigh = high, RequestedBy = link.CreatedBy, Status = FriendStatus.Accepted, CreatedAt = now, AcceptedAt = now,
+        });
+
         var started = AuthEndpoints.StartSession(http, db, user.Id, now, options.Value);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);

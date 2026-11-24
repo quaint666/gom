@@ -136,6 +136,25 @@ public sealed class AppFixture : IAsyncLifetime
         return (await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("token").GetString()!;
     }
 
+    /// <summary>A new member, signed in.</summary>
+    public async Task<(User User, string Cookie)> Member(string? gomId = null)
+    {
+        var user = await AddUser(gomId);
+        return (user, await SignIn(user.GomId));
+    }
+
+    /// <summary>Makes two people friends directly in the database (the friend endpoints have their own tests).</summary>
+    public async Task Befriend(User a, User b)
+    {
+        var (low, high) = Friendship.Order(a.Id, b.Id);
+        await using var db = Db.NewContext();
+        db.Friendships.Add(new Friendship { UserLow = low, UserHigh = high, RequestedBy = a.Id, Status = FriendStatus.Accepted, CreatedAt = Clock.Now, AcceptedAt = Clock.Now });
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task<System.Text.Json.JsonElement> Json(HttpResponseMessage response) =>
+        await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+
     public Task<List<Session>> SessionsOf(Guid userId) => ReadSessions(userId);
 
     private async Task<List<Session>> ReadSessions(Guid userId)
