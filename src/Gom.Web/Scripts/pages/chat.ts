@@ -901,19 +901,34 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /**
-   * Sends the words of a message to another conversation as a new message from you. It uses the same queue as writing, so a
-   * lost connection does not lose it; a refusal for good (no longer friends, say) is told here, not left in a thread you are not in.
+   * Sends the words, pictures and files of a message to another conversation as a new message from you. The pictures and files are
+   * copied by the server first (so that needs a connection: with none, nothing is queued and you are told); the message then uses
+   * the same queue as writing, so a lost connection does not lose it. A refusal for good (no longer friends, say) is told here, not
+   * left in a thread you are not in.
    */
   async function forward(m: Shown, target: string): Promise<void> {
     forwarding = null;
     if (me === null) return;
     const name = chatOf(target)?.title ?? '';
     const t = threadOf(target);
+    const copies: Attachment[] = [];
+    if ((m.attachments ?? []).length > 0) {
+      notice = `Đang chuyển tiếp đến ${name}…`;
+      update();
+      for (const a of m.attachments ?? []) {
+        const copy = await api.copyAttachment(target, a.id);
+        if (copy.ok) { copies.push(copy.data); continue; }
+        if (copy.error === 'unauthorized') { go('/sign-in'); return; }
+        notice = copy.error === 'network' ? `Chưa chuyển tiếp được đến ${name}. Cần có mạng để chuyển ảnh và tệp.` : errorText(copy);
+        update();
+        return;
+      }
+    }
     const clientId = deps.newId();
     const waiting = t.pending.some((x) => x.state === 'queued');
     t.pending.push({
       id: clientId, clientId, seq: 0, conversationId: target, sender: { id: me.id, displayName: me.displayName }, body: m.body,
-      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending',
+      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(copies.length > 0 ? { attachments: copies } : {}),
     });
     persist();
     update();

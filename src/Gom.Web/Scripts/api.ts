@@ -107,6 +107,8 @@ export interface Api {
   send(conversation: string, clientId: string, body: string, replyTo?: string, attachments?: string[]): Promise<Result<ChatMessage>>;
   /** The writer takes the link preview off their own message, for everyone. */
   removePreview(conversation: string, messageId: string): Promise<Result<void>>;
+  /** Copies a picture or file you may see into another conversation as a new upload of yours (not yet in a message): this is how it is forwarded. */
+  copyAttachment(conversation: string, from: string): Promise<Result<Attachment>>;
   /** Sends one picture or file to a conversation (not yet in a message). `onProgress` gets 0 to 1 while the bytes go up. */
   upload(conversation: string, file: Blob & { name?: string }, onProgress: (fraction: number) => void): Promise<Result<Attachment>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
@@ -235,6 +237,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     setReceipts: (enabled) => call('PATCH', '/api/me/receipts', { enabled }),
     recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
+    copyAttachment: (conversation, from) => call('POST', `/api/conversations/${enc(conversation)}/attachments/copy`, { from }),
     search: (conversation, query) => call('GET', `/api/conversations/${enc(conversation)}/search?q=${enc(query)}`),
     pins: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/pins`),
     pin: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),

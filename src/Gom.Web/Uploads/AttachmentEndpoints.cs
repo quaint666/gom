@@ -13,6 +13,9 @@ public static class AttachmentEndpoints
     /// <summary>What an upload turned into, as the browser sees it.</summary>
     public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height);
 
+    /// <summary>Which picture or file to copy into another conversation.</summary>
+    public sealed record CopyRequest(Guid? From);
+
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
     public static AttachmentDto ToDto(Attachment a) => new(a.Id, a.Kind == AttachmentKind.Image ? "image" : "file", a.Name, a.Size, a.Width, a.Height);
@@ -21,8 +24,69 @@ public static class AttachmentEndpoints
     {
         var api = app.MapGroup("/api").RequireAuthorization();
         api.MapPost("/conversations/{id:guid}/attachments", Upload);
+        api.MapPost("/conversations/{id:guid}/attachments/copy", Copy);
         api.MapGet("/attachments/{id:guid}", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: false, http, db, sp, ct));
         api.MapGet("/attachments/{id:guid}/thumb", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: true, http, db, sp, ct));
+    }
+
+    /// <summary>
+    /// Forwarding a picture or a file: makes a copy of one this person may fetch, as a new upload of theirs to this conversation (not yet
+    /// in a message). It is a real copy, not a shared file, so taking the original back, or ending its group, cannot take it away.
+    /// </summary>
+    private static async Task<IResult> Copy(Guid id, CopyRequest request, HttpContext http, GomDbContext db, TimeProvider clock, IServiceProvider services,
+        IOptions<UploadOptions> options, UploadLimiter limiter, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(options.Value.Path)) return Error(StatusCodes.Status503ServiceUnavailable, "uploads_disabled");
+        if (request.From is not { } from) return Error(StatusCodes.Status400BadRequest, "invalid_attachment");
+
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
+
+        var slow = limiter.TryTake(me);
+        if (slow is not null)
+        {
+            http.Response.Headers.RetryAfter = ((int)Math.Ceiling(slow.Value.TotalSeconds)).ToString();
+            return Error(StatusCodes.Status429TooManyRequests, "too_many_uploads");
+        }
+
+        // Only what is in a message this person may fetch: "not yours to see" and "not there" look the same.
+        var source = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == from, ct);
+        if (source is null || source.MessageId is null || source.Kind is not (AttachmentKind.Image or AttachmentKind.File) || !await MayFetch(db, source, me, ct)) return Results.NotFound();
+
+        var copy = new Attachment
+        {
+            Id = Guid.NewGuid(), ConversationId = id, UploaderId = me, Kind = source.Kind, Name = source.Name, ContentType = source.ContentType,
+            Size = source.Size, Width = source.Width, Height = source.Height, CreatedAt = clock.GetUtcNow(),
+        };
+        var store = services.GetRequiredService<IBlobStore>();
+        try
+        {
+            var copied = await store.CopyAsync(source.Id.ToString(), copy.Id.ToString(), ct)
+                && (source.Kind != AttachmentKind.Image || await store.CopyAsync(source.Id + ".t", copy.Id + ".t", ct));
+            if (!copied) { store.Delete(copy.Id.ToString()); store.Delete(copy.Id + ".t"); return Results.NotFound(); }   // the original went while this ran
+            db.Attachments.Add(copy);
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            store.Delete(copy.Id.ToString()); store.Delete(copy.Id + ".t");
+            throw;
+        }
+        return Results.Json(ToDto(copy), statusCode: StatusCodes.Status201Created);
+    }
+
+    /// <summary>
+    /// Whether this person may fetch it: they are in its conversation; before it is in a message only its uploader; once it is, only if
+    /// the message was said after they joined and they have not hidden it.
+    /// </summary>
+    private static async Task<bool> MayFetch(GomDbContext db, Attachment a, Guid me, CancellationToken ct)
+    {
+        var access = await Access.Of(db, a.ConversationId, me, ct);
+        if (access is null || a.MessageId is null && a.UploaderId != me) return false;
+        return a.MessageId is not { } messageId
+            || await db.Messages.AnyAsync(m => m.Id == messageId && m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct);
     }
 
     private static async Task<IResult> Upload(Guid id, string? name, HttpContext http, GomDbContext db, TimeProvider clock, IServiceProvider services,
@@ -129,11 +193,7 @@ public static class AttachmentEndpoints
         var a = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
         // "Not yours to see" and "not there" look the same. Before it is in a message, only the uploader sees it.
         if (a is null) return Results.NotFound();
-        var access = await Access.Of(db, a.ConversationId, me, ct);
-        if (access is null || a.MessageId is null && a.UploaderId != me) return Results.NotFound();
-        // In a message: only what was said after you joined, and not what you hid.
-        if (a.MessageId is { } messageId && !await db.Messages.AnyAsync(m => m.Id == messageId && m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct))
-            return Results.NotFound();
+        if (!await MayFetch(db, a, me, ct)) return Results.NotFound();
         var picture = a.Kind is AttachmentKind.Image or AttachmentKind.Preview;
         if (thumb && !picture) return Results.NotFound();
 
