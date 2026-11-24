@@ -47,7 +47,9 @@ export interface Reply { id: string; sender: Sender | null; snippet: string | nu
 export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null }
 /** What the page behind the first address in a message says about itself. The picture, if any, is at /api/attachments/{imageId}/thumb. */
 export interface Preview { url: string; title: string | null; description: string | null; site: string | null; imageId: string | null }
-export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; preview?: Preview | null }
+/** A line in a group's thread that says what happened (who was added or taken out, who left, a new name): not something anyone wrote. */
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed'; target?: Sender | null; title?: string | null }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; preview?: Preview | null; notice?: Notice | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */

@@ -8,7 +8,7 @@ namespace Gom.Web.Chat;
 public sealed record PreviewDto(string Url, string? Title, string? Description, string? Site, Guid? ImageId);
 
 /// <summary>What rides along with a message: its pictures and files, and the preview of its address.</summary>
-public sealed record MessageExtras(IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments, PreviewDto? Preview);
+public sealed record MessageExtras(IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments, PreviewDto? Preview, NoticeDto? Notice = null);
 
 public static class MessageAttachments
 {
@@ -21,11 +21,12 @@ public static class MessageAttachments
             .OrderBy(a => a.Position).ThenBy(a => a.CreatedAt).ToListAsync(ct))
             .GroupBy(a => a.MessageId!.Value).ToDictionary(g => g.Key, g => (IReadOnlyList<AttachmentEndpoints.AttachmentDto>)g.Select(AttachmentEndpoints.ToDto).ToList());
         var previews = await db.Previews.AsNoTracking().Where(p => ids.Contains(p.MessageId)).ToDictionaryAsync(p => p.MessageId, ct);
+        var notices = await Notices.For(db, ids, ct);
         var result = new Dictionary<Guid, MessageExtras>();
-        foreach (var id in files.Keys.Concat(previews.Keys).Distinct())
+        foreach (var id in files.Keys.Concat(previews.Keys).Concat(notices.Keys).Distinct())
         {
             var p = previews.GetValueOrDefault(id);
-            result[id] = new MessageExtras(files.GetValueOrDefault(id), p is null ? null : new PreviewDto(p.Url, p.Title, p.Description, p.Site, p.ImageId));
+            result[id] = new MessageExtras(files.GetValueOrDefault(id), p is null ? null : new PreviewDto(p.Url, p.Title, p.Description, p.Site, p.ImageId), notices.GetValueOrDefault(id));
         }
         return result;
     }

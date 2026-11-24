@@ -98,6 +98,24 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Empty(offenders);
     }
 
+    /// <summary>
+    /// The image's migration-bundle stage copies the source folders one by one (so it stays cached when only scripts change). A new
+    /// folder of C# that is not in that list breaks the image build, and nothing else notices until CI builds the image. This does.
+    /// </summary>
+    [Fact]
+    public void Every_folder_of_csharp_is_copied_into_the_migration_bundle_stage_of_the_image()
+    {
+        var root = RepoRoot();
+        var dockerfile = File.ReadAllText(Path.Combine(root, "Dockerfile"));
+        var web = Path.Combine(root, "src", "Gom.Web");
+        var skip = new[] { "bin", "obj", "node_modules", "Scripts", "ScriptTests", "wwwroot", "Properties" };
+        var folders = Directory.EnumerateDirectories(web).Select(Path.GetFileName).Where(n => n is not null && !skip.Contains(n))
+            .Where(n => Directory.EnumerateFiles(Path.Combine(web, n!), "*.cs", SearchOption.AllDirectories).Any()).ToList();
+        Assert.NotEmpty(folders);
+        var missing = folders.Where(n => !dockerfile.Contains($"COPY src/Gom.Web/{n} ./src/Gom.Web/{n}", StringComparison.Ordinal)).ToList();
+        Assert.Empty(missing);
+    }
+
     [Fact]
     public async Task A_method_an_address_does_not_take_is_a_405()
     {

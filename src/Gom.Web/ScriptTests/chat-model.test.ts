@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '../Scripts/api.js';
-import { AVATAR_TONES, avatarTone, buildThread, clock, dayLabel, initials, listTime, mergeMessages, type Shown } from '../Scripts/chat/model.js';
+import { AVATAR_TONES, avatarTone, buildThread, clock, dayLabel, initials, listTime, mergeMessages, noticeText, type Shown } from '../Scripts/chat/model.js';
 
 // Noon UTC is the same calendar day in every time zone from -11 to +11, so day grouping is the same wherever the tests run.
 const at = (day: number, hh = 12, mm = 0) => new Date(Date.UTC(2026, 11, day, hh, mm)).toISOString();
@@ -54,7 +54,7 @@ describe('merging messages', () => {
 });
 
 describe('building a thread', () => {
-  const kinds = (items: ReturnType<typeof buildThread>) => items.map((i) => (i.kind === 'msg' ? `m${i.msg.seq}` : i.kind === 'day' ? `day:${i.label}` : `new:${i.count}`));
+  const kinds = (items: ReturnType<typeof buildThread>) => items.map((i) => (i.kind === 'msg' ? `m${i.msg.seq}` : i.kind === 'day' ? `day:${i.label}` : i.kind === 'notice' ? `notice:${i.msg.seq}` : `new:${i.count}`));
 
   it('puts a day pill before each new day', () => {
     const items = buildThread([msg(1, 'me', at(9)), msg(2, 'me', at(10, 9)), msg(3, 'me', at(10, 14))], 'me', null, 0, NOW);
@@ -136,5 +136,34 @@ describe('avatarTone', () => {
   it('uses more than one colour across a family of names (it is there for variety)', () => {
     const names = ['Bảo', 'Mai Trần', 'Hùng', 'Lan Anh', 'Nam', 'Thu Hà', 'Tommy', 'Linh Nguyễn'];
     expect(new Set(names.map(avatarTone)).size).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('notices in a thread', () => {
+  const sender = (id: string, displayName: string) => ({ id, displayName });
+  const notice = (n: number, who: string, type: 'added' | 'removed' | 'left' | 'renamed', target?: { id: string; displayName: string }, title?: string): ChatMessage =>
+    ({ ...msg(n, who, at(10, 12, n)), body: '', sender: sender(who === 'me' ? 'me' : `u-${who}`, who), notice: { type, target: target ?? null, title: title ?? null } });
+
+  it('puts a notice between messages, breaks the run, and is never the first of a new-message divider', () => {
+    const items = buildThread([msg(1, 'lan', at(10, 12, 1)), notice(2, 'lan', 'added', sender('u-bao', 'Bảo')), msg(3, 'lan', at(10, 12, 3))], 'me', 0, 2, NOW);   // a minute or two apart: one run, but for the notice
+    expect(items.map((i) => i.kind)).toEqual(['day', 'new', 'msg', 'notice', 'msg']);
+    const msgs = items.filter((i) => i.kind === 'msg');
+    expect(msgs.map((i) => i.kind === 'msg' && [i.first, i.last])).toEqual([[true, true], [true, true]]);   // the notice split what was one run
+  });
+
+  it('does not put the divider before a notice even when it is the first thing after what was read', () => {
+    const items = buildThread([notice(1, 'lan', 'left'), msg(2, 'lan', at(10, 2))], 'me', 0, 1, NOW);
+    const order = items.map((i) => i.kind);
+    expect(order.indexOf('notice')).toBeLessThan(order.indexOf('new'));
+  });
+
+  it('says what happened, from the reader\'s side', () => {
+    expect(noticeText(notice(1, 'lan', 'added', sender('u-bao', 'Bảo')), 'me')).toBe('lan đã thêm Bảo vào nhóm');
+    expect(noticeText(notice(1, 'lan', 'added', sender('me', 'Mẹ')), 'me')).toBe('lan đã thêm bạn vào nhóm');
+    expect(noticeText(notice(1, 'me', 'added', sender('u-bao', 'Bảo')), 'me')).toBe('Bạn đã thêm Bảo vào nhóm');
+    expect(noticeText(notice(1, 'lan', 'removed', sender('u-bao', 'Bảo')), 'me')).toBe('lan đã xóa Bảo khỏi nhóm');
+    expect(noticeText(notice(1, 'lan', 'left'), 'me')).toBe('lan đã rời nhóm');
+    expect(noticeText(notice(1, 'me', 'renamed', undefined, 'Nhà mình'), 'me')).toBe('Bạn đã đổi tên nhóm thành "Nhà mình"');
+    expect(noticeText(msg(1, 'lan', at(10, 1)), 'me')).toBe('');
   });
 });

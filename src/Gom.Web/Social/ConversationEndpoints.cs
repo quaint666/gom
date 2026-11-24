@@ -84,13 +84,13 @@ public static class ConversationEndpoints
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new { u.GomId, u.DisplayName }).FirstOrDefault(),
-                Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).OrderByDescending(x => x.Seq)
+                Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).OrderByDescending(x => x.Seq)
                     .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
                     {
                         x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.CreatedAt, Deleted = x.DeletedAt != null, SenderId = u.Id, u.DisplayName,
                         Attached = db.Attachments.Where(a => a.MessageId == x.Id).OrderBy(a => a.Position).Select(a => (int?)a.Kind).FirstOrDefault(),
                     }).FirstOrDefault(),
-                Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)),
+                Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)),
             }).ToListAsync(ct);
 
         return Results.Ok(rows.Select(r => new

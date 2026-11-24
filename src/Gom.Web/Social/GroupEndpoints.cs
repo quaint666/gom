@@ -112,10 +112,13 @@ public static class GroupEndpoints
             return Results.Json(new { status = "pending" }, statusCode: StatusCodes.Status202Accepted);
         }
 
-        var problem = await AdmitAsync(db, id, other.Value, clock.GetUtcNow(), options.Value.MaxGroupMembers, ct);
+        var now = clock.GetUtcNow();
+        var problem = await AdmitAsync(db, id, other.Value, now, options.Value.MaxGroupMembers, ct);
         if (problem is not null) return problem;
+        var notice = await Notices.Write(db, id, me, NoticeKind.Added, other.Value, "", now, ct);
         await tx.CommitAsync(ct);
         live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct));
+        await Notices.Publish(db, live, notice, ct);
         return Results.NoContent();
     }
 
@@ -133,7 +136,7 @@ public static class GroupEndpoints
         return null;
     }
 
-    private static async Task<IResult> Leave(Guid id, HttpContext http, GomDbContext db, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
+    private static async Task<IResult> Leave(Guid id, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -156,8 +159,10 @@ public static class GroupEndpoints
         }
 
         await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteDeleteAsync(ct);
+        var notice = await Notices.Write(db, id, me, NoticeKind.Left, null, "", clock.GetUtcNow(), ct);
         await tx.CommitAsync(ct);
         live.ConversationsChanged(everyone);
+        await Notices.Publish(db, live, notice, ct);
         return Results.NoContent();
     }
 
@@ -207,8 +212,10 @@ public static class GroupEndpoints
         await db.Members.Where(m => m.ConversationId == id && m.UserId == userId).ExecuteDeleteAsync(ct);
         // "And do not let them back": nobody can add them until the leader lifts it.
         if (ban == true) await db.Database.ExecuteSqlAsync($"INSERT INTO group_bans (conversation_id, user_id, banned_by, created_at) VALUES ({id}, {userId}, {me}, {clock.GetUtcNow()}) ON CONFLICT DO NOTHING", ct);
+        var notice = await Notices.Write(db, id, me, NoticeKind.Removed, userId, "", clock.GetUtcNow(), ct);
         await tx.CommitAsync(ct);
         live.ConversationsChanged(everyone);
+        await Notices.Publish(db, live, notice, ct);
         return Results.NoContent();
     }
 
@@ -257,7 +264,7 @@ public static class GroupEndpoints
     }
 
     /// <summary>The leader or a deputy gives the group a new name. Everyone in it is told to reload their list.</summary>
-    private static async Task<IResult> Rename(Guid id, RenameRequest request, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    private static async Task<IResult> Rename(Guid id, RenameRequest request, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -273,10 +280,14 @@ public static class GroupEndpoints
         var role = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).Select(m => (GroupRole?)m.Role).SingleOrDefaultAsync(ct);
         if (role is null) return Results.NotFound();
         if (role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        // Naming it what it is already called changes nothing, and says nothing.
+        var before = await db.Conversations.Where(c => c.Id == id).Select(c => c.Title).SingleAsync(ct);
         await db.Conversations.Where(c => c.Id == id).ExecuteUpdateAsync(s => s.SetProperty(c => c.Title, title), ct);
+        var notice = before == title ? null : await Notices.Write(db, id, me, NoticeKind.Renamed, null, title, clock.GetUtcNow(), ct);
         var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
         await tx.CommitAsync(ct);
         live.ConversationsChanged(everyone);
+        if (notice is not null) await Notices.Publish(db, live, notice, ct);
         return Results.NoContent();
     }
 
@@ -334,10 +345,13 @@ public static class GroupEndpoints
         if (role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
         if (!await db.JoinRequests.AnyAsync(x => x.ConversationId == id && x.UserId == userId, ct)) return Results.NotFound();
         if (await db.Bans.AnyAsync(x => x.ConversationId == id && x.UserId == userId, ct)) return Error(StatusCodes.Status403Forbidden, "banned");
-        var problem = await AdmitAsync(db, id, userId, clock.GetUtcNow(), options.Value.MaxGroupMembers, ct);
+        var now = clock.GetUtcNow();
+        var problem = await AdmitAsync(db, id, userId, now, options.Value.MaxGroupMembers, ct);
         if (problem is not null) return problem;
+        var notice = await Notices.Write(db, id, me, NoticeKind.Added, userId, "", now, ct);
         await tx.CommitAsync(ct);
         live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct));
+        await Notices.Publish(db, live, notice, ct);
         return Results.NoContent();
     }
 

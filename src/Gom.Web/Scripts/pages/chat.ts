@@ -4,7 +4,7 @@ import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
 import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, Reply, User } from '../api.js';
 import { linkify, safeUrl } from '../linkify.js';
-import { avatarTone, buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
+import { avatarTone, buildThread, clock, initials, listTime, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { errorBox } from '../ui.js';
@@ -341,6 +341,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const threadItem = (item: ThreadItem, group: boolean, seenText: (msg: Shown) => string | null, tick: (msg: Shown) => Tick) => {
     if (item.kind === 'day') return html`<div class="day">${item.label}</div>`;
     if (item.kind === 'new') return html`<div class="newdiv"><span>${item.count} tin nhắn mới</span></div>`;
+    if (item.kind === 'notice') return html`<div class="notice-row" data-notice=${item.msg.id} role="status"><span>${noticeText(item.msg, me?.id ?? '')}</span></div>`;
     return bubble(item, group, seenText(item.msg), tick(item.msg));
   };
 
@@ -348,7 +349,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function tickOf(t: Thread, c: Conversation | undefined): (msg: Shown) => Tick {
     const others = c?.kind === 'group' ? Math.max(1, (c.memberCount ?? 2) - 1) : 1;
     return (msg) => {
-      if (msg.sender.id !== me?.id || msg.state !== undefined || msg.deleted === true) return null;
+      if (msg.sender.id !== me?.id || msg.state !== undefined || msg.deleted === true || msg.notice) return null;
       const readers = t.reads.enabled ? [...t.reads.seqs.values()].filter((seq) => seq >= msg.seq).length : 0;
       return readers >= others ? 'seen' : 'sent';
     };
@@ -356,7 +357,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** The "seen" line goes under your last sent message that has not been taken back, once someone has read up to it. */
   function seenText(t: Thread, group: boolean): (msg: Shown) => string | null {
-    const lastMine = [...t.messages].reverse().find((m) => m.sender.id === me?.id && m.deleted !== true);
+    const lastMine = [...t.messages].reverse().find((m) => m.sender.id === me?.id && m.deleted !== true && !m.notice);
     const count = lastMine === undefined ? 0 : [...t.reads.seqs.values()].filter((seq) => seq >= lastMine.seq).length;
     return (msg) => group && lastMine !== undefined && msg.id === lastMine.id && count > 0 ? `Đã xem bởi ${count}` : null;
   }
@@ -716,8 +717,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       // A change to a message this device has not loaded is not added: a lone old message would break the paging.
       if (event.kind !== 'updated' || t.messages.some((x) => x.id === message.id)) t.messages = mergeMessages(t.messages, [message]);
       // Something new from someone else while you are reading further up: say so, and offer the way down.
-      if (event.kind === 'created' && t.loaded && !t.stick && t.messages.length > had2 && message.sender.id !== me?.id && conversation === openId) t.below++;
-      if (event.kind === 'created' && t.loaded && t.messages.length > had2 && message.sender.id !== me?.id && conversation === openId) {
+      if (event.kind === 'created' && t.loaded && !t.stick && t.messages.length > had2 && message.sender.id !== me?.id && !message.notice && conversation === openId) t.below++;
+      if (event.kind === 'created' && t.loaded && t.messages.length > had2 && message.sender.id !== me?.id && !message.notice && conversation === openId) {
         fresh.add(message.id);
         setTimeout(() => { fresh.delete(message.id); }, 600);
       }
@@ -735,7 +736,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       } else if (event.kind === 'updated') {
         // The same message changed (its reactions, its words): the preview follows its words, nothing else about the list moves.
         if (c.lastMessage?.seq === message.seq) c.lastMessage = { ...c.lastMessage, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body };
-      } else {
+      } else if (!message.notice) {   // a notice says what happened; it is not what was last said, and nothing to read
         c.lastMessage = {
           seq: message.seq, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body,
           createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true, attachment: message.attachments?.[0]?.kind ?? null,
