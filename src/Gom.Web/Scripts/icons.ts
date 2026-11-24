@@ -19,3 +19,4 @@ export const users = () => icon('M9 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7z', 'M2.5 
 export const send = () => icon('M4 12l16-8-6 16-3-7-7-1z');
 export const wifiOff = () => icon('M2 8.8a15 15 0 0120 0', 'M5 12.5a10 10 0 0114 0', 'M8.5 16a5 5 0 017 0', 'M12 19.5h.01', 'M3 3l18 18');
 export const pencil = () => icon('M4 20h4L19 9l-4-4L4 16v4z', 'M13.5 6.5l4 4');
+export const more = () => icon('M12 5.5h.01', 'M12 12h.01', 'M12 18.5h.01');

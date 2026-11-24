@@ -17,7 +17,7 @@ export function fakeApi(overrides: Partial<{ [K in keyof Api]: ReturnType<typeof
     friends: nope(), askFriend: nope(), acceptFriend: vi.fn(async () => ok(undefined)), withdrawFriend: vi.fn(async () => ok(undefined)),
     unfriend: vi.fn(async () => ok(undefined)), blocks: nope(), block: vi.fn(async () => ok(undefined)), unblock: vi.fn(async () => ok(undefined)),
     conversations: nope(), openDirect: nope(), history: nope(), send: nope(), markRead: vi.fn(async () => ok(undefined)),
-    createGroup: nope(), groupMembers: nope(), addMember: vi.fn(async () => ok(undefined)), leaveGroup: vi.fn(async () => ok(undefined)), askMember: nope(),
+    createGroup: nope(), groupMembers: nope(), addMember: vi.fn(async () => ok(undefined)), leaveGroup: vi.fn(async () => ok(undefined)), askMember: nope(), recall: vi.fn(async () => ok(undefined)),
   };
   return { ...base, ...overrides } as never;
 }

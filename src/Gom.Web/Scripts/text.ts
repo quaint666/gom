@@ -32,6 +32,7 @@ export function errorText(failure: Failure): string {
     case 'group_too_big': case 'group_full': return 'Nhóm đã đủ số thành viên tối đa.';
     case 'already_member': return 'Người này đã ở trong nhóm.';
     case 'not_a_group': return 'Đây không phải là một nhóm.';
+    case 'not_your_message': return 'Chỉ thu hồi được tin nhắn của chính bạn.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
     case 'network': return 'Không kết nối được. Kiểm tra mạng rồi thử lại.';
     case 'server': return 'Gom đang gặp sự cố. Hãy thử lại sau ít phút.';

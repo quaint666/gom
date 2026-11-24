@@ -15,13 +15,16 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
                 connection.TryEnqueue(frame);
     }
 
-    public async Task PublishCreatedAsync(GomDbContext db, MessageEndpoints.MessageDto message)
+    /// <summary>Sends one step of the stream (a message created or recalled) to every member's devices.</summary>
+    /// <param name="eventSeq">The step's own number; for a recall it is later than the message's.</param>
+    public async Task PublishAsync(GomDbContext db, long eventSeq, string kind, MessageEndpoints.MessageDto message)
     {
         try
         {
             // Membership is read now, not remembered: whoever is a member at this moment gets it, nobody else.
-            var members = await db.Members.AsNoTracking().Where(m => m.ConversationId == message.ConversationId).Select(m => m.UserId).ToListAsync();
-            var frame = Frames.Live(message.ConversationId, new EventDto(message.Seq, "created", message));
+            // And a member who joined after the message was written is not told anything about it, not even that it was taken back.
+            var members = await db.Members.AsNoTracking().Where(m => m.ConversationId == message.ConversationId && m.JoinedSeq < message.Seq).Select(m => m.UserId).ToListAsync();
+            var frame = Frames.Live(message.ConversationId, new EventDto(eventSeq, kind, message));
             foreach (var user in members)
                 foreach (var connection in registry.For(user))
                     connection.TryEnqueue(frame);

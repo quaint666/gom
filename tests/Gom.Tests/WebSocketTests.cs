@@ -384,6 +384,73 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(["sau"], reply.GetProperty("events").EnumerateArray().Select(e => e.GetProperty("message").GetProperty("body").GetString()!).ToArray());
     }
 
+    // ---- recall
+
+    [Fact]
+    public async Task A_recall_reaches_every_device_of_both_people_as_a_deleted_event_with_its_own_number()
+    {
+        var p = await NewPair();
+        var (_, stranger) = await app.Member();
+        using var sent = await Send(p.CA, p.Chat, "sẽ thu hồi");
+        var messageId = (await AppFixture.Json(sent)).GetProperty("id").GetGuid();
+        using var aPhone = await ConnectReady(p.CA);
+        using var bPhone = await ConnectReady(p.CB);
+        using var bLaptop = await ConnectReady(p.CB);
+        using var other = await ConnectReady(stranger);
+
+        using var recall = await app.Call(HttpMethod.Delete, $"/api/conversations/{p.Chat}/messages/{messageId}", cookie: p.CA);
+
+        foreach (var ws in new[] { aPhone, bPhone, bLaptop })
+        {
+            var frame = await Next(ws);
+            var e = frame.GetProperty("event");
+            Assert.Equal(("event", "deleted", 2L), (frame.GetProperty("t").GetString(), e.GetProperty("kind").GetString(), e.GetProperty("seq").GetInt64()));
+            var m = e.GetProperty("message");
+            Assert.Equal((messageId, 1L, true, ""), (m.GetProperty("id").GetGuid(), m.GetProperty("seq").GetInt64(), m.GetProperty("deleted").GetBoolean(), m.GetProperty("body").GetString()));
+        }
+        await AssertSilent(other);
+    }
+
+    [Fact]
+    public async Task A_device_that_was_away_learns_of_a_recall_from_the_stream_and_never_sees_the_words()
+    {
+        var p = await NewPair();
+        using var first = await Send(p.CA, p.Chat, "giữ lại");
+        using var second = await Send(p.CA, p.Chat, "sẽ mất");
+        var secondId = (await AppFixture.Json(second)).GetProperty("id").GetGuid();
+        using var recall = await app.Call(HttpMethod.Delete, $"/api/conversations/{p.Chat}/messages/{secondId}", cookie: p.CA);
+        using var ws = await ConnectReady(p.CB);
+
+        await SendText(ws, $$"""{"t":"sync","c":"{{p.Chat}}","after":0}""");
+        var reply = await Next(ws);
+
+        var events = reply.GetProperty("events").EnumerateArray().ToArray();
+        Assert.Equal([(1L, "created"), (2L, "created"), (3L, "deleted")], events.Select(e => (e.GetProperty("seq").GetInt64(), e.GetProperty("kind").GetString()!)).ToArray());
+        Assert.DoesNotContain("sẽ mất", reply.ToString());
+        Assert.Equal([false, true, true], events.Select(e => e.GetProperty("message").GetProperty("deleted").GetBoolean()).ToArray());   // the created event of a recalled message shows it as recalled too
+    }
+
+    [Fact]
+    public async Task Someone_who_joined_a_group_later_hears_nothing_of_a_recall_of_a_message_from_before()
+    {
+        var t = await Trio();
+        var (d, cd) = await app.Member();
+        await app.Befriend(t.A, d);
+        var chat = await NewGroup(t.CA, t.B.GomId, t.C.GomId);
+        using var before = await Send(t.CA, chat, "từ trước");
+        var beforeId = (await AppFixture.Json(before)).GetProperty("id").GetGuid();
+        using var add = await app.Call(HttpMethod.Post, $"/api/conversations/{chat}/members", new { gomId = d.GomId }, t.CA);
+        using var newcomer = await ConnectReady(cd);
+        using var existing = await ConnectReady(t.CB);
+
+        using var recall = await app.Call(HttpMethod.Delete, $"/api/conversations/{chat}/messages/{beforeId}", cookie: t.CA);
+
+        Assert.Equal("deleted", (await Next(existing)).GetProperty("event").GetProperty("kind").GetString());
+        await AssertSilent(newcomer);
+        await SendText(newcomer, $$"""{"t":"sync","c":"{{chat}}","after":0}""");
+        Assert.Empty((await Next(newcomer)).GetProperty("events").EnumerateArray());
+    }
+
     // ---- when the session ends, the socket ends
 
     [Fact]

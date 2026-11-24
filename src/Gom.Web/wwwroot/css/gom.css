@@ -194,3 +194,11 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .pick input { inline-size: 22px; block-size: 22px; accent-color: var(--btn); flex: none; }
 .pick label { flex: 1; min-block-size: 44px; display: flex; align-items: center; gap: 8px; }
 .pick small { color: var(--muted); }
+
+/* taking a message back */
+.menu-btn { color: var(--muted); }
+.mrow.out .menu-btn { order: -1; }
+.menu { align-self: flex-end; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-inline-size: 90%; margin-block: 2px 8px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; font-size: 14px; }
+.menu p { flex-basis: 100%; text-align: end; }
+.mrow.recalled .bub { background: transparent; border: 1px dashed var(--border); color: var(--muted); }
+.txt.gone { font-style: italic; }

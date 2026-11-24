@@ -31,6 +31,8 @@ interface Thread {
   hasMore: boolean;
   loading: boolean;
   loaded: boolean;
+  /** The last step of the stream this device knows of. It runs ahead of the newest message when a message was taken back. */
+  cursor: number;
   /** What you had read, and how many were new, when you opened it: the "new messages" divider. */
   lastReadAtOpen: number;
   unreadAtOpen: number;
@@ -64,6 +66,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let outbox: ReturnType<ChatDeps['outbox']> | null = null;
   let live: LiveControl | null = null;
   let scrollAnchor: number | null = null;
+  let menu: { id: string; confirming: boolean } | null = null;
 
   function idFromPath(): string | null { return CONVERSATION_PATH.exec(deps.nav.path())?.[1]?.toLowerCase() ?? null; }
   const chatOf = (id: string | null): Conversation | undefined => (id === null ? undefined : chats?.find((c) => c.id === id));
@@ -72,7 +75,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, draft: '', stick: true, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, draft: '', stick: true, cursor: 0, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -89,6 +92,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function preview(c: Conversation): string {
     const last = c.lastMessage;
     if (last === null) return 'Chưa có tin nhắn';
+    if (last.deleted) return recalledText(last.sender.id === me?.id, c.kind === 'group' ? last.sender.displayName : null);
     const who = last.sender.id === me?.id ? 'Bạn: ' : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
     return who + last.body;
   }
@@ -113,16 +117,35 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <a class="btn" href="/friends">Thêm bạn bè</a>
     </div>`;
 
+  /** What stands where a message was: in your voice, or theirs (with their name in a group). */
+  const recalledText = (mine: boolean, name: string | null): string =>
+    mine ? 'Bạn đã thu hồi một tin nhắn' : name === null ? 'Tin nhắn đã được thu hồi' : `${name} đã thu hồi một tin nhắn`;
+
+  const menuFor = (m: Shown) => menu?.id !== m.id ? nothing : html`
+    <div class="menu" role="group" aria-label="Tùy chọn tin nhắn">
+      ${menu.confirming ? html`
+        <p>Thu hồi tin nhắn này với mọi người?</p>
+        <button class="btn small" type="button" data-confirm-recall @click=${() => void recall(m)}>Thu hồi</button>
+        <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Hủy</button>` : html`
+        <button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>
+        <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Đóng</button>`}
+    </div>`;
+
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
-    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''}`;
+    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''}`;
+    // Only your own sent message has a menu: not one still on its way, and not one already taken back.
+    const canRecall = item.mine && m.state === undefined && m.deleted !== true;
     return html`
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
+        ${canRecall ? html`<button class="ib small menu-btn" type="button" data-menu aria-label="Tùy chọn tin nhắn" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
+          @click=${() => { menu = menu?.id === m.id ? null : { id: m.id, confirming: false }; update(); }}>${icons.more()}</button>` : nothing}
         ${others ? (item.last ? html`<div class="av sm a1" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
-        <div class="bub">${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}<span class="txt">${m.body}</span>
+        <div class="bub">${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`<span class="txt">${m.body}</span>`}
           <span class="ts">${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
       </div>
+      ${menuFor(m)}
       ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? 'Sẽ gửi khi có mạng' : 'Sẽ thử gửi lại'}</div>` : nothing}
       ${m.state === 'failed' ? html`
         <div class="failed" role="alert">${icons.alert()}<span>${m.error ? errorText(m.error) : 'Chưa gửi được.'}</span>
@@ -253,6 +276,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (!result.ok) { handleFailure(result); return; }
     t.messages = mergeMessages(t.messages, result.data.messages);
     t.hasMore = result.data.hasMore;
+    t.cursor = Math.max(t.cursor, result.data.lastSeq);
     t.loaded = true;
     update();
     markRead(id);
@@ -309,21 +333,46 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
     const t = threads.get(conversation);
     if (t !== undefined) {
-      const had = newestSeq(t);
+      const had = t.cursor;
       t.pending = t.pending.filter((p) => p.clientId !== message.clientId);
       t.messages = mergeMessages(t.messages, [message]);
-      // A number is missing: ask the server to fill in from the last one we held.
+      // A number is missing: ask the server to fill in from the last step we knew of.
       if (t.loaded && event.seq > had + 1) live?.sync(conversation, had);
+      t.cursor = Math.max(t.cursor, event.seq);
     }
 
     if (event.seq > c.lastSeq) {
       c.lastSeq = event.seq;
-      c.lastMessage = { seq: message.seq, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body, createdAt: message.createdAt, sender: message.sender };
-      if (message.sender.id !== me?.id && !(conversation === openId && deps.visible())) c.unread++;
-      chats = [c, ...(chats ?? []).filter((x) => x !== c)];
+      if (event.kind === 'deleted') {
+        // A message taken back: the preview says so if it was the last one, and it is no longer something to read.
+        if (c.lastMessage?.seq === message.seq) c.lastMessage = { ...c.lastMessage, body: '', deleted: true };
+        if (message.seq > c.lastReadSeq && message.sender.id !== me?.id && c.unread > 0) c.unread--;
+      } else {
+        c.lastMessage = {
+          seq: message.seq, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body,
+          createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true,
+        };
+        if (message.sender.id !== me?.id && message.deleted !== true && !(conversation === openId && deps.visible())) c.unread++;
+        chats = [c, ...(chats ?? []).filter((x) => x !== c)];
+      }
     }
     update();
     if (conversation === openId) markRead(conversation);
+  }
+
+  // ---- taking a message back
+
+  async function recall(m: Shown): Promise<void> {
+    const result = await api.recall(m.conversationId, m.id);
+    menu = null;
+    if (!result.ok) { error = result; update(); return; }
+    error = null;
+    // Show it at once. The server's own "deleted" event follows and changes nothing more.
+    const t = threads.get(m.conversationId);
+    if (t !== undefined) t.messages = mergeMessages(t.messages, [{ ...m, body: '', deleted: true }]);
+    const c = chatOf(m.conversationId);
+    if (c?.lastMessage?.seq === m.seq) c.lastMessage = { ...c.lastMessage, body: '', deleted: true };
+    update();
   }
 
   // ---- writing
@@ -459,7 +508,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       void refreshList().then(() => {
         if (openId === null) return;
         const t = threads.get(openId);
-        if (t?.loaded) live?.sync(openId, newestSeq(t));
+        if (t?.loaded) live?.sync(openId, t.cursor);
       });
     },
     event: (conversation, event) => apply(conversation, event),

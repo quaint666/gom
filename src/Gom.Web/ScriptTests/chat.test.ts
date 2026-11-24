@@ -17,6 +17,7 @@ const msg = (seq: number, from: 'mom' | 'minh', body = `m${seq}`, when = at(10, 
   id: `id${seq}`, seq, conversationId: conv, clientId: `cl${seq}`, sender: from === 'mom' ? { id: 'u-mom', displayName: 'Mẹ' } : { id: 'u-minh', displayName: 'Minh' }, body, createdAt: when,
 });
 const created = (m: ChatMessage): ChatEvent => ({ seq: m.seq, kind: 'created', message: m });
+const recalled = (m: ChatMessage, eventSeq: number): ChatEvent => ({ seq: eventSeq, kind: 'deleted', message: { ...m, body: '', deleted: true } });
 
 const chat = (id: string, name: string, extra: Partial<Conversation> = {}): Conversation => ({
   id, kind: 'direct', title: name, peer: { gomId: name.toLowerCase(), displayName: name }, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, ...extra,
@@ -36,13 +37,13 @@ interface Harness {
   outbox: { items: { conversation: string; clientId: string; body: string; createdAt: string }[]; saves: number };
 }
 
-function start(opts: { outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown> } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown> } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(me)),
     // A fresh copy each time, as a real server gives: the page changes what it is handed.
     conversations: vi.fn(async () => ok(structuredClone(opts.chats ?? []))),
-    history: vi.fn(async (id: string) => ok({ messages: [...(history[id] ?? [])].reverse(), hasMore: opts.hasMore ?? false })),
+    history: vi.fn(async (id: string) => ok({ messages: [...(history[id] ?? [])].reverse(), hasMore: opts.hasMore ?? false, lastSeq: opts.lastSeq?.[id] ?? Math.max(0, ...(history[id] ?? []).map((m) => m.seq)) })),
     ...(opts.api ?? {}),
   });
   let captured: LiveHandlers | null = null;
@@ -1084,5 +1085,204 @@ describe('chat: groups', () => {
     h.handlers().conversations();
     await flush();
     expect(text(root.querySelector('.thread-pane')!)).toContain('Không tìm thấy cuộc trò chuyện');
+  });
+});
+
+
+describe('chat: taking a message back', () => {
+  const mine = msg(1, 'mom', 'lỡ gửi nhầm');
+  const theirs = msg(2, 'minh', 'tin của Minh');
+  const chats = [withLast(theirs, { lastReadSeq: 2 })];
+  const open = (extra: Record<string, unknown> = {}, history = [mine, theirs], more: Record<string, unknown> = {}) =>
+    start({ path: `/c/${C1}`, chats, history: { [C1]: history }, api: extra, ...more });
+  const row = (id: string) => root.querySelector(`[data-msg="${id}"]`)!;
+
+  it('shows a recalled message as a placeholder with none of its words, in your voice and theirs', async () => {
+    open({}, [{ ...msg(1, 'mom', ''), deleted: true }, { ...msg(2, 'minh', ''), deleted: true }]);
+    await flush();
+    expect(row('id1').classList.contains('recalled')).toBe(true);
+    expect(text(row('id1'))).toContain('Bạn đã thu hồi một tin nhắn');
+    expect(text(row('id2'))).toContain('Tin nhắn đã được thu hồi');
+    expect(row('id1').querySelector('.txt:not(.gone)')).toBeNull();
+  });
+
+  it('names who took it back in a group', async () => {
+    const G = '33333333-3333-4333-8333-333333333333';
+    const ghost: ChatMessage = { ...msg(1, 'minh', '', at(10), G), deleted: true };
+    start({ path: `/c/${G}`, chats: [{ id: G, kind: 'group', title: 'Nhóm', peer: null, lastSeq: 1, lastReadSeq: 1, unread: 0, lastMessage: null, memberCount: 3 }], history: { [G]: [ghost] } });
+    await flush();
+    expect(text(root.querySelector('[data-msg="id1"]')!)).toContain('Minh đã thu hồi một tin nhắn');
+  });
+
+  it('offers the menu on your own sent messages only', async () => {
+    open({ send: vi.fn(async () => fail('network', 0)) });
+    await flush();
+    expect(row('id1').querySelector('button[data-menu]')).not.toBeNull();
+    expect(row('id2').querySelector('button[data-menu]')).toBeNull();
+
+    compose('chưa gửi được');
+    submitForm();
+    await flush();
+    expect(root.querySelector('[data-msg="new-1"] button[data-menu]')).toBeNull();   // still on its way
+  });
+
+  it('offers no menu on a message that has already been taken back', async () => {
+    open({}, [{ ...msg(1, 'mom', ''), deleted: true }]);
+    await flush();
+    expect(row('id1').querySelector('button[data-menu]')).toBeNull();
+  });
+
+  it('takes it back only after asking, then shows the placeholder at once', async () => {
+    const h = open({ recall: vi.fn(async () => ok(undefined)) });
+    await flush();
+
+    row('id1').querySelector<HTMLButtonElement>('button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-recall]')!.click();
+    await flush();
+    expect(h.api.recall).not.toHaveBeenCalled();
+    expect(text(root.querySelector('.menu')!)).toContain('mọi người');
+
+    root.querySelector<HTMLButtonElement>('button[data-confirm-recall]')!.click();
+    await flush();
+
+    expect(h.api.recall).toHaveBeenCalledWith(C1, 'id1');
+    expect(row('id1').classList.contains('recalled')).toBe(true);
+    expect(root.querySelector('.menu')).toBeNull();
+  });
+
+  it('can change its mind', async () => {
+    const h = open({ recall: vi.fn(async () => ok(undefined)) });
+    await flush();
+    row('id1').querySelector<HTMLButtonElement>('button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-recall]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-cancel-recall]')!.click();
+    await flush();
+    expect(root.querySelector('.menu')).toBeNull();
+    expect(h.api.recall).not.toHaveBeenCalled();
+    expect(row('id1').classList.contains('recalled')).toBe(false);
+  });
+
+  it('shows a refusal in words and leaves the message as it was', async () => {
+    open({ recall: vi.fn(async () => fail('not_your_message', 403)) });
+    await flush();
+    row('id1').querySelector<HTMLButtonElement>('button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-recall]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-confirm-recall]')!.click();
+    await flush();
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+    expect(row('id1').classList.contains('recalled')).toBe(false);
+  });
+
+  it('turns a message into a placeholder when told live that someone took it back', async () => {
+    const h = open();
+    await flush();
+    h.handlers().event(C1, recalled(theirs, 3));
+    await flush();
+    expect(row('id2').classList.contains('recalled')).toBe(true);
+    expect(text(row('id2'))).not.toContain('tin của Minh');
+  });
+
+  it('does not ask for a catch-up when a recall takes a number but adds no message', async () => {
+    const h = open();
+    await flush();
+    h.handlers().event(C1, recalled(theirs, 3));   // number 3 is the recall
+    h.handlers().event(C1, created(msg(4, 'minh', 'tiếp theo')));
+    await flush();
+    expect(h.live.sync).not.toHaveBeenCalled();
+    expect(bubbles().map((b) => b.getAttribute('data-msg'))).toEqual(['id1', 'id2', 'id4']);
+  });
+
+  it('starts from where the stream stood when the history was read, not from the last message', async () => {
+    const h = open({}, [mine, theirs], { lastSeq: { [C1]: 4 } });   // numbers 3 and 4 were recalls
+    await flush();
+    h.handlers().event(C1, created(msg(5, 'minh', 'sau đó')));
+    await flush();
+    expect(h.live.sync).not.toHaveBeenCalled();
+    h.handlers().event(C1, created(msg(7, 'minh', 'bỏ sót số 6')));
+    await flush();
+    expect(h.live.sync).toHaveBeenCalledWith(C1, 5);
+  });
+
+  it('catches up from the stream position after a reconnect', async () => {
+    const h = open({}, [mine, theirs], { lastSeq: { [C1]: 4 } });
+    await flush();
+    h.handlers().state(false);
+    h.handlers().state(true);
+    await flush();
+    expect(h.live.sync).toHaveBeenCalledWith(C1, 4);
+  });
+
+  it('updates the list when the last message is taken back, and takes it off the unread count once', async () => {
+    const m = msg(2, 'minh', 'sắp thu hồi');
+    const h = start({ chats: [withLast(m, { lastReadSeq: 1, unread: 1 })], history: {} });
+    await flush();
+    expect(rows()[0]!.querySelector('.badge')!.textContent).toBe('1');
+
+    h.handlers().event(C1, recalled(m, 3));
+    h.handlers().event(C1, recalled(m, 3));
+    await flush();
+
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Tin nhắn đã được thu hồi');
+    expect(rows()[0]!.querySelector('.badge')).toBeNull();
+  });
+
+  it('leaves the unread count alone when the message taken back was yours, or had already been read', async () => {
+    const readOne = msg(1, 'minh', 'đã đọc');
+    const unreadOne = msg(3, 'minh', 'chưa đọc');
+    const own = msg(4, 'mom', 'của tôi');   // after the read position, so only the sender check stops it counting
+    const h = start({ chats: [withLast(unreadOne, { lastReadSeq: 2, unread: 1 })], history: {} });
+    await flush();
+
+    h.handlers().event(C1, recalled(readOne, 4));   // before the read position
+    h.handlers().event(C1, recalled(own, 6));       // yours
+    await flush();
+
+    expect(rows()[0]!.querySelector('.badge')!.textContent).toBe('1');
+  });
+
+  it('shows your own last message as taken back in the list at once', async () => {
+    const own = msg(1, 'mom', 'tôi viết');
+    const h = start({ path: `/c/${C1}`, chats: [withLast(own, { lastReadSeq: 1 })], history: { [C1]: [own] }, api: { recall: vi.fn(async () => ok(undefined)) } });
+    await flush();
+    row('id1').querySelector<HTMLButtonElement>('button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-recall]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-confirm-recall]')!.click();
+    await flush();
+    expect(h.api.recall).toHaveBeenCalled();
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Bạn đã thu hồi một tin nhắn');
+  });
+
+  it('does not move a conversation to the top because a message in it was taken back', async () => {
+    const old = msg(1, 'minh', 'cũ', at(9), C2);
+    const h = start({ chats: [withLast(msg(3, 'minh', 'mới', at(11))), withLast(old, { id: C2, title: 'Lan', peer: { gomId: 'lan', displayName: 'Lan' } })] });
+    await flush();
+    h.handlers().event(C2, recalled(old, 2));
+    await flush();
+    expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C1, C2]);
+  });
+
+  it('shows a message that arrives already taken back as such, and does not count it as unread', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    h.handlers().event(C1, { seq: 1, kind: 'created', message: { ...msg(1, 'minh', ''), deleted: true } });
+    await flush();
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Tin nhắn đã được thu hồi');
+    expect(rows()[0]!.querySelector('.badge')).toBeNull();
+  });
+
+  it('shows a recalled last message in the list as such, in your voice and theirs', async () => {
+    const own = withLast(msg(1, 'mom'), { lastMessage: { seq: 1, body: '', createdAt: at(10), sender: { id: 'u-mom', displayName: 'Mẹ' }, deleted: true } });
+    const their = chat(C2, 'Lan', { lastSeq: 1, lastMessage: { seq: 1, body: '', createdAt: at(10), sender: { id: 'u-lan', displayName: 'Lan' }, deleted: true } });
+    start({ chats: [own, their] });
+    await flush();
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Bạn đã thu hồi một tin nhắn');
+    expect(text(rows()[1]!.querySelector('.pv')!)).toBe('Tin nhắn đã được thu hồi');
   });
 });

@@ -4,14 +4,14 @@ export type ErrorCode =
   | 'wrong_password' | 'cannot_disable_owner' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
-  | 'group_full' | 'not_a_group' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
+  | 'group_full' | 'not_a_group' | 'not_your_message' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
   'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner',
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
-  'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group',
+  'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -29,10 +29,10 @@ export interface FriendRequest extends Person { createdAt: string }
 export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; outgoing: FriendRequest[] }
 /** Who wrote a message: a name and an opaque id. The Gom ID is shown to friends only, so it is not here. */
 export interface Sender { id: string; displayName: string }
-export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
-export interface ChatEvent { seq: number; kind: 'created'; message: ChatMessage }
-export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender }
+export interface ChatEvent { seq: number; kind: 'created' | 'deleted'; message: ChatMessage }
+export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number;
@@ -72,7 +72,8 @@ export interface Api {
   unblock(gomId: string): Promise<Result<void>>;
   conversations(): Promise<Result<Conversation[]>>;
   openDirect(gomId: string): Promise<Result<{ id: string }>>;
-  history(conversation: string, before?: number): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean }>>;
+  history(conversation: string, before?: number): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean; lastSeq: number }>>;
+  recall(conversation: string, message: string): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string): Promise<Result<ChatMessage>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
   createGroup(title: string, members: string[]): Promise<Result<{ id: string }>>;
@@ -139,6 +140,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
     leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
     askMember: (conversation, userId) => call('POST', `/api/conversations/${enc(conversation)}/members/${enc(userId)}/friend-request`),
+    recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
     markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };
 }

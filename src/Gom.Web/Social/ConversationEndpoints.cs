@@ -74,9 +74,9 @@ public static class ConversationEndpoints
                 Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq).OrderByDescending(x => x.Seq)
                     .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
                     {
-                        x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.CreatedAt, SenderId = u.Id, u.DisplayName,
+                        x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.CreatedAt, Deleted = x.DeletedAt != null, SenderId = u.Id, u.DisplayName,
                     }).FirstOrDefault(),
-                Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me),
+                Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null),
             }).ToListAsync(ct);
 
         return Results.Ok(rows.Select(r => new
@@ -91,7 +91,7 @@ public static class ConversationEndpoints
             unread = r.Unread,
             lastMessage = r.Last is null ? null : new
             {
-                seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt,
+                seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt, deleted = r.Last.Deleted,
                 sender = new { id = r.Last.SenderId, displayName = r.Last.DisplayName },
             },
         }));
