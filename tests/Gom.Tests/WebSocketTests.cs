@@ -296,6 +296,94 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(1003, await WaitForClose(ws));
     }
 
+    // ---- groups
+
+    private async Task<(User A, string CA, User B, string CB, User C, string CC)> Trio()
+    {
+        var (a, ca) = await app.Member(); var (b, cb) = await app.Member(); var (c, cc) = await app.Member();
+        await app.Befriend(a, b); await app.Befriend(a, c);
+        return (a, ca, b, cb, c, cc);
+    }
+
+    private async Task<Guid> NewGroup(string cookie, params string[] members)
+    {
+        using var r = await app.Call(HttpMethod.Post, "/api/conversations/group", new { title = "Nhóm", members }, cookie);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        return (await AppFixture.Json(r)).GetProperty("id").GetGuid();
+    }
+
+    private static async Task ExpectListChanged(WebSocket ws) => Assert.Equal("conversations", (await Next(ws)).GetProperty("t").GetString());
+
+    [Fact]
+    public async Task Making_a_group_tells_every_member_s_devices_to_reload_their_list_and_nobody_else()
+    {
+        var t = await Trio();
+        var (_, stranger) = await app.Member();
+        using var a = await ConnectReady(t.CA);
+        using var b = await ConnectReady(t.CB);
+        using var c = await ConnectReady(t.CC);
+        using var other = await ConnectReady(stranger);
+
+        await NewGroup(t.CA, t.B.GomId, t.C.GomId);
+
+        foreach (var ws in new[] { a, b, c }) await ExpectListChanged(ws);
+        await AssertSilent(other);
+    }
+
+    [Fact]
+    public async Task Adding_someone_tells_the_new_member_and_the_old_ones()
+    {
+        var t = await Trio();
+        var (d, cd) = await app.Member();
+        await app.Befriend(t.A, d);
+        var chat = await NewGroup(t.CA, t.B.GomId, t.C.GomId);
+        using var b = await ConnectReady(t.CB);
+        using var newcomer = await ConnectReady(cd);
+
+        using var add = await app.Call(HttpMethod.Post, $"/api/conversations/{chat}/members", new { gomId = d.GomId }, t.CA);
+
+        await ExpectListChanged(b);
+        await ExpectListChanged(newcomer);
+    }
+
+    [Fact]
+    public async Task Someone_who_leaves_is_told_on_every_device_and_hears_nothing_more_from_the_group()
+    {
+        var t = await Trio();
+        var chat = await NewGroup(t.CA, t.B.GomId, t.C.GomId);
+        using var phone = await ConnectReady(t.CB);
+        using var laptop = await ConnectReady(t.CB);
+        using var a = await ConnectReady(t.CA);
+
+        using var leave = await app.Call(HttpMethod.Delete, $"/api/conversations/{chat}/members/me", cookie: t.CB);
+        await ExpectListChanged(phone);
+        await ExpectListChanged(laptop);
+        await ExpectListChanged(a);
+
+        using var sent = await Send(t.CA, chat, "B không còn nghe");
+        Assert.Equal("event", (await Next(a)).GetProperty("t").GetString());
+        await AssertSilent(phone);
+        await AssertSilent(laptop);
+    }
+
+    [Fact]
+    public async Task A_new_member_cannot_sync_what_was_said_before_they_joined()
+    {
+        var t = await Trio();
+        var (d, cd) = await app.Member();
+        await app.Befriend(t.A, d);
+        var chat = await NewGroup(t.CA, t.B.GomId, t.C.GomId);
+        using var first = await Send(t.CA, chat, "trước");
+        using var add = await app.Call(HttpMethod.Post, $"/api/conversations/{chat}/members", new { gomId = d.GomId }, t.CA);
+        using var second = await Send(t.CB, chat, "sau");
+        using var ws = await ConnectReady(cd);
+
+        await SendText(ws, $$"""{"t":"sync","c":"{{chat}}","after":0}""");
+        var reply = await Next(ws);
+
+        Assert.Equal(["sau"], reply.GetProperty("events").EnumerateArray().Select(e => e.GetProperty("message").GetProperty("body").GetString()!).ToArray());
+    }
+
     // ---- when the session ends, the socket ends
 
     [Fact]

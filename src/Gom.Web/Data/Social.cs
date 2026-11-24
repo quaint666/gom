@@ -54,6 +54,8 @@ public class ConversationMember
     public DateTimeOffset JoinedAt { get; set; }
     /// <summary>How far this member has read: one number per member, however many messages it covers.</summary>
     public long LastReadSeq { get; set; }
+    /// <summary>The conversation's counter when this member joined: they see only what comes after. Zero for a one-to-one chat.</summary>
+    public long JoinedSeq { get; set; }
 }
 
 /// <summary>The materialized state of one message. The event stream (<see cref="MessageEvent"/>) is what clients follow.</summary>

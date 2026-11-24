@@ -9,6 +9,8 @@ public sealed class ChatOptions
     public int SendBurst { get; set; } = 20;
     /// <summary>After the burst, how many more per second.</summary>
     public double SendPerSecond { get; set; } = 2;
+    /// <summary>The most people in one group, the creator included.</summary>
+    public int MaxGroupMembers { get; set; } = 50;
     /// <summary>Open sockets one person may hold (phone, laptop, a tab or two). The oldest is closed to make room.</summary>
     public int MaxSocketsPerUser { get; set; } = 5;
     /// <summary>Frames waiting for one socket. A client that falls this far behind is closed and catches up from its cursor.</summary>

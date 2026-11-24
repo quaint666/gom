@@ -52,6 +52,7 @@ app.MapLinks();
 app.MapAccount();
 app.MapFriends();
 app.MapConversations();
+app.MapGroups();
 app.MapMessages();
 app.MapSocket();
 

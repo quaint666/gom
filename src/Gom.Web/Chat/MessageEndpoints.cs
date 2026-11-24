@@ -32,13 +32,6 @@ public static class MessageEndpoints
 
     private static MessageDto ToDto(Message m, PersonDto sender) => new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt);
 
-    /// <summary>The kind of conversation this person is in, or null when they are not in it (the same answer as "does not exist").</summary>
-    private static Task<ConversationKind?> KindIfMember(GomDbContext db, Guid conversation, Guid me, CancellationToken ct) =>
-        (from m in db.Members
-         where m.ConversationId == conversation && m.UserId == me
-         join c in db.Conversations on m.ConversationId equals c.Id
-         select (ConversationKind?)c.Kind).SingleOrDefaultAsync(ct);
-
     // ---- what a message may contain
 
     /// <summary>The cleaned body, or the error code. Line breaks become \n; the ends are trimmed; control characters are refused (a half emoji never gets here: the JSON reader replaces it).</summary>
@@ -62,8 +55,9 @@ public static class MessageEndpoints
         SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
-        var kind = await KindIfMember(db, id, me, ct);
-        if (kind is null) return Results.NotFound();
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        var kind = access.Kind;
 
         if (!Guid.TryParse(request.ClientId, out var clientId) || clientId == Guid.Empty) return Error(StatusCodes.Status400BadRequest, "invalid_client_id");
         var sender = new PersonDto(me, http.User.FindFirst(GomClaims.DisplayName)!.Value);
@@ -139,12 +133,13 @@ public static class MessageEndpoints
     private static async Task<IResult> History(Guid id, long? before, string? limit, HttpContext http, GomDbContext db, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
-        if (await KindIfMember(db, id, me, ct) is null) return Results.NotFound();
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
 
         var take = int.TryParse(limit, out var n) ? Math.Clamp(n, 1, 100) : 50;
         var rows = await (
             from m in db.Messages.AsNoTracking()
-            where m.ConversationId == id && (before == null || m.Seq < before)
+            where m.ConversationId == id && m.Seq > access.JoinedSeq && (before == null || m.Seq < before)
             orderby m.Seq descending
             join u in db.Users on m.SenderId equals u.Id
             select new { Message = m, u.Id, u.DisplayName }).Take(take + 1).ToListAsync(ct);
@@ -161,7 +156,7 @@ public static class MessageEndpoints
     private static async Task<IResult> MarkRead(Guid id, ReadRequest request, HttpContext http, GomDbContext db, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
-        if (await KindIfMember(db, id, me, ct) is null) return Results.NotFound();
+        if (await Access.Of(db, id, me, ct) is null) return Results.NotFound();
         if (request.Seq is null or < 0) return Error(StatusCodes.Status400BadRequest, "invalid_seq");
 
         // Forward only, and never past the newest message.

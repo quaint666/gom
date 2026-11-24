@@ -38,6 +38,7 @@ public sealed class AppFixture : IAsyncLifetime
             b.UseSetting("ConnectionStrings:Default", Db.ConnectionString);
             b.UseSetting("Auth:PasswordIterations", "1000");
             b.UseSetting("Auth:AllowedOrigins:0", Origin);
+            b.UseSetting("Chat:MaxGroupMembers", "5");   // small, so a test can fill a group
             b.ConfigureServices(s =>
             {
                 s.RemoveAll<TimeProvider>();

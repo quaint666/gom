@@ -6,6 +6,15 @@ namespace Gom.Web.Chat.Live;
 /// <summary>Tells connected members about a new message. Runs only after the commit, and never fails the send.</summary>
 public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelivery> logger)
 {
+    /// <summary>Tells these people's devices to reload their list of conversations.</summary>
+    public void ConversationsChanged(IEnumerable<Guid> people)
+    {
+        var frame = Frames.ConversationsChanged();
+        foreach (var person in people.Distinct())
+            foreach (var connection in registry.For(person))
+                connection.TryEnqueue(frame);
+    }
+
     public async Task PublishCreatedAsync(GomDbContext db, MessageEndpoints.MessageDto message)
     {
         try

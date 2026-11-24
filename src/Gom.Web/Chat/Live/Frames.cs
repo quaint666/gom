@@ -14,6 +14,8 @@ public static class Frames
     };
     private static byte[] Json(object value) => JsonSerializer.SerializeToUtf8Bytes(value, Options);
 
+    /// <summary>"Your list of conversations changed" (you were added to a group, someone joined or left): reload it.</summary>
+    public static byte[] ConversationsChanged() => Json(new { t = "conversations" });
     public static byte[] Ready() => Json(new { t = "ready" });
     public static byte[] Live(Guid conversation, EventDto e) => Json(new { t = "event", c = conversation, @event = e });
     public static byte[] Events(Guid conversation, IReadOnlyList<EventDto> events, bool hasMore) => Json(new { t = "events", c = conversation, events, hasMore });

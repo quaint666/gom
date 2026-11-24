@@ -58,13 +58,19 @@ public static class FriendEndpoints
         var me = GomClaims.User(http.User);
         var other = await FindMember(db, request.GomId, ct);
         if (other is null) return Error(StatusCodes.Status404NotFound, "user_not_found");
+        return await AskAsync(db, clock, me, other.Value, ct);
+    }
+
+    /// <summary>Asks one person to be friends. Shared by "ask by Gom ID" and "ask a member of a group you are both in".</summary>
+    internal static async Task<IResult> AskAsync(GomDbContext db, TimeProvider clock, Guid me, Guid other, CancellationToken ct)
+    {
         if (other == me) return Error(StatusCodes.Status400BadRequest, "cannot_add_self");
 
         if (await db.Blocks.AnyAsync(b => b.BlockerId == me && b.BlockedId == other, ct)) return Error(StatusCodes.Status409Conflict, "you_blocked_them");
         // Someone who blocked you must not learn it: it looks like the request went out, and nothing is stored.
         if (await db.Blocks.AnyAsync(b => b.BlockerId == other && b.BlockedId == me, ct)) return Results.Ok(new { status = "pending" });
 
-        var (low, high) = Friendship.Order(me, other.Value);
+        var (low, high) = Friendship.Order(me, other);
         // Two people asking each other at once: one insert loses the race, then sees the other's request and accepts it.
         for (var attempt = 0; attempt < 2; attempt++)
         {

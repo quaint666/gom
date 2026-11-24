@@ -92,7 +92,11 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
 
         b.Entity<ConversationMember>(e =>
         {
-            e.ToTable("conversation_members", t => t.HasCheckConstraint("ck_conversation_members_read", "last_read_seq >= 0"));
+            e.ToTable("conversation_members", t =>
+            {
+                t.HasCheckConstraint("ck_conversation_members_read", "last_read_seq >= 0");
+                t.HasCheckConstraint("ck_conversation_members_joined", "joined_seq >= 0");
+            });
             e.HasKey(x => new { x.ConversationId, x.UserId });
             e.HasIndex(x => x.UserId);
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);

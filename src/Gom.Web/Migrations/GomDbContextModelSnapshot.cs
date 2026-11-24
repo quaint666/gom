@@ -121,6 +121,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("joined_at");
 
+                    b.Property<long>("JoinedSeq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("joined_seq");
+
                     b.Property<long>("LastReadSeq")
                         .HasColumnType("bigint")
                         .HasColumnName("last_read_seq");
@@ -133,6 +137,8 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("conversation_members", null, t =>
                         {
+                            t.HasCheckConstraint("ck_conversation_members_joined", "joined_seq >= 0");
+
                             t.HasCheckConstraint("ck_conversation_members_read", "last_read_seq >= 0");
                         });
                 });

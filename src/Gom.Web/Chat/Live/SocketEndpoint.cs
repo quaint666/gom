@@ -93,11 +93,13 @@ public static class SocketEndpoint
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<GomDbContext>();
         // Membership on every ask: "not a member" and "no such conversation" look the same.
-        if (!await db.Members.AnyAsync(m => m.ConversationId == conversation && m.UserId == me, ct)) return Frames.Error("not_found", conversation);
+        var access = await Access.Of(db, conversation, me, ct);
+        if (access is null) return Frames.Error("not_found", conversation);
+        var floor = Math.Max(after, access.JoinedSeq);   // never what was said before they joined
 
         var rows = await (
             from e in db.Events.AsNoTracking()
-            where e.ConversationId == conversation && e.Seq > after
+            where e.ConversationId == conversation && e.Seq > floor
             orderby e.Seq
             join m in db.Messages on e.MessageId equals m.Id
             join u in db.Users on m.SenderId equals u.Id

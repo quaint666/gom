@@ -68,9 +68,10 @@ public static class ConversationEndpoints
             select new
             {
                 c.Id, c.Kind, c.Title, c.LastSeq, m.LastReadSeq,
+                MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new { u.GomId, u.DisplayName }).FirstOrDefault(),
-                Last = db.Messages.Where(x => x.ConversationId == c.Id).OrderByDescending(x => x.Seq)
+                Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq).OrderByDescending(x => x.Seq)
                     .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
                     {
                         x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.CreatedAt, SenderId = u.Id, u.DisplayName,
@@ -84,6 +85,7 @@ public static class ConversationEndpoints
             kind = r.Kind.ToString().ToLowerInvariant(),
             title = r.Kind == ConversationKind.Direct ? r.Peer?.DisplayName : r.Title,
             peer = r.Kind == ConversationKind.Direct && r.Peer is not null ? new { gomId = r.Peer.GomId, displayName = r.Peer.DisplayName } : null,
+            memberCount = r.MemberCount,
             lastSeq = r.LastSeq,
             lastReadSeq = r.LastReadSeq,
             unread = r.Unread,
