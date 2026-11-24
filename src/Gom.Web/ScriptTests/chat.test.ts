@@ -2682,3 +2682,75 @@ describe('chat: avatars and the header', () => {
     expect(root.querySelector('.th-head .av')!.classList.contains(`a${avatarTone(name)}`)).toBe(true);
   });
 });
+
+describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
+  const G = '33333333-3333-4333-8333-333333333333';
+  const group = (): Conversation => ({ id: G, kind: 'group', title: 'Nhóm nhà', peer: null, lastSeq: 1, lastReadSeq: 1, unread: 0, lastMessage: null, memberCount: 2 });
+  const people = [
+    { id: 'u-mom', displayName: 'Mẹ', isMe: true, isFriend: false, gomId: 'mom', request: 'none' as const, role: 'leader' as const },
+    { id: 'u-a', displayName: 'Anh', isMe: false, isFriend: true, gomId: 'anh', request: 'none' as const, role: 'member' as const },
+  ];
+  beforeEach(() => { try { localStorage.removeItem('gom-info'); } catch { /* nothing to clear */ } });
+
+  it('opens the gear menu from the rail, closes it with Escape or a click outside, and offers sign-out', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')], api: { signOut: vi.fn(async () => ok(undefined)) } });
+    await flush();
+    expect(root.querySelector('.gearmenu')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-gear]')!.click();
+    await flush();
+    expect(root.querySelector('.gearmenu a[href="/settings"]')).not.toBeNull();
+    root.querySelector('.gearmenu')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(root.querySelector('.gearmenu')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-gear]')!.click();
+    await flush();
+    root.querySelector<HTMLElement>('[data-gear-scrim]')!.click();
+    await flush();
+    expect(root.querySelector('.gearmenu')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-gear]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-signout]')!.click();
+    await flush();
+    expect(h.api.signOut).toHaveBeenCalledOnce();
+    expect(h.go).toHaveBeenCalledWith('/sign-in');
+  });
+
+  it('shows the owner link in the gear menu only to the owner', async () => {
+    start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-gear]')!.click();
+    await flush();
+    expect(root.querySelector('.gearmenu a[href="/owner"]')).toBeNull();
+  });
+
+  it('opens an info panel with the pins and the members of a group, and remembers that it is open', async () => {
+    const pinned = msg(1, 'mom', 'ghim này', at(10), G);
+    const h = start({
+      path: `/c/${G}`, chats: [group()], history: { [G]: [pinned] },
+      api: { groupMembers: vi.fn(async () => ok(people)), pins: vi.fn(async () => ok({ pins: [pinned] })) },
+    });
+    await flush();
+    expect(root.querySelector('[data-info-panel]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+    await flush();
+    const panel = root.querySelector('[data-info-panel]')!;
+    expect(text(panel)).toContain('Nhóm nhà');
+    expect(panel.querySelectorAll('[data-info-member]')).toHaveLength(2);
+    expect(panel.querySelector('[data-info-pin]')).not.toBeNull();
+    expect(h.api.groupMembers).toHaveBeenCalledWith(G);
+    expect(localStorage.getItem('gom-info')).toBe('1');
+    root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+    await flush();
+    expect(root.querySelector('[data-info-panel]')).toBeNull();
+    expect(localStorage.getItem('gom-info')).toBe('0');
+  });
+
+  it('starts with the panel open when it was left open, and asks for the members only for a group', async () => {
+    localStorage.setItem('gom-info', '1');
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] }, api: { groupMembers: vi.fn(async () => ok(people)) } });
+    await flush();
+    expect(root.querySelector('[data-info-panel]')).not.toBeNull();
+    expect(h.api.groupMembers).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-info-member]')).toBeNull();
+  });
+});

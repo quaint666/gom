@@ -1,7 +1,7 @@
 import { html, nothing, render, type TemplateResult } from 'lit-html';
 import type { Api, Conversation, FriendLists, Failure, Person, User } from '../api.js';
 import * as icons from '../icons.js';
-import { matches } from '../search.js';
+import { fold, matches } from '../search.js';
 import { appBar, avatar, errorBox, formatTime } from '../ui.js';
 
 /** How many rows of a long list show before "Xem thêm". */
@@ -78,6 +78,18 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
     return html`<div class="tabs" role="tablist" aria-label="Danh bạ">${tabButton('friends', 'Bạn bè', mine)}${tabButton('groups', 'Nhóm', groups.length)}</div>`;
   };
 
+  /** A name's letter for the A to Z headings: no accents, no capitals, and "Đ" is its own letter's cousin D. Anything else goes under "#". */
+  const letterOf = (name: string): string => { const f = fold(name).charAt(0).toUpperCase(); return /[A-Z]/.test(f) ? f : '#'; };
+
+  /** Friends by name. With everyone showing (not a handful), under a heading for each first letter. */
+  const friendList = (rows: Person[], everyone: boolean) => {
+    const sorted = [...rows].sort((a, b) => fold(a.displayName).localeCompare(fold(b.displayName), 'vi'));
+    if (!everyone || sorted.length <= HANDFUL) return html`<ul class="list">${sorted.map(friendRow)}</ul>`;
+    const letters = [...new Set(sorted.map((p) => letterOf(p.displayName)))].sort((a, b) => a === '#' ? 1 : b === '#' ? -1 : a.localeCompare(b));
+    return html`${letters.map((l) => html`<h3 class="letter" data-letter=${l}>${l}</h3>
+      <ul class="list">${sorted.filter((p) => letterOf(p.displayName) === l).map(friendRow)}</ul>`)}`;
+  };
+
   const listing = () => {
     const rows = tab === 'friends'
       ? lists.friends.filter((p) => matches(`${p.displayName} ${p.gomId}`, query))
@@ -90,7 +102,7 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
     return html`
       <div role="tabpanel" aria-labelledby=${`tab-${tab}`}>
         ${rows.length === 0 ? html`<p class="hint" data-empty>${empty}</p>` : html`
-          <ul class="list">${tab === 'friends' ? (part.rows as Person[]).map(friendRow) : (part.rows as Conversation[]).map(groupRow)}</ul>
+          ${tab === 'friends' ? friendList(part.rows as Person[], part.hidden === 0) : html`<ul class="list">${(part.rows as Conversation[]).map(groupRow)}</ul>`}
           ${part.hidden > 0 ? html`<button class="btn secondary" type="button" data-more-rows @click=${() => { expanded = true; update(); }}>Xem thêm (${part.hidden})</button>` : nothing}`}
         ${tab === 'groups' ? html`<a class="btn" href="/groups/new" data-new-group>Nhóm mới</a>` : nothing}
       </div>`;

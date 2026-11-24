@@ -2,7 +2,7 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
-import type { Api, ChatEvent, ChatMessage, Conversation, Failure, Reply, User } from '../api.js';
+import type { Api, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, Reply, User } from '../api.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
@@ -93,6 +93,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** The search bar of the open conversation: what was asked, and what came back (null while waiting for the first answer). */
   /** Messages that just arrived from someone else in the open chat: they rise in once, and are forgotten a moment later. */
   const fresh = new Set<string>();
+  /** The gear menu in the side rail, and the info panel beside a thread (its open or closed state is remembered on this device). */
+  let gearOpen = false;
+  let infoOpen = ((): boolean => { try { return localStorage.getItem('gom-info') === '1'; } catch { return false; } })();
+  const people = new Map<string, GroupMember[]>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
   let found: string | null = null;
   /** What is typed in the search above the list of conversations. */
@@ -305,6 +309,67 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <button class="btn secondary small" type="button" data-cancel-forward @click=${() => { forwarding = null; update(); }}>Hủy</button>
     </div>`;
 
+  /** The narrow bar on a wide screen: messages, contacts, and a gear for settings and signing out. */
+  const rail = () => html`
+    <nav class="rail" aria-label="Điều hướng">
+      <a class="rail-i active" href="/" aria-label="Tin nhắn" aria-current="page" @click=${onHome}>${icons.logo()}</a>
+      <a class="rail-i" href="/friends" aria-label="Danh bạ">${icons.users()}</a>
+      <button class="rail-i gear" type="button" data-gear aria-label="Cài đặt và tài khoản" aria-haspopup="menu" aria-expanded=${gearOpen ? 'true' : 'false'}
+        @click=${() => { gearOpen = !gearOpen; update(); }}>${icons.gear()}</button>
+    </nav>
+    ${gearOpen ? html`
+      <div class="scrim" data-gear-scrim @click=${() => { gearOpen = false; update(); }}></div>
+      <div class="gearmenu" role="menu" aria-label="Tài khoản" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { gearOpen = false; update(); } }}>
+        <a class="mi" role="menuitem" href="/settings">${icons.gear()}<span>Cài đặt</span></a>
+        ${me?.isOwner ? html`<a class="mi" role="menuitem" href="/owner">${icons.users()}<span>Lời mời và thành viên</span></a>` : nothing}
+        <button class="mi" type="button" role="menuitem" data-signout @click=${() => void signOut()}><span>Đăng xuất</span></button>
+      </div>` : nothing}`;
+
+  async function signOut(): Promise<void> {
+    const result = await api.signOut();
+    if (result.ok || result.error === 'unauthorized') go('/sign-in'); else { gearOpen = false; handleFailure(result); }
+  }
+
+  function toggleInfo(): void {
+    infoOpen = !infoOpen;
+    try { localStorage.setItem('gom-info', infoOpen ? '1' : '0'); } catch { /* it is just not remembered */ }
+    if (infoOpen && openId !== null) void loadPeople(openId);
+    update();
+  }
+
+  async function loadPeople(id: string): Promise<void> {
+    if (chatOf(id)?.kind !== 'group' || people.has(id)) return;
+    const result = await api.groupMembers(id);
+    if (!result.ok) return;
+    people.set(id, result.data);
+    update();
+  }
+
+  /** The panel beside a thread: who it is, ways to find things in it, what is pinned, and who is in a group. */
+  const infoPanel = (c: Conversation, t: Thread) => html`
+    <aside class="info" aria-label="Thông tin cuộc trò chuyện" data-info-panel>
+      <div class="info-top">
+        <div class="av xl a${avatarTone(c.title ?? '?')}" aria-hidden="true">${initials(c.title ?? '?')}</div>
+        <h2>${c.title ?? '…'}</h2>
+        <small>${c.kind === 'group' ? `${c.memberCount ?? 0} thành viên` : c.peer ? `@${c.peer.gomId}` : ''}</small>
+      </div>
+      <div class="info-actions">
+        <button class="btn secondary small" type="button" data-info-search @click=${() => { searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} Tìm tin nhắn</button>
+        <button class="btn secondary small" type="button" data-info-mute @click=${() => void toggleMute(c)}>${c.muted ? icons.bellOff() : icons.bell()} ${c.muted ? 'Bật thông báo' : 'Tắt thông báo'}</button>
+      </div>
+      ${t.pins.length === 0 ? nothing : html`
+        <h3>Tin đã ghim</h3>
+        <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
+          <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
+          <span>${[...p.body].length > 100 ? [...p.body].slice(0, 100).join('') + '…' : p.body}</span></button></li>`)}</ul>`}
+      ${c.kind !== 'group' ? nothing : html`
+        <h3>Thành viên</h3>
+        <ul class="info-list">${(people.get(c.id) ?? []).map((m) => html`<li class="info-person" data-info-member=${m.id}>
+          <div class="av sm a${avatarTone(m.displayName)}" aria-hidden="true">${initials(m.displayName)}</div>
+          <span>${m.displayName}${m.isMe ? ' (bạn)' : ''}</span>${m.role === 'leader' ? html`<span class="tag">Nhóm trưởng</span>` : m.role === 'deputy' ? html`<span class="tag">Phó nhóm</span>` : nothing}</li>`)}</ul>
+        <a class="btn secondary small" href="/groups/${c.id}">Quản lý nhóm</a>`}
+    </aside>`;
+
   function threadPane(): TemplateResult {
     const c = chatOf(openId);
     if (openId === null) return html`<section class="thread-pane none"><div class="empty welcome"><div class="big-icon">${icons.logo()}</div><h2>Gom</h2><p class="lead">Chọn một cuộc trò chuyện</p></div></section>`;
@@ -326,6 +391,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="ib" type="button" data-mute aria-pressed=${c.muted ? 'true' : 'false'}
             aria-label=${c.muted ? 'Bật lại thông báo' : 'Tắt thông báo'} @click=${() => void toggleMute(c)}>${c.muted ? icons.bellOff() : icons.bell()}</button>`}
           ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label="Thông tin nhóm">${icons.users()}</a>` : nothing}
+          ${c === undefined ? nothing : html`<button class="ib info-btn" type="button" data-info aria-label="Thông tin cuộc trò chuyện" aria-pressed=${infoOpen ? 'true' : 'false'} @click=${toggleInfo}>${icons.info()}</button>`}
         </header>
         ${banner()}
         ${searching === null ? nothing : searchPanel(searching)}
@@ -356,7 +422,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   const view = () => html`
-    <div class="chat" data-pane=${openId === null ? 'list' : 'thread'}>
+    <div class="chat" data-pane=${openId === null ? 'list' : 'thread'} data-infostate=${infoOpen && openId !== null ? 'open' : 'closed'}>
+      ${rail()}
       <section class="list-pane">
         <header class="bar">
           <a class="brand" href="/" aria-label="Gom, về trang chủ" @click=${onHome}>${icons.logo()}<span>Gom</span></a>
@@ -374,6 +441,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${me === null || chats === null ? nothing : chats.length === 0 ? empty() : visibleChats().length === 0 ? html`<p class="hint nomatch" data-no-match>Không tìm thấy cuộc trò chuyện nào.</p>` : html`<ul class="items">${repeat(visibleChats(), (c) => c.id, row)}</ul>`}
       </section>
       ${threadPane()}
+      ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
     </div>`;
 
   function update(): void {
@@ -451,6 +519,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
     if (!t.loaded) void loadHistory(id);
     else markRead(id);
+    if (infoOpen) void loadPeople(id);
   }
 
   // ---- loading
