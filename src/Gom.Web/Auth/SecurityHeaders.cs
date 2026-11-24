@@ -19,6 +19,7 @@ public sealed class SecurityHeaders(RequestDelegate next)
             headers.ContentSecurityPolicy = Policy;
             headers.XContentTypeOptions = "nosniff";
             headers["Referrer-Policy"] = "no-referrer";
+            headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
             if (context.Request.Path.StartsWithSegments("/api") || (context.Response.ContentType?.StartsWith("text/html") ?? false))
                 headers.CacheControl = "no-store";
             return Task.CompletedTask;

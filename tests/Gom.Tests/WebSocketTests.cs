@@ -275,12 +275,39 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         var (_, cookie) = await app.Member();
         using var ws = await ConnectReady(cookie);
 
-        foreach (var junk in new[] { "not json", "[]", "{}", """{"t":"dance"}""", """{"t":"sync"}""", """{"t":"sync","c":"x","after":0}""", """{"t":"sync","c":"00000000-0000-0000-0000-000000000000","after":-1}""" })
+        // Four, one fewer than the limit; each kind of unreadable frame is told apart in its own run below.
+        foreach (var junk in new[] { "not json", "[]", """{"t":"dance"}""", """{"t":"sync","c":"x","after":0}""" })
         {
             await SendText(ws, junk);
             var reply = await Next(ws);
             Assert.Equal("error", reply.GetProperty("t").GetString());
             Assert.Equal("bad_request", reply.GetProperty("error").GetString());
+        }
+        Assert.Equal(WebSocketState.Open, ws.State);
+    }
+
+    [Fact]
+    public async Task Five_frames_that_cannot_be_read_close_the_connection()
+    {
+        var (_, cookie) = await app.Member();
+        using var ws = await ConnectReady(cookie);
+
+        foreach (var junk in new[] { "not json", "{}", """{"t":"sync"}""", """{"t":"sync","c":"00000000-0000-0000-0000-000000000000","after":-1}""", "[]" })
+            await SendText(ws, junk);
+
+        Assert.Equal(1008, await WaitForClose(ws));
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task Asking_about_a_conversation_that_is_not_yours_is_not_counted_as_a_bad_frame()
+    {
+        var (_, cookie) = await app.Member();
+        using var ws = await ConnectReady(cookie);
+
+        for (var i = 0; i < 8; i++)
+        {
+            await SendText(ws, $$"""{"t":"sync","c":"{{Guid.NewGuid()}}","after":0}""");
+            Assert.Equal("not_found", (await Next(ws)).GetProperty("error").GetString());
         }
         Assert.Equal(WebSocketState.Open, ws.State);
     }

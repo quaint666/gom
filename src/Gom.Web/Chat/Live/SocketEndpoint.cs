@@ -46,7 +46,7 @@ public static class SocketEndpoint
         try
         {
             connection.TryEnqueue(Frames.Ready());
-            await ReceiveLoop(socket, connection, scopes, http.RequestAborted);
+            await ReceiveLoop(socket, connection, scopes, o.MaxBadFrames, http.RequestAborted);
         }
         catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException) { }
         finally
@@ -58,9 +58,10 @@ public static class SocketEndpoint
         return Results.Empty;
     }
 
-    private static async Task ReceiveLoop(WebSocket socket, Connection connection, IServiceScopeFactory scopes, CancellationToken ct)
+    private static async Task ReceiveLoop(WebSocket socket, Connection connection, IServiceScopeFactory scopes, int maxBadFrames, CancellationToken ct)
     {
         var buffer = new byte[MaxFrameBytes];
+        var bad = 0;
         while (socket.State == WebSocketState.Open)
         {
             var result = await socket.ReceiveAsync(buffer, ct);
@@ -68,12 +69,14 @@ public static class SocketEndpoint
             if (result.MessageType == WebSocketMessageType.Binary) { connection.Close(1003, "text only"); return; }
             if (!result.EndOfMessage) { connection.Close(1009, "frame too big"); return; }
 
-            var reply = await Answer(buffer.AsMemory(0, result.Count), connection.UserId, scopes, ct);
+            var (reply, wasBad) = await Answer(buffer.AsMemory(0, result.Count), connection.UserId, scopes, ct);
             connection.TryEnqueue(reply);
+            // A client that keeps sending what we cannot read is broken or hostile: it is let go.
+            if (wasBad && ++bad >= maxBadFrames) { connection.Close(1008, "too many bad frames"); return; }
         }
     }
 
-    private static async Task<byte[]> Answer(ReadOnlyMemory<byte> frame, Guid me, IServiceScopeFactory scopes, CancellationToken ct)
+    private static async Task<(byte[] Frame, bool Bad)> Answer(ReadOnlyMemory<byte> frame, Guid me, IServiceScopeFactory scopes, CancellationToken ct)
     {
         Guid conversation;
         long after;
@@ -82,19 +85,19 @@ public static class SocketEndpoint
             using var doc = JsonDocument.Parse(frame);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("t", out var t) || t.ValueKind != JsonValueKind.String || t.GetString() != "sync")
-                return Frames.Error("bad_request");
+                return (Frames.Error("bad_request"), true);
             if (!root.TryGetProperty("c", out var c) || c.ValueKind != JsonValueKind.String || !Guid.TryParse(c.GetString(), out conversation))
-                return Frames.Error("bad_request");
+                return (Frames.Error("bad_request"), true);
             if (!root.TryGetProperty("after", out var a) || a.ValueKind != JsonValueKind.Number || !a.TryGetInt64(out after) || after < 0)
-                return Frames.Error("bad_request", conversation);
+                return (Frames.Error("bad_request", conversation), true);
         }
-        catch (JsonException) { return Frames.Error("bad_request"); }
+        catch (JsonException) { return (Frames.Error("bad_request"), true); }
 
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<GomDbContext>();
         // Membership on every ask: "not a member" and "no such conversation" look the same.
         var access = await Access.Of(db, conversation, me, ct);
-        if (access is null) return Frames.Error("not_found", conversation);
+        if (access is null) return (Frames.Error("not_found", conversation), false);
         var floor = Math.Max(after, access.JoinedSeq);   // never what was said before they joined
 
         var rows = await (
@@ -109,6 +112,6 @@ public static class SocketEndpoint
         var events = rows.Take(SyncPage).Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),
             new MessageEndpoints.MessageDto(r.Message.Id, r.Message.Seq, r.Message.ConversationId, r.Message.ClientId,
                 new MessageEndpoints.PersonDto(r.Id, r.DisplayName), r.Message.Body, r.Message.CreatedAt, r.Message.DeletedAt != null))).ToList();
-        return Frames.Events(conversation, events, rows.Count > SyncPage);
+        return (Frames.Events(conversation, events, rows.Count > SyncPage), false);
     }
 }
