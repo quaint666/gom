@@ -253,10 +253,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const searchPanel = (s: NonNullable<typeof searching>) => html`
     <div class="searchbar" role="search">
       <form data-search-form @submit=${(e: Event) => { e.preventDefault(); void runSearch(); }}>
-        <input type="search" name="q" aria-label="Từ cần tìm" placeholder="Tìm tin nhắn" autocomplete="off" maxlength="100"
-          .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; }}
-          @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { searching = null; update(); } }}>
-        <button class="btn small" type="submit" data-do-search>Tìm</button>
+        <div class="searchfield input">${icons.search()}
+          <input type="search" name="q" aria-label="Từ cần tìm" placeholder="Tìm tin nhắn" autocomplete="off" maxlength="100" enterkeyhint="search"
+            .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; }}
+            @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { searching = null; update(); } }}>
+          <button class="clear" type="button" data-close-search aria-label="Đóng tìm kiếm" @click=${() => { searching = null; update(); }}>${icons.close()}</button>
+        </div>
       </form>
       ${s.results === null ? nothing : s.results.length === 0
         ? html`<p class="hint" data-no-results>Không tìm thấy tin nhắn nào.</p>`

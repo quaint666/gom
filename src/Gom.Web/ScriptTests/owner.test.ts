@@ -98,4 +98,46 @@ describe('owner page', () => {
     await flush();
     expect(root.querySelector('[role="alert"]')).not.toBeNull();
   });
+
+  const crowd = Array.from({ length: 9 }, (_, n) => ({ gomId: `u${n}`, displayName: n === 7 ? 'Đào Mai' : `Người ${n}`, isOwner: false, disabled: false, createdAt: '2026-11-25T00:00:00Z' }));
+
+  it('shows a handful of members, the rest behind "Xem thêm"', async () => {
+    mountOwner(root, api({ members: vi.fn(async () => ok(crowd)) }), vi.fn(), 'https://gom.test');
+    await flush();
+    expect(root.querySelectorAll('[data-member]').length).toBe(5);
+    root.querySelector<HTMLButtonElement>('[data-more-members]')!.click();
+    await flush();
+    expect(root.querySelectorAll('[data-member]').length).toBe(9);
+    expect(root.querySelector('[data-more-members]')).toBeNull();
+  });
+
+  it('finds a member by name without accents, and says when nobody matches', async () => {
+    mountOwner(root, api({ members: vi.fn(async () => ok(crowd)) }), vi.fn(), 'https://gom.test');
+    await flush();
+    const input = root.querySelector<HTMLInputElement>('input[name="member-search"]')!;
+    input.value = 'dao mai';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    expect([...root.querySelectorAll('[data-member]')].map((n) => n.getAttribute('data-member'))).toEqual(['u7']);
+    input.value = 'zzz';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    expect(root.querySelector('[data-no-member]')).not.toBeNull();
+  });
+
+  it('has no search when there are only a few members', async () => {
+    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    await flush();
+    expect(root.querySelector('input[name="member-search"]')).toBeNull();
+  });
+
+  it('shows a handful of invites too', async () => {
+    const many = Array.from({ length: 8 }, (_, n) => ({ id: `x${n}`, createdAt: '2026-12-01T09:00:00Z', expiresAt: '2026-12-08T09:00:00Z', usedBy: null, status: 'pending' }));
+    mountOwner(root, api({ invites: vi.fn(async () => ok(many)) }), vi.fn(), 'https://gom.test');
+    await flush();
+    expect(root.querySelectorAll('[data-invite]').length).toBe(5);
+    root.querySelector<HTMLButtonElement>('[data-more-invites]')!.click();
+    await flush();
+    expect(root.querySelectorAll('[data-invite]').length).toBe(8);
+  });
 });

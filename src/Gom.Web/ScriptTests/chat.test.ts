@@ -1943,6 +1943,15 @@ describe('chat: searching a conversation', () => {
     expect(root.querySelector('[data-no-results]')).not.toBeNull();
   });
 
+  it('closes the search with the cross inside the field', async () => {
+    open();
+    await flush();
+    await toggle();
+    root.querySelector<HTMLButtonElement>('.searchbar [data-close-search]')!.click();
+    await flush();
+    expect(root.querySelector('.searchbar')).toBeNull();
+  });
+
   it('does not ask for an empty search', async () => {
     const h = open();
     await flush();

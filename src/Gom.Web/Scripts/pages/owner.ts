@@ -1,7 +1,11 @@
 import { html, nothing, render } from 'lit-html';
 import type { Api, Failure, Invite, Issued, Member } from '../api.js';
 import * as icons from '../icons.js';
+import { matches } from '../search.js';
 import { appBar, errorBox, formatTime } from '../ui.js';
+
+/** How many rows of a long list show before "Xem thêm". */
+const HANDFUL = 5;
 
 const STATUS: Record<Invite['status'], string> = { pending: 'Đang chờ', used: 'Đã dùng', revoked: 'Đã thu hồi', expired: 'Hết hạn' };
 
@@ -12,6 +16,9 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let link: { url: string; note: string } | null = null;
   let copied = '';
   let error: Failure | null = null;
+  let query = '';
+  let moreInvites = false;
+  let moreMembers = false;
 
   const inviteRow = (i: Invite) => html`
     <li class="li" data-invite=${i.id}>
@@ -40,6 +47,12 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       <p class="hint" role="status">${copied}</p>
     </div>`;
 
+  /** A handful of members, or everyone who matches what was typed. */
+  const shownMembers = (): Member[] => {
+    if (query.trim() !== '') return members.filter((m) => matches(`${m.displayName} ${m.gomId}`, query));
+    return moreMembers || members.length <= HANDFUL ? members : members.slice(0, HANDFUL);
+  };
+
   const view = () => html`
     ${appBar({ title: 'Lời mời và thành viên', back: '/settings' })}
     <div class="page">
@@ -47,9 +60,15 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       <button class="btn" type="button" data-create-invite @click=${makeInvite}>Tạo lời mời mới</button>
       ${linkBox()}
       <h2 class="section">Lời mời</h2>
-      <ul class="list">${invites.map(inviteRow)}</ul>
+      <ul class="list">${(moreInvites || invites.length <= HANDFUL ? invites : invites.slice(0, HANDFUL)).map(inviteRow)}</ul>
+      ${moreInvites || invites.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-invites @click=${() => { moreInvites = true; update(); }}>Xem thêm (${invites.length - HANDFUL})</button>`}
       <h2 class="section">Thành viên</h2>
-      <ul class="list">${members.map(memberRow)}</ul>
+      ${members.length <= HANDFUL ? nothing : html`
+        <div class="searchfield input">${icons.search()}
+          <input type="search" name="member-search" aria-label="Tìm thành viên" placeholder="Tìm thành viên" autocomplete="off" maxlength="60"
+            .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>`}
+      ${shownMembers().length === 0 ? html`<p class="hint" data-no-member>Không tìm thấy thành viên nào.</p>` : html`<ul class="list">${shownMembers().map(memberRow)}</ul>`}
+      ${query.trim() !== '' || moreMembers || members.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-members @click=${() => { moreMembers = true; update(); }}>Xem thêm (${members.length - HANDFUL})</button>`}
     </div>`;
   const update = () => render(view(), root);
 

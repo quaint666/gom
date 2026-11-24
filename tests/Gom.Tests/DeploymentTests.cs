@@ -38,6 +38,36 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Empty(offenders);
     }
 
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
+        Assert.NotNull(dir);
+        return dir.FullName;
+    }
+
+    /// <summary>
+    /// The hidden time text in a message is positioned absolutely. Without a positioned scroller around it the page itself grows and scrolls
+    /// off the chat. The scroller must be positioned; this guards the rule in the stylesheet.
+    /// </summary>
+    [Fact]
+    public void The_message_scroller_is_positioned_so_hidden_text_cannot_stretch_the_page()
+    {
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Gom.Web", "wwwroot", "css", "gom.css"));
+        var rule = System.Text.RegularExpressions.Regex.Match(css, @"(?m)^\.msgs \{([^}]*)\}");
+        Assert.True(rule.Success);
+        Assert.Contains("position: relative", rule.Groups[1].Value);
+    }
+
+    /// <summary>On a phone the keyboard must shrink the page, not cover the composer or leave a gap.</summary>
+    [Fact]
+    public void Every_page_lets_the_keyboard_resize_the_content()
+    {
+        var pages = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src", "Gom.Web", "wwwroot", "pages"), "*.html").ToList();
+        Assert.NotEmpty(pages);
+        Assert.All(pages, p => Assert.Contains("interactive-widget=resizes-content", File.ReadAllText(p)));
+    }
+
     [Fact]
     public async Task A_method_an_address_does_not_take_is_a_405()
     {
