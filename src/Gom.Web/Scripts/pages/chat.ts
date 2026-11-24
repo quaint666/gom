@@ -3,11 +3,11 @@ import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
 import type { Api, ChatEvent, ChatMessage, Conversation, Failure, Reply, User } from '../api.js';
-import { buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
+import { avatarTone, buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
-import { renderedScheme, toggleScheme } from '../theme.js';
-import { appBar, errorBox } from '../ui.js';
+import { errorBox } from '../ui.js';
+import { matches } from '../search.js';
 import { errorText } from '../text.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
@@ -90,6 +90,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** The search bar of the open conversation: what was asked, and what came back (null while waiting for the first answer). */
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
   let found: string | null = null;
+  /** What is typed in the search above the list of conversations. */
+  let filter = '';
   /** The message being passed on, while the person picks where to. */
   let forwarding: Shown | null = null;
 
@@ -108,11 +110,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- drawing
 
-  const themeButton = () => html`
-    <button class="ib" type="button" aria-label=${renderedScheme() === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
-      @click=${() => { toggleScheme(); update(); }}>${renderedScheme() === 'dark' ? icons.sun() : icons.moon()}</button>`;
-
-  const avatar = (name: string): TemplateResult => html`<div class="av a1" aria-hidden="true">${initials(name)}</div>`;
+  const avatar = (name: string): TemplateResult => html`<div class="av a${avatarTone(name)}" aria-hidden="true">${initials(name)}</div>`;
 
   function preview(c: Conversation): string {
     const last = c.lastMessage;
@@ -132,6 +130,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${c.muted ? html`<span class="mute-mark" role="img" aria-label="Đã tắt thông báo">${icons.bellOff()}</span>` : nothing}
           ${c.unread > 0 ? html`<span class="badge ${c.muted ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>` : nothing}</div>
       </div></a></li>`;
+
+  /** The conversations whose name matches what is typed above the list (all of them when nothing is typed). */
+  const visibleChats = (): Conversation[] => (chats ?? []).filter((c) => matches(c.title ?? '', filter));
 
   const banner = () => offline ? html`<div class="warn" role="status">${icons.wifiOff()}<span>Mất kết nối. Đang kết nối lại…</span></div>` : nothing;
 
@@ -220,7 +221,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
         ${item.mine ? tools : nothing}
-        ${others ? (item.last ? html`<div class="av sm a1" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
+        ${others ? (item.last ? html`<div class="av sm a${avatarTone(m.sender.displayName)}" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
           @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
@@ -289,7 +290,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function threadPane(): TemplateResult {
     const c = chatOf(openId);
-    if (openId === null) return html`<section class="thread-pane none"><div class="empty"><p class="lead">Chọn một cuộc trò chuyện</p></div></section>`;
+    if (openId === null) return html`<section class="thread-pane none"><div class="empty welcome"><div class="big-icon">${icons.logo()}</div><h2>Gom</h2><p class="lead">Chọn một cuộc trò chuyện</p></div></section>`;
     if (chats !== null && c === undefined) return html`
       <section class="thread-pane">
         <header class="th-head"><a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a></header>
@@ -340,14 +341,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const view = () => html`
     <div class="chat" data-pane=${openId === null ? 'list' : 'thread'}>
       <section class="list-pane">
-        ${appBar({ title: 'Gom', actions: html`${themeButton()}
-          <a class="ib" href="/groups/new" aria-label="Tạo nhóm mới">${icons.pencil()}</a>
-          <a class="ib" href="/friends" aria-label="Bạn bè">${icons.users()}</a>
-          <a class="ib" href="/settings" aria-label="Cài đặt">${icons.gear()}</a>` })}
+        <header class="bar">
+          <a class="brand" href="/" aria-label="Gom, về trang chủ" @click=${onHome}>${icons.logo()}<span>Gom</span></a>
+          <a class="ib" href="/friends" aria-label="Danh bạ">${icons.users()}</a>
+          <a class="ib" href="/settings" aria-label="Cài đặt">${icons.gear()}</a>
+        </header>
+        ${chats === null || chats.length === 0 ? nothing : html`
+          <div class="searchfield input list-search">${icons.search()}
+            <input type="search" name="filter" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength="60"
+              .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); }}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; update(); } }}></div>`}
         ${banner()}
         ${errorBox(error)}
         ${notice === '' ? nothing : html`<p class="note" role="status">${notice}</p>`}
-        ${me === null || chats === null ? nothing : chats.length === 0 ? empty() : html`<ul class="items">${repeat(chats, (c) => c.id, row)}</ul>`}
+        ${me === null || chats === null ? nothing : chats.length === 0 ? empty() : visibleChats().length === 0 ? html`<p class="hint nomatch" data-no-match>Không tìm thấy cuộc trò chuyện nào.</p>` : html`<ul class="items">${repeat(visibleChats(), (c) => c.id, row)}</ul>`}
       </section>
       ${threadPane()}
     </div>`;
@@ -382,6 +389,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     deps.nav.push('/');
     openId = null;
     update();
+  }
+
+  /** The Gom button: back to the start of the app (the list, nothing open). Already there, it does nothing. */
+  function onHome(e: MouseEvent): void {
+    if (openId === null) { if (!(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey)) e.preventDefault(); return; }
+    onBack(e);
   }
 
   function onScroll(id: string, box: HTMLElement): void {

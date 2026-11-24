@@ -1,13 +1,16 @@
 import { html, nothing, render } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
 import type { Api, Failure, Person } from '../api.js';
-import { appBar, errorBox } from '../ui.js';
+import * as icons from '../icons.js';
+import { matches } from '../search.js';
+import { appBar, avatar, errorBox } from '../ui.js';
 
 /** Make a group: a name, and some of your friends. */
 export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) => void): void {
   let friends: Person[] | null = null;
   const picked = new Set<string>();
   let title = '';
+  let query = '';
   let busy = false;
   let error: Failure | null = null;
 
@@ -25,11 +28,15 @@ export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) =>
               .value=${live(title)} @input=${(e: Event) => { title = (e.target as HTMLInputElement).value; }}></div>
           </div>
           <fieldset class="picks">
-            <legend class="section">Chọn thành viên</legend>
-            ${friends.map((f, i) => html`
+            <legend class="section">Chọn thành viên${picked.size > 0 ? html` · <span data-picked>${picked.size}</span>` : nothing}</legend>
+            <div class="searchfield input">${icons.search()}
+              <input type="search" name="find" aria-label="Tìm bạn bè" placeholder="Tìm bạn bè" autocomplete="off" maxlength="60"
+                .value=${live(query)} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>
+            ${friends.map((f, i) => !matches(`${f.displayName} ${f.gomId}`, query) ? nothing : html`
               <div class="pick"><input type="checkbox" id="pick-${i}" value=${f.gomId} .checked=${live(picked.has(f.gomId))}
-                @change=${(e: Event) => toggle(f.gomId, (e.target as HTMLInputElement).checked)}>
-                <label for="pick-${i}"><b>${f.displayName}</b> <small>@${f.gomId}</small></label></div>`)}
+                @change=${(e: Event) => { toggle(f.gomId, (e.target as HTMLInputElement).checked); update(); }}>
+                <label for="pick-${i}">${avatar(f.displayName, true)}<span><b>${f.displayName}</b> <small>@${f.gomId}</small></span></label></div>`)}
+            ${friends.every((f) => !matches(`${f.displayName} ${f.gomId}`, query)) ? html`<p class="hint" data-no-match>Không tìm thấy ai khớp với từ khóa.</p>` : nothing}
           </fieldset>
           <button class="btn" type="submit" ?disabled=${busy}>Tạo nhóm</button>
         </form>`}

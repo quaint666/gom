@@ -1,15 +1,6 @@
 export type Scheme = 'light' | 'dark';
 const KEY = 'color-scheme';
 
-/**
- * The two-state toggle: go to the opposite of what is showing now. If that is what the system already is, forget the
- * override (do not pin it); otherwise store it. A stored value that later matches the system is kept, never cleaned up.
- */
-export function nextOverride({ stored, system }: { stored: Scheme | null; system: Scheme }): Scheme | null {
-  const target: Scheme = (stored ?? system) === 'dark' ? 'light' : 'dark';
-  return target === system ? null : target;
-}
-
 export function applyScheme(override: Scheme | null): void {
   const meta = document.querySelector('meta[name="color-scheme"]');
   meta?.setAttribute('content', override ?? 'light dark');
@@ -25,6 +16,7 @@ export function storedScheme(): Scheme | null {
   } catch { return null; }
 }
 
-export const systemScheme = (): Scheme => (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-export const renderedScheme = (): Scheme => storedScheme() ?? systemScheme();
-export const toggleScheme = (): void => applyScheme(nextOverride({ stored: storedScheme(), system: systemScheme() }));
+/** What the person chose: follow the system, or light, or dark. */
+export type Choice = 'system' | Scheme;
+export const chosenScheme = (): Choice => storedScheme() ?? 'system';
+export const chooseScheme = (choice: Choice): void => applyScheme(choice === 'system' ? null : choice);

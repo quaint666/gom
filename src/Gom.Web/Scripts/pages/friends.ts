@@ -1,15 +1,25 @@
 import { html, nothing, render, type TemplateResult } from 'lit-html';
-import type { Api, FriendLists, Failure, Person, User } from '../api.js';
+import type { Api, Conversation, FriendLists, Failure, Person, User } from '../api.js';
 import * as icons from '../icons.js';
-import { appBar, errorBox, formatTime } from '../ui.js';
+import { matches } from '../search.js';
+import { appBar, avatar, errorBox, formatTime } from '../ui.js';
+
+/** How many rows of a long list show before "Xem thêm". */
+const HANDFUL = 5;
 
 const NONE: FriendLists = { friends: [], incoming: [], outgoing: [] };
 
-/** Friends: add by ID or by your own link, answer requests, message, unfriend, block. */
+/** Contacts: friends and groups in two tabs with a search, and adding by ID or by your own link, answering requests, unfriending, blocking. */
 export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => void, origin: string): void {
   let user: User | null = null;
   let lists: FriendLists = NONE;
   let blocked: Person[] = [];
+  let groups: Conversation[] = [];
+  let tab: 'friends' | 'groups' = 'friends';
+  let query = '';
+  let expanded = false;
+  /** The friend whose "more" tray (unfriend, block) is open. */
+  let tray: string | null = null;
   let friendId = '';
   let status = '';
   let copied = '';
@@ -40,27 +50,75 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
     </li>`;
   };
 
+  /** Up to a handful of rows; the rest behind "Xem thêm", unless something is being searched for. */
+  const shown = <T,>(rows: T[]): { rows: T[]; hidden: number } =>
+    query.trim() !== '' || expanded || rows.length <= HANDFUL ? { rows, hidden: 0 } : { rows: rows.slice(0, HANDFUL), hidden: rows.length - HANDFUL };
+
+  const friendRow = (p: Person) => html`
+    <li class="li person" data-friend=${p.gomId}>
+      <button class="rowmain" type="button" data-action="message" @click=${() => void message(p.gomId)}>${avatar(p.displayName)}
+        <span class="t"><b>${p.displayName}</b><small>@${p.gomId}</small></span></button>
+      <button class="ib" type="button" data-more aria-label=${`Tùy chọn cho ${p.displayName}`} aria-expanded=${tray === p.gomId ? 'true' : 'false'}
+        @click=${() => { tray = tray === p.gomId ? null : p.gomId; update(); }}>${icons.more()}</button>
+      ${tray === p.gomId ? html`<div class="tray">
+        ${button('Xóa bạn', 'unfriend', () => { tray = null; sure = { kind: 'unfriend', person: p }; update(); })}
+        ${button('Chặn', 'block', () => { tray = null; sure = { kind: 'block', person: p }; update(); })}</div>` : nothing}
+    </li>
+    ${sure?.person.gomId === p.gomId ? question(sure) : nothing}`;
+
+  const groupRow = (c: Conversation) => html`
+    <li><a class="li person" href="/c/${c.id}" data-group=${c.id}>${avatar(c.title ?? '?')}
+      <span class="t"><b>${c.title ?? '…'}</b><small>${c.memberCount ?? 0} thành viên</small></span></a></li>`;
+
+  const tabs = () => {
+    const mine = lists.friends.length;
+    const tabButton = (id: 'friends' | 'groups', label: string, count: number) => html`
+      <button class="tab" type="button" role="tab" id=${`tab-${id}`} data-tab=${id} aria-selected=${tab === id ? 'true' : 'false'}
+        @click=${() => { tab = id; expanded = false; tray = null; update(); }}>${label} <span class="count">${count}</span></button>`;
+    return html`<div class="tabs" role="tablist" aria-label="Danh bạ">${tabButton('friends', 'Bạn bè', mine)}${tabButton('groups', 'Nhóm', groups.length)}</div>`;
+  };
+
+  const listing = () => {
+    const rows = tab === 'friends'
+      ? lists.friends.filter((p) => matches(`${p.displayName} ${p.gomId}`, query))
+      : groups.filter((c) => matches(c.title ?? '', query));
+    const total = tab === 'friends' ? lists.friends.length : groups.length;
+    const part = shown(rows as unknown[]);
+    const empty = total === 0
+      ? (tab === 'friends' ? 'Chưa có bạn bè nào. Hãy gửi lời mời ở trên.' : 'Bạn chưa ở trong nhóm nào.')
+      : 'Không tìm thấy ai khớp với từ khóa.';
+    return html`
+      <div role="tabpanel" aria-labelledby=${`tab-${tab}`}>
+        ${rows.length === 0 ? html`<p class="hint" data-empty>${empty}</p>` : html`
+          <ul class="list">${tab === 'friends' ? (part.rows as Person[]).map(friendRow) : (part.rows as Conversation[]).map(groupRow)}</ul>
+          ${part.hidden > 0 ? html`<button class="btn secondary" type="button" data-more-rows @click=${() => { expanded = true; update(); }}>Xem thêm (${part.hidden})</button>` : nothing}`}
+        ${tab === 'groups' ? html`<a class="btn" href="/groups/new" data-new-group>Nhóm mới</a>` : nothing}
+      </div>`;
+  };
+
   const view = () => html`
-    ${appBar({ title: 'Bạn bè', back: '/' })}
+    ${appBar({ title: 'Danh bạ', back: '/' })}
     <div class="page">
       ${errorBox(error)}
       ${user === null ? nothing : html`
-        <form class="card" data-add @submit=${onAdd}>
-          <label for="friend-id">Thêm bạn bằng Gom ID</label>
-          <div class="input"><span class="prefix" aria-hidden="true">@</span>
-            <input id="friend-id" name="friendId" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
-              enterkeyhint="send" .value=${friendId} @input=${(e: Event) => { friendId = (e.target as HTMLInputElement).value; }}></div>
-          <button class="btn" type="submit" ?disabled=${busy}>Gửi lời mời</button>
-          <p class="hint" role="status" data-add-status>${status}</p>
-        </form>
-
-        <div class="card">
-          <label for="my-link">Liên kết kết bạn của bạn</label>
-          <div class="input"><input id="my-link" data-mylink readonly type="text" .value=${origin + '/add/' + user.gomId}>
-            <button class="ib" type="button" data-copy aria-label="Sao chép liên kết" @click=${copyLink}>${icons.copy()}</button></div>
-          <p class="hint">Ai có liên kết này và đã đăng nhập có thể gửi lời mời kết bạn cho bạn.</p>
-          <p class="hint" role="status" data-copy-status>${copied}</p>
-        </div>
+        <details class="addbox" data-addbox>
+          <summary class="btn secondary">${icons.users()}<span>Thêm bạn</span></summary>
+          <form class="card" data-add @submit=${onAdd}>
+            <label for="friend-id">Thêm bạn bằng Gom ID</label>
+            <div class="input"><span class="prefix" aria-hidden="true">@</span>
+              <input id="friend-id" name="friendId" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
+                enterkeyhint="send" .value=${friendId} @input=${(e: Event) => { friendId = (e.target as HTMLInputElement).value; }}></div>
+            <button class="btn" type="submit" ?disabled=${busy}>Gửi lời mời</button>
+            <p class="hint" role="status" data-add-status>${status}</p>
+          </form>
+          <div class="card">
+            <label for="my-link">Liên kết kết bạn của bạn</label>
+            <div class="input"><input id="my-link" data-mylink readonly type="text" .value=${origin + '/add/' + user.gomId}>
+              <button class="ib" type="button" data-copy aria-label="Sao chép liên kết" @click=${copyLink}>${icons.copy()}</button></div>
+            <p class="hint">Ai có liên kết này và đã đăng nhập có thể gửi lời mời kết bạn cho bạn.</p>
+            <p class="hint" role="status" data-copy-status>${copied}</p>
+          </div>
+        </details>
 
         ${section('Lời mời nhận được', lists.incoming.map((p) => html`
           <li class="li" data-incoming=${p.gomId}>${who(p, html` · ${formatTime(p.createdAt)}`)}
@@ -71,25 +129,23 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
           <li class="li" data-outgoing=${p.gomId}>${who(p, html` · ${formatTime(p.createdAt)}`)}
             ${button('Hủy lời mời', 'cancel', () => act(() => api.withdrawFriend(p.gomId)))}</li>`))}
 
-        <h2 class="section">Bạn bè</h2>
-        ${lists.friends.length === 0 ? html`<p class="hint">Chưa có bạn bè nào. Hãy gửi lời mời ở trên.</p>` : html`
-        <ul class="list">${lists.friends.map((p) => html`
-          <li class="li" data-friend=${p.gomId}>${who(p)}
-            ${button('Nhắn tin', 'message', () => void message(p.gomId), false)}
-            ${button('Xóa bạn', 'unfriend', () => { sure = { kind: 'unfriend', person: p }; update(); })}
-            ${button('Chặn', 'block', () => { sure = { kind: 'block', person: p }; update(); })}</li>
-          ${sure?.person.gomId === p.gomId ? question(sure) : nothing}`)}</ul>`}
+        ${tabs()}
+        <div class="searchfield input">${icons.search()}
+          <input type="search" name="find" aria-label=${tab === 'friends' ? 'Tìm bạn bè' : 'Tìm nhóm'} placeholder=${tab === 'friends' ? 'Tìm bạn bè' : 'Tìm nhóm'}
+            autocomplete="off" maxlength="60" .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; expanded = false; update(); }}></div>
+        ${listing()}
 
-        ${section('Đã chặn', blocked.map((p) => html`
+        ${tab === 'friends' ? section('Đã chặn', blocked.map((p) => html`
           <li class="li" data-blocked=${p.gomId}>${who(p)}
-            ${button('Bỏ chặn', 'unblock', () => act(() => api.unblock(p.gomId)))}</li>`))}`}
+            ${button('Bỏ chặn', 'unblock', () => act(() => api.unblock(p.gomId)))}</li>`)) : nothing}`}
     </div>`;
   const update = () => render(view(), root);
 
   async function reload(): Promise<void> {
-    const [f, b] = await Promise.all([api.friends(), api.blocks()]);
+    const [f, b, g] = await Promise.all([api.friends(), api.blocks(), api.conversations()]);
     if (f.ok) lists = f.data; else error = f;
     if (b.ok) blocked = b.data; else error = b;
+    if (g.ok) groups = g.data.filter((c) => c.kind === 'group'); else error = g;
     update();
   }
 

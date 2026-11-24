@@ -60,6 +60,26 @@ describe('new group page', () => {
     expect(name.getAttribute('maxlength')).toBe('60');
   });
 
+  it('searches the friends to pick from, and keeps a pick that the search hides', async () => {
+    const go = vi.fn();
+    const a = api({ createGroup: vi.fn(async () => ok({ id: G })) });
+    mountNewGroup(root, a, go);
+    await flush();
+    check('minh');
+    const find = root.querySelector<HTMLInputElement>('input[name="find"]')!;
+    find.value = 'LAN'; find.dispatchEvent(new Event('input', { bubbles: true })); await flush();
+    expect([...root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map((b) => b.value)).toEqual(['lan']);
+    check('lan');
+    expect(text(root.querySelector('[data-picked]')!)).toBe('2');
+    find.value = 'zzz'; find.dispatchEvent(new Event('input', { bubbles: true })); await flush();
+    expect(root.querySelector('[data-no-match]')).not.toBeNull();
+    find.value = ''; find.dispatchEvent(new Event('input', { bubbles: true })); await flush();
+    fill(root, 'input[name="title"]', 'Nhà');
+    submit(root);
+    await flush();
+    expect(a.createGroup).toHaveBeenCalledWith('Nhà', ['minh', 'lan']);
+  });
+
   it('makes the group from the name and the friends picked, then opens it', async () => {
     const go = vi.fn();
     const a = api({ createGroup: vi.fn(async () => ok({ id: G })) });
