@@ -72,7 +72,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let outbox: ReturnType<ChatDeps['outbox']> | null = null;
   let live: LiveControl | null = null;
   let scrollAnchor: number | null = null;
-  let menu: { id: string; confirming: boolean } | null = null;
+  let menu: { id: string; confirming: boolean; hide?: boolean } | null = null;
   /** The message being passed on, while the person picks where to. */
   let forwarding: Shown | null = null;
 
@@ -132,13 +132,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   const menuFor = (m: Shown, mine: boolean) => menu?.id !== m.id ? nothing : html`
     <div class="menu ${mine ? 'mine' : ''}" role="group" aria-label="Tùy chọn tin nhắn">
-      ${menu.confirming ? html`
+      ${menu.hide ? html`
+        <p>Xóa tin nhắn này chỉ ở phía bạn? Người khác vẫn thấy nó.</p>
+        <button class="btn small" type="button" data-confirm-hide @click=${() => void hide(m)}>Xóa với tôi</button>
+        <button class="btn secondary small" type="button" data-cancel-hide @click=${() => { menu = null; update(); }}>Hủy</button>` : menu.confirming ? html`
         <p>Thu hồi tin nhắn này với mọi người?</p>
         <button class="btn small" type="button" data-confirm-recall @click=${() => void recall(m)}>Thu hồi</button>
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Hủy</button>` : html`
         <button class="btn secondary small" type="button" data-reply @click=${() => startReply(m)}>Trả lời</button>
         <button class="btn secondary small" type="button" data-copy @click=${() => void copyText(m)}>Sao chép</button>
         <button class="btn secondary small" type="button" data-forward @click=${() => { menu = null; forwarding = m; update(); }}>Chuyển tiếp</button>
+        <button class="btn secondary small" type="button" data-hide @click=${() => { menu = { id: m.id, confirming: false, hide: true }; update(); }}>Xóa với tôi</button>
         ${mine ? html`<button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>` : nothing}
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Đóng</button>`}
     </div>`;
@@ -475,6 +479,28 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  // ---- deleting a message for yourself
+
+  /** Takes a message out of this device's view: it goes from the thread, and the list is asked again (the preview may have changed). */
+  function drop(conversation: string, messageId: string): void {
+    const t = threads.get(conversation);
+    if (t !== undefined) {
+      t.messages = t.messages.filter((x) => x.id !== messageId);
+      if (t.replying?.id === messageId) t.replying = null;
+    }
+    if (menu?.id === messageId) menu = null;
+    update();
+    void refreshList();
+  }
+
+  async function hide(m: Shown): Promise<void> {
+    const result = await api.hideMessage(m.conversationId, m.id);
+    menu = null;
+    if (!result.ok) { error = result; update(); return; }
+    error = null;
+    drop(m.conversationId, m.id);
+  }
+
   // ---- taking a message back
 
   async function recall(m: Shown): Promise<void> {
@@ -633,6 +659,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       void refreshList();
       if (openId !== null) void fetchReads(openId);   // a switch may have been flipped by someone
     },
+    hidden: (conversation, messageId) => drop(conversation, messageId),
     read(conversation, userId, seq) {
       const t = threads.get(conversation);
       if (t === undefined || !t.reads.enabled || seq <= (t.reads.seqs.get(userId) ?? -1)) return;

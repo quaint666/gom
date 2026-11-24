@@ -1723,3 +1723,90 @@ describe('chat: muting', () => {
     expect(root.querySelector('[role="alert"]')).not.toBeNull();
   });
 });
+
+describe('chat: deleting a message for yourself', () => {
+  const messages = [msg(1, 'minh', 'của Minh'), msg(2, 'mom', 'của mẹ')];
+  const open = (extra: Record<string, unknown> = {}) => start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: messages }, api: extra });
+  const row = (id: string) => root.querySelector(`[data-msg="${id}"]`);
+  const menuOf = async (id: string) => { row(id)!.querySelector<HTMLButtonElement>('button[data-menu]')!.click(); await flush(); };
+
+  it('is offered on someone else\'s message and on your own', async () => {
+    open();
+    await flush();
+    for (const id of ['id1', 'id2']) {
+      await menuOf(id);
+      expect(root.querySelector('button[data-hide]')).not.toBeNull();
+    }
+  });
+
+  it('asks first and says the others still see it, and does nothing until yes', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-hide]')!.click();
+    await flush();
+    expect(text(root.querySelector('.menu')!)).toContain('Người khác vẫn thấy');
+    expect(h.api.hideMessage).not.toHaveBeenCalled();
+    expect(row('id1')).not.toBeNull();
+  });
+
+  it('removes it from view after yes, and asks the server and the list again', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-hide]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-confirm-hide]')!.click();
+    await flush();
+    expect(h.api.hideMessage).toHaveBeenCalledWith(C1, 'id1');
+    expect(row('id1')).toBeNull();
+    expect(row('id2')).not.toBeNull();
+    expect(h.api.conversations).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps it and says why when the server refuses', async () => {
+    open({ hideMessage: vi.fn(async () => fail('server', 500)) });
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-hide]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-confirm-hide]')!.click();
+    await flush();
+    expect(row('id1')).not.toBeNull();
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('cancels without asking the server', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-hide]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-cancel-hide]')!.click();
+    await flush();
+    expect(h.api.hideMessage).not.toHaveBeenCalled();
+    expect(root.querySelector('.menu')).toBeNull();
+    expect(row('id1')).not.toBeNull();
+  });
+
+  it('drops a message when another device of yours deleted it', async () => {
+    const h = open();
+    await flush();
+    h.handlers().hidden(C1, 'id2');
+    await flush();
+    expect(row('id2')).toBeNull();
+    expect(row('id1')).not.toBeNull();
+  });
+
+  it('drops the bar above the composer if the message being answered was deleted for you', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    expect(root.querySelector('[data-replybar]')).not.toBeNull();
+    h.handlers().hidden(C1, 'id1');
+    await flush();
+    expect(root.querySelector('[data-replybar]')).toBeNull();
+  });
+});

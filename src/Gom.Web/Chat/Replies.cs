@@ -15,9 +15,10 @@ public static class Replies
 
     /// <summary>
     /// The quote of each reply among these messages, for a reader who joined at <paramref name="readerJoinedSeq"/>. A quoted
-    /// message from before they joined, or taken back, shows nothing of its words or its writer. One query, however many replies.
+    /// message from before they joined, taken back, or deleted by the reader for themself, shows nothing of its words or its writer.
+    /// Two queries, however many replies.
     /// </summary>
-    public static async Task<Dictionary<Guid, ReplyDto>> For(GomDbContext db, IEnumerable<Message> messages, long readerJoinedSeq, CancellationToken ct)
+    public static async Task<Dictionary<Guid, ReplyDto>> For(GomDbContext db, IEnumerable<Message> messages, Guid reader, long readerJoinedSeq, CancellationToken ct)
     {
         var replies = messages.Where(m => m.ReplyToId is not null && m.DeletedAt is null).ToList();
         if (replies.Count == 0) return [];
@@ -26,10 +27,12 @@ public static class Replies
                              join u in db.Users on p.SenderId equals u.Id
                              select new { p.Id, p.Seq, p.Body, p.DeletedAt, Sender = new MessageEndpoints.PersonDto(u.Id, u.DisplayName) }).ToDictionaryAsync(p => p.Id, ct);
 
+        var mine = (await db.Hides.AsNoTracking().Where(h => h.UserId == reader && wanted.Contains(h.MessageId)).Select(h => h.MessageId).ToListAsync(ct)).ToHashSet();
+
         return replies.ToDictionary(m => m.Id, m =>
         {
             var id = m.ReplyToId!.Value;
-            if (!parents.TryGetValue(id, out var p) || p.DeletedAt is not null || p.Seq <= readerJoinedSeq) return Hidden(id);
+            if (!parents.TryGetValue(id, out var p) || p.DeletedAt is not null || p.Seq <= readerJoinedSeq || mine.Contains(id)) return Hidden(id);
             return new ReplyDto(id, p.Sender, Snippet(p.Body));
         });
     }

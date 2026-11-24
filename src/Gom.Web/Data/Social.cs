@@ -93,3 +93,11 @@ public class MessageEvent
     public Guid MessageId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
+
+/// <summary>One person's own "delete for me": the message stays for everyone else. It is hidden from this person's history, sync and list.</summary>
+public class MessageHide
+{
+    public Guid UserId { get; set; }
+    public Guid MessageId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}

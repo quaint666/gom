@@ -312,6 +312,29 @@ namespace Gom.Web.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.MessageHide", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("UserId", "MessageId")
+                        .HasName("pk_message_hides");
+
+                    b.HasIndex("MessageId")
+                        .HasDatabaseName("ix_message_hides_message_id");
+
+                    b.ToTable("message_hides", (string)null);
+                });
+
             modelBuilder.Entity("Gom.Web.Data.OneTimeLink", b =>
                 {
                     b.Property<Guid>("Id")
@@ -598,6 +621,23 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_message_events_message_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.MessageHide", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Message", null)
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_message_hides_message_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_message_hides_user_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.OneTimeLink", b =>

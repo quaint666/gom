@@ -27,6 +27,7 @@ public static class MessageEndpoints
         api.MapGet("/messages", History);
         api.MapPost("/read", MarkRead);
         api.MapDelete("/messages/{messageId:guid}", Recall);
+        api.MapPut("/messages/{messageId:guid}/hidden", Hide);
     }
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
@@ -119,7 +120,7 @@ public static class MessageEndpoints
         }
 
         // Only now is it sent: the live delivery and the answer both follow the commit.
-        var reply = (await Replies.For(db, [message], access.JoinedSeq, ct)).GetValueOrDefault(message.Id);
+        var reply = (await Replies.For(db, [message], me, access.JoinedSeq, ct)).GetValueOrDefault(message.Id);
         var dto = ToDto(message, sender, reply);
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
@@ -131,7 +132,7 @@ public static class MessageEndpoints
 
     private static async Task<IResult> Same(GomDbContext db, Message existing, Guid conversation, PersonDto sender, long joinedSeq, CancellationToken ct) =>
         existing.ConversationId == conversation
-            ? Results.Ok(ToDto(existing, sender, (await Replies.For(db, [existing], joinedSeq, ct)).GetValueOrDefault(existing.Id)))
+            ? Results.Ok(ToDto(existing, sender, (await Replies.For(db, [existing], sender.Id, joinedSeq, ct)).GetValueOrDefault(existing.Id)))
             : Error(StatusCodes.Status409Conflict, "client_id_reused");
 
     /// <summary>In a one-to-one conversation, both must still be friends (an unfriend or a block ends sending, not reading).</summary>
@@ -179,6 +180,26 @@ public static class MessageEndpoints
         return Results.NoContent();
     }
 
+    // ---- delete for me
+
+    /// <summary>
+    /// Hides one message from this person's own view (theirs or someone else's, taken back or not). Everyone else still has it.
+    /// Doing it twice changes nothing. Their other devices are told to drop it.
+    /// </summary>
+    private static async Task<IResult> Hide(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        // Only what this person can see: "not yours to see" and "no such message" look the same.
+        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq, ct)) return Results.NotFound();
+
+        var now = clock.GetUtcNow();
+        await db.Database.ExecuteSqlAsync($"INSERT INTO message_hides (user_id, message_id, created_at) VALUES ({me}, {messageId}, {now}) ON CONFLICT DO NOTHING", ct);
+        live.MessageHidden(me, id, messageId);
+        return Results.NoContent();
+    }
+
     // ---- history
 
     private static async Task<IResult> History(Guid id, long? before, string? limit, HttpContext http, GomDbContext db, CancellationToken ct)
@@ -191,12 +212,13 @@ public static class MessageEndpoints
         var rows = await (
             from m in db.Messages.AsNoTracking()
             where m.ConversationId == id && m.Seq > access.JoinedSeq && (before == null || m.Seq < before)
+                && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
             orderby m.Seq descending
             join u in db.Users on m.SenderId equals u.Id
             select new { Message = m, u.Id, u.DisplayName }).Take(take + 1).ToListAsync(ct);
 
         var page = rows.Take(take).ToList();
-        var replies = await Replies.For(db, page.Select(r => r.Message), access.JoinedSeq, ct);
+        var replies = await Replies.For(db, page.Select(r => r.Message), me, access.JoinedSeq, ct);
         return Results.Ok(new
         {
             messages = page.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id))),
