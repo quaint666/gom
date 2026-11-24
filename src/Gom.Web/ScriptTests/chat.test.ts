@@ -1,4 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
@@ -2551,14 +2550,5 @@ describe('chat: runs of messages', () => {
     expect(root.querySelector('[data-msg="id1"] .ts')).toBeNull();
     expect(root.querySelector('[data-msg="id1"] .sr-only')!.textContent).toMatch(/\d{2}:\d{2}/);
     expect(root.querySelector('[data-msg="id2"] .ts')!.textContent).toMatch(/\d{2}:\d{2}/);
-  });
-});
-
-describe('the page policy', () => {
-  it('no template sets an inline style attribute: the policy refuses it', () => {
-    const dir = process.cwd() + '/Scripts/';
-    const files = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.ts'));
-    const offenders = files.filter((f) => /\sstyle=/.test(readFileSync(dir + f, 'utf8')));
-    expect(offenders).toEqual([]);
   });
 });

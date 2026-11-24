@@ -20,6 +20,24 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>
+    /// The page policy is <c>style-src 'self'</c>: a style attribute is refused, also the one a template writes on its first draw.
+    /// Styles that depend on a value go through the style object after drawing (see placeMenu in chat.ts).
+    /// </summary>
+    [Fact]
+    public void No_script_writes_an_inline_style_attribute()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
+        Assert.NotNull(dir);
+        var scripts = Path.Combine(dir.FullName, "src", "Gom.Web", "Scripts");
+        Assert.True(Directory.Exists(scripts));
+        var offenders = Directory.EnumerateFiles(scripts, "*.ts", SearchOption.AllDirectories)
+            .Where(f => System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(f), @"\sstyle="))
+            .Select(f => Path.GetRelativePath(dir.FullName, f)).ToList();
+        Assert.Empty(offenders);
+    }
+
     [Fact]
     public async Task A_method_an_address_does_not_take_is_a_405()
     {
