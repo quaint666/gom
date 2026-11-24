@@ -293,6 +293,18 @@ describe('contacts: tabs, a handful of rows, and search', () => {
     expect(root.querySelector('[data-more-rows]')).toBeNull();
   });
 
+  it('lists everyone under A to Z headings once expanded, with "Đ" under D, and no headings for a handful', async () => {
+    mount();
+    await flush();
+    expect(root.querySelector('[data-letter]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-more-rows]')!.click();
+    await flush();
+    const letters = [...root.querySelectorAll('[data-letter]')].map((h) => h.getAttribute('data-letter'));
+    expect(letters).toEqual(['B', 'D']);
+    const names = [...root.querySelectorAll('[data-friend]')].map((n) => n.getAttribute('data-friend'));
+    expect(names[names.length - 1]).toBe('f0');   // Đào Thị Lan comes last, under D
+  });
+
   it('searches every friend, not only the handful, and ignores accents and capitals', async () => {
     mount();
     await flush();

@@ -384,3 +384,38 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .tick { display: inline-block; margin-inline-start: 2px; color: var(--muted); }
 .tick .i { inline-size: 14px; block-size: 14px; vertical-align: -3px; }
 .tick.t-seen { color: var(--link); }
+
+/* the desktop shell: a narrow rail, the list, the thread and, when asked for, an info panel. A phone has none of the rail or panel. */
+.rail, .info, .info-btn, .gearmenu { display: none; }
+@media (min-width: 900px) {
+  .chat { grid-template-columns: 64px 340px minmax(0, 1fr); }
+  .chat[data-infostate="open"] { grid-template-columns: 64px 340px minmax(0, 1fr); }
+  .rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; background: var(--tint); border-inline-end: 1px solid var(--border); block-size: 100dvh; }
+  .rail-i { display: grid; place-items: center; inline-size: 44px; block-size: 44px; border: 0; border-radius: 12px; background: transparent; color: var(--tint-text); cursor: pointer; text-decoration: none; }
+  .rail-i:hover { background: color-mix(in srgb, var(--surface) 55%, transparent); }
+  .rail-i:active { background: var(--press); }
+  .rail-i.active { background: var(--surface); color: var(--link); }
+  .rail-i.gear { margin-block-start: auto; }
+  .list-pane > .bar { display: none; }
+  .gearmenu { display: flex; flex-direction: column; position: fixed; z-index: 21; inset-inline-start: 72px; inset-block-end: 12px; inline-size: 240px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgb(0 0 0 / .4); }
+  .gearmenu .mi { flex-direction: row; justify-content: flex-start; gap: 12px; min-block-size: 40px; padding: 6px 10px; font-size: 14px; text-align: start; text-decoration: none; inline-size: 100%; }
+  .gearmenu .mi .i { inline-size: 18px; block-size: 18px; }
+  .scrim[data-gear-scrim] { background: transparent; }
+}
+@media (min-width: 1200px) {
+  .info-btn { display: inline-grid; }
+  .chat[data-infostate="open"] { grid-template-columns: 64px 340px minmax(0, 1fr) 300px; }
+  .info { display: flex; flex-direction: column; gap: 12px; padding: 20px 16px; overflow-y: auto; block-size: 100dvh; background: var(--surface); border-inline-start: 1px solid var(--border); }
+  .info-top { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+  .info-top small { color: var(--muted); }
+  .info-actions { display: flex; flex-direction: column; gap: 6px; }
+  .info-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .info-actions .btn .i { inline-size: 16px; block-size: 16px; }
+  .info h3 { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .info-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .info-person { display: flex; align-items: center; gap: 10px; min-block-size: 40px; }
+  .info-person .av { inline-size: 32px; block-size: 32px; font-size: 13px; }
+  .info-person .tag { margin-inline-start: auto; }
+}
+.ib[aria-pressed="true"].info-btn { color: var(--link); }
+.letter { margin: 12px 4px 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
