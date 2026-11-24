@@ -17,6 +17,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<MessageHide> Hides => Set<MessageHide>();
     public DbSet<MessagePin> Pins => Set<MessagePin>();
     public DbSet<MessageReaction> Reactions => Set<MessageReaction>();
+    public DbSet<JoinRequest> JoinRequests => Set<JoinRequest>();
+    public DbSet<GroupBan> Bans => Set<GroupBan>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -96,6 +98,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.Property(x => x.Title).HasMaxLength(60);
             e.HasIndex(x => x.DirectKey).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.JoinApproval).HasDefaultValue(false);
         });
 
         b.Entity<ConversationMember>(e =>
@@ -174,6 +177,24 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.Property(x => x.Emoji).HasMaxLength(16);
             e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<JoinRequest>(e =>
+        {
+            e.ToTable("join_requests");
+            e.HasKey(x => new { x.ConversationId, x.UserId });
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.RequestedBy).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<GroupBan>(e =>
+        {
+            e.ToTable("group_bans");
+            e.HasKey(x => new { x.ConversationId, x.UserId });
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.BannedBy).OnDelete(DeleteBehavior.Restrict);
         });
 
         // Postgres convention: snake_case names, whatever the C# property is called.

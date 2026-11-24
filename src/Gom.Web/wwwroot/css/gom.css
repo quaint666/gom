@@ -259,3 +259,7 @@ form { display: flex; flex-direction: column; gap: 14px; }
 
 /* edited messages */
 .edited { color: var(--muted); }
+
+/* group settings */
+.check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; }
+.check input { inline-size: 22px; block-size: 22px; accent-color: var(--btn); flex: none; }

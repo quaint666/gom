@@ -45,6 +45,8 @@ public class Conversation
     public long LastSeq { get; set; }
     /// <summary>When the newest message arrived; null before the first. Orders the list without a scan.</summary>
     public DateTimeOffset? LastMessageAt { get; set; }
+    /// <summary>On: someone adding a person to a group needs the leader or a deputy to approve it (the leader and deputies add directly).</summary>
+    public bool JoinApproval { get; set; }
 }
 
 /// <summary>What a member may do in a group. A one-to-one chat has only plain members.</summary>
@@ -119,5 +121,23 @@ public class MessageReaction
     public Guid MessageId { get; set; }
     public Guid UserId { get; set; }
     public string Emoji { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>A member's wish to add one of their friends to a group that asks for approval, waiting for the leader or a deputy.</summary>
+public class JoinRequest
+{
+    public Guid ConversationId { get; set; }
+    public Guid UserId { get; set; }
+    public Guid RequestedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>Someone the leader or a deputy removed and does not want back: nobody can add them until the leader lifts it.</summary>
+public class GroupBan
+{
+    public Guid ConversationId { get; set; }
+    public Guid UserId { get; set; }
+    public Guid BannedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

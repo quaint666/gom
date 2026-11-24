@@ -69,6 +69,12 @@ namespace Gom.Web.Migrations
                         .HasColumnType("character varying(73)")
                         .HasColumnName("direct_key");
 
+                    b.Property<bool>("JoinApproval")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("join_approval");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -210,6 +216,66 @@ namespace Gom.Web.Migrations
 
                             t.HasCheckConstraint("ck_friendships_status", "status IN ('pending', 'accepted')");
                         });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.GroupBan", b =>
+                {
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("BannedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("banned_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("ConversationId", "UserId")
+                        .HasName("pk_group_bans");
+
+                    b.HasIndex("BannedBy")
+                        .HasDatabaseName("ix_group_bans_banned_by");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_group_bans_user_id");
+
+                    b.ToTable("group_bans", (string)null);
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.JoinRequest", b =>
+                {
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.HasKey("ConversationId", "UserId")
+                        .HasName("pk_join_requests");
+
+                    b.HasIndex("RequestedBy")
+                        .HasDatabaseName("ix_join_requests_requested_by");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_join_requests_user_id");
+
+                    b.ToTable("join_requests", (string)null);
                 });
 
             modelBuilder.Entity("Gom.Web.Data.Message", b =>
@@ -645,6 +711,54 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_friendships_user_low");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.GroupBan", b =>
+                {
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("BannedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_group_bans_banned_by");
+
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_group_bans_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_group_bans_user_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.JoinRequest", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_join_requests_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_join_requests_requested_by");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_join_requests_user_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.Message", b =>
