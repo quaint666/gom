@@ -125,3 +125,13 @@ describe('api: uploading a picture or a file', () => {
     expect('attachments' in bodies[1]).toBe(false);
   });
 });
+
+describe('api: taking a link preview away', () => {
+  it('deletes the preview of one message', async () => {
+    const fetchFn = vi.fn(async () => new Response(null, { status: 204 }));
+    await createApi(fetchFn).removePreview('c1', 'm/1');
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/conversations/c1/messages/m%2F1/preview');
+    expect(init.method).toBe('DELETE');
+  });
+});

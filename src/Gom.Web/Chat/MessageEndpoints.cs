@@ -2,6 +2,7 @@ using System.Globalization;
 using Gom.Web.Auth;
 using Gom.Web.Chat.Live;
 using Gom.Web.Data;
+using Gom.Web.Previews;
 using Gom.Web.Uploads;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -18,7 +19,7 @@ public static class MessageEndpoints
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, PreviewDto? Preview = null);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -33,6 +34,7 @@ public static class MessageEndpoints
         api.MapDelete("/messages/{messageId:guid}", Recall);
         api.MapPut("/messages/{messageId:guid}/hidden", Hide);
         api.MapPatch("/messages/{messageId:guid}", Edit);
+        api.MapDelete("/messages/{messageId:guid}/preview", RemovePreview);
         api.MapPut("/messages/{messageId:guid}/reaction", React);
         api.MapDelete("/messages/{messageId:guid}/reaction", Unreact);
         api.MapGet("/pins", ListPins);
@@ -42,8 +44,9 @@ public static class MessageEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? attachments = null) =>
-        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt, m.DeletedAt != null ? null : attachments);
+    internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null, MessageExtras? extras = null) =>
+        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt,
+            m.DeletedAt != null ? null : extras?.Attachments, m.DeletedAt != null ? null : extras?.Preview);
 
     // ---- what a message may contain
 
@@ -65,7 +68,7 @@ public static class MessageEndpoints
     // ---- sending
 
     private static async Task<IResult> Send(Guid id, SendRequest request, HttpContext http, GomDbContext db, TimeProvider clock,
-        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, IOptions<UploadOptions> uploads, CancellationToken ct)
+        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, IOptions<UploadOptions> uploads, PreviewQueue previews, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -151,6 +154,8 @@ public static class MessageEndpoints
         var dto = ToDto(message, sender, reply, null, (await MessageAttachments.For(db, [message.Id], ct)).GetValueOrDefault(message.Id));
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
+        // The preview of its first address is made later, by itself; sending never waits for it.
+        if (previews.Enabled && LinkFinder.First(body) is { } address) previews.TryEnqueue(new PreviewJob(message.Id, id, me, address));
         return Results.Ok(dto);
     }
 
@@ -201,6 +206,7 @@ public static class MessageEndpoints
             pinsGone = await db.Pins.Where(p => p.MessageId == messageId).ExecuteDeleteAsync(ct) > 0;
             // Its pictures and files go with it.
             files = await db.Attachments.Where(a => a.MessageId == messageId).Select(a => a.Id).ToListAsync(ct);
+            await db.Previews.Where(p => p.MessageId == messageId).ExecuteDeleteAsync(ct);
             await db.Attachments.Where(a => a.MessageId == messageId).ExecuteDeleteAsync(ct);
 
             seq = (await db.Database.SqlQuery<long>(
@@ -312,7 +318,7 @@ public static class MessageEndpoints
     /// message shows that it was edited. The old words are not kept. Writing the same words again changes nothing.
     /// </summary>
     private static async Task<IResult> Edit(Guid id, Guid messageId, EditRequest request, HttpContext http, GomDbContext db, TimeProvider clock,
-        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
+        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, PreviewQueue previews, IBlobStore blobs, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -334,6 +340,7 @@ public static class MessageEndpoints
 
         var now = clock.GetUtcNow();
         long seq;
+        List<Guid> dropped = [];
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
             await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
@@ -341,9 +348,50 @@ public static class MessageEndpoints
             var changed = await db.Messages.Where(m => m.Id == messageId && m.DeletedAt == null && m.Body != body)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.Body, body).SetProperty(m => m.EditedAt, (DateTimeOffset?)now), ct);
             if (changed == 0) return Results.NoContent();
+            // A preview belongs to the address that was in the words: if that address is gone (or another comes first), the preview goes.
+            var address = LinkFinder.First(body);
+            var old = await db.Previews.Where(p => p.MessageId == messageId).Select(p => p.Url).SingleOrDefaultAsync(ct);
+            if (old is not null && old != address?.AbsoluteUri) dropped = await DropPreview(db, messageId, ct);
+            seq = await NextUpdate(db, id, messageId, now, ct);
+            await tx.CommitAsync(ct);
+            if (previews.Enabled && address is not null && (old is null || old != address.AbsoluteUri)) previews.TryEnqueue(new PreviewJob(messageId, id, me, address));
+        }
+        AttachmentFiles.Forget(blobs, dropped);
+        await PublishUpdate(db, found, seq, me, ct, live);
+        return Results.NoContent();
+    }
+
+    /// <summary>Takes the preview of a message and its picture out of the database; returns the picture files to remove after the commit.</summary>
+    private static async Task<List<Guid>> DropPreview(GomDbContext db, Guid messageId, CancellationToken ct)
+    {
+        var pictures = await db.Attachments.Where(a => a.MessageId == messageId && a.Kind == AttachmentKind.Preview).Select(a => a.Id).ToListAsync(ct);
+        await db.Previews.Where(p => p.MessageId == messageId).ExecuteDeleteAsync(ct);
+        await db.Attachments.Where(a => a.MessageId == messageId && a.Kind == AttachmentKind.Preview).ExecuteDeleteAsync(ct);
+        return pictures;
+    }
+
+    /// <summary>The writer of a message takes its link preview away (for everyone). Nothing to take away is not an error.</summary>
+    private static async Task<IResult> RemovePreview(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null).SingleOrDefaultAsync(ct);
+        if (found is null) return Results.NotFound();
+        if (found.SenderId != me) return Error(StatusCodes.Status403Forbidden, "not_your_message");
+
+        var now = clock.GetUtcNow();
+        long seq;
+        List<Guid> pictures;
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
+            if (!await db.Previews.AnyAsync(p => p.MessageId == messageId, ct)) return Results.NoContent();
+            pictures = await DropPreview(db, messageId, ct);
             seq = await NextUpdate(db, id, messageId, now, ct);
             await tx.CommitAsync(ct);
         }
+        AttachmentFiles.Forget(blobs, pictures);
         await PublishUpdate(db, found, seq, me, ct, live);
         return Results.NoContent();
     }
@@ -408,7 +456,7 @@ public static class MessageEndpoints
     }
 
     /// <summary>Takes the next number of the conversation for a change to an existing message ("updated"). Call inside the transaction that made the change.</summary>
-    private static async Task<long> NextUpdate(GomDbContext db, Guid id, Guid messageId, DateTimeOffset now, CancellationToken ct)
+    internal static async Task<long> NextUpdate(GomDbContext db, Guid id, Guid messageId, DateTimeOffset now, CancellationToken ct)
     {
         var seq = (await db.Database.SqlQuery<long>(
             $"UPDATE conversations SET last_seq = last_seq + 1 WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
@@ -418,7 +466,7 @@ public static class MessageEndpoints
     }
 
     /// <summary>Tells the conversation the message changed: its words, its quote and its reactions as they are now.</summary>
-    private static async Task PublishUpdate(GomDbContext db, Message message, long seq, Guid actor, CancellationToken ct, LiveDelivery live)
+    internal static async Task PublishUpdate(GomDbContext db, Message message, long seq, Guid actor, CancellationToken ct, LiveDelivery live)
     {
         var author = await db.Users.AsNoTracking().Where(u => u.Id == message.SenderId).Select(u => new PersonDto(u.Id, u.DisplayName)).SingleAsync(ct);
         var current = await db.Messages.AsNoTracking().SingleAsync(m => m.Id == message.Id, ct);

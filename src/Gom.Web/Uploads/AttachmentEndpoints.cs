@@ -134,14 +134,15 @@ public static class AttachmentEndpoints
         // In a message: only what was said after you joined, and not what you hid.
         if (a.MessageId is { } messageId && !await db.Messages.AnyAsync(m => m.Id == messageId && m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct))
             return Results.NotFound();
-        if (thumb && a.Kind != AttachmentKind.Image) return Results.NotFound();
+        var picture = a.Kind is AttachmentKind.Image or AttachmentKind.Preview;
+        if (thumb && !picture) return Results.NotFound();
 
         var stream = services.GetRequiredService<IBlobStore>().OpenRead(thumb ? id + ".t" : id.ToString());
         if (stream is null) return Results.NotFound();
 
         // A picture may stay in the browser for a day (opening a conversation again must not fetch every picture again); it never
         // changes, so its id is its tag. A file is not kept: the site-wide "no-store" applies.
-        if (a.Kind == AttachmentKind.Image)
+        if (picture)
         {
             http.Response.Headers.CacheControl = "private, max-age=86400";
             return Results.Stream(stream, "image/webp", entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{id}{(thumb ? "t" : "")}\""), enableRangeProcessing: true);
