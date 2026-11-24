@@ -29,6 +29,8 @@ public sealed class AppFixture : IAsyncLifetime
     public FakeClock Clock { get; } = new();
     public WebApplicationFactory<Program> Factory { get; private set; } = null!;
     public PasswordService Passwords { get; } = new(1_000);
+    /// <summary>Where uploads go in tests: a folder of its own, removed at the end.</summary>
+    public string UploadsDir { get; } = Path.Combine(Path.GetTempPath(), "gom-test-uploads-" + Guid.NewGuid().ToString("N"));
 
     public async Task InitializeAsync()
     {
@@ -39,6 +41,11 @@ public sealed class AppFixture : IAsyncLifetime
             b.UseSetting("Auth:PasswordIterations", "1000");
             b.UseSetting("Auth:AllowedOrigins:0", Origin);
             b.UseSetting("Chat:MaxGroupMembers", "5");   // small, so a test can fill a group
+            b.UseSetting("Uploads:Path", UploadsDir);
+            b.UseSetting("Uploads:MaxFileBytes", "300000");     // small, so a test can go over
+            b.UseSetting("Uploads:MaxImageBytes", "200000");
+            b.UseSetting("Uploads:MaxPixels", "1000000");
+            b.UseSetting("Uploads:UploadBurst", "30");
             b.ConfigureServices(s =>
             {
                 s.RemoveAll<TimeProvider>();
@@ -52,6 +59,7 @@ public sealed class AppFixture : IAsyncLifetime
     {
         await Factory.DisposeAsync();
         await Db.DisposeAsync();
+        if (Directory.Exists(UploadsDir)) Directory.Delete(UploadsDir, recursive: true);
     }
 
     private int _nextIp;
@@ -127,6 +135,18 @@ public sealed class AppFixture : IAsyncLifetime
     {
         using var client = Client();
         return await Send(client, method, path, body, cookie, origin);
+    }
+
+    /// <summary>Sends raw bytes as the body (an upload), the way the browser does.</summary>
+    public async Task<HttpResponseMessage> CallBytes(HttpMethod method, string path, byte[] body, string? cookie = null, string contentType = "application/octet-stream", long? declaredLength = null)
+    {
+        using var client = Client();
+        var request = new HttpRequestMessage(method, path) { Content = new ByteArrayContent(body) };
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+        if (declaredLength is not null) request.Content.Headers.ContentLength = declaredLength;
+        if (cookie is not null) request.Headers.Add("Cookie", $"{SessionCookie.Name}={cookie}");
+        request.Headers.Add("Origin", Origin);
+        return await client.SendAsync(request);
     }
 
     public async Task<string> NewInviteToken()

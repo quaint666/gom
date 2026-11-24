@@ -27,12 +27,13 @@ WORKDIR /src
 # Restore first: this layer is reused until a package changes.
 COPY Directory.Build.props dotnet-tools.json ./
 COPY src/Gom.Web/Gom.Web.csproj src/Gom.Web/
-RUN dotnet restore src/Gom.Web/Gom.Web.csproj && dotnet tool restore
+# The runtime is named, so only the native files for this one (the picture library has them for every system) are restored and shipped.
+RUN dotnet restore src/Gom.Web/Gom.Web.csproj -r linux-musl-x64 && dotnet tool restore
 
 FROM restore AS publish
 COPY src/Gom.Web ./src/Gom.Web
 COPY --from=assets /build/wwwroot/js ./src/Gom.Web/wwwroot/js
-RUN dotnet publish src/Gom.Web/Gom.Web.csproj -c Release --no-restore -o /out/web
+RUN dotnet publish src/Gom.Web/Gom.Web.csproj -c Release --no-restore -r linux-musl-x64 --self-contained false -o /out/web
 
 FROM restore AS bundle
 # Only what the bundle compiles. A NEW folder of C# in src/Gom.Web goes in this list too (a missing one fails the build with a
@@ -43,6 +44,7 @@ COPY src/Gom.Web/Chat ./src/Gom.Web/Chat
 COPY src/Gom.Web/Data ./src/Gom.Web/Data
 COPY src/Gom.Web/Migrations ./src/Gom.Web/Migrations
 COPY src/Gom.Web/Social ./src/Gom.Web/Social
+COPY src/Gom.Web/Uploads ./src/Gom.Web/Uploads
 # The app stops at start without a connection string, so finding the DbContext here needs a placeholder; the real one is
 # given when the bundle runs. The bundle is not self-contained: it runs on the .NET runtime the site image already has.
 RUN ConnectionStrings__Default="Host=placeholder;Database=placeholder" \
@@ -53,8 +55,10 @@ RUN ConnectionStrings__Default="Host=placeholder;Database=placeholder" \
 # the unprivileged "app" user come from the base image. The files stay root-owned: the site never writes to its own folder.
 # Alpine's dotnet images turn globalization off, so the packages are added and the switch is turned off (names and text are
 # Vietnamese). krb5-libs: without it the database driver prints "Cannot load library libgssapi_krb5.so.2" when it connects.
+# fontconfig: the picture library's native part (SkiaSharp, for making uploaded pictures smaller) is linked against it, even though
+# no text is ever drawn; without it the first upload fails with "Unable to load shared library 'libSkiaSharp'".
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.15-alpine3.24@sha256:21c3f9798416cba4c0576a947c286231cb71ea2884896cb968253f5c9668f930 AS web
-RUN apk add --no-cache icu-libs icu-data-full tzdata krb5-libs
+RUN apk add --no-cache icu-libs icu-data-full tzdata krb5-libs fontconfig
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 WORKDIR /app
 COPY --from=publish /out/web ./

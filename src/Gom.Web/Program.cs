@@ -3,6 +3,7 @@ using Gom.Web.Chat;
 using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Gom.Web.Social;
+using Gom.Web.Uploads;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -42,6 +43,19 @@ builder.Services.AddSingleton<SendLimiter>(sp =>
     var o = sp.GetRequiredService<IOptions<ChatOptions>>().Value;
     return new SendLimiter(sp.GetRequiredService<TimeProvider>(), o.SendBurst, o.SendPerSecond);
 });
+builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection("Uploads"));
+builder.Services.AddSingleton<IBlobStore>(sp => new DiskBlobStore(sp.GetRequiredService<IOptions<UploadOptions>>().Value.Path));
+builder.Services.AddSingleton<UploadLimiter>(sp =>
+{
+    var o = sp.GetRequiredService<IOptions<UploadOptions>>().Value;
+    return new UploadLimiter(new SendLimiter(sp.GetRequiredService<TimeProvider>(), o.UploadBurst, o.UploadPerSecond));
+});
+builder.Services.AddSingleton<ImageLimiter>(sp =>
+{
+    var o = sp.GetRequiredService<IOptions<UploadOptions>>().Value;
+    return new ImageLimiter(o.ImageSlots > 0 ? o.ImageSlots : Math.Max(1, Environment.ProcessorCount / 2), TimeSpan.FromSeconds(o.ImageWaitSeconds));
+});
+builder.Services.AddHostedService<AttachmentJanitor>();
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<SignInThrottle>(sp => new SignInThrottle(sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddSingleton<HashLimiter>(sp =>
@@ -77,6 +91,7 @@ app.MapFriends();
 app.MapConversations();
 app.MapGroups();
 app.MapMessages();
+app.MapAttachments();
 app.MapReceipts();
 app.MapSocket();
 

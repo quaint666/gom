@@ -19,6 +19,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<MessageReaction> Reactions => Set<MessageReaction>();
     public DbSet<JoinRequest> JoinRequests => Set<JoinRequest>();
     public DbSet<GroupBan> Bans => Set<GroupBan>();
+    public DbSet<Attachment> Attachments => Set<Attachment>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -157,6 +158,21 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             // Ending a group looks hides up by message.
             e.HasIndex(x => x.MessageId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<Attachment>(e =>
+        {
+            e.ToTable("attachments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(120);
+            e.Property(x => x.ContentType).HasMaxLength(100);
+            e.HasIndex(x => x.ConversationId);
+            e.HasIndex(x => x.MessageId);
+            e.HasIndex(x => new { x.MessageId, x.CreatedAt });   // the cleanup of uploads nobody used
+            e.ToTable(t => t.HasCheckConstraint("ck_attachments_kind", "kind in (0, 1)"));
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UploaderId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
         });
 
