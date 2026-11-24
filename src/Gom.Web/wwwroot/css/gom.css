@@ -139,13 +139,15 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .th-title { flex: 1; min-inline-size: 0; }
 .th-title b { display: block; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .th-title small { color: var(--muted); font-size: 13px; }
-.msgs { flex: 1; min-block-size: 0; overflow-y: auto; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 3px; overflow-anchor: none; }
+.msgs { flex: 1; min-block-size: 0; overflow-y: auto; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 2px; overflow-anchor: none; }
 .msgs .more { align-self: center; margin-block-end: 8px; }
 .day { align-self: center; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 12px; margin-block: 6px 10px; }
 .newdiv { display: flex; align-items: center; gap: 10px; margin-block: 10px 8px; color: var(--tint-text); font-size: 12px; font-weight: 600; }
 .newdiv::before, .newdiv::after { content: ""; block-size: 1px; background: var(--border); flex: 1; }
 .newdiv span { background: var(--tint); padding: 2px 12px; border-radius: 999px; }
 .mrow { display: flex; }
+/* a run of messages from one person sits close; a new run, or a pause, gets room */
+.mrow.first:not(:first-child) { margin-block-start: 10px; }
 .mrow.out { justify-content: flex-end; }
 .bub { max-inline-size: min(520px, 78%); padding: 8px 12px 6px; border-radius: 16px; overflow-wrap: anywhere; }
 .in .bub { background: var(--surface); border: 1px solid var(--border); }
@@ -196,10 +198,6 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .pick small { color: var(--muted); }
 
 /* taking a message back */
-.menu-btn { color: var(--muted); }
-.mrow.out .menu-btn { order: -1; }
-.menu { align-self: flex-end; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-inline-size: 90%; margin-block: 2px 8px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; font-size: 14px; }
-.menu p { flex-basis: 100%; text-align: end; }
 .mrow.recalled .bub { background: transparent; border: 1px dashed var(--border); color: var(--muted); }
 .txt.gone { font-style: italic; }
 
@@ -260,17 +258,45 @@ form { display: flex; flex-direction: column; gap: 14px; }
 /* edited messages */
 .edited { color: var(--muted); }
 
-/* the menu without the always-there button: on hover or focus with a mouse; a long press with a finger */
+/* the little toolbar beside a message (a mouse), and the menu it opens */
 .bub { -webkit-touch-callout: none; }
+.tools { display: flex; align-items: center; align-self: center; flex: none; }
+.tools .ib { inline-size: 32px; block-size: 32px; }
+.tools .ib .i { inline-size: 18px; block-size: 18px; }
 @media (hover: hover) and (pointer: fine) {
-  .mrow .menu-btn { opacity: 0; }
-  .mrow:hover .menu-btn, .mrow:focus-within .menu-btn, .menu-btn[aria-expanded="true"] { opacity: 1; }
+  .mrow .tools { opacity: 0; }
+  .mrow:hover .tools, .mrow:focus-within .tools, .mrow .menu-btn[aria-expanded="true"] { opacity: 1; }
+  .mrow .menu-btn[aria-expanded="true"] { background: var(--tint); }
 }
 @media (pointer: coarse) {
   /* Still in the page for a screen reader and a keyboard, but not drawn: a long press is how a finger opens it. */
-  .mrow .menu-btn { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
-  .mrow .menu-btn:focus-visible { position: static; inline-size: 44px; block-size: 44px; clip-path: none; }
+  .mrow .tools { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  .mrow .tools:focus-within { position: static; inline-size: auto; block-size: auto; clip-path: none; }
 }
-/* group settings */
-.check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; }
-.check input { inline-size: 22px; block-size: 22px; accent-color: var(--btn); flex: none; }
+.scrim { position: fixed; inset: 0; z-index: 20; background: rgb(0 0 0 / .45); }
+.menu {
+  position: fixed; z-index: 21; inset-inline: 0; inset-block-end: 0; max-block-size: 85dvh; overflow-y: auto; padding: 12px 12px max(12px, env(safe-area-inset-bottom));
+  background: var(--surface); border-block-start: 1px solid var(--border); border-radius: 18px 18px 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .35);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.menu p { text-align: center; }
+.menu .ask { display: flex; gap: 8px; justify-content: center; }
+.menu .emoji-row { justify-content: space-around; padding: 6px 4px; border-radius: 26px; background: var(--bg); }
+.items-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.mi { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; min-block-size: 64px; padding: 8px 2px; border: 0; border-radius: 10px; background: none; color: var(--text); font: inherit; font-size: 12px; text-align: center; cursor: pointer; }
+.mi:hover { background: var(--hover); }
+.mi .i { color: var(--link); }
+.mi.danger, .mi.danger .i { color: var(--err-text); }
+@media (hover: hover) and (pointer: fine) and (min-width: 600px) {
+  .scrim { background: transparent; }
+  .menu {
+    inset: auto; inset-inline-start: clamp(8px, var(--x, 0px), calc(100vw - 244px)); inset-block-start: clamp(8px, var(--y, 0px), calc(100dvh - 400px));
+    inline-size: 236px; max-block-size: calc(100dvh - 16px); padding: 6px; border: 1px solid var(--border); border-radius: 12px; gap: 4px; box-shadow: 0 8px 28px rgb(0 0 0 / .4);
+  }
+  .menu .emoji-row { gap: 0; padding: 2px; }
+  .menu .emoji { min-inline-size: 32px; min-block-size: 36px; font-size: 20px; }
+  .items-grid { grid-template-columns: 1fr; gap: 0; }
+  .mi { flex-direction: row; justify-content: flex-start; gap: 12px; min-block-size: 36px; padding: 6px 10px; font-size: 14px; text-align: start; }
+  .mi .i { inline-size: 18px; block-size: 18px; }
+  .menu .close-menu { display: none; }
+}
