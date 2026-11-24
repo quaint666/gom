@@ -19,4 +19,6 @@ public sealed class ChatOptions
     public int SocketSendTimeoutSeconds { get; set; } = 10;
     /// <summary>Frames a socket may send that cannot be read before it is closed (1008).</summary>
     public int MaxBadFrames { get; set; } = 5;
+    /// <summary>How often a socket is sent a small "still here" message, in seconds. Anything in the path that cuts idle connections sees traffic, and the page can tell a dead connection from a quiet one.</summary>
+    public int HeartbeatSeconds { get; set; } = 25;
 }
