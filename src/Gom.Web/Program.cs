@@ -59,6 +59,7 @@ app.MapSocket();
 void MapPage(string route, string file) => app.MapGet(route, (IWebHostEnvironment env) =>
     Results.File(env.WebRootFileProvider.GetFileInfo($"pages/{file}").CreateReadStream(), "text/html; charset=utf-8"));
 MapPage("/", "home.html");
+MapPage("/c/{id}", "home.html");
 MapPage("/sign-in", "sign-in.html");
 MapPage("/join/{token}", "join.html");
 MapPage("/reset/{token}", "reset.html");

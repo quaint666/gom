@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi } from '../Scripts/api.js';
 import { mountAdd } from '../Scripts/pages/add.js';
 import { mountFriends } from '../Scripts/pages/friends.js';
-import { mountHome } from '../Scripts/pages/home.js';
 import { mountSignIn } from '../Scripts/pages/signin.js';
 import { safeNext } from '../Scripts/pages/signin.js';
 import { errorText } from '../Scripts/text.js';
@@ -198,7 +197,7 @@ describe('friends page', () => {
     expect(a.friends).toHaveBeenCalledTimes(2);
   });
 
-  it('opens a conversation with a friend and goes to the home page', async () => {
+  it('opens a conversation with a friend and goes to it', async () => {
     const go = vi.fn();
     const a = api({ openDirect: vi.fn(async () => ok({ id: 'c1' })) });
     mountFriends(root, a, go, 'https://gom.test');
@@ -206,7 +205,7 @@ describe('friends page', () => {
     root.querySelector<HTMLButtonElement>('[data-friend="minh"] button[data-action="message"]')!.click();
     await flush();
     expect(a.openDirect).toHaveBeenCalledWith('minh');
-    expect(go).toHaveBeenCalledWith('/');
+    expect(go).toHaveBeenCalledWith('/c/c1');
   });
 
   it('shows a failed action in words', async () => {
@@ -254,32 +253,5 @@ describe('add-by-link page', () => {
     root.querySelector<HTMLButtonElement>('button[data-send]')!.click();
     await flush();
     expect(text(root.querySelector('[role="alert"]')!)).toContain('Không tìm thấy');
-  });
-});
-
-describe('home page conversations', () => {
-  const chats = [
-    { id: 'c1', kind: 'direct', title: 'Minh', peer: { gomId: 'minh', displayName: 'Minh' }, lastSeq: 0, lastReadSeq: 0 },
-  ];
-  const api = (list: unknown[]) => fakeApi({ me: vi.fn(async () => ok(me)), conversations: vi.fn(async () => ok(list)) });
-
-  it('shows the empty state with a way to add friends', async () => {
-    mountHome(root, api([]), vi.fn());
-    await flush();
-    expect(text(root)).toContain('Chưa có cuộc trò chuyện nào');
-    expect(root.querySelector('a[href="/friends"]')).not.toBeNull();
-  });
-
-  it('lists conversations by the other person\'s name', async () => {
-    mountHome(root, api(chats), vi.fn());
-    await flush();
-    expect(text(root.querySelector('[data-chat="c1"]')!)).toContain('Minh');
-    expect(text(root)).not.toContain('Chưa có cuộc trò chuyện nào');
-  });
-
-  it('always has a way to the friends page', async () => {
-    mountHome(root, api(chats), vi.fn());
-    await flush();
-    expect(root.querySelector('header a[href="/friends"]')).not.toBeNull();
   });
 });

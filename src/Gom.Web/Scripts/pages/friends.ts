@@ -88,7 +88,7 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
   async function message(gomId: string): Promise<void> {
     const result = await api.openDirect(gomId);
     if (!result.ok) { error = result; update(); return; }
-    go('/');
+    go(`/c/${result.data.id}`);
   }
 
   async function onAdd(event: Event): Promise<void> {

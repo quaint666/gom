@@ -2,12 +2,14 @@ export type ErrorCode =
   | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
   | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
   | 'wrong_password' | 'cannot_disable_owner' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
-  | 'not_friends' | 'cannot_chat_self' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
+  | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
+  | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
   'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner',
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
+  'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -23,8 +25,13 @@ export interface JoinBody { gomId: string; password: string; displayName: string
 export interface Person { gomId: string; displayName: string }
 export interface FriendRequest extends Person { createdAt: string }
 export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; outgoing: FriendRequest[] }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Person; body: string; createdAt: string }
+/** One step of a conversation's stream, as the server sends it (live or in a sync page). */
+export interface ChatEvent { seq: number; kind: 'created'; message: ChatMessage }
+export interface LastMessage { seq: number; body: string; createdAt: string; sender: Person }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
+  unread: number; lastMessage: LastMessage | null;
 }
 
 export interface Api {
@@ -57,6 +64,9 @@ export interface Api {
   unblock(gomId: string): Promise<Result<void>>;
   conversations(): Promise<Result<Conversation[]>>;
   openDirect(gomId: string): Promise<Result<{ id: string }>>;
+  history(conversation: string, before?: number): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean }>>;
+  send(conversation: string, clientId: string, body: string): Promise<Result<ChatMessage>>;
+  markRead(conversation: string, seq: number): Promise<Result<void>>;
 }
 
 /** The browser sends the Origin header itself on same-origin POST and DELETE; the server checks it. */
@@ -109,6 +119,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     unblock: (gomId) => call('DELETE', `/api/blocks/${enc(gomId)}`),
     conversations: () => call('GET', '/api/conversations'),
     openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
+    history: (conversation, before) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}`),
+    send: (conversation, clientId, body) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body }),
+    markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };
 }
 
