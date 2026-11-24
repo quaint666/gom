@@ -21,7 +21,6 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<JoinRequest> JoinRequests => Set<JoinRequest>();
     public DbSet<GroupBan> Bans => Set<GroupBan>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
-    public DbSet<MessagePreview> Previews => Set<MessagePreview>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -172,17 +171,6 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => x.MessageId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
-        });
-
-        b.Entity<MessagePreview>(e =>
-        {
-            e.ToTable("message_previews");
-            e.HasKey(x => x.MessageId);
-            e.Property(x => x.Url).HasMaxLength(2048);
-            e.Property(x => x.Title).HasMaxLength(400);
-            e.Property(x => x.Description).HasMaxLength(800);
-            e.Property(x => x.Site).HasMaxLength(200);
-            e.HasOne<Message>().WithOne().HasForeignKey<MessagePreview>(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
         });
 
         b.Entity<Attachment>(e =>
