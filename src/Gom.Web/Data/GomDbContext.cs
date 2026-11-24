@@ -103,6 +103,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasKey(x => new { x.ConversationId, x.UserId });
             e.HasIndex(x => x.UserId);
             e.Property(x => x.Role).HasDefaultValue(GroupRole.Member);
+            e.Property(x => x.Muted).HasDefaultValue(false);
             // At most one leader per conversation.
             e.HasIndex(x => x.ConversationId).IsUnique().HasFilter("role = 2");
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
