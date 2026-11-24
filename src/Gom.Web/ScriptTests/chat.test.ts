@@ -3008,3 +3008,71 @@ describe('chat: addresses in messages', () => {
     expect(off.defaultPrevented).toBe(true);
   });
 });
+
+describe('chat: the card under a message for its address', () => {
+  const preview = { url: 'https://example.com/a', title: 'Chuyến đi Đà Lạt', description: 'Ảnh và kế hoạch', site: 'Gom Blog', imageId: 'img1' };
+  const open = (m: ChatMessage, extra: Record<string, unknown> = {}) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 1 })], history: { [C1]: [m] }, api: extra });
+
+  it('draws the site, the title, the words and the small picture, as a link that opens in a new tab', async () => {
+    open({ ...msg(1, 'minh', 'xem https://example.com/a'), preview });
+    await flush();
+    const card = root.querySelector('[data-preview]')!;
+    const link = card.querySelector<HTMLAnchorElement>('a.lc-main')!;
+    expect(link.getAttribute('href')).toBe('https://example.com/a');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer nofollow');
+    expect(card.querySelector('img')!.getAttribute('src')).toBe('/api/attachments/img1/thumb');
+    expect(text(card)).toContain('Gom Blog');
+    expect(text(card)).toContain('Chuyến đi Đà Lạt');
+    expect(text(card)).toContain('Ảnh và kế hoạch');
+  });
+
+  it('shows no card for an address the page could not make a link of, or when there is nothing to say', async () => {
+    open({ ...msg(1, 'minh', 'x'), preview: { ...preview, url: 'javascript:alert(1)' } });
+    await flush();
+    expect(root.querySelector('[data-preview]')).toBeNull();
+    root = document.createElement('div'); document.body.replaceChildren(root);
+    open({ ...msg(1, 'minh', 'x'), preview: { ...preview, title: null, description: null } });
+    await flush();
+    expect(root.querySelector('[data-preview]')).toBeNull();
+  });
+
+  it('has no picture area when the page had no picture', async () => {
+    open({ ...msg(1, 'minh', 'x'), preview: { ...preview, imageId: null } });
+    await flush();
+    expect(root.querySelector('[data-preview] img')).toBeNull();
+  });
+
+  it('lets only the writer take the card away, and takes it off at once', async () => {
+    open({ ...msg(1, 'minh', 'x'), preview });
+    await flush();
+    expect(root.querySelector('[data-preview-remove]')).toBeNull();
+    root = document.createElement('div'); document.body.replaceChildren(root);
+    const removePreview = vi.fn(async () => ok(undefined));
+    open({ ...msg(1, 'mom', 'x'), preview }, { removePreview });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-preview-remove]')!.click();
+    await flush();
+    expect(removePreview).toHaveBeenCalledWith(C1, 'id1');
+    expect(root.querySelector('[data-preview]')).toBeNull();
+  });
+
+  it('puts the card back and says why when taking it away fails', async () => {
+    open({ ...msg(1, 'mom', 'x'), preview }, { removePreview: vi.fn(async () => fail('server', 500)) });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-preview-remove]')!.click();
+    await flush();
+    expect(root.querySelector('[data-preview]')).not.toBeNull();
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('shows a card that arrives later in an update of the same message', async () => {
+    const h = open(msg(1, 'minh', 'xem https://example.com/a'));
+    await flush();
+    expect(root.querySelector('[data-preview]')).toBeNull();
+    h.handlers().event(C1, { seq: 2, kind: 'updated', message: { ...msg(1, 'minh', 'xem https://example.com/a'), preview } });
+    await flush();
+    expect(root.querySelector('[data-preview]')).not.toBeNull();
+  });
+});
