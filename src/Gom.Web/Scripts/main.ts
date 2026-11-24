@@ -4,6 +4,7 @@ import { mountGroup } from './pages/group.js';
 import { mountNewGroup } from './pages/newgroup.js';
 import { mountFriends } from './pages/friends.js';
 import { mountChat, type ChatDeps, type OutboxItem } from './pages/chat.js';
+import { createInstaller } from './install.js';
 import { createLive } from './chat/live.js';
 import { mountJoin } from './pages/join.js';
 import { mountOwner } from './pages/owner.js';
@@ -14,6 +15,8 @@ import { applyScheme, storedScheme } from './theme.js';
 
 const root = document.getElementById('app');
 const api = createApi();
+// The browser offers to install the app once, early: listen on every page so the settings page can use it.
+const installer = createInstaller(window);
 const go = (path: string): void => location.assign(path);
 // /join/<token> and /reset/<token>
 const token = decodeURIComponent(location.pathname.split('/')[2] ?? '');
@@ -47,7 +50,7 @@ if (root) {
     case 'join': mountJoin(root, api, go, token); break;
     case 'reset': mountReset(root, api, go, token); break;
     case 'home': mountChat(root, api, go, chatDeps()); break;
-    case 'settings': mountSettings(root, api, go); break;
+    case 'settings': mountSettings(root, api, go, installer); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go); break;
