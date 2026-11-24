@@ -60,6 +60,8 @@ interface Thread {
 }
 
 const PREVIEW_CHARS = 200;
+/** The reactions the server accepts, in the order they are offered. */
+const EMOJI = ['👍', '❤️', '😆', '😮', '😢', '😡'] as const;
 /** How much of the answered message the bar above the composer shows (the server keeps the same number for the quote). */
 const QUOTE_CHARS = 100;
 const CONVERSATION_PATH = /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
@@ -150,6 +152,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <p>Thu hồi tin nhắn này với mọi người?</p>
         <button class="btn small" type="button" data-confirm-recall @click=${() => void recall(m)}>Thu hồi</button>
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Hủy</button>` : html`
+        <div class="emoji-row" role="group" aria-label="Thả cảm xúc">${EMOJI.map((e) => html`
+          <button class="emoji" type="button" data-react=${e} aria-label=${`Thả ${e}`} @click=${() => void setReaction(m, e)}>${e}</button>`)}</div>
         <button class="btn secondary small" type="button" data-reply @click=${() => startReply(m)}>Trả lời</button>
         <button class="btn secondary small" type="button" data-copy @click=${() => void copyText(m)}>Sao chép</button>
         ${threadOf(m.conversationId).pins.some((p) => p.id === m.id)
@@ -160,6 +164,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${mine ? html`<button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>` : nothing}
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Đóng</button>`}
     </div>`;
+
+  /** The reactions under a message: each emoji with how many chose it; yours is marked, and tapping a chip is choosing it or taking yours back. */
+  const chips = (m: Shown) => m.deleted || !m.reactions || m.reactions.length === 0 ? nothing : html`
+    <div class="reacts ${m.sender.id === me?.id ? 'out' : 'in'}">${m.reactions.map((r) => {
+      const mine = r.users.some((u) => u.id === me?.id);
+      return html`<button class="chip ${mine ? 'mine' : ''}" type="button" data-chip=${r.emoji} aria-pressed=${mine ? 'true' : 'false'}
+        aria-label=${`${r.emoji}: ${r.users.map((u) => u.id === me?.id ? 'Bạn' : u.displayName).join(', ')}`}
+        @click=${() => void setReaction(m, mine ? null : r.emoji)}>${r.emoji}<span>${r.users.length}</span></button>`;
+    })}</div>`;
 
   /** What stands above an answer: who wrote the message it answers and the start of it, or that it is no longer there to see. */
   const quote = (r: Reply) => html`
@@ -181,6 +194,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="bub">${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
           <span class="ts">${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
       </div>
+      ${chips(m)}
       ${menuFor(m, item.mine)}
       ${seen === null ? nothing : html`<div class="seen">${icons.checks()}<span>${seen}</span></div>`}
       ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? 'Sẽ gửi khi có mạng' : 'Sẽ thử gửi lại'}</div>` : nothing}
@@ -446,7 +460,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       // The message being answered was taken back: there is nothing left to answer.
       if (event.kind === 'deleted' && t.replying?.id === message.id) t.replying = null;
       const had2 = t.messages.length;
-      t.messages = mergeMessages(t.messages, [message]);
+      // A change to a message this device has not loaded is not added: a lone old message would break the paging.
+      if (event.kind !== 'updated' || t.messages.some((x) => x.id === message.id)) t.messages = mergeMessages(t.messages, [message]);
       // Something new from someone else while you are reading further up: say so, and offer the way down.
       if (event.kind === 'created' && t.loaded && !t.stick && t.messages.length > had2 && message.sender.id !== me?.id && conversation === openId) t.below++;
       // A number is missing: ask the server to fill in from the last step we knew of.
@@ -460,6 +475,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         // A message taken back: the preview says so if it was the last one, and it is no longer something to read.
         if (c.lastMessage?.seq === message.seq) c.lastMessage = { ...c.lastMessage, body: '', deleted: true };
         if (message.seq > c.lastReadSeq && message.sender.id !== me?.id && c.unread > 0) c.unread--;
+      } else if (event.kind === 'updated') {
+        // The same message changed (its reactions, its words): the preview follows its words, nothing else about the list moves.
+        if (c.lastMessage?.seq === message.seq) c.lastMessage = { ...c.lastMessage, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body };
       } else {
         c.lastMessage = {
           seq: message.seq, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body,
@@ -493,6 +511,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (result.ok) return;
     c.muted = !wanted;
     handleFailure(result);
+  }
+
+  // ---- reactions
+
+  /** Chooses an emoji for a message, or (null) takes yours back. The change comes back through the stream and is drawn then. */
+  async function setReaction(m: Shown, emoji: string | null): Promise<void> {
+    menu = null;
+    const result = emoji === null ? await api.unreact(m.conversationId, m.id) : await api.react(m.conversationId, m.id, emoji);
+    if (!result.ok) { error = result; update(); return; }
+    error = null;
+    update();
   }
 
   // ---- pinned messages

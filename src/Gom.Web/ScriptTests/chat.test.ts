@@ -2140,3 +2140,105 @@ describe('chat: pinned messages', () => {
     expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
   });
 });
+
+describe('chat: reactions', () => {
+  const minhReacts = (emoji: string, who = [{ id: 'u-minh', displayName: 'Minh' }]) => ({ emoji, users: who });
+  const base = [msg(1, 'minh', 'tin của Minh'), msg(2, 'mom', 'tin của mẹ')];
+  const open = (extra: Record<string, unknown> = {}, messages: ChatMessage[] = base) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2, lastMessage: { seq: 2, body: 'tin của mẹ', createdAt: at(10, 2), sender: { id: 'u-mom', displayName: 'Mẹ' } } })], history: { [C1]: messages }, api: extra });
+  const row = (id: string) => root.querySelector(`[data-msg="${id}"]`)!;
+  const menuOf = async (id: string) => { row(id).querySelector<HTMLButtonElement>('button[data-menu]')!.click(); await flush(); };
+
+  it('shows each emoji under a message with how many chose it, and who', async () => {
+    open({}, [{ ...base[0]!, reactions: [minhReacts('👍', [{ id: 'u-minh', displayName: 'Minh' }, { id: 'u-lan', displayName: 'Lan' }]), minhReacts('❤️')] }, base[1]!]);
+    await flush();
+    const chips = [...root.querySelectorAll('[data-chip]')];
+    expect(chips.map((c) => c.getAttribute('data-chip'))).toEqual(['👍', '❤️']);
+    expect(text(chips[0]!)).toContain('2');
+    expect(chips[0]!.getAttribute('aria-label')).toBe('👍: Minh, Lan');
+  });
+
+  it('marks your own reaction and names you "Bạn" for a screen reader', async () => {
+    open({}, [{ ...base[0]!, reactions: [minhReacts('👍', [{ id: 'u-mom', displayName: 'Mẹ' }, { id: 'u-minh', displayName: 'Minh' }])] }, base[1]!]);
+    await flush();
+    const chip = root.querySelector('[data-chip="👍"]')!;
+    expect(chip.getAttribute('aria-pressed')).toBe('true');
+    expect(chip.getAttribute('aria-label')).toBe('👍: Bạn, Minh');
+  });
+
+  it('shows no chips on a message with none, or one taken back', async () => {
+    open({}, [{ ...base[0]!, reactions: [] }, { ...base[1]!, deleted: true, reactions: [minhReacts('👍')] }]);
+    await flush();
+    expect(root.querySelector('[data-chip]')).toBeNull();
+  });
+
+  it('offers the six emoji in the menu and sends the one chosen', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id1');
+    expect([...root.querySelectorAll('[data-react]')].map((b) => b.getAttribute('data-react'))).toEqual(['👍', '❤️', '😆', '😮', '😢', '😡']);
+    root.querySelector<HTMLButtonElement>('[data-react="😆"]')!.click();
+    await flush();
+    expect(h.api.react).toHaveBeenCalledWith(C1, 'id1', '😆');
+    expect(root.querySelector('.menu')).toBeNull();
+  });
+
+  it('chooses an emoji by tapping a chip you have not chosen, and takes yours back by tapping it again', async () => {
+    const h = open({}, [{ ...base[0]!, reactions: [minhReacts('👍'), minhReacts('❤️', [{ id: 'u-mom', displayName: 'Mẹ' }])] }, base[1]!]);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-chip="👍"]')!.click();
+    await flush();
+    expect(h.api.react).toHaveBeenCalledWith(C1, 'id1', '👍');
+    root.querySelector<HTMLButtonElement>('[data-chip="❤️"]')!.click();
+    await flush();
+    expect(h.api.unreact).toHaveBeenCalledWith(C1, 'id1');
+  });
+
+  it('says why when the server refuses', async () => {
+    open({ react: vi.fn(async () => fail('not_friends', 403)) });
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('[data-react="👍"]')!.click();
+    await flush();
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('shows a reaction that arrives live without moving the list or counting as unread', async () => {
+    const h = open();
+    await flush();
+    const updated = { seq: 3, kind: 'updated' as const, message: { ...base[0]!, reactions: [minhReacts('😮')] } };
+    h.handlers().event(C1, updated);
+    await flush();
+    expect(root.querySelector('[data-chip="😮"]')).not.toBeNull();
+    expect(root.querySelector(`[data-chat="${C1}"] .badge`)).toBeNull();
+    expect(text(root.querySelector(`[data-chat="${C1}"] .pv`)!)).toContain('tin của mẹ');
+  });
+
+  it('follows the words of the last message in the list when they change, and nothing else moves', async () => {
+    const h = open();
+    await flush();
+    h.handlers().event(C1, { seq: 3, kind: 'updated', message: { ...base[1]!, body: 'đã sửa' } });
+    await flush();
+    expect(text(root.querySelector(`[data-chat="${C1}"] .pv`)!)).toContain('đã sửa');
+  });
+
+  it('does not add a changed message that this device never loaded', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 9 })], history: { [C1]: [msg(8, 'minh'), msg(9, 'mom')] }, hasMore: true });
+    await flush();
+    h.handlers().event(C1, { seq: 10, kind: 'updated', message: { ...msg(2, 'minh', 'cũ'), reactions: [minhReacts('👍')] } });
+    await flush();
+    expect(root.querySelector('[data-msg="id2"]')).toBeNull();
+    expect([...root.querySelectorAll('[data-msg]')].map((m) => m.getAttribute('data-msg'))).toEqual(['id8', 'id9']);
+  });
+
+  it('takes the cursor forward over an updated event so nothing is asked for twice', async () => {
+    const h = open();
+    await flush();
+    h.handlers().event(C1, { seq: 3, kind: 'updated', message: { ...base[0]!, reactions: [minhReacts('👍')] } });
+    await flush();
+    expect(h.live.sync).not.toHaveBeenCalled();
+    h.handlers().event(C1, { seq: 5, kind: 'updated', message: { ...base[0]!, reactions: [minhReacts('❤️')] } });
+    await flush();
+    expect(h.live.sync).toHaveBeenCalledWith(C1, 3);
+  });
+});

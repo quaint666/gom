@@ -38,6 +38,7 @@ export function errorText(failure: Failure): string {
     case 'invalid_reply': return 'Không trả lời được tin nhắn này vì nó đã bị thu hồi hoặc không còn nữa.';
     case 'invalid_query': return 'Hãy nhập từ cần tìm (tối đa 100 ký tự).';
     case 'pin_limit': return 'Chỉ ghim được tối đa 3 tin nhắn. Hãy bỏ ghim một tin trước.';
+    case 'invalid_reaction': return 'Không dùng được biểu tượng cảm xúc này.';
     case 'use_leave': return 'Muốn ra khỏi nhóm thì chọn "Rời nhóm".';
     case 'not_your_message': return 'Chỉ thu hồi được tin nhắn của chính bạn.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';

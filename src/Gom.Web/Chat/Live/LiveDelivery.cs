@@ -70,6 +70,9 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
             // And a member who joined after the message was written is not told anything about it, not even that it was taken back.
             var members = await db.Members.AsNoTracking().Where(m => m.ConversationId == message.ConversationId && m.JoinedSeq < message.Seq)
                 .Select(m => new { m.UserId, m.JoinedSeq }).ToListAsync();
+            // Someone who deleted this message for themself is not told of later changes to it: it would come back.
+            var gone = kind == "created" ? [] : await db.Hides.AsNoTracking().Where(h => h.MessageId == message.Id).Select(h => h.UserId).ToListAsync();
+            members = members.Where(m => !gone.Contains(m.UserId)).ToList();
             var frame = Frames.Live(message.ConversationId, new EventDto(eventSeq, kind, message));
             // Two readers can see one answer differently: someone who joined after the quoted message gets the quote with nothing in it.
             var hidden = message.Reply is null || parentSeq is null ? frame

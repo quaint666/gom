@@ -12,10 +12,11 @@ namespace Gom.Web.Chat;
 public static class MessageEndpoints
 {
     public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null);
+    public sealed record ReactRequest(string? Emoji);
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -29,6 +30,8 @@ public static class MessageEndpoints
         api.MapPost("/read", MarkRead);
         api.MapDelete("/messages/{messageId:guid}", Recall);
         api.MapPut("/messages/{messageId:guid}/hidden", Hide);
+        api.MapPut("/messages/{messageId:guid}/reaction", React);
+        api.MapDelete("/messages/{messageId:guid}/reaction", Unreact);
         api.MapGet("/pins", ListPins);
         api.MapPut("/messages/{messageId:guid}/pin", Pin);
         api.MapDelete("/messages/{messageId:guid}/pin", Unpin);
@@ -36,7 +39,8 @@ public static class MessageEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null) => new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply);
+    internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null) =>
+        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions);
 
     // ---- what a message may contain
 
@@ -274,6 +278,93 @@ public static class MessageEndpoints
         return Results.NoContent();
     }
 
+    // ---- reactions
+
+    /// <summary>Gives a message this person's reaction (one each; choosing another replaces it). Everyone in the conversation is told, through the stream.</summary>
+    private static async Task<IResult> React(Guid id, Guid messageId, ReactRequest request, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, CancellationToken ct)
+    {
+        if (request.Emoji is null || !Reactions.Allowed.Contains(request.Emoji)) return Error(StatusCodes.Status400BadRequest, "invalid_reaction");
+        var me = GomClaims.User(http.User);
+        var (error, found) = await ReactionTarget(db, id, messageId, me, ct);
+        if (error is not null) return error;
+
+        var now = clock.GetUtcNow();
+        long seq;
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            // The conversation row is locked: reactions of one person on one message cannot race, and the number comes in order.
+            await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
+            if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.DeletedAt == null, ct)) return Results.NotFound();
+            var current = await db.Reactions.Where(r => r.MessageId == messageId && r.UserId == me).Select(r => r.Emoji).SingleOrDefaultAsync(ct);
+            if (current == request.Emoji) return Results.NoContent();
+            if (current is null) db.Reactions.Add(new MessageReaction { MessageId = messageId, UserId = me, Emoji = request.Emoji, CreatedAt = now });
+            else await db.Reactions.Where(r => r.MessageId == messageId && r.UserId == me).ExecuteUpdateAsync(s => s.SetProperty(r => r.Emoji, request.Emoji).SetProperty(r => r.CreatedAt, now), ct);
+            seq = await NextUpdate(db, id, messageId, now, ct);
+            await tx.CommitAsync(ct);
+        }
+        await PublishUpdate(db, found!, seq, me, ct, live);
+        return Results.NoContent();
+    }
+
+    /// <summary>Takes this person's reaction away. When there was none, nothing happens.</summary>
+    private static async Task<IResult> Unreact(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var (error, found) = await ReactionTarget(db, id, messageId, me, ct);
+        if (error is not null) return error;
+
+        long seq;
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
+            if (await db.Reactions.Where(r => r.MessageId == messageId && r.UserId == me).ExecuteDeleteAsync(ct) == 0) return Results.NoContent();
+            seq = await NextUpdate(db, id, messageId, clock.GetUtcNow(), ct);
+            await tx.CommitAsync(ct);
+        }
+        await PublishUpdate(db, found!, seq, me, ct, live);
+        return Results.NoContent();
+    }
+
+    /// <summary>The message a reaction is about, if this person may react to it: in their conversation, after they joined, there, not hidden by them, and (one-to-one) still between friends.</summary>
+    private static async Task<(IResult? Error, Message? Message)> ReactionTarget(GomDbContext db, Guid id, Guid messageId, Guid me, CancellationToken ct)
+    {
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return (Results.NotFound(), null);
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null
+            && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)).SingleOrDefaultAsync(ct);
+        if (found is null) return (Results.NotFound(), null);
+        if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return (Error(StatusCodes.Status403Forbidden, "not_friends"), null);
+        return (null, found);
+    }
+
+    /// <summary>Takes the next number of the conversation for a change to an existing message ("updated"). Call inside the transaction that made the change.</summary>
+    private static async Task<long> NextUpdate(GomDbContext db, Guid id, Guid messageId, DateTimeOffset now, CancellationToken ct)
+    {
+        var seq = (await db.Database.SqlQuery<long>(
+            $"UPDATE conversations SET last_seq = last_seq + 1 WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
+        db.Events.Add(new MessageEvent { ConversationId = id, Seq = seq, Kind = EventKind.Updated, MessageId = messageId, CreatedAt = now });
+        await db.SaveChangesAsync(ct);
+        return seq;
+    }
+
+    /// <summary>Tells the conversation the message changed: its words, its quote and its reactions as they are now.</summary>
+    private static async Task PublishUpdate(GomDbContext db, Message message, long seq, Guid actor, CancellationToken ct, LiveDelivery live)
+    {
+        var author = await db.Users.AsNoTracking().Where(u => u.Id == message.SenderId).Select(u => new PersonDto(u.Id, u.DisplayName)).SingleAsync(ct);
+        var current = await db.Messages.AsNoTracking().SingleAsync(m => m.Id == message.Id, ct);
+        var reactions = await Reactions.For(db, message.ConversationId, [message.Id], ct);
+        long? parentSeq = null;
+        ReplyDto? reply = null;
+        if (current.ReplyToId is { } parent)
+        {
+            // The quote as the actor sees it; readers who joined after the quoted message get it emptied by the delivery.
+            parentSeq = await db.Messages.Where(m => m.Id == parent).Select(m => (long?)m.Seq).SingleOrDefaultAsync(ct);
+            var joined = await db.Members.Where(m => m.ConversationId == current.ConversationId && m.UserId == actor).Select(m => m.JoinedSeq).SingleOrDefaultAsync(ct);
+            reply = (await Replies.For(db, [current], actor, joined, ct)).GetValueOrDefault(current.Id);
+        }
+        await live.PublishAsync(db, seq, "updated", ToDto(current, author, reply, reactions.GetValueOrDefault(current.Id)), parentSeq);
+    }
+
     // ---- delete for me
 
     /// <summary>
@@ -313,9 +404,10 @@ public static class MessageEndpoints
 
         var page = rows.Take(take).ToList();
         var replies = await Replies.For(db, page.Select(r => r.Message), me, access.JoinedSeq, ct);
+        var reactions = await Reactions.For(db, id, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         return Results.Ok(new
         {
-            messages = page.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id))),
+            messages = page.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id), reactions.GetValueOrDefault(r.Message.Id))),
             hasMore = rows.Count > take,
             // Where the stream stands, so a device can ask for "everything after this" from here on.
             lastSeq = await db.Conversations.Where(c => c.Id == id).Select(c => c.LastSeq).SingleAsync(ct),

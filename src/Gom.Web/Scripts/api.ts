@@ -5,7 +5,7 @@ export type ErrorCode =
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
-  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit'
+  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit' | 'invalid_reaction'
   | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
@@ -15,7 +15,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
-  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit',
+  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit', 'invalid_reaction',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -33,11 +33,13 @@ export interface FriendRequest extends Person { createdAt: string }
 export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; outgoing: FriendRequest[] }
 /** Who wrote a message: a name and an opaque id. The Gom ID is shown to friends only, so it is not here. */
 export interface Sender { id: string; displayName: string }
+/** One emoji on a message and the members who chose it. */
+export interface Reaction { emoji: string; users: Sender[] }
 /** The quote above an answer. With no sender and no snippet, the quoted message is not there for this reader. */
 export interface Reply { id: string; sender: Sender | null; snippet: string | null }
-export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
-export interface ChatEvent { seq: number; kind: 'created' | 'deleted'; message: ChatMessage }
+export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
@@ -86,6 +88,8 @@ export interface Api {
   setReceipts(enabled: boolean): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string, replyTo?: string): Promise<Result<ChatMessage>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
+  react(conversation: string, message: string, emoji: string): Promise<Result<void>>;
+  unreact(conversation: string, message: string): Promise<Result<void>>;
   search(conversation: string, query: string): Promise<Result<{ results: ChatMessage[] }>>;
   pins(conversation: string): Promise<Result<{ pins: ChatMessage[] }>>;
   pin(conversation: string, message: string): Promise<Result<void>>;
@@ -175,6 +179,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     pins: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/pins`),
     pin: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),
     unpin: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),
+    react: (conversation, message, emoji) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/reaction`, { emoji }),
+    unreact: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/reaction`),
     markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };
 }

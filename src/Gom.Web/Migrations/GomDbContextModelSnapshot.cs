@@ -307,7 +307,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("message_events", null, t =>
                         {
-                            t.HasCheckConstraint("ck_message_events_kind", "kind IN ('created', 'deleted')");
+                            t.HasCheckConstraint("ck_message_events_kind", "kind IN ('created', 'deleted', 'updated')");
 
                             t.HasCheckConstraint("ck_message_events_seq", "seq > 0");
                         });
@@ -364,6 +364,35 @@ namespace Gom.Web.Migrations
                         .HasDatabaseName("ix_message_pins_pinned_by");
 
                     b.ToTable("message_pins", (string)null);
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.MessageReaction", b =>
+                {
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Emoji")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("emoji");
+
+                    b.HasKey("MessageId", "UserId")
+                        .HasName("pk_message_reactions");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_message_reactions_user_id");
+
+                    b.ToTable("message_reactions", (string)null);
                 });
 
             modelBuilder.Entity("Gom.Web.Data.OneTimeLink", b =>
@@ -693,6 +722,23 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_message_pins_pinned_by");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.MessageReaction", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Message", null)
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_message_reactions_message_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_message_reactions_user_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.OneTimeLink", b =>

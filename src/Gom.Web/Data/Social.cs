@@ -82,7 +82,7 @@ public class Message
     public DateTimeOffset? DeletedAt { get; set; }
 }
 
-public enum EventKind { Created, Deleted }
+public enum EventKind { Created, Deleted, Updated }
 
 /// <summary>One step in a conversation's ordered stream. A device that was away asks for "everything after seq N".</summary>
 public class MessageEvent
@@ -108,5 +108,14 @@ public class MessagePin
     public Guid ConversationId { get; set; }
     public Guid MessageId { get; set; }
     public Guid PinnedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>One person's reaction to one message: at most one each, changed by choosing another.</summary>
+public class MessageReaction
+{
+    public Guid MessageId { get; set; }
+    public Guid UserId { get; set; }
+    public string Emoji { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; }
 }

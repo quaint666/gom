@@ -247,3 +247,12 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .pin-text span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pinlist { list-style: none; margin: 0; padding: 8px 12px; background: var(--surface); border-block-end: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; max-block-size: 40vh; overflow-y: auto; }
 .mrow.found .bub { outline: 2px solid var(--btn); outline-offset: 2px; }
+
+/* reactions */
+.emoji-row { display: flex; flex-basis: 100%; justify-content: space-between; gap: 4px; }
+.emoji { min-inline-size: 44px; min-block-size: 44px; border: 0; border-radius: 22px; background: none; font-size: 24px; cursor: pointer; }
+.emoji:hover { background: var(--border); }
+.reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-block: -2px 4px; }
+.reacts.out { justify-content: flex-end; }
+.chip { display: inline-flex; align-items: center; gap: 4px; min-block-size: 28px; padding-inline: 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.chip.mine { border-color: var(--btn); background: var(--out); }
