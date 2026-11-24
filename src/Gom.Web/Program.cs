@@ -4,11 +4,27 @@ using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Gom.Web.Social;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
+
+// Behind a proxy chain the visitor's address and "https" arrive in X-Forwarded-*. ForwardedHeaders:Hops is how many
+// proxies sit in front of the app (staging: nginx, then cloudflared, so 2). It is 0 by default, so a copy on a laptop
+// never believes a header a visitor sends. When it is on, the app must be reachable only through the proxy: callers are
+// not checked, the number of hops is what picks the visitor's address out of the header.
+var proxyHops = builder.Configuration.GetValue<int?>("ForwardedHeaders:Hops") ?? 0;
+if (proxyHops < 0) throw new InvalidOperationException("ForwardedHeaders:Hops must be 0 (no proxy) or a whole number above 0.");
+if (proxyHops > 0)
+    builder.Services.Configure<ForwardedHeadersOptions>(o =>
+    {
+        o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        o.ForwardLimit = proxyHops;
+        o.KnownProxies.Clear();
+        o.KnownIPNetworks.Clear();
+    });
 
 // Everything environment-specific comes from configuration, never from code.
 var connectionString = builder.Configuration.GetConnectionString("Default")
@@ -42,6 +58,7 @@ builder.Services.AddHostedService<OwnerSeedingService>();
 
 var app = builder.Build();
 
+if (proxyHops > 0) app.UseForwardedHeaders();
 app.UseMiddleware<SecurityHeaders>();
 app.UseStaticFiles(new StaticFileOptions
 {

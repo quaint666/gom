@@ -1,0 +1,165 @@
+# Gom image.
+#
+# Every pull request and every push to main builds the image (the site and the migration bundle, see the Dockerfile) and
+# checks it against a throwaway Postgres. Only a push to main also publishes it to GitHub's registry (GHCR), tagged with the
+# first 12 characters of the commit. There is deliberately no `latest` tag: deployment pins an exact tag and digest, and
+# deploying is a manual step. CI never deploys and holds no secrets of its own: it pushes with the run's built-in GITHUB_TOKEN.
+# On main the last step writes the tag and the digest into the run summary.
+#
+# The tests are in test.yml (the required check); this workflow is about the image.
+
+name: images
+
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  push:
+    branches: [main]
+    # A push that changes only docs builds nothing: the image never contains them.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      APP_IMAGE: ghcr.io/${{ github.repository }}
+      CI_NAME: gom-ci-${{ github.run_id }}
+      PG_PASSWORD: ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Compute the image tag (first 12 characters of the commit)
+        env:
+          SHA: ${{ github.sha }}
+        run: echo "TAG=${SHA:0:12}" >> "$GITHUB_ENV"
+
+      - name: Build the image (the site and the migration bundle)
+        run: docker build --provenance=false -t "$APP_IMAGE:$TAG" .
+
+      - name: Start a throwaway Postgres on a private network
+        run: |
+          docker rm -f "$CI_NAME-web" "$CI_NAME-pg" 2>/dev/null || true
+          docker network rm "$CI_NAME" 2>/dev/null || true
+          docker network create "$CI_NAME"
+          docker run -d --name "$CI_NAME-pg" --network "$CI_NAME" \
+            --memory=512m --memory-swap=512m \
+            -e POSTGRES_USER=gom -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_DB=gom \
+            postgres:19
+          for i in $(seq 1 60); do
+            docker exec "$CI_NAME-pg" pg_isready -h 127.0.0.1 -U gom -d gom && break
+            sleep 1
+          done
+          docker exec "$CI_NAME-pg" pg_isready -h 127.0.0.1 -U gom -d gom
+
+      # The bundle reaches the database only through ConnectionStrings__Default, the way staging runs it (the same image,
+      # entrypoint /app/efbundle). A second run must change nothing.
+      - name: Run the migration bundle of the image twice
+        run: |
+          migrate() {
+            docker run --rm --network "$CI_NAME" --entrypoint /app/efbundle \
+              -e ConnectionStrings__Default="Host=$CI_NAME-pg;Username=gom;Password=$PG_PASSWORD;Database=gom" \
+              "$APP_IMAGE:$TAG"
+          }
+          migrate | tail -3
+          OUT=$(migrate 2>&1)
+          echo "$OUT" | tail -3
+          echo "$OUT" | grep -q 'No migrations were applied'
+
+      - name: Fail-fast check, the site refuses to start with no connection string
+        run: |
+          CODE=0
+          OUT=$(docker run --rm "$APP_IMAGE:$TAG" 2>&1) || CODE=$?
+          echo "$OUT" | tail -3
+          echo "exit code: $CODE"
+          [ "$CODE" -ne 0 ]
+          echo "$OUT" | grep -q "ConnectionStrings:Default is not set"
+
+      # The settings are the ones staging uses. The health check calls localhost, because AllowedHosts names the site and
+      # localhost only.
+      - name: Smoke test, health, HEAD, a page, the host check, a 405, sign-in and a WebSocket
+        run: |
+          docker run -d --name "$CI_NAME-web" --network "$CI_NAME" \
+            --memory=256m --memory-swap=256m \
+            -e ConnectionStrings__Default="Host=$CI_NAME-pg;Username=gom;Password=$PG_PASSWORD;Database=gom" \
+            -e ForwardedHeaders__Hops=2 -e 'AllowedHosts=gom-staging.example;localhost' \
+            -e Auth__AllowedOrigins__0=https://gom-staging.example \
+            -e Owner__GomId=ci_owner -e Owner__Password=ci-only-password-not-a-secret \
+            "$APP_IMAGE:$TAG"
+          for i in $(seq 1 30); do
+            docker exec "$CI_NAME-web" wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 && break
+            sleep 1
+          done
+          [ "$(docker exec "$CI_NAME-web" wget -qO- http://localhost:8080/healthz)" = '{"status":"ok"}' ]
+          [ "$(docker exec "$CI_NAME-web" id -u)" != 0 ]
+          CODE=0; docker exec "$CI_NAME-web" wget -qO- --header='Host: evil.example' http://127.0.0.1:8080/healthz >/dev/null 2>&1 || CODE=$?
+          echo "a host that is not allowed: wget exit code $CODE"
+          [ "$CODE" -ne 0 ]
+          # What a plain wget cannot do (the image has no curl, the runner does), against the published build.
+          IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CI_NAME-web")
+          req() { curl -s -H 'Host: gom-staging.example' "$@"; }
+          [ "$(req -o /dev/null -w '%{http_code}' -I "http://$IP:8080/healthz")" = 200 ]
+          [ "$(req -o /dev/null -w '%{http_code}' -I "http://$IP:8080/sign-in")" = 200 ]
+          [ "$(req -o /dev/null -w '%{http_code}' -X PUT "http://$IP:8080/healthz")" = 405 ]
+          req -D "$RUNNER_TEMP/h" -o /dev/null "http://$IP:8080/sign-in"
+          grep -qi '^permissions-policy:' "$RUNNER_TEMP/h"
+          ! grep -qi '^server:' "$RUNNER_TEMP/h"
+          # Sign in as the owner made by the settings above, then open the WebSocket with that cookie and the right Origin.
+          req -D "$RUNNER_TEMP/s" -o /dev/null -X POST "http://$IP:8080/api/session" \
+            -H 'Origin: https://gom-staging.example' -H 'Content-Type: application/json' \
+            -d '{"gomId":"ci_owner","password":"ci-only-password-not-a-secret"}'
+          head -1 "$RUNNER_TEMP/s" | grep -q ' 200'
+          COOKIE=$(grep -i '^set-cookie: __Host-gom=' "$RUNNER_TEMP/s" | sed 's/^[^=]*=\([^;]*\);.*/\1/' | tr -d '\r')
+          [ -n "$COOKIE" ]
+          WS=$(req -o /dev/null -w '%{http_code}' --max-time 3 -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            -H 'Origin: https://gom-staging.example' -H "Cookie: __Host-gom=$COOKIE" "http://$IP:8080/ws" || true)
+          echo "websocket upgrade: $WS"
+          [ "$WS" = 101 ]
+          WS=$(req -o /dev/null -w '%{http_code}' --max-time 3 -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            -H 'Origin: https://evil.example' -H "Cookie: __Host-gom=$COOKIE" "http://$IP:8080/ws" || true)
+          echo "websocket upgrade from another site: $WS"
+          [ "$WS" = 403 ]
+
+      - name: Show the web logs if something above failed
+        if: failure()
+        run: docker logs "$CI_NAME-web" 2>&1 | tail -40 || true
+
+      - name: Log in and push the image (main only)
+        if: github.ref == 'refs/heads/main'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          docker push "$APP_IMAGE:$TAG"
+          APP_DIGEST=$(docker image inspect --format '{{index .RepoDigests 0}}' "$APP_IMAGE:$TAG")
+          {
+            echo '### Pin this build'
+            echo
+            echo "tag: \`$TAG\`"
+            echo
+            echo '```'
+            echo "$APP_DIGEST"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # The homelab helper greps the run log for ghcr.io/quaint666/gom@sha256:<digest>: it must appear once, with one
+          # digest. Do not print the image reference with a digest anywhere else.
+          echo "$APP_DIGEST"
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f "$CI_NAME-web" "$CI_NAME-pg" 2>/dev/null || true
+          docker network rm "$CI_NAME" 2>/dev/null || true
+          docker logout "$REGISTRY" || true
+          docker rmi "$APP_IMAGE:$TAG" 2>/dev/null || true
