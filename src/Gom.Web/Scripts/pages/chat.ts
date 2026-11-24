@@ -88,6 +88,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** `at` is where it was asked for (the pointer or the button), so a mouse gets it there; a finger always gets the sheet at the bottom. */
   let menu: { id: string; confirming: boolean; hide?: boolean; at?: { x: number; y: number } } | null = null;
   /** The search bar of the open conversation: what was asked, and what came back (null while waiting for the first answer). */
+  /** Messages that just arrived from someone else in the open chat: they rise in once, and are forgotten a moment later. */
+  const fresh = new Set<string>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
   let found: string | null = null;
   /** What is typed in the search above the list of conversations. */
@@ -206,7 +208,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
-    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${found === m.id ? 'found' : ''}`;
+    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
     const tools = hasMenu ? html`
@@ -519,6 +521,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (event.kind !== 'updated' || t.messages.some((x) => x.id === message.id)) t.messages = mergeMessages(t.messages, [message]);
       // Something new from someone else while you are reading further up: say so, and offer the way down.
       if (event.kind === 'created' && t.loaded && !t.stick && t.messages.length > had2 && message.sender.id !== me?.id && conversation === openId) t.below++;
+      if (event.kind === 'created' && t.loaded && t.messages.length > had2 && message.sender.id !== me?.id && conversation === openId) {
+        fresh.add(message.id);
+        setTimeout(() => { fresh.delete(message.id); }, 600);
+      }
       // A number is missing: ask the server to fill in from the last step we knew of.
       if (t.loaded && event.seq > had + 1) live?.sync(conversation, had);
       t.cursor = Math.max(t.cursor, event.seq);

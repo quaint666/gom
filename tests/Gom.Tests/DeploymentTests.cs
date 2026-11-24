@@ -68,6 +68,36 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.All(pages, p => Assert.Contains("interactive-widget=resizes-content", File.ReadAllText(p)));
     }
 
+    /// <summary>Motion is for people who have not asked for less: every animation and transition sits inside the no-preference media query.</summary>
+    [Fact]
+    public void Every_animation_and_transition_is_inside_the_reduced_motion_gate()
+    {
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Gom.Web", "wwwroot", "css", "gom.css"));
+        var stack = new Stack<bool>();   // for each open block: is it (inside) the gate
+        var header = new System.Text.StringBuilder();
+        var offenders = new List<string>();
+        var declaration = new System.Text.StringBuilder();
+        foreach (var ch in css)
+        {
+            if (ch == '{')
+            {
+                var gate = (stack.Count > 0 && stack.Peek()) || header.ToString().Contains("prefers-reduced-motion: no-preference", StringComparison.Ordinal);
+                stack.Push(gate);
+                header.Clear(); declaration.Clear();
+            }
+            else if (ch == '}') { if (stack.Count > 0) stack.Pop(); header.Clear(); declaration.Clear(); }
+            else if (ch == ';')
+            {
+                var d = declaration.ToString().Trim();
+                if ((d.StartsWith("animation", StringComparison.Ordinal) || d.StartsWith("transition", StringComparison.Ordinal)) && !(stack.Count > 0 && stack.Peek()))
+                    offenders.Add(d);
+                declaration.Clear(); header.Append(ch);
+            }
+            else { header.Append(ch); declaration.Append(ch); }
+        }
+        Assert.Empty(offenders);
+    }
+
     [Fact]
     public async Task A_method_an_address_does_not_take_is_a_405()
     {
