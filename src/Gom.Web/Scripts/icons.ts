@@ -20,6 +20,7 @@ export const send = () => icon('M4 12l16-8-6 16-3-7-7-1z');
 export const wifiOff = () => icon('M2 8.8a15 15 0 0120 0', 'M5 12.5a10 10 0 0114 0', 'M8.5 16a5 5 0 017 0', 'M12 19.5h.01', 'M3 3l18 18');
 export const pencil = () => icon('M4 20h4L19 9l-4-4L4 16v4z', 'M13.5 6.5l4 4');
 export const more = () => icon('M12 5.5h.01', 'M12 12h.01', 'M12 18.5h.01');
+export const check = () => icon('M5 12.5l4.5 4.5L19 7.5');
 export const checks = () => icon('M2 13l4 4 8-9', 'M10 15l2 2 9-10');
 export const close = () => icon('M6 6l12 12', 'M18 6L6 18');
 export const bell = () => icon('M6 16V11a6 6 0 0112 0v5l1.5 2h-15z', 'M10 21h4');

@@ -1321,42 +1321,46 @@ describe('chat: who has seen your message', () => {
   const open = (reads: { enabled: boolean; reads: { userId: string; seq: number }[] }, history = [mine1, theirs2], extra: Record<string, unknown> = {}) =>
     start({ path: `/c/${C1}`, chats, history: { [C1]: history }, api: { reads: vi.fn(async () => ok(reads)), ...extra } });
   const seen = () => root.querySelector('.seen');
+  const tick = (id: string) => root.querySelector(`[data-msg="${id}"] .tick`);
 
-  it('says "Đã xem" under your last message once the other person has read up to it', async () => {
+  it('marks your message with two checks once the other person has read up to it, and has no extra line in a chat of two', async () => {
     open({ enabled: true, reads: [{ userId: 'u-minh', seq: 1 }] });
     await flush();
-    expect(text(seen()!)).toBe('Đã xem');
-    expect(root.querySelector('[data-msg="id1"]')!.nextElementSibling).toBe(seen());
+    expect(tick('id1')!.classList.contains('t-seen')).toBe(true);
+    expect(tick('id1')!.getAttribute('aria-label')).toBe('Đã xem');
+    expect(seen()).toBeNull();
   });
 
   it('says nothing until they have read that far', async () => {
     open({ enabled: true, reads: [{ userId: 'u-minh', seq: 0 }] });
     await flush();
-    expect(seen()).toBeNull();
+    expect(tick('id1')!.classList.contains('t-sent')).toBe(true);
+    expect(tick('id1')!.getAttribute('aria-label')).toBe('Đã gửi');
   });
 
   it('says nothing when you have hidden yours, which hides theirs too', async () => {
     open({ enabled: false, reads: [] });
     await flush();
-    expect(seen()).toBeNull();
+    expect(tick('id1')!.classList.contains('t-sent')).toBe(true);
   });
 
-  it('puts the line under your last message only, not under earlier ones', async () => {
-    open({ enabled: true, reads: [{ userId: 'u-minh', seq: 9 }] }, [mine1, theirs2, msg(3, 'mom', 'tin sau')]);
+  it('marks each of your messages by how far they have read, and never marks theirs', async () => {
+    open({ enabled: true, reads: [{ userId: 'u-minh', seq: 2 }] }, [mine1, theirs2, msg(3, 'mom', 'tin sau')]);
     await flush();
-    expect(root.querySelectorAll('.seen')).toHaveLength(1);
-    expect(root.querySelector('[data-msg="id3"]')!.nextElementSibling).toBe(seen());
+    expect(tick('id1')!.classList.contains('t-seen')).toBe(true);
+    expect(tick('id3')!.classList.contains('t-sent')).toBe(true);
+    expect(tick('id2')).toBeNull();
   });
 
   it('skips a message you took back, and shows nothing when you have written nothing', async () => {
     open({ enabled: true, reads: [{ userId: 'u-minh', seq: 9 }] }, [mine1, { ...msg(3, 'mom', ''), deleted: true }]);
     await flush();
-    expect(root.querySelector('[data-msg="id1"]')!.nextElementSibling).toBe(seen());
+    expect(tick('id3')).toBeNull();
 
     root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
     open({ enabled: true, reads: [{ userId: 'u-minh', seq: 9 }] }, [theirs2]);
     await flush();
-    expect(seen()).toBeNull();
+    expect(root.querySelector('.tick')).toBeNull();
   });
 
   it('does not show it for a message still on its way', async () => {
@@ -1365,16 +1369,16 @@ describe('chat: who has seen your message', () => {
     compose('chưa gửi được');
     submitForm();
     await flush();
-    expect(seen()).toBeNull();
+    expect(root.querySelector('.mrow[data-state="queued"] .tick, .mrow[data-state="failed"] .tick, .mrow[data-state="sending"] .tick')).toBeNull();
   });
 
   it('shows it as soon as they read, with no reload', async () => {
     const h = open({ enabled: true, reads: [] });
     await flush();
-    expect(seen()).toBeNull();
+    expect(tick('id1')!.classList.contains('t-sent')).toBe(true);
     h.handlers().read(C1, 'u-minh', 1);
     await flush();
-    expect(text(seen()!)).toBe('Đã xem');
+    expect(tick('id1')!.classList.contains('t-seen')).toBe(true);
   });
 
   it('never goes backwards when an older reading arrives late', async () => {
@@ -1382,7 +1386,7 @@ describe('chat: who has seen your message', () => {
     await flush();
     h.handlers().read(C1, 'u-minh', 0);
     await flush();
-    expect(text(seen()!)).toBe('Đã xem');
+    expect(tick('id1')!.classList.contains('t-seen')).toBe(true);
   });
 
   it('ignores a reading in a conversation that is not open, and one while you have it hidden', async () => {
@@ -1435,6 +1439,19 @@ describe('chat: who has seen your message', () => {
     h.handlers().read(G, 'u-c', 1);   // a new person is one more
     await flush();
     expect(text(seen()!)).toBe('Đã xem bởi 3');
+    expect(tick('id1')!.classList.contains('t-seen')).toBe(true);   // all three others have read it
+  });
+
+  it('keeps one check in a group until everyone else has read', async () => {
+    const G = '33333333-3333-4333-8333-333333333333';
+    start({
+      path: `/c/${G}`, history: { [G]: [msg(1, 'mom', 'cả nhà ơi', at(10), G)] },
+      chats: [{ id: G, kind: 'group', title: 'Nhóm', peer: null, lastSeq: 1, lastReadSeq: 1, unread: 0, lastMessage: null, memberCount: 4 }],
+      api: { reads: vi.fn(async () => ok({ enabled: true, reads: [{ userId: 'u-a', seq: 1 }, { userId: 'u-b', seq: 1 }] })) },
+    });
+    await flush();
+    expect(tick('id1')!.classList.contains('t-sent')).toBe(true);
+    expect(text(seen()!)).toBe('Đã xem bởi 2');
   });
 });
 
