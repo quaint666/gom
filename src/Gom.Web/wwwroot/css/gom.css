@@ -467,3 +467,7 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .info-media { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .info-media .pic { aspect-ratio: 1; border-radius: 6px; }
 .info-media .pic img { block-size: 100%; }
+
+/* an address in a message */
+a.ext { color: var(--link); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+a.ext:hover { text-decoration-thickness: 2px; }

@@ -2967,3 +2967,44 @@ describe('chat: pictures and files', () => {
     localStorage.removeItem('gom-info');
   });
 });
+
+describe('chat: addresses in messages', () => {
+  const open = (body: string) => start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 1 })], history: { [C1]: [msg(1, 'minh', body)] } });
+
+  it('makes an address a link that opens in a new tab without telling that site who sent you', async () => {
+    open('xem https://example.com/a?b=1, nhé');
+    await flush();
+    const link = root.querySelector<HTMLAnchorElement>('[data-msg="id1"] a.ext')!;
+    expect(link.getAttribute('href')).toBe('https://example.com/a?b=1');
+    expect(link.textContent).toBe('https://example.com/a?b=1');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer nofollow');
+    expect(text(root.querySelector('[data-msg="id1"] .txt')!)).toBe('xem https://example.com/a?b=1, nhé');
+  });
+
+  it('leaves a javascript address and an address with a password in front as plain words', async () => {
+    open('javascript:alert(1) https://google.com@evil.example/');
+    await flush();
+    expect(root.querySelector('[data-msg="id1"] a')).toBeNull();
+  });
+
+  it('does not turn what is written in the box or a quoted snippet into a link', async () => {
+    open('chỉ là chữ');
+    await flush();
+    compose('https://example.com');
+    expect(root.querySelector('textarea')!.value).toBe('https://example.com');
+    expect(root.querySelector('.composer a')).toBeNull();
+  });
+
+  it('keeps the message menu away from an address on a right click, so the browser can offer to copy it', async () => {
+    open('https://example.com/x');
+    await flush();
+    const on = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    root.querySelector('[data-msg="id1"] a.ext')!.dispatchEvent(on);
+    expect(on.defaultPrevented).toBe(false);
+    expect(root.querySelector('.menu')).toBeNull();
+    const off = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    root.querySelector('[data-msg="id1"] .bub')!.dispatchEvent(off);
+    expect(off.defaultPrevented).toBe(true);
+  });
+});
