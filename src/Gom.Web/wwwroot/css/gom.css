@@ -370,6 +370,7 @@ form { display: flex; flex-direction: column; gap: 14px; }
   @keyframes pop { from { opacity: 0; transform: scale(.92); } }
   @keyframes sheet { from { transform: translateY(24px); opacity: 0; } }
   @keyframes fade { from { opacity: 0; } }
+  .viewer { animation: fade .15s var(--ease); }
   @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }
   .mrow.fresh { animation: rise .18s var(--ease); }
   .chip { animation: pop .15s var(--ease); }
@@ -419,3 +420,50 @@ form { display: flex; flex-direction: column; gap: 14px; }
 }
 .ib[aria-pressed="true"].info-btn { color: var(--link); }
 .letter { margin: 12px 4px 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
+
+/* pictures and files in a message */
+.pics { display: grid; gap: 3px; margin: 0 0 4px; max-inline-size: min(320px, 100%); border-radius: 10px; overflow: hidden; }
+.pics.n1 { grid-template-columns: 1fr; }
+.pics.n2, .pics.n4 { grid-template-columns: 1fr 1fr; }
+.pics.n3, .pics.n5 { grid-template-columns: 1fr 1fr 1fr; }
+.pic { display: block; padding: 0; border: 0; background: var(--border); cursor: zoom-in; inline-size: 100%; overflow: hidden; }
+.pic img { display: block; inline-size: 100%; block-size: auto; object-fit: cover; }
+.pics:not(.n1) .pic { aspect-ratio: 1; }
+.pics:not(.n1) .pic img { block-size: 100%; }
+.pics.n1 .pic img { max-block-size: 360px; inline-size: auto; max-inline-size: 100%; margin-inline: auto; }
+.filecard { display: flex; align-items: center; gap: 10px; min-inline-size: 200px; padding: 8px 10px; margin-block: 2px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 70%, transparent); color: var(--text); text-decoration: none; }
+.filecard:hover { background: var(--hover); }
+.filecard .fi { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
+.filecard b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filecard small { color: var(--muted); }
+.mrow .bub:has(> .pics:only-child), .mrow .bub:has(> .pics:first-child:nth-last-child(2)) { padding: 4px; }
+
+/* what is chosen for the next message */
+.atray { display: flex; gap: 8px; padding: 8px 12px; overflow-x: auto; flex: none; background: var(--surface); border-block-start: 1px solid var(--border); }
+.tray-item { position: relative; flex: none; inline-size: 84px; block-size: 84px; border-radius: 10px; overflow: hidden; background: var(--bg); border: 1px solid var(--border); }
+.tray-item img { inline-size: 100%; block-size: 100%; object-fit: cover; display: block; }
+.tray-file { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; inline-size: 100%; block-size: 100%; padding: 6px; font-size: 11px; color: var(--muted); text-align: center; }
+.tray-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
+.tray-item progress { position: absolute; inset-inline: 6px; inset-block-end: 6px; inline-size: calc(100% - 12px); block-size: 6px; }
+.tray-item.failed { inline-size: 220px; border-color: var(--err-border); background: var(--err-bg); color: var(--err-text); }
+.tray-err { padding: 8px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+.tray-x { position: absolute; inset-block-start: 2px; inset-inline-end: 2px; inline-size: 26px; block-size: 26px; background: rgb(0 0 0 / .55); color: #fff; }
+.tray-x .i { inline-size: 14px; block-size: 14px; }
+.file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.composer .attach { flex: none; }
+
+/* the big picture */
+.viewer { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgb(0 0 0 / .92); outline: 0; }
+.viewer .vimg { max-inline-size: 100vw; max-block-size: 100dvh; object-fit: contain; }
+.viewer-bar { position: absolute; inset-block-start: 0; inset-inline: 0; display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 8px 12px; color: #fff; z-index: 1; }
+.viewer-bar span { margin-inline-end: auto; font-size: 14px; }
+.viewer .ib { color: #fff; background: rgb(255 255 255 / .12); }
+.viewer .ib:hover { background: rgb(255 255 255 / .25); color: #fff; }
+.viewer .vprev, .viewer .vnext { position: absolute; inset-block-start: 50%; translate: 0 -50%; z-index: 1; }
+.viewer .vprev { inset-inline-start: 12px; }
+.viewer .vnext { inset-inline-end: 12px; }
+
+/* the panel beside a thread: pictures and files shared so far */
+.info-media { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.info-media .pic { aspect-ratio: 1; border-radius: 6px; }
+.info-media .pic img { block-size: 100%; }

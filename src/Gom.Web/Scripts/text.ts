@@ -45,8 +45,25 @@ export function errorText(failure: Failure): string {
     case 'use_leave': return 'Muốn ra khỏi nhóm thì chọn "Rời nhóm".';
     case 'not_your_message': return 'Chỉ thu hồi được tin nhắn của chính bạn.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
+    case 'too_large': return 'Tệp quá lớn (ảnh tối đa 10 MB, tệp tối đa 25 MB).';
+    case 'image_dimensions': return 'Ảnh có kích thước quá lớn.';
+    case 'invalid_image': return 'Không đọc được ảnh này.';
+    case 'busy': return 'Gom đang bận xử lý ảnh. Hãy thử lại sau ít giây.';
+    case 'too_many_uploads': return 'Bạn tải lên quá nhanh. Hãy đợi một chút.';
+    case 'uploads_disabled': return 'Máy chủ này chưa bật tính năng gửi ảnh và tệp.';
+    case 'empty_upload': return 'Tệp này trống.';
+    case 'invalid_attachment': return 'Không đính kèm được tệp này. Hãy gỡ nó ra và chọn lại.';
+    case 'too_many_attachments': return 'Mỗi tin nhắn có tối đa 10 tệp.';
     case 'network': return 'Không kết nối được. Kiểm tra mạng rồi thử lại.';
     case 'server': return 'Gom đang gặp sự cố. Hãy thử lại sau ít phút.';
     default: return 'Có lỗi xảy ra. Hãy thử lại.';
   }
+}
+
+/** A size in words: "1,2 MB". */
+export function formatSize(bytes: number): string {
+  const number = (n: number) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(n);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${number(bytes / 1024)} KB`;
+  return `${number(bytes / (1024 * 1024))} MB`;
 }
