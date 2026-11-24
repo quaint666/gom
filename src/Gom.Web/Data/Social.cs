@@ -80,6 +80,8 @@ public class Message
     public string Body { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    /// <summary>When its words were last changed by the sender; null if never. The old words are not kept.</summary>
+    public DateTimeOffset? EditedAt { get; set; }
 }
 
 public enum EventKind { Created, Deleted, Updated }

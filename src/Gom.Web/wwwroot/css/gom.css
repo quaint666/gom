@@ -256,3 +256,6 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .reacts.out { justify-content: flex-end; }
 .chip { display: inline-flex; align-items: center; gap: 4px; min-block-size: 28px; padding-inline: 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 .chip.mine { border-color: var(--btn); background: var(--out); }
+
+/* edited messages */
+.edited { color: var(--muted); }
