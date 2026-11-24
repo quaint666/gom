@@ -37,7 +37,7 @@ const deps = (random = 1): LiveDeps => ({
 });
 
 function handlers(): LiveHandlers & { [K in keyof LiveHandlers]: ReturnType<typeof vi.fn> } {
-  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), read: vi.fn(), hidden: vi.fn(), ended: vi.fn(), replaced: vi.fn() } as never;
+  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), read: vi.fn(), pins: vi.fn(), hidden: vi.fn(), ended: vi.fn(), replaced: vi.fn() } as never;
 }
 const last = () => FakeSocket.all[FakeSocket.all.length - 1]!;
 const fireTimer = () => { const t = timers.shift()!; t.fn(); };
@@ -215,6 +215,19 @@ describe('live socket', () => {
     createLive('ws://x/ws', h, deps()).start();
     last().drop();
     expect(h.state).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('live socket: pinned messages', () => {
+  it('tells the page which conversation has new pins, and ignores a frame without one', () => {
+    const h = handlers();
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept(); last().say({ t: 'ready' });
+    last().say({ t: 'pins', c: 'c1' });
+    last().say({ t: 'pins' });
+    last().say({ t: 'pins', c: 5 });
+    expect(h.pins).toHaveBeenCalledOnce();
+    expect(h.pins).toHaveBeenCalledWith('c1');
   });
 });
 

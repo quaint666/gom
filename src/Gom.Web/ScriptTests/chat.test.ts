@@ -2021,3 +2021,122 @@ describe('chat: searching a conversation', () => {
     expect(root.querySelector('[data-result="id1"]')).toBeNull();
   });
 });
+
+describe('chat: pinned messages', () => {
+  const scrolled: Element[] = [];
+  beforeEach(() => {
+    scrolled.length = 0;
+    (Element.prototype as unknown as { scrollIntoView: (o?: unknown) => void }).scrollIntoView = function (this: Element) { scrolled.push(this); };
+  });
+  const messages = [msg(1, 'minh', 'quy tắc nhà'), msg(2, 'mom', 'tin của mẹ'), msg(3, 'minh', 'địa chỉ mới')];
+  const open = (extra: Record<string, unknown> = {}) => start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 3 })], history: { [C1]: messages }, api: extra });
+  const menuOf = async (id: string) => { root.querySelector(`[data-msg="${id}"] button[data-menu]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await flush(); };
+
+  it('shows nothing when nothing is pinned', async () => {
+    open();
+    await flush();
+    expect(root.querySelector('[data-pinbar]')).toBeNull();
+  });
+
+  it('shows the newest pin under the header, and a count when there are more', async () => {
+    open({ pins: vi.fn(async () => ok({ pins: [messages[2]!, messages[0]!] })) });
+    await flush();
+    expect(text(root.querySelector('[data-pin-top]')!)).toContain('địa chỉ mới');
+    expect(text(root.querySelector('[data-pin-all]')!)).toContain('2 tin');
+    expect(root.querySelector('[data-pinlist]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-pin-all]')!.click();
+    await flush();
+    expect([...root.querySelectorAll('[data-pin-item]')].map((b) => b.getAttribute('data-pin-item'))).toEqual(['id3', 'id1']);
+  });
+
+  it('closes the list when you go to one of the pins in it', async () => {
+    open({ pins: vi.fn(async () => ok({ pins: [messages[2]!, messages[0]!] })) });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-pin-all]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-pin-item="id1"]')!.click();
+    await flush();
+    expect(root.querySelector('[data-pinlist]')).toBeNull();
+  });
+
+  it('has no list button when only one message is pinned', async () => {
+    open({ pins: vi.fn(async () => ok({ pins: [messages[0]!] })) });
+    await flush();
+    expect(root.querySelector('[data-pin-all]')).toBeNull();
+  });
+
+  it('offers "Ghim" on an unpinned message and "Bỏ ghim" on a pinned one', async () => {
+    open({ pins: vi.fn(async () => ok({ pins: [messages[0]!] })) });
+    await flush();
+    await menuOf('id2');
+    expect(root.querySelector('button[data-pin]')).not.toBeNull();
+    expect(root.querySelector('button[data-unpin]')).toBeNull();
+    await menuOf('id1');
+    expect(root.querySelector('button[data-unpin]')).not.toBeNull();
+    expect(root.querySelector('button[data-pin]')).toBeNull();
+  });
+
+  it('pins, then asks for the pins again', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-pin]')!.click();
+    await flush();
+    expect(h.api.pin).toHaveBeenCalledWith(C1, 'id2');
+    expect(h.api.pins).toHaveBeenCalledTimes(2);
+  });
+
+  it('unpins the same way', async () => {
+    const h = open({ pins: vi.fn(async () => ok({ pins: [messages[0]!] })) });
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-unpin]')!.click();
+    await flush();
+    expect(h.api.unpin).toHaveBeenCalledWith(C1, 'id1');
+  });
+
+  it('says why when pinning is refused, for instance at the limit of three', async () => {
+    open({ pin: vi.fn(async () => fail('pin_limit', 409)) });
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-pin]')!.click();
+    await flush();
+    expect(text(root.querySelector('[role="alert"]')!)).toContain('tối đa 3');
+  });
+
+  it('asks for the pins again when the server says they changed, but only for a conversation that is open', async () => {
+    const h = open();
+    await flush();
+    const calls = h.api.pins.mock.calls.length;
+    h.handlers().pins(C1);
+    await flush();
+    expect(h.api.pins.mock.calls.length).toBe(calls + 1);
+    h.handlers().pins(C2);
+    await flush();
+    expect(h.api.pins.mock.calls.length).toBe(calls + 1);
+  });
+
+  it('takes you to the pinned message and marks it for a moment', async () => {
+    open({ pins: vi.fn(async () => ok({ pins: [messages[0]!] })) });
+    await flush();
+    scrolled.length = 0;
+    root.querySelector<HTMLButtonElement>('[data-pin-top]')!.click();
+    await flush();
+    expect(scrolled.some((e) => e.getAttribute('data-msg') === 'id1')).toBe(true);
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
+  });
+
+  it('loads older pages until a pinned message that is further back is there', async () => {
+    const old = msg(1, 'minh', 'xa lắm');
+    const history = vi.fn(async (_id: string, before?: number) => before === undefined
+      ? ok({ messages: [msg(3, 'minh'), msg(2, 'mom')], hasMore: true, lastSeq: 3 })
+      : ok({ messages: [old], hasMore: false, lastSeq: 3 }));
+    open({ history, pins: vi.fn(async () => ok({ pins: [old] })) });
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-pin-top]')!.click();
+    await flush();
+    expect(history).toHaveBeenCalledWith(C1, 2);
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
+  });
+});

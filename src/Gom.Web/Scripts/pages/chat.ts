@@ -42,6 +42,10 @@ interface Thread {
   jump: boolean;
   /** Messages from others that arrived while you were reading further up. */
   below: number;
+  /** The messages pinned to the top, newest pin first. */
+  pins: ChatMessage[];
+  /** Whether the list of pins (more than the newest) is open. */
+  pinsOpen: boolean;
   draft: string;
   /** The message the next one will answer, shown above the composer. */
   replying: Reply | null;
@@ -90,7 +94,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, pins: [], pinsOpen: false, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -148,6 +152,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Hủy</button>` : html`
         <button class="btn secondary small" type="button" data-reply @click=${() => startReply(m)}>Trả lời</button>
         <button class="btn secondary small" type="button" data-copy @click=${() => void copyText(m)}>Sao chép</button>
+        ${threadOf(m.conversationId).pins.some((p) => p.id === m.id)
+          ? html`<button class="btn secondary small" type="button" data-unpin @click=${() => void setPin(m, false)}>Bỏ ghim</button>`
+          : html`<button class="btn secondary small" type="button" data-pin @click=${() => void setPin(m, true)}>Ghim</button>`}
         <button class="btn secondary small" type="button" data-forward @click=${() => { menu = null; forwarding = m; update(); }}>Chuyển tiếp</button>
         <button class="btn secondary small" type="button" data-hide @click=${() => { menu = { id: m.id, confirming: false, hide: true }; update(); }}>Xóa với tôi</button>
         ${mine ? html`<button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>` : nothing}
@@ -212,6 +219,18 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             <b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><small>${listTime(r.createdAt, deps.now())}</small>
             <span>${[...r.body].length > 160 ? [...r.body].slice(0, 160).join('') + '…' : r.body}</span></button></li>`)}</ul>`}
     </div>`;
+  /** The pinned messages: the newest one stays under the header, and a button opens them all. */
+  const pinBar = (t: Thread) => t.pins.length === 0 ? nothing : html`
+    <div class="pinbar" data-pinbar>
+      <button class="pin-top" type="button" data-pin-top @click=${() => void reveal(t.pins[0]!)}>
+        ${icons.pin()}<span class="pin-text"><b>Tin đã ghim</b><span>${[...t.pins[0]!.body].length > 100 ? [...t.pins[0]!.body].slice(0, 100).join('') + '…' : t.pins[0]!.body}</span></span></button>
+      ${t.pins.length > 1 ? html`<button class="btn secondary small" type="button" data-pin-all aria-expanded=${t.pinsOpen ? 'true' : 'false'}
+        @click=${() => { t.pinsOpen = !t.pinsOpen; update(); }}>${t.pins.length} tin</button>` : nothing}
+    </div>
+    ${t.pinsOpen ? html`<ul class="pinlist" data-pinlist>${t.pins.map((p) => html`
+      <li><button type="button" class="result" data-pin-item=${p.id} @click=${() => void reveal(p)}>
+        <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
+        <span>${[...p.body].length > 160 ? [...p.body].slice(0, 160).join('') + '…' : p.body}</span></button></li>`)}</ul>` : nothing}`;
 
   /** Where to pass a message on: your conversations, newest first. The message goes as a new message from you, with nothing saying who wrote it first. */
   const forwardPanel = (m: Shown) => html`
@@ -247,6 +266,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         </header>
         ${banner()}
         ${searching === null ? nothing : searchPanel(searching)}
+        ${pinBar(t)}
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
@@ -367,6 +387,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
     markRead(id);
     void fetchReads(id);
+    void refreshPins(id);
   }
 
   async function loadOlder(id: string): Promise<void> {
@@ -474,6 +495,25 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     handleFailure(result);
   }
 
+  // ---- pinned messages
+
+  async function refreshPins(id: string): Promise<void> {
+    const result = await api.pins(id);
+    if (!result.ok) return;   // a nicety: without it the bar just does not show
+    const t = threadOf(id);
+    t.pins = result.data.pins;
+    if (t.pins.length <= 1) t.pinsOpen = false;
+    update();
+  }
+
+  async function setPin(m: Shown, on: boolean): Promise<void> {
+    menu = null;
+    const result = on ? await api.pin(m.conversationId, m.id) : await api.unpin(m.conversationId, m.id);
+    if (!result.ok) { error = result; update(); return; }
+    error = null;
+    await refreshPins(m.conversationId);
+  }
+
   // ---- answering and copying
 
   /** The next message will answer this one: shown above the composer until sent or cancelled. */
@@ -543,6 +583,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const id = m.conversationId;
     const t = threadOf(id);
     searching = null;
+    t.pinsOpen = false;
     t.stick = false;
     update();
     for (let pages = 0; !t.messages.some((x) => x.id === m.id) && t.hasMore && pages < 40; pages++) await loadOlder(id);
@@ -734,6 +775,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (openId !== null) void fetchReads(openId);   // a switch may have been flipped by someone
     },
     hidden: (conversation, messageId) => drop(conversation, messageId),
+    pins: (conversation) => { if (threads.get(conversation)?.loaded) void refreshPins(conversation); },
     read(conversation, userId, seq) {
       const t = threads.get(conversation);
       if (t === undefined || !t.reads.enabled || seq <= (t.reads.seqs.get(userId) ?? -1)) return;

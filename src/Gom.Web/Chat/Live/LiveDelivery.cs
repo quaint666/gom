@@ -37,6 +37,21 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
         }
     }
 
+    /// <summary>Tells everyone in a conversation that its pinned messages changed.</summary>
+    public async Task PinsChangedAsync(GomDbContext db, Guid conversation)
+    {
+        try
+        {
+            var frame = Frames.Pins(conversation);
+            foreach (var user in await db.Members.AsNoTracking().Where(m => m.ConversationId == conversation).Select(m => m.UserId).ToListAsync())
+                foreach (var connection in registry.For(user)) connection.TryEnqueue(frame);
+        }
+        catch (Exception e)
+        {
+            logger.LogWarning(e, "pin notification failed; devices will see it the next time they look");
+        }
+    }
+
     /// <summary>Tells one person's devices that they deleted a message for themself.</summary>
     public void MessageHidden(Guid person, Guid conversation, Guid message)
     {

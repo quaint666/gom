@@ -29,6 +29,9 @@ public static class MessageEndpoints
         api.MapPost("/read", MarkRead);
         api.MapDelete("/messages/{messageId:guid}", Recall);
         api.MapPut("/messages/{messageId:guid}/hidden", Hide);
+        api.MapGet("/pins", ListPins);
+        api.MapPut("/messages/{messageId:guid}/pin", Pin);
+        api.MapDelete("/messages/{messageId:guid}/pin", Unpin);
     }
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
@@ -162,12 +165,15 @@ public static class MessageEndpoints
 
         var now = clock.GetUtcNow();
         long seq;
+        var pinsGone = false;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
             // Erase first, and only if it is still there: of several recalls at once exactly one gets 1 here.
             var erased = await db.Messages.Where(m => m.Id == messageId && m.DeletedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.DeletedAt, (DateTimeOffset?)now).SetProperty(m => m.Body, ""), ct);
             if (erased == 0) return Results.NoContent();
+            // A message taken back is no longer there to stay at the top.
+            pinsGone = await db.Pins.Where(p => p.MessageId == messageId).ExecuteDeleteAsync(ct) > 0;
 
             seq = (await db.Database.SqlQuery<long>(
                 $"UPDATE conversations SET last_seq = last_seq + 1 WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
@@ -176,6 +182,7 @@ public static class MessageEndpoints
             await tx.CommitAsync(ct);
         }
 
+        if (pinsGone) await live.PinsChangedAsync(db, id);
         var sender = new PersonDto(me, http.User.FindFirst(GomClaims.DisplayName)!.Value);
         await live.PublishAsync(db, seq, "deleted", ToDto(new Message { Id = messageId, ConversationId = id, Seq = found.Seq, SenderId = me, ClientId = found.ClientId, Body = "", CreatedAt = found.CreatedAt, DeletedAt = now }, sender));
         return Results.NoContent();
@@ -212,6 +219,59 @@ public static class MessageEndpoints
             select new { Message = m, u.Id, u.DisplayName }).Take(SearchLimit).ToListAsync(ct);
 
         return Results.Ok(new { results = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName))) });
+    }
+
+    // ---- pins
+
+    /// <summary>The pinned messages this person can see, newest pin first. A pin of something they hid, or that was said before they joined, is not shown to them.</summary>
+    private static async Task<IResult> ListPins(Guid id, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        var rows = await (
+            from p in db.Pins.AsNoTracking()
+            where p.ConversationId == id
+            join m in db.Messages on p.MessageId equals m.Id
+            where m.Seq > access.JoinedSeq && m.DeletedAt == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
+            join u in db.Users on m.SenderId equals u.Id
+            orderby p.CreatedAt descending
+            select new { Message = m, u.Id, u.DisplayName }).ToListAsync(ct);
+        return Results.Ok(new { pins = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName))) });
+    }
+
+    /// <summary>Pins a message for everyone in the conversation (any member may). A few at most; pinning again changes nothing.</summary>
+    private static async Task<IResult> Pin(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null
+                && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct)) return Results.NotFound();
+        if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // The conversation row is locked, so "how many are pinned" cannot change between the count and the insert.
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
+        // The message may have been taken back while this request waited for the lock.
+        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.DeletedAt == null, ct)) return Results.NotFound();
+        if (await db.Pins.AnyAsync(p => p.ConversationId == id && p.MessageId == messageId, ct)) return Results.NoContent();
+        if (await db.Pins.CountAsync(p => p.ConversationId == id, ct) >= options.Value.MaxPins) return Error(StatusCodes.Status409Conflict, "pin_limit");
+        db.Pins.Add(new MessagePin { ConversationId = id, MessageId = messageId, PinnedBy = me, CreatedAt = clock.GetUtcNow() });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        await live.PinsChangedAsync(db, id);
+        return Results.NoContent();
+    }
+
+    /// <summary>Takes a pin away (any member may). Doing it when there is none changes nothing.</summary>
+    private static async Task<IResult> Unpin(Guid id, Guid messageId, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        if (await Access.Of(db, id, me, ct) is null) return Results.NotFound();
+        var removed = await db.Pins.Where(p => p.ConversationId == id && p.MessageId == messageId).ExecuteDeleteAsync(ct);
+        if (removed > 0) await live.PinsChangedAsync(db, id);
+        return Results.NoContent();
     }
 
     // ---- delete for me

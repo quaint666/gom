@@ -239,4 +239,11 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .result { inline-size: 100%; text-align: start; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
 .result span { grid-column: 1 / -1; overflow-wrap: anywhere; color: var(--muted); }
 .result small { color: var(--muted); }
+/* pinned messages */
+.pinbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--surface); border-block-end: 1px solid var(--border); }
+.pin-top { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 8px; min-block-size: 44px; border: 0; background: none; color: var(--text); font: inherit; text-align: start; cursor: pointer; }
+.pin-top svg { inline-size: 18px; block-size: 18px; flex: none; color: var(--btn); }
+.pin-text { display: flex; flex-direction: column; min-inline-size: 0; font-size: 13px; }
+.pin-text span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pinlist { list-style: none; margin: 0; padding: 8px 12px; background: var(--surface); border-block-end: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; max-block-size: 40vh; overflow-y: auto; }
 .mrow.found .bub { outline: 2px solid var(--btn); outline-offset: 2px; }

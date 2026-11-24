@@ -101,3 +101,12 @@ public class MessageHide
     public Guid MessageId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
+
+/// <summary>A message pinned to the top of a conversation, for everyone in it. At most a few per conversation.</summary>
+public class MessagePin
+{
+    public Guid ConversationId { get; set; }
+    public Guid MessageId { get; set; }
+    public Guid PinnedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}

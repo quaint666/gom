@@ -133,6 +133,7 @@ public static class GroupEndpoints
     /// <summary>Takes a group and everything in it out of the database. Every key is Restrict, so this goes from the leaves inward.</summary>
     private static async Task DeleteGroup(GomDbContext db, Guid id, CancellationToken ct)
     {
+        await db.Pins.Where(p => p.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Hides.Where(h => db.Messages.Any(m => m.Id == h.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
         await db.Events.Where(e => e.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Messages.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);

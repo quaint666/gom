@@ -5,6 +5,7 @@ export type ErrorCode =
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
+  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit'
   | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
@@ -14,6 +15,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
+  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -85,6 +87,9 @@ export interface Api {
   send(conversation: string, clientId: string, body: string, replyTo?: string): Promise<Result<ChatMessage>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
   search(conversation: string, query: string): Promise<Result<{ results: ChatMessage[] }>>;
+  pins(conversation: string): Promise<Result<{ pins: ChatMessage[] }>>;
+  pin(conversation: string, message: string): Promise<Result<void>>;
+  unpin(conversation: string, message: string): Promise<Result<void>>;
   hideMessage(conversation: string, message: string): Promise<Result<void>>;
   createGroup(title: string, members: string[]): Promise<Result<{ id: string }>>;
   groupMembers(conversation: string): Promise<Result<GroupMember[]>>;
@@ -167,6 +172,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
     search: (conversation, query) => call('GET', `/api/conversations/${enc(conversation)}/search?q=${enc(query)}`),
+    pins: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/pins`),
+    pin: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),
+    unpin: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),
     markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };
 }
