@@ -45,6 +45,8 @@ export interface Reaction { emoji: string; users: Sender[] }
 export interface Reply { id: string; sender: Sender | null; snippet: string | null }
 /** A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb. */
 export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null }
+/** One picture or file in the side panel's list, with the message it belongs to. */
+export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string }
 /** What the page behind the first address in a message says about itself. The picture, if any, is at /api/attachments/{imageId}/thumb. */
 export interface Preview { url: string; title: string | null; description: string | null; site: string | null; imageId: string | null }
 /** A line in a group's thread that says what happened (who was added or taken out, who left, a new name): not something anyone wrote. */
@@ -105,6 +107,8 @@ export interface Api {
   reads(conversation: string): Promise<Result<{ enabled: boolean; reads: { userId: string; seq: number }[] }>>;
   setReceipts(enabled: boolean): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string, replyTo?: string, attachments?: string[]): Promise<Result<ChatMessage>>;
+  /** The pictures ("image") or files ("file") of a conversation, newest first; `before` is the seq of the last item of the page you have. */
+  media(conversation: string, kind: 'image' | 'file', before?: number): Promise<Result<{ items: MediaItem[]; hasMore: boolean }>>;
   /** The writer takes the link preview off their own message, for everyone. */
   removePreview(conversation: string, messageId: string): Promise<Result<void>>;
   /** Sends one picture or file to a conversation (not yet in a message). `onProgress` gets 0 to 1 while the bytes go up. */
@@ -235,6 +239,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     setReceipts: (enabled) => call('PATCH', '/api/me/receipts', { enabled }),
     recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
+    media: (conversation, kind, before) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}`),
     search: (conversation, query) => call('GET', `/api/conversations/${enc(conversation)}/search?q=${enc(query)}`),
     pins: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/pins`),
     pin: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),

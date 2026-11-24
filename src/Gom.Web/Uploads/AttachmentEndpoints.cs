@@ -13,6 +13,12 @@ public static class AttachmentEndpoints
     /// <summary>What an upload turned into, as the browser sees it.</summary>
     public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height);
 
+    /// <summary>One picture or file in the side panel's list, with the message it belongs to (a click goes there).</summary>
+    public sealed record MediaItem(AttachmentDto Attachment, Guid MessageId, long Seq, DateTimeOffset CreatedAt);
+
+    /// <summary>How many messages' worth of pictures (or files) one page of the media list holds.</summary>
+    private const int MediaPage = 24;
+
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
     public static AttachmentDto ToDto(Attachment a) => new(a.Id, a.Kind == AttachmentKind.Image ? "image" : "file", a.Name, a.Size, a.Width, a.Height);
@@ -21,8 +27,41 @@ public static class AttachmentEndpoints
     {
         var api = app.MapGroup("/api").RequireAuthorization();
         api.MapPost("/conversations/{id:guid}/attachments", Upload);
+        api.MapGet("/conversations/{id:guid}/media", Media);
         api.MapGet("/attachments/{id:guid}", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: false, http, db, sp, ct));
         api.MapGet("/attachments/{id:guid}/thumb", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: true, http, db, sp, ct));
+    }
+
+    /// <summary>
+    /// The pictures ("image") or the files ("file") of a conversation, newest message first, a page of messages at a time; ask for the
+    /// next page with before = the seq of the last item. Only what this person may fetch: said after they joined, not taken back, not
+    /// hidden by them, and in a message (an upload not yet sent is not listed).
+    /// </summary>
+    private static async Task<IResult> Media(Guid id, string? kind, long? before, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        AttachmentKind wanted;
+        if (kind == "image") wanted = AttachmentKind.Image;
+        else if (kind == "file") wanted = AttachmentKind.File;
+        else return Error(StatusCodes.Status400BadRequest, "invalid_kind");
+
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+
+        var visible =
+            from a in db.Attachments.AsNoTracking()
+            where a.ConversationId == id && a.Kind == wanted
+            join m in db.Messages on a.MessageId equals m.Id
+            where m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null && (before == null || m.Seq < before)
+                && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
+            select new { Attachment = a, m.Seq, m.CreatedAt };
+
+        // A page is a number of messages, so one message's pictures are never split between two pages.
+        var seqs = await visible.Select(x => x.Seq).Distinct().OrderByDescending(s => s).Take(MediaPage + 1).ToListAsync(ct);
+        var hasMore = seqs.Count > MediaPage;
+        var page = seqs.Take(MediaPage).ToList();
+        var rows = await visible.Where(x => page.Contains(x.Seq)).OrderByDescending(x => x.Seq).ThenBy(x => x.Attachment.Position).ThenBy(x => x.Attachment.CreatedAt).ToListAsync(ct);
+        return Results.Ok(new { items = rows.Select(r => new MediaItem(ToDto(r.Attachment), r.Attachment.MessageId!.Value, r.Seq, r.CreatedAt)), hasMore });
     }
 
     private static async Task<IResult> Upload(Guid id, string? name, HttpContext http, GomDbContext db, TimeProvider clock, IServiceProvider services,
