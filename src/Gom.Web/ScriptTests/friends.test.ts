@@ -85,9 +85,16 @@ describe('friends page', () => {
     outgoing: [{ gomId: 'hoa', displayName: 'Hoa', createdAt: '2026-12-01T09:00:00Z' }],
   };
   const blocked = [{ gomId: 'bad', displayName: 'Bad' }];
+  const chatsList = [
+    { id: 'g1', kind: 'group', title: 'Gia đình', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 4 },
+    { id: 'd1', kind: 'direct', title: 'Minh', peer: { gomId: 'minh', displayName: 'Minh' }, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null },
+  ];
   const api = (extra = {}) => fakeApi({
-    me: vi.fn(async () => ok(me)), friends: vi.fn(async () => ok(lists)), blocks: vi.fn(async () => ok(blocked)), ...extra,
+    me: vi.fn(async () => ok(me)), friends: vi.fn(async () => ok(lists)), blocks: vi.fn(async () => ok(blocked)),
+    conversations: vi.fn(async () => ok(chatsList)), ...extra,
   });
+  /** The "more" tray of a friend (unfriend, block) opens first. */
+  const tray = (id: string) => { root.querySelector<HTMLButtonElement>(`[data-friend="${id}"] button[data-more]`)!.click(); };
   const mount = (a = api()) => { mountFriends(root, a, vi.fn(), 'https://gom.test'); return a; };
 
   it('sends a signed-out visitor to sign in', async () => {
@@ -113,7 +120,7 @@ describe('friends page', () => {
     }));
     await flush();
     const headings = [...root.querySelectorAll('h2.section')].map((h) => text(h));
-    expect(headings).toEqual(['Bạn bè']);
+    expect(headings).toEqual([]);
     expect(text(root)).toContain('Chưa có bạn bè nào');
   });
 
@@ -201,6 +208,7 @@ describe('friends page', () => {
   ] as const)('asks before %s, names the person, and does nothing until yes', async (_name, method, words) => {
     const a = mount();
     await flush();
+    tray('minh'); await flush();
     root.querySelector<HTMLButtonElement>(`[data-friend="minh"] button[data-action="${method}"]`)!.click();
     await flush();
     expect(text(root.querySelector('[data-sure="minh"]')!)).toContain(words);
@@ -217,6 +225,7 @@ describe('friends page', () => {
     const two = { ...lists, friends: [{ gomId: 'minh', displayName: 'Minh' }, { gomId: 'cuong', displayName: 'Cường' }] };
     mount(api({ friends: vi.fn(async () => ok(two)) }));
     await flush();
+    tray('cuong'); await flush();
     root.querySelector<HTMLButtonElement>('[data-friend="cuong"] button[data-action="block"]')!.click();
     await flush();
     expect(root.querySelectorAll('[data-sure]')).toHaveLength(1);
@@ -227,6 +236,7 @@ describe('friends page', () => {
   it.each(['unfriend', 'block'] as const)('drops the question on "Hủy" and %s is not called', async (method) => {
     const a = mount();
     await flush();
+    tray('minh'); await flush();
     root.querySelector<HTMLButtonElement>(`[data-friend="minh"] button[data-action="${method}"]`)!.click();
     await flush();
     root.querySelector<HTMLButtonElement>('[data-cancel-sure]')!.click();
@@ -252,6 +262,67 @@ describe('friends page', () => {
     root.querySelector<HTMLButtonElement>('[data-incoming="lan"] button[data-action="accept"]')!.click();
     await flush();
     expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+});
+
+describe('contacts: tabs, a handful of rows, and search', () => {
+  const many = Array.from({ length: 8 }, (_, i) => ({ gomId: `f${i}`, displayName: i === 0 ? 'Đào Thị Lan' : `Bạn ${i}` }));
+  const lists = { friends: many, incoming: [], outgoing: [] };
+  const chatsList = [
+    { id: 'g1', kind: 'group', title: 'Gia đình', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 4 },
+    { id: 'd1', kind: 'direct', title: 'Bạn 1', peer: { gomId: 'f1', displayName: 'Bạn 1' }, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null },
+  ];
+  const mount = () => {
+    mountFriends(root, fakeApi({
+      me: vi.fn(async () => ok({ id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false })), friends: vi.fn(async () => ok(lists)),
+      blocks: vi.fn(async () => ok([])), conversations: vi.fn(async () => ok(chatsList)),
+    }), vi.fn(), 'https://gom.test');
+  };
+  const rows = () => root.querySelectorAll('[data-friend]').length;
+  const type = (value: string) => { const f = root.querySelector<HTMLInputElement>('input[name="find"]')!; f.value = value; f.dispatchEvent(new Event('input', { bubbles: true })); };
+
+  it('shows a handful of friends and the rest behind "Xem thêm"', async () => {
+    mount();
+    await flush();
+    expect(rows()).toBe(5);
+    expect(text(root.querySelector('[data-more-rows]')!)).toContain('Xem thêm (3)');
+    root.querySelector<HTMLButtonElement>('[data-more-rows]')!.click();
+    await flush();
+    expect(rows()).toBe(8);
+    expect(root.querySelector('[data-more-rows]')).toBeNull();
+  });
+
+  it('searches every friend, not only the handful, and ignores accents and capitals', async () => {
+    mount();
+    await flush();
+    type('dao lan'); await flush();
+    expect([...root.querySelectorAll('[data-friend]')].map((r) => r.getAttribute('data-friend'))).toEqual(['f0']);
+    type('bạn 7'); await flush();
+    expect([...root.querySelectorAll('[data-friend]')].map((r) => r.getAttribute('data-friend'))).toEqual(['f7']);
+    type('không có ai'); await flush();
+    expect(rows()).toBe(0);
+    expect(text(root.querySelector('[data-empty]')!)).toContain('Không tìm thấy');
+  });
+
+  it('has a Groups tab with only the groups, and a way to make a new one', async () => {
+    mount();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-tab="groups"]')!.click();
+    await flush();
+    expect(rows()).toBe(0);
+    expect(root.querySelectorAll('[data-group]')).toHaveLength(1);
+    expect(root.querySelector('[data-group="g1"]')!.getAttribute('href')).toBe('/c/g1');
+    expect(text(root.querySelector('[data-group="g1"]')!)).toContain('4 thành viên');
+    expect(root.querySelector('a[data-new-group]')!.getAttribute('href')).toBe('/groups/new');
+    expect(root.querySelector('[data-tab="groups"]')!.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('keeps the add-friend form inside a closed box, in the page for the keyboard and a screen reader', async () => {
+    mount();
+    await flush();
+    const box = root.querySelector<HTMLDetailsElement>('details[data-addbox]')!;
+    expect(box.open).toBe(false);
+    expect(box.querySelector('form[data-add]')).not.toBeNull();
   });
 });
 

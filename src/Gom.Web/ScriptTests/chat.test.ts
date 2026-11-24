@@ -1072,10 +1072,12 @@ describe('chat: groups', () => {
     expect((h.api.conversations as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1);
   });
 
-  it('has a way to make a new group from the list', async () => {
+  it('has one way into friends and groups (the contacts page) in the header, and settings stays where it was', async () => {
     start({ chats: [] });
     await flush();
-    expect(root.querySelector('header a[href="/groups/new"]')).not.toBeNull();
+    expect(root.querySelector('header a[href="/friends"]')).not.toBeNull();
+    expect(root.querySelector('header a[href="/settings"]')).not.toBeNull();
+    expect(root.querySelector('header a[href="/groups/new"]')).toBeNull();
   });
 
   it('says "you are no longer in this group" when the open group disappears from the list', async () => {
@@ -2550,5 +2552,56 @@ describe('chat: runs of messages', () => {
     expect(root.querySelector('[data-msg="id1"] .ts')).toBeNull();
     expect(root.querySelector('[data-msg="id1"] .sr-only')!.textContent).toMatch(/\d{2}:\d{2}/);
     expect(root.querySelector('[data-msg="id2"] .ts')!.textContent).toMatch(/\d{2}:\d{2}/);
+  });
+});
+
+describe('chat: the list of conversations', () => {
+  const several = [chat(C1, 'Đào Thị Lan', { lastSeq: 0 }), chat(C2, 'Gia đình', { lastSeq: 0 })];
+  const type = (value: string) => { const f = root.querySelector<HTMLInputElement>('input[name="filter"]')!; f.value = value; f.dispatchEvent(new Event('input', { bubbles: true })); };
+  const names = () => [...root.querySelectorAll('.item .nm')].map((n) => n.textContent);
+
+  it('filters by name as you type, ignoring accents and capitals, and brings everything back when cleared', async () => {
+    start({ chats: several });
+    await flush();
+    expect(names()).toEqual(['Đào Thị Lan', 'Gia đình']);
+    type('DAO'); await flush();
+    expect(names()).toEqual(['Đào Thị Lan']);
+    type('gia dinh'); await flush();
+    expect(names()).toEqual(['Gia đình']);
+    type(''); await flush();
+    expect(names()).toHaveLength(2);
+  });
+
+  it('says so when nothing matches, and Escape clears the search', async () => {
+    start({ chats: several });
+    await flush();
+    type('zzz'); await flush();
+    expect(root.querySelector('[data-no-match]')).not.toBeNull();
+    root.querySelector('input[name="filter"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await flush();
+    expect(root.querySelector('[data-no-match]')).toBeNull();
+    expect(names()).toHaveLength(2);
+  });
+
+  it('has no search when there is nothing to search', async () => {
+    start({ chats: [] });
+    await flush();
+    expect(root.querySelector('input[name="filter"]')).toBeNull();
+  });
+
+  it('goes home from the Gom button: the open conversation closes and the address is the start', async () => {
+    const h = start({ path: `/c/${C1}`, chats: several });
+    await flush();
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('thread');
+    root.querySelector<HTMLAnchorElement>('a.brand')!.click();
+    await flush();
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('list');
+    expect(h.nav.push).toHaveBeenLastCalledWith('/');
+  });
+
+  it('shows a welcome in the empty right side instead of nothing', async () => {
+    start({ chats: several });
+    await flush();
+    expect(text(root.querySelector('.thread-pane.none')!)).toContain('Chọn một cuộc trò chuyện');
+    expect(root.querySelector('.thread-pane.none svg')).not.toBeNull();
   });
 });
