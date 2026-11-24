@@ -12,6 +12,7 @@ import { mountReset } from './pages/reset.js';
 import { mountSettings } from './pages/settings.js';
 import { mountSignIn } from './pages/signin.js';
 import { applyScheme, storedScheme } from './theme.js';
+import { showUpdateBar, watchForUpdate } from './update.js';
 
 const root = document.getElementById('app');
 const api = createApi();
@@ -58,6 +59,23 @@ if (root) {
     case 'owner': mountOwner(root, api, go, location.origin); break;
   }
 }
+
+// A new version deployed while this page is open: say so (never reload by itself). The page asks about the script it runs from.
+const updateBar = document.createElement('div');
+document.body.append(updateBar);
+const ownScript = new URL(import.meta.url).pathname;
+watchForUpdate({
+  probe: async () => {
+    try {
+      const response = await fetch(ownScript, { method: 'HEAD', cache: 'no-store', credentials: 'omit' });
+      return { status: response.status, etag: response.headers.get('etag') };
+    } catch { return null; }
+  },
+  now: () => Date.now(),
+  every: (fn, ms) => { window.setInterval(fn, ms); },
+  onShown: (fn) => { document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') fn(); }); },
+  announce: () => showUpdateBar(updateBar, () => location.reload()),
+});
 
 // The app can be added to a home screen, and shows a "no connection" page instead of the browser's own. Browsers only allow this on https and on localhost.
 if ('serviceWorker' in navigator) void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
