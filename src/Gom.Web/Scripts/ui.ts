@@ -1,7 +1,7 @@
 import { html, nothing, type TemplateResult } from 'lit-html';
 import type { Failure } from './api.js';
 import * as icons from './icons.js';
-import { initials } from './chat/model.js';
+import { avatarTone, initials } from './chat/model.js';
 import { errorText } from './text.js';
 
 export const brand = (): TemplateResult => html`<div class="logo">${icons.logo()}<span>Gom</span></div>`;
@@ -69,5 +69,5 @@ const dateFormat = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeS
 export const formatTime = (iso: string): string => dateFormat.format(new Date(iso));
 
 /** A round badge with the one or two letters of a name. */
-export const avatar = (name: string, small = false): TemplateResult =>
-  html`<div class="av a1 ${small ? 'sm' : ''}" aria-hidden="true">${initials(name)}</div>`;
+export const avatar = (name: string, small = false, big = false): TemplateResult =>
+  html`<div class="av a${avatarTone(name)} ${small ? 'sm' : ''} ${big ? 'xl' : ''}" aria-hidden="true">${initials(name)}</div>`;

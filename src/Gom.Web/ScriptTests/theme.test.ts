@@ -1,23 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { nextOverride, applyScheme } from '../Scripts/theme.js';
-
-describe('nextOverride (two-state toggle)', () => {
-  it('stores the opposite when it differs from the system', () => {
-    expect(nextOverride({ stored: null, system: 'light' })).toBe('dark');
-    expect(nextOverride({ stored: null, system: 'dark' })).toBe('light');
-  });
-
-  it('removes the override when the user undoes it', () => {
-    expect(nextOverride({ stored: 'dark', system: 'light' })).toBeNull();
-    expect(nextOverride({ stored: 'light', system: 'dark' })).toBeNull();
-  });
-
-  it('keeps pinning against the system when the stored value now matches it, and toggles the other way', () => {
-    // The OS later changed to dark and the site was pinned dark: rendered is dark, so the toggle goes to light,
-    // which differs from the system (dark), so it is stored.
-    expect(nextOverride({ stored: 'dark', system: 'dark' })).toBe('light');
-  });
-});
+import { applyScheme, chooseScheme, chosenScheme } from '../Scripts/theme.js';
 
 describe('applyScheme', () => {
   beforeEach(() => {
@@ -45,5 +27,28 @@ describe('applyScheme', () => {
       applyScheme('dark');
       expect(document.querySelector('meta[name="color-scheme"]')!.getAttribute('content')).toBe('dark');
     } finally { Storage.prototype.setItem = real; }
+  });
+});
+
+describe('the three-way choice', () => {
+  beforeEach(() => {
+    document.head.innerHTML = '<meta name="color-scheme" content="light dark">';
+    localStorage.clear();
+  });
+
+  it('says "system" until light or dark is chosen', () => {
+    expect(chosenScheme()).toBe('system');
+    chooseScheme('dark');
+    expect(chosenScheme()).toBe('dark');
+    chooseScheme('light');
+    expect(chosenScheme()).toBe('light');
+  });
+
+  it('goes back to following the system, forgetting the stored choice', () => {
+    chooseScheme('dark');
+    chooseScheme('system');
+    expect(chosenScheme()).toBe('system');
+    expect(localStorage.getItem('color-scheme')).toBeNull();
+    expect(document.querySelector('meta[name="color-scheme"]')!.getAttribute('content')).toBe('light dark');
   });
 });

@@ -1,7 +1,11 @@
 import { html, nothing, render } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
 import type { Api, Failure, SessionInfo, User } from '../api.js';
-import { appBar, errorBox, formatTime, passwordField } from '../ui.js';
+import { chosenScheme, chooseScheme, type Choice } from '../theme.js';
+import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
+
+/** The choices for the colour scheme, in the order shown. */
+const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', 'Theo hệ thống'], ['light', 'Sáng'], ['dark', 'Tối']];
 
 export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void): void {
   let user: User | null = null;
@@ -16,6 +20,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let receipts = true;
   let receiptsStatus = '';
   let busy = false;
+  let scheme: Choice = chosenScheme();
 
   const row = (s: SessionInfo) => html`
     <li class="li" data-session=${s.id}>
@@ -31,8 +36,9 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     <div class="page">
       ${errorBox(error)}
       ${user === null ? nothing : html`
-        <p class="lead">Đang đăng nhập là <b>${user.displayName}</b> (@${user.gomId}).</p>
-        <h2 class="section">Tên hiển thị</h2>
+        <div class="profile" data-profile>${avatar(user.displayName, false, true)}
+          <div class="t"><b>${user.displayName}</b><small>@${user.gomId}</small></div></div>
+        <h2 class="section">Hồ sơ</h2>
         <form class="card" data-nickname @submit=${saveNickname}>
           <label for="display-name">Tên mọi người nhìn thấy</label>
           <div class="input"><input id="display-name" name="displayName" type="text" autocomplete="nickname" maxlength="60" enterkeyhint="done"
@@ -41,14 +47,22 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
           <button class="btn" type="submit" ?disabled=${busy}>Lưu tên</button>
           <p class="hint" role="status" data-nickname-status>${nicknameStatus}</p>
         </form>
-        <h2 class="section">Trạng thái đã xem</h2>
+        <h2 class="section">Giao diện</h2>
+        <fieldset class="choices" data-scheme>
+          <legend class="sr-only">Màu giao diện</legend>
+          ${SCHEMES.map(([value, label]) => html`
+            <div class="choice"><input type="radio" name="scheme" id=${`scheme-${value}`} value=${value} .checked=${live(scheme === value)}
+              @change=${() => { scheme = value; chooseScheme(value); update(); }}>
+              <label for=${`scheme-${value}`}>${label}</label></div>`)}
+        </fieldset>
+        <h2 class="section">Quyền riêng tư</h2>
         <div class="card">
           <div class="pick"><input type="checkbox" id="receipts" name="receipts" .checked=${live(receipts)} @change=${(e: Event) => void saveReceipts((e.target as HTMLInputElement).checked)}>
             <label for="receipts">Cho người khác biết khi tôi đã xem tin nhắn</label></div>
           <p class="hint">Nếu tắt, bạn cũng không thấy người khác đã xem tin nhắn của bạn.</p>
           <p class="hint" role="status" data-receipts-status>${receiptsStatus}</p>
         </div>
-        <h2 class="section">Đổi mật khẩu</h2>
+        <h2 class="section">Bảo mật</h2>
         <form class="card" data-password @submit=${savePassword}>
           <input class="sr-only" name="username" type="text" autocomplete="username" readonly tabindex="-1" aria-hidden="true" .value=${user.gomId}>
           ${passwordField({ label: 'Mật khẩu hiện tại', name: 'current', autocomplete: 'current-password', value: current, shown,

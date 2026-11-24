@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi } from '../Scripts/api.js';
 import { mountAdd } from '../Scripts/pages/add.js';
+import { avatarTone } from '../Scripts/chat/model.js';
 import { mountFriends } from '../Scripts/pages/friends.js';
 import { mountSignIn } from '../Scripts/pages/signin.js';
 import { safeNext } from '../Scripts/pages/signin.js';
@@ -315,6 +316,14 @@ describe('contacts: tabs, a handful of rows, and search', () => {
     root.querySelector<HTMLButtonElement>('[data-tab="groups"]')!.click(); await flush();
     root.querySelector<HTMLButtonElement>('[data-tab="friends"]')!.click(); await flush();
     expect(rows()).toBe(5);
+  });
+
+  it('gives each friend the avatar colour of their name', async () => {
+    mount();
+    await flush();
+    const row = root.querySelector('[data-friend="f1"] .av')!;   // "Bạn 1"
+    expect(row.classList.contains(`a${avatarTone('Bạn 1')}`)).toBe(true);
+    expect(row.textContent).toBe('B1');
   });
 
   it('has a Groups tab with only the groups, and a way to make a new one', async () => {

@@ -172,3 +172,48 @@ describe('owner: switching members off and on', () => {
     expect(root.querySelector('[role="alert"]')).not.toBeNull();
   });
 });
+
+describe('settings: profile and appearance', () => {
+  const api = () => fakeApi({ me: vi.fn(async () => ok(me)), sessions: vi.fn(async () => ok([])) });
+  const meta = () => document.querySelector('meta[name="color-scheme"]')!.getAttribute('content');
+  const radio = (value: string) => root.querySelector<HTMLInputElement>(`input[name="scheme"][value="${value}"]`)!;
+  beforeEach(() => { document.head.innerHTML = '<meta name="color-scheme" content="light dark">'; localStorage.clear(); });
+
+  it('shows who you are in a profile card, with an avatar of your initials', async () => {
+    mountSettings(root, api(), vi.fn());
+    await flush();
+    const card = root.querySelector('[data-profile]')!;
+    expect(text(card)).toContain('Mẹ');
+    expect(text(card)).toContain('@mom');
+    expect(card.querySelector('.av')!.textContent).toBe('M');
+  });
+
+  it('offers system, light and dark, with the one in use chosen', async () => {
+    mountSettings(root, api(), vi.fn());
+    await flush();
+    expect(['system', 'light', 'dark'].map((v) => radio(v).checked)).toEqual([true, false, false]);
+    for (const v of ['system', 'light', 'dark']) expect(root.querySelector(`label[for="${radio(v).id}"]`)).not.toBeNull();
+  });
+
+  it('applies and remembers a choice at once, and going back to the system forgets it', async () => {
+    mountSettings(root, api(), vi.fn());
+    await flush();
+    radio('dark').checked = true; radio('dark').dispatchEvent(new Event('change', { bubbles: true })); await flush();
+    expect(meta()).toBe('dark');
+    expect(localStorage.getItem('color-scheme')).toBe('dark');
+    expect(radio('dark').checked).toBe(true);
+    radio('light').checked = true; radio('light').dispatchEvent(new Event('change', { bubbles: true })); await flush();
+    expect(meta()).toBe('light');
+    radio('system').checked = true; radio('system').dispatchEvent(new Event('change', { bubbles: true })); await flush();
+    expect(meta()).toBe('light dark');
+    expect(localStorage.getItem('color-scheme')).toBeNull();
+  });
+
+  it('opens with the stored choice selected', async () => {
+    localStorage.setItem('color-scheme', 'dark');
+    mountSettings(root, api(), vi.fn());
+    await flush();
+    expect(radio('dark').checked).toBe(true);
+    expect(radio('system').checked).toBe(false);
+  });
+});

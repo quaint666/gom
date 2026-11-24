@@ -122,6 +122,12 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .item.active { background: var(--tint); border-inline-start-color: var(--btn); }
 .av { inline-size: 48px; block-size: 48px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 16px; flex: none; }
 .av.a1 { background: var(--tint); color: var(--tint-text); }
+.av.a2 { background: light-dark(#F1E6D2, #3A3220); color: light-dark(#5E4710, #EBD9AE); }
+.av.a3 { background: light-dark(#DDE8F3, #1F2E3D); color: light-dark(#234A70, #BBD6F0); }
+.av.a4 { background: light-dark(#F3DDD8, #3D2724); color: light-dark(#7A2E22, #F0C4BB); }
+.av.a5 { background: light-dark(#E7E0F1, #2C2640); color: light-dark(#4A3478, #D3C8EE); }
+.av.a6 { background: light-dark(#D8EEEC, #1B3433); color: light-dark(#1E5654, #B5E3DF); }
+.av.xl { inline-size: 72px; block-size: 72px; font-size: 26px; }
 .im { flex: 1; min-inline-size: 0; }
 .l1, .l2 { display: flex; align-items: baseline; gap: 6px; }
 .l2 { align-items: center; gap: 8px; margin-block-start: 2px; }
@@ -334,3 +340,14 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .tray { flex-basis: 100%; display: flex; gap: 8px; padding-block-end: 6px; }
 .pick label span { min-inline-size: 0; overflow-wrap: anywhere; }
 [role="tabpanel"] { display: flex; flex-direction: column; gap: 14px; }
+
+/* settings: the profile card and the choice of appearance */
+.profile { display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+.profile .t b { display: block; font-size: 18px; overflow-wrap: anywhere; }
+.profile .t small { color: var(--muted); }
+.choices { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.choices legend { padding: 0; }
+.choice { display: flex; align-items: center; gap: 12px; min-block-size: 48px; padding-inline: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.choice input { inline-size: 22px; block-size: 22px; accent-color: var(--btn); flex: none; }
+.choice label { flex: 1; min-block-size: 44px; display: flex; align-items: center; gap: 10px; margin: 0; font-weight: 400; }
+.choice:has(input:checked) { border-color: var(--btn); background: var(--tint); }

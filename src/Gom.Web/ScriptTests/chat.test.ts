@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { avatarTone } from '../Scripts/chat/model.js';
 import type { ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
 import { mountChat, type ChatDeps } from '../Scripts/pages/chat.js';
@@ -2611,5 +2612,32 @@ describe('chat: the list of conversations', () => {
     await flush();
     expect(text(root.querySelector('.thread-pane.none')!)).toContain('Chọn một cuộc trò chuyện');
     expect(root.querySelector('.thread-pane.none svg')).not.toBeNull();
+  });
+});
+
+describe('chat: avatars and the header', () => {
+  it('has no theme button in the list header any more (it lives in settings)', async () => {
+    start({ chats: [chat(C1, 'Minh', { lastSeq: 0 })] });
+    await flush();
+    expect(root.querySelectorAll('.list-pane header button')).toHaveLength(0);
+    expect(root.querySelector('.list-pane header a[href="/settings"]')).not.toBeNull();
+  });
+
+  it('colours the avatar beside a message in a group by the sender\'s name', async () => {
+    const G = '55555555-5555-4555-8555-555555555555';
+    const hung = { ...msg(1, 'minh', 'xin chào', at(10, 1), G), sender: { id: 'u-hung', displayName: 'Hùng' } };
+    expect(avatarTone('Hùng')).not.toBe(1);
+    start({ path: `/c/${G}`, chats: [{ id: G, kind: 'group', title: 'Nhóm', peer: null, lastSeq: 1, lastReadSeq: 1, unread: 0, lastMessage: null, memberCount: 3 }], history: { [G]: [hung] } });
+    await flush();
+    expect(root.querySelector('[data-msg="id1"] .av.sm')!.classList.contains(`a${avatarTone('Hùng')}`)).toBe(true);
+  });
+
+  it('gives a person the same colour in the list and in the thread', async () => {
+    const name = 'Hùng';   // not tone 1, so a page that never varies its avatars fails here
+    expect(avatarTone(name)).not.toBe(1);
+    start({ path: `/c/${C1}`, chats: [chat(C1, name, { lastSeq: 0 })] });
+    await flush();
+    expect(root.querySelector('.item .av')!.classList.contains(`a${avatarTone(name)}`)).toBe(true);
+    expect(root.querySelector('.th-head .av')!.classList.contains(`a${avatarTone(name)}`)).toBe(true);
   });
 });

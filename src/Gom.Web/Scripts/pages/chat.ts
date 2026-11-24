@@ -3,10 +3,9 @@ import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
 import type { Api, ChatEvent, ChatMessage, Conversation, Failure, Reply, User } from '../api.js';
-import { buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
+import { avatarTone, buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
-import { renderedScheme, toggleScheme } from '../theme.js';
 import { errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { errorText } from '../text.js';
@@ -111,11 +110,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- drawing
 
-  const themeButton = () => html`
-    <button class="ib" type="button" aria-label=${renderedScheme() === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
-      @click=${() => { toggleScheme(); update(); }}>${renderedScheme() === 'dark' ? icons.sun() : icons.moon()}</button>`;
-
-  const avatar = (name: string): TemplateResult => html`<div class="av a1" aria-hidden="true">${initials(name)}</div>`;
+  const avatar = (name: string): TemplateResult => html`<div class="av a${avatarTone(name)}" aria-hidden="true">${initials(name)}</div>`;
 
   function preview(c: Conversation): string {
     const last = c.lastMessage;
@@ -226,7 +221,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
         ${item.mine ? tools : nothing}
-        ${others ? (item.last ? html`<div class="av sm a1" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
+        ${others ? (item.last ? html`<div class="av sm a${avatarTone(m.sender.displayName)}" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
           @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
@@ -348,7 +343,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <section class="list-pane">
         <header class="bar">
           <a class="brand" href="/" aria-label="Gom, về trang chủ" @click=${onHome}>${icons.logo()}<span>Gom</span></a>
-          ${themeButton()}
           <a class="ib" href="/friends" aria-label="Danh bạ">${icons.users()}</a>
           <a class="ib" href="/settings" aria-label="Cài đặt">${icons.gear()}</a>
         </header>

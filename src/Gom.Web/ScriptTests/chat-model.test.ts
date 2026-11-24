@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '../Scripts/api.js';
-import { buildThread, clock, dayLabel, initials, listTime, mergeMessages, type Shown } from '../Scripts/chat/model.js';
+import { AVATAR_TONES, avatarTone, buildThread, clock, dayLabel, initials, listTime, mergeMessages, type Shown } from '../Scripts/chat/model.js';
 
 // Noon UTC is the same calendar day in every time zone from -11 to +11, so day grouping is the same wherever the tests run.
 const at = (day: number, hh = 12, mm = 0) => new Date(Date.UTC(2026, 11, day, hh, mm)).toISOString();
@@ -119,5 +119,22 @@ describe('building a thread', () => {
   it('gives every item a different key, so the page can reuse what it already drew', () => {
     const items = buildThread([msg(1, 'lan', at(9)), msg(2, 'me', at(10))], 'me', 2, 1, NOW);
     expect(new Set(items.map((i) => i.key)).size).toBe(items.length);
+  });
+});
+
+describe('avatarTone', () => {
+  it('is always one of the colours, and the same for the same name whatever the case or spaces', () => {
+    for (const name of ['Mẹ', 'Linh Nguyễn', 'Đào Thị Lan', 'a', '😀', '']) {
+      const tone = avatarTone(name);
+      expect(tone).toBeGreaterThanOrEqual(1);
+      expect(tone).toBeLessThanOrEqual(AVATAR_TONES);
+      expect(avatarTone(name)).toBe(tone);
+    }
+    expect(avatarTone('  Linh NGUYỄN ')).toBe(avatarTone('linh nguyễn'));
+  });
+
+  it('uses more than one colour across a family of names (it is there for variety)', () => {
+    const names = ['Bảo', 'Mai Trần', 'Hùng', 'Lan Anh', 'Nam', 'Thu Hà', 'Tommy', 'Linh Nguyễn'];
+    expect(new Set(names.map(avatarTone)).size).toBeGreaterThanOrEqual(4);
   });
 });

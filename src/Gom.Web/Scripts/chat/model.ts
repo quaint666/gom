@@ -19,6 +19,16 @@ export function initials(name: string): string {
   return words.length === 1 ? first(words[0]!) : first(words[0]!) + first(words[words.length - 1]!);
 }
 
+/** How many colours an avatar can have (the classes a1 to a6 in the stylesheet). */
+export const AVATAR_TONES = 6;
+
+/** The same name always gets the same colour, so a person is easy to spot; it changes only when they rename themselves. */
+export function avatarTone(name: string): number {
+  let sum = 0;
+  for (const ch of name.trim().toLocaleLowerCase('vi')) sum = (sum * 31 + ch.codePointAt(0)!) % 100_003;
+  return (sum % AVATAR_TONES) + 1;
+}
+
 const pad = (n: number): string => String(n).padStart(2, '0');
 const sameDay = (a: Date, b: Date): boolean => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 const dayKey = (d: Date): string => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
