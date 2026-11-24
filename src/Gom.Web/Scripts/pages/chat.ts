@@ -511,6 +511,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         </div>
         ${menuOverlay(t)}
         ${viewerView()}
+        ${t.stick ? nothing : html`<button class="toend" type="button" data-to-end aria-label="Xuống tin mới nhất" @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}</button>`}
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${t.editing === null ? nothing : html`
@@ -599,8 +600,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function onScroll(id: string, box: HTMLElement): void {
     const t = threadOf(id);
+    const wasStuck = t.stick;
+    const hadNew = t.below;
     t.stick = box.scrollHeight - box.scrollTop - box.clientHeight < GAP_NEAR_BOTTOM_PX;
-    if (t.stick && t.below > 0) { t.below = 0; update(); }
+    if (t.stick) t.below = 0;
+    // The arrow to the end shows while you are away from it: the page is drawn again when that changes, not on every scroll.
+    if (wasStuck !== t.stick || hadNew !== t.below) update();
   }
 
   function onDraft(e: Event): void {

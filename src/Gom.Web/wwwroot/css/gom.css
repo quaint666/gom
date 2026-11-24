@@ -237,6 +237,10 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 /* new messages below the part you are reading */
 .jump { align-self: center; display: inline-flex; align-items: center; gap: 6px; margin: -44px auto 8px; min-block-size: 36px; padding-inline: 14px; border: 0; border-radius: 18px; background: var(--btn); color: var(--on-btn); font: inherit; font-size: 14px; font-weight: 600; box-shadow: 0 2px 8px rgb(0 0 0 / .25); cursor: pointer; position: relative; }
 .jump svg { inline-size: 16px; block-size: 16px; }
+/* the arrow in the corner that goes to the end of the conversation, shown while you are reading further up */
+.toend { align-self: flex-end; position: relative; z-index: 2; margin: -52px 14px 12px 0; display: inline-grid; place-items: center; flex: none; inline-size: 40px; block-size: 40px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--text); box-shadow: 0 2px 8px rgb(0 0 0 / .25); cursor: pointer; }
+.toend svg { inline-size: 20px; block-size: 20px; }
+.toend:hover { background: var(--hover); }
 
 /* searching one conversation */
 .searchbar { padding: 6px 12px; background: var(--surface); border-block-end: 1px solid var(--border); }
