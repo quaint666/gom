@@ -32,6 +32,10 @@ export function errorText(failure: Failure): string {
     case 'group_too_big': case 'group_full': return 'Nhóm đã đủ số thành viên tối đa.';
     case 'already_member': return 'Người này đã ở trong nhóm.';
     case 'not_a_group': return 'Đây không phải là một nhóm.';
+    case 'not_allowed': return 'Bạn không có quyền làm việc này trong nhóm.';
+    case 'leader_must_hand_over': return 'Trưởng nhóm cần chuyển quyền cho người khác trước khi rời nhóm.';
+    case 'invalid_role': case 'invalid_member': return 'Không thể thực hiện với thành viên này.';
+    case 'use_leave': return 'Muốn ra khỏi nhóm thì chọn "Rời nhóm".';
     case 'not_your_message': return 'Chỉ thu hồi được tin nhắn của chính bạn.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
     case 'network': return 'Không kết nối được. Kiểm tra mạng rồi thử lại.';

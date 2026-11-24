@@ -98,9 +98,13 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             {
                 t.HasCheckConstraint("ck_conversation_members_read", "last_read_seq >= 0");
                 t.HasCheckConstraint("ck_conversation_members_joined", "joined_seq >= 0");
+                t.HasCheckConstraint("ck_conversation_members_role", "role IN (0, 1, 2)");
             });
             e.HasKey(x => new { x.ConversationId, x.UserId });
             e.HasIndex(x => x.UserId);
+            e.Property(x => x.Role).HasDefaultValue(GroupRole.Member);
+            // At most one leader per conversation.
+            e.HasIndex(x => x.ConversationId).IsUnique().HasFilter("role = 2");
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
