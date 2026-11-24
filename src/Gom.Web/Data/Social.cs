@@ -73,6 +73,8 @@ public class Message
     public Guid SenderId { get; set; }
     /// <summary>Chosen by the sender's device; with the sender it makes a send safe to retry.</summary>
     public Guid ClientId { get; set; }
+    /// <summary>The message this one answers, in the same conversation. Null when it answers nothing.</summary>
+    public Guid? ReplyToId { get; set; }
     public string Body { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }

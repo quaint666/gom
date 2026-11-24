@@ -21,3 +21,4 @@ export const wifiOff = () => icon('M2 8.8a15 15 0 0120 0', 'M5 12.5a10 10 0 0114
 export const pencil = () => icon('M4 20h4L19 9l-4-4L4 16v4z', 'M13.5 6.5l4 4');
 export const more = () => icon('M12 5.5h.01', 'M12 12h.01', 'M12 18.5h.01');
 export const checks = () => icon('M2 13l4 4 8-9', 'M10 15l2 2 9-10');
+export const close = () => icon('M6 6l12 12', 'M18 6L6 18');

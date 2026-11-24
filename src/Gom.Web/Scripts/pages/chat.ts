@@ -1,7 +1,7 @@
 import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
-import type { Api, ChatEvent, ChatMessage, Conversation, Failure, User } from '../api.js';
+import type { Api, ChatEvent, ChatMessage, Conversation, Failure, Reply, User } from '../api.js';
 import { buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
@@ -23,7 +23,7 @@ export interface ChatDeps {
   outbox(gomId: string): { load(): OutboxItem[]; save(items: OutboxItem[]): void };
 }
 
-export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string }
+export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply }
 
 interface Thread {
   messages: ChatMessage[];
@@ -39,6 +39,8 @@ interface Thread {
   lastReadAtOpen: number;
   unreadAtOpen: number;
   draft: string;
+  /** The message the next one will answer, shown above the composer. */
+  replying: Reply | null;
   stick: boolean;
   /** True while one message of this conversation is on its way: they go out one at a time, in the order written. */
   flushing: boolean;
@@ -50,6 +52,8 @@ interface Thread {
 }
 
 const PREVIEW_CHARS = 200;
+/** How much of the answered message the bar above the composer shows (the server keeps the same number for the quote). */
+const QUOTE_CHARS = 100;
 const CONVERSATION_PATH = /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const GAP_NEAR_BOTTOM_PX = 80;
 /** A busy or failing server is tried this many times before the message is called failed. A bad network is waited out for ever. */
@@ -77,7 +81,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, draft: '', stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -123,31 +127,39 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const recalledText = (mine: boolean, name: string | null): string =>
     mine ? 'Bạn đã thu hồi một tin nhắn' : name === null ? 'Tin nhắn đã được thu hồi' : `${name} đã thu hồi một tin nhắn`;
 
-  const menuFor = (m: Shown) => menu?.id !== m.id ? nothing : html`
-    <div class="menu" role="group" aria-label="Tùy chọn tin nhắn">
+  const menuFor = (m: Shown, mine: boolean) => menu?.id !== m.id ? nothing : html`
+    <div class="menu ${mine ? 'mine' : ''}" role="group" aria-label="Tùy chọn tin nhắn">
       ${menu.confirming ? html`
         <p>Thu hồi tin nhắn này với mọi người?</p>
         <button class="btn small" type="button" data-confirm-recall @click=${() => void recall(m)}>Thu hồi</button>
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Hủy</button>` : html`
-        <button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>
+        <button class="btn secondary small" type="button" data-reply @click=${() => startReply(m)}>Trả lời</button>
+        <button class="btn secondary small" type="button" data-copy @click=${() => void copyText(m)}>Sao chép</button>
+        ${mine ? html`<button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>` : nothing}
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Đóng</button>`}
     </div>`;
+
+  /** What stands above an answer: who wrote the message it answers and the start of it, or that it is no longer there to see. */
+  const quote = (r: Reply) => html`
+    <div class="quote" data-quote=${r.id}>${r.sender === null || r.snippet === null
+      ? html`<span class="gone">Tin nhắn không còn hiển thị</span>`
+      : html`<b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><span>${r.snippet}</span>`}</div>`;
 
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
     const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''}`;
-    // Only your own sent message has a menu: not one still on its way, and not one already taken back.
-    const canRecall = item.mine && m.state === undefined && m.deleted !== true;
+    // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
+    const hasMenu = m.state === undefined && m.deleted !== true;
     return html`
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
-        ${canRecall ? html`<button class="ib small menu-btn" type="button" data-menu aria-label="Tùy chọn tin nhắn" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
+        ${hasMenu ? html`<button class="ib small menu-btn" type="button" data-menu aria-label="Tùy chọn tin nhắn" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
           @click=${() => { menu = menu?.id === m.id ? null : { id: m.id, confirming: false }; update(); }}>${icons.more()}</button>` : nothing}
         ${others ? (item.last ? html`<div class="av sm a1" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
-        <div class="bub">${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`<span class="txt">${m.body}</span>`}
+        <div class="bub">${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
           <span class="ts">${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
       </div>
-      ${menuFor(m)}
+      ${menuFor(m, item.mine)}
       ${seen === null ? nothing : html`<div class="seen">${icons.checks()}<span>${seen}</span></div>`}
       ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? 'Sẽ gửi khi có mạng' : 'Sẽ thử gửi lại'}</div>` : nothing}
       ${m.state === 'failed' ? html`
@@ -192,6 +204,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
         </div>
+        ${t.replying === null ? nothing : html`
+          <div class="replybar" data-replybar>
+            <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.snippet ?? ''}</span></div>
+            <button class="ib" type="button" data-cancel-reply aria-label="Hủy trả lời" @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
+          </div>`}
         <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
           <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
             .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey}></textarea>
@@ -346,6 +363,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (t !== undefined) {
       const had = t.cursor;
       t.pending = t.pending.filter((p) => p.clientId !== message.clientId);
+      // The message being answered was taken back: there is nothing left to answer.
+      if (event.kind === 'deleted' && t.replying?.id === message.id) t.replying = null;
       t.messages = mergeMessages(t.messages, [message]);
       // A number is missing: ask the server to fill in from the last step we knew of.
       if (t.loaded && event.seq > had + 1) live?.sync(conversation, had);
@@ -380,6 +399,24 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  // ---- answering and copying
+
+  /** The next message will answer this one: shown above the composer until sent or cancelled. */
+  function startReply(m: Shown): void {
+    menu = null;
+    const t = threadOf(m.conversationId);
+    const body = [...m.body];
+    t.replying = { id: m.id, sender: m.sender, snippet: body.length > QUOTE_CHARS ? body.slice(0, QUOTE_CHARS).join('') : m.body };
+    update();
+    root.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus();
+  }
+
+  async function copyText(m: Shown): Promise<void> {
+    menu = null;
+    try { await navigator.clipboard.writeText(m.body); notice = 'Đã sao chép tin nhắn.'; } catch { notice = 'Không sao chép được. Hãy chọn và chép bằng tay.'; }
+    update();
+  }
+
   // ---- taking a message back
 
   async function recall(m: Shown): Promise<void> {
@@ -401,7 +438,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function persist(): void {
     if (outbox === null) return;
     outbox.save([...threads].flatMap(([id, t]) => t.pending.filter((p) => p.state !== 'failed')
-      .map((p) => ({ conversation: id, clientId: p.clientId, body: p.body, createdAt: p.createdAt }))));
+      .map((p) => ({ conversation: id, clientId: p.clientId, body: p.body, createdAt: p.createdAt, ...(p.reply ? { replyTo: p.reply } : {}) }))));
   }
 
   async function send(id: string): Promise<void> {
@@ -409,12 +446,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const body = t.draft.trim();
     if (body === '' || me === null) return;
     t.draft = '';
+    const reply = t.replying;
+    t.replying = null;
     const clientId = deps.newId();
     // If an earlier message is still waiting, this one waits behind it: they must reach the server in the order written.
     const waiting = t.pending.some((x) => x.state === 'queued');
     t.pending.push({
       id: clientId, clientId, seq: 0, conversationId: id, sender: { id: me.id, displayName: me.displayName }, body,
-      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending',
+      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(reply ? { reply } : {}),
     });
     t.stick = true;
     persist();
@@ -434,7 +473,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         p.state = 'sending';
         delete p.error;
         update();
-        const result = await api.send(id, p.clientId, p.body);
+        const result = await api.send(id, p.clientId, p.body, p.reply?.id);
         if (result.ok) {
           t.failures = 0;
           t.attempts.delete(p.clientId);
@@ -509,7 +548,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (chatOf(item.conversation) === undefined) continue;   // no longer in that conversation: let it go
       threadOf(item.conversation).pending.push({
         id: item.clientId, clientId: item.clientId, seq: 0, conversationId: item.conversation,
-        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued',
+        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued', ...(item.replyTo ? { reply: item.replyTo } : {}),
       });
     }
     persist();

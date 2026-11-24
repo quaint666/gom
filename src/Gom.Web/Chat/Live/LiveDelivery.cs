@@ -39,17 +39,25 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
 
     /// <summary>Sends one step of the stream (a message created or recalled) to every member's devices.</summary>
     /// <param name="eventSeq">The step's own number; for a recall it is later than the message's.</param>
-    public async Task PublishAsync(GomDbContext db, long eventSeq, string kind, MessageEndpoints.MessageDto message)
+    /// <param name="parentSeq">For an answer, the number of the message it quotes: members who joined after it are not shown its words or its writer.</param>
+    public async Task PublishAsync(GomDbContext db, long eventSeq, string kind, MessageEndpoints.MessageDto message, long? parentSeq = null)
     {
         try
         {
             // Membership is read now, not remembered: whoever is a member at this moment gets it, nobody else.
             // And a member who joined after the message was written is not told anything about it, not even that it was taken back.
-            var members = await db.Members.AsNoTracking().Where(m => m.ConversationId == message.ConversationId && m.JoinedSeq < message.Seq).Select(m => m.UserId).ToListAsync();
+            var members = await db.Members.AsNoTracking().Where(m => m.ConversationId == message.ConversationId && m.JoinedSeq < message.Seq)
+                .Select(m => new { m.UserId, m.JoinedSeq }).ToListAsync();
             var frame = Frames.Live(message.ConversationId, new EventDto(eventSeq, kind, message));
-            foreach (var user in members)
-                foreach (var connection in registry.For(user))
-                    connection.TryEnqueue(frame);
+            // Two readers can see one answer differently: someone who joined after the quoted message gets the quote with nothing in it.
+            var hidden = message.Reply is null || parentSeq is null ? frame
+                : Frames.Live(message.ConversationId, new EventDto(eventSeq, kind, message with { Reply = Replies.Hidden(message.Reply.Id) }));
+            foreach (var member in members)
+            {
+                var send = parentSeq is { } p && member.JoinedSeq >= p ? hidden : frame;
+                foreach (var connection in registry.For(member.UserId))
+                    connection.TryEnqueue(send);
+            }
         }
         catch (Exception e)
         {
