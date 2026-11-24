@@ -1,0 +1,4 @@
+# The mockup boards in design/source fill their frames with innerHTML from literals in the same file.
+# They are not served by the app, so they are not scanned.
+paths-ignore:
+  - design/source

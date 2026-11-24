@@ -8,7 +8,7 @@ describe('errorText', () => {
     'password_too_common', 'invalid_display_name', 'missing_fields', 'network', 'server',
   ] as const)('has its own Vietnamese sentence for %s', (code) => {
     const sentence = errorText(fail(code));
-    expect(sentence).toMatch(/[ạ-ỹàáâãèéêìíòóôõùúăđĩũơưÀ-Ỹ]| /); // real words, not the code
+    expect(sentence).toContain(' '); // a sentence, not the code
     expect(sentence).not.toContain('_');
   });
 
