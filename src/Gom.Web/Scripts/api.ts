@@ -1,11 +1,13 @@
 export type ErrorCode =
   | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
   | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
-  | 'wrong_password' | 'cannot_disable_owner' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
+  | 'wrong_password' | 'cannot_disable_owner' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
+  | 'not_friends' | 'cannot_chat_self' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
   'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner',
+  'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -17,6 +19,13 @@ export interface Invite { id: string; createdAt: string; expiresAt: string; used
 export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; createdAt: string }
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
 export interface JoinBody { gomId: string; password: string; displayName: string }
+
+export interface Person { gomId: string; displayName: string }
+export interface FriendRequest extends Person { createdAt: string }
+export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; outgoing: FriendRequest[] }
+export interface Conversation {
+  id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
+}
 
 export interface Api {
   me(): Promise<Result<User>>;
@@ -37,6 +46,17 @@ export interface Api {
   changePassword(current: string, password: string): Promise<Result<void>>;
   disableMember(gomId: string): Promise<Result<void>>;
   enableMember(gomId: string): Promise<Result<void>>;
+  friends(): Promise<Result<FriendLists>>;
+  askFriend(gomId: string): Promise<Result<{ status: 'pending' | 'friends' }>>;
+  acceptFriend(gomId: string): Promise<Result<void>>;
+  /** Declines a request sent to you, or cancels one you sent. */
+  withdrawFriend(gomId: string): Promise<Result<void>>;
+  unfriend(gomId: string): Promise<Result<void>>;
+  blocks(): Promise<Result<Person[]>>;
+  block(gomId: string): Promise<Result<void>>;
+  unblock(gomId: string): Promise<Result<void>>;
+  conversations(): Promise<Result<Conversation[]>>;
+  openDirect(gomId: string): Promise<Result<{ id: string }>>;
 }
 
 /** The browser sends the Origin header itself on same-origin POST and DELETE; the server checks it. */
@@ -79,6 +99,16 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
     disableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/disable`),
     enableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/enable`),
+    friends: () => call('GET', '/api/friends'),
+    askFriend: (gomId) => call('POST', '/api/friends/requests', { gomId }),
+    acceptFriend: (gomId) => call('POST', `/api/friends/requests/${enc(gomId)}/accept`),
+    withdrawFriend: (gomId) => call('DELETE', `/api/friends/requests/${enc(gomId)}`),
+    unfriend: (gomId) => call('DELETE', `/api/friends/${enc(gomId)}`),
+    blocks: () => call('GET', '/api/blocks'),
+    block: (gomId) => call('POST', `/api/blocks/${enc(gomId)}`),
+    unblock: (gomId) => call('DELETE', `/api/blocks/${enc(gomId)}`),
+    conversations: () => call('GET', '/api/conversations'),
+    openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
   };
 }
 

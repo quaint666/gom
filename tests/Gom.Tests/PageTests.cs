@@ -9,7 +9,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
     public static TheoryData<string, string> Pages => new()
     {
         { "/", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/reset/some-token", "reset" },
-        { "/settings", "settings" }, { "/owner", "owner" },
+        { "/settings", "settings" }, { "/friends", "friends" }, { "/add/some_id", "add" }, { "/owner", "owner" },
     };
 
     [Theory]

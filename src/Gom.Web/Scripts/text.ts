@@ -16,6 +16,12 @@ export function errorText(failure: Failure): string {
     case 'invalid_display_name': return 'Tên hiển thị tối đa 60 ký tự và không được có ký tự điều khiển.';
     case 'wrong_password': return 'Mật khẩu hiện tại không đúng.';
     case 'cannot_disable_owner': return 'Không thể khóa tài khoản của chủ Gom.';
+    case 'user_not_found': return 'Không tìm thấy ai có Gom ID này. Hãy kiểm tra lại.';
+    case 'cannot_add_self': return 'Đây là Gom ID của chính bạn.';
+    case 'already_friends': return 'Hai bạn đã là bạn bè.';
+    case 'you_blocked_them': return 'Bạn đã chặn người này. Hãy bỏ chặn trước nếu muốn kết bạn.';
+    case 'not_friends': return 'Chỉ nhắn tin được với bạn bè.';
+    case 'cannot_chat_self': return 'Bạn không thể nhắn tin cho chính mình.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
     case 'network': return 'Không kết nối được. Kiểm tra mạng rồi thử lại.';
     case 'server': return 'Gom đang gặp sự cố. Hãy thử lại sau ít phút.';

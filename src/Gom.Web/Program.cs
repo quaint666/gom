@@ -50,6 +50,8 @@ MapPage("/sign-in", "sign-in.html");
 MapPage("/join/{token}", "join.html");
 MapPage("/reset/{token}", "reset.html");
 MapPage("/settings", "settings.html");
+MapPage("/friends", "friends.html");
+MapPage("/add/{gomId}", "add.html");
 MapPage("/owner", "owner.html");
 
 // 200 only when the database answers; a monitor or a proxy can poll this.

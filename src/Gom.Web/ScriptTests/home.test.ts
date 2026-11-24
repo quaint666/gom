@@ -16,7 +16,7 @@ describe('home page', () => {
   });
 
   it('shows the name, the empty state and a link to settings', async () => {
-    mountHome(root, fakeApi({ me: vi.fn(async () => ok(me)) }), vi.fn());
+    mountHome(root, fakeApi({ me: vi.fn(async () => ok(me)), conversations: vi.fn(async () => ok([])) }), vi.fn());
     await flush();
     expect(text(root)).toContain('Mẹ');
     expect(text(root)).toContain('Chưa có cuộc trò chuyện nào');

@@ -1,4 +1,6 @@
 import { createApi } from './api.js';
+import { mountAdd } from './pages/add.js';
+import { mountFriends } from './pages/friends.js';
 import { mountHome } from './pages/home.js';
 import { mountJoin } from './pages/join.js';
 import { mountOwner } from './pages/owner.js';
@@ -18,11 +20,13 @@ addEventListener('storage', (e) => { if (e.key === 'color-scheme') applyScheme(s
 
 if (root) {
   switch (document.body.dataset['page']) {
-    case 'signin': mountSignIn(root, api, go); break;
+    case 'signin': mountSignIn(root, api, go, new URLSearchParams(location.search).get('next')); break;
     case 'join': mountJoin(root, api, go, token); break;
     case 'reset': mountReset(root, api, go, token); break;
     case 'home': mountHome(root, api, go); break;
     case 'settings': mountSettings(root, api, go); break;
+    case 'friends': mountFriends(root, api, go, location.origin); break;
+    case 'add': mountAdd(root, api, go, token); break;
     case 'owner': mountOwner(root, api, go, location.origin); break;
   }
 }
