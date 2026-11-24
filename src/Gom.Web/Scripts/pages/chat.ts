@@ -77,6 +77,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let live: LiveControl | null = null;
   let scrollAnchor: number | null = null;
   let menu: { id: string; confirming: boolean; hide?: boolean } | null = null;
+  /** The search bar of the open conversation: what was asked, and what came back (null while waiting for the first answer). */
+  let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
+  let found: string | null = null;
   /** The message being passed on, while the person picks where to. */
   let forwarding: Shown | null = null;
 
@@ -160,7 +163,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
-    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''}`;
+    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${found === m.id ? 'found' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
     return html`
@@ -193,6 +196,23 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return (msg) => lastMine !== undefined && msg.id === lastMine.id && count > 0 ? (group ? `Đã xem bởi ${count}` : 'Đã xem') : null;
   }
 
+  /** Looking for words in this conversation: a field, and the messages that contain them, newest first. */
+  const searchPanel = (s: NonNullable<typeof searching>) => html`
+    <div class="searchbar" role="search">
+      <form data-search-form @submit=${(e: Event) => { e.preventDefault(); void runSearch(); }}>
+        <input type="search" name="q" aria-label="Từ cần tìm" placeholder="Tìm tin nhắn" autocomplete="off" maxlength="100"
+          .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; }}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { searching = null; update(); } }}>
+        <button class="btn small" type="submit" data-do-search>Tìm</button>
+      </form>
+      ${s.results === null ? nothing : s.results.length === 0
+        ? html`<p class="hint" data-no-results>Không tìm thấy tin nhắn nào.</p>`
+        : html`<ul class="results">${s.results.map((r) => html`
+          <li><button type="button" class="result" data-result=${r.id} @click=${() => void reveal(r)}>
+            <b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><small>${listTime(r.createdAt, deps.now())}</small>
+            <span>${[...r.body].length > 160 ? [...r.body].slice(0, 160).join('') + '…' : r.body}</span></button></li>`)}</ul>`}
+    </div>`;
+
   /** Where to pass a message on: your conversations, newest first. The message goes as a new message from you, with nothing saying who wrote it first. */
   const forwardPanel = (m: Shown) => html`
     <div class="forward card" role="group" aria-label="Chuyển tiếp tin nhắn" data-forward-panel>
@@ -219,11 +239,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a>
           ${avatar(c?.title ?? '?')}
           <div class="th-title"><b>${c?.title ?? '…'}</b>${c?.peer ? html`<small>@${c.peer.gomId}</small>` : nothing}${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>
-          ${c === undefined ? nothing : html`<button class="ib" type="button" data-mute aria-pressed=${c.muted ? 'true' : 'false'}
+          ${c === undefined ? nothing : html`<button class="ib" type="button" data-search aria-label="Tìm trong cuộc trò chuyện" aria-expanded=${searching ? 'true' : 'false'}
+            @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
+          <button class="ib" type="button" data-mute aria-pressed=${c.muted ? 'true' : 'false'}
             aria-label=${c.muted ? 'Bật lại thông báo' : 'Tắt thông báo'} @click=${() => void toggleMute(c)}>${c.muted ? icons.bellOff() : icons.bell()}</button>`}
           ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label="Thông tin nhóm">${icons.users()}</a>` : nothing}
         </header>
         ${banner()}
+        ${searching === null ? nothing : searchPanel(searching)}
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
@@ -497,6 +520,38 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  // ---- searching
+
+  async function runSearch(): Promise<void> {
+    if (searching === null || openId === null) return;
+    const s = searching;
+    const q = s.q.trim();
+    if (q === '') return;
+    // Only the newest question may fill the list: an older, slower answer is dropped.
+    const ticket = ++s.ticket;
+    s.asked = q;
+    const result = await api.search(openId, q);
+    if (searching !== s || s.ticket !== ticket) return;
+    if (!result.ok) { handleFailure(result); return; }
+    s.results = result.data.results;
+    error = null;
+    update();
+  }
+
+  /** Goes to a message found by the search: older pages are loaded until it is there, then it is brought into view and marked for a moment. */
+  async function reveal(m: ChatMessage): Promise<void> {
+    const id = m.conversationId;
+    const t = threadOf(id);
+    searching = null;
+    t.stick = false;
+    update();
+    for (let pages = 0; !t.messages.some((x) => x.id === m.id) && t.hasMore && pages < 40; pages++) await loadOlder(id);
+    found = m.id;
+    update();
+    root.querySelector<HTMLElement>(`[data-msg="${m.id}"]`)?.scrollIntoView?.({ block: 'center' });
+    deps.timer.set(() => { if (found === m.id) { found = null; update(); } }, 2500);
+  }
+
   // ---- deleting a message for yourself
 
   /** Takes a message out of this device's view: it goes from the thread, and the list is asked again (the preview may have changed). */
@@ -507,6 +562,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (t.replying?.id === messageId) t.replying = null;
     }
     if (menu?.id === messageId) menu = null;
+    if (searching?.results) searching.results = searching.results.filter((r) => r.id !== messageId);
     update();
     void refreshList();
   }

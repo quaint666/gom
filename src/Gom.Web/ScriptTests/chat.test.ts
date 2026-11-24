@@ -1892,3 +1892,132 @@ describe('chat: where reading starts', () => {
     expect(root.querySelector('[data-jump-bottom]')).toBeNull();
   });
 });
+
+describe('chat: searching a conversation', () => {
+  const scrolled: Element[] = [];
+  beforeEach(() => {
+    scrolled.length = 0;
+    (Element.prototype as unknown as { scrollIntoView: (o?: unknown) => void }).scrollIntoView = function (this: Element) { scrolled.push(this); };
+  });
+  const messages = [msg(1, 'minh', 'Tối nay ăn phở'), msg(2, 'mom', 'ok')];
+  const hit = (m: ChatMessage): ChatMessage => m;
+  const open = (extra: Record<string, unknown> = {}) => start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: messages }, api: extra });
+  const toggle = async () => { root.querySelector<HTMLButtonElement>('.th-head button[data-search]')!.click(); await flush(); };
+  const ask = async (q: string) => {
+    const input = root.querySelector<HTMLInputElement>('.searchbar input')!;
+    input.value = q; input.dispatchEvent(new Event('input', { bubbles: true }));
+    root.querySelector<HTMLFormElement>('[data-search-form]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    await flush();
+  };
+
+  it('opens a search bar from the header and closes it again', async () => {
+    open();
+    await flush();
+    expect(root.querySelector('.searchbar')).toBeNull();
+    await toggle();
+    expect(root.querySelector('.searchbar input')).not.toBeNull();
+    await toggle();
+    expect(root.querySelector('.searchbar')).toBeNull();
+  });
+
+  it('asks the server about this conversation and lists who said it, when, and the words', async () => {
+    const search = vi.fn(async () => ok({ results: [hit(messages[0]!)] }));
+    open({ search });
+    await flush();
+    await toggle();
+    await ask('  phở ');
+    expect(search).toHaveBeenCalledWith(C1, 'phở');
+    const row = root.querySelector('[data-result="id1"]')!;
+    expect(text(row)).toContain('Minh');
+    expect(text(row)).toContain('Tối nay ăn phở');
+  });
+
+  it('says so when nothing was found', async () => {
+    open();
+    await flush();
+    await toggle();
+    await ask('xyz');
+    expect(root.querySelector('[data-no-results]')).not.toBeNull();
+  });
+
+  it('does not ask for an empty search', async () => {
+    const h = open();
+    await flush();
+    await toggle();
+    await ask('   ');
+    expect(h.api.search).not.toHaveBeenCalled();
+  });
+
+  it('shows what went wrong when the search fails', async () => {
+    open({ search: vi.fn(async () => fail('server', 500)) });
+    await flush();
+    await toggle();
+    await ask('phở');
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('closes on Escape', async () => {
+    open();
+    await flush();
+    await toggle();
+    root.querySelector('.searchbar input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(root.querySelector('.searchbar')).toBeNull();
+  });
+
+  it('lets only the newest answer fill the list, even if an older one comes last', async () => {
+    const finish: Array<(v: unknown) => void> = [];
+    const search = vi.fn(() => new Promise((resolve) => { finish.push(resolve); }));
+    open({ search });
+    await flush();
+    await toggle();
+    await ask('một');
+    await ask('hai');
+    finish[1]!(ok({ results: [hit(messages[1]!)] })); await flush();
+    finish[0]!(ok({ results: [hit(messages[0]!)] })); await flush();
+    expect(root.querySelector('[data-result="id2"]')).not.toBeNull();
+    expect(root.querySelector('[data-result="id1"]')).toBeNull();
+  });
+
+  it('takes you to a result that is already on screen, and marks it for a moment', async () => {
+    const h = open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
+    await flush();
+    await toggle();
+    await ask('phở');
+    scrolled.length = 0;
+    root.querySelector<HTMLButtonElement>('[data-result="id1"]')!.click();
+    await flush();
+    expect(root.querySelector('.searchbar')).toBeNull();
+    expect(scrolled.some((e) => e.getAttribute('data-msg') === 'id1')).toBe(true);
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
+    h.timers[h.timers.length - 1]!.fn();
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(false);
+  });
+
+  it('loads older messages until a result that is further back is there', async () => {
+    const old = msg(1, 'minh', 'xa lắm phở');
+    const history = vi.fn(async (_id: string, before?: number) => before === undefined
+      ? ok({ messages: [msg(3, 'minh'), msg(2, 'mom')], hasMore: true, lastSeq: 3 })
+      : ok({ messages: [old], hasMore: false, lastSeq: 3 }));
+    open({ history, search: vi.fn(async () => ok({ results: [hit(old)] })) });
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')).toBeNull();
+    await toggle();
+    await ask('phở');
+    root.querySelector<HTMLButtonElement>('[data-result="id1"]')!.click();
+    await flush();
+    expect(history).toHaveBeenCalledWith(C1, 2);
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
+  });
+
+  it('drops a result from the list when you delete that message for yourself', async () => {
+    const h = open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
+    await flush();
+    await toggle();
+    await ask('phở');
+    h.handlers().hidden(C1, 'id1');
+    await flush();
+    expect(root.querySelector('[data-result="id1"]')).toBeNull();
+  });
+});

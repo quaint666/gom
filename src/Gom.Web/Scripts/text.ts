@@ -36,6 +36,7 @@ export function errorText(failure: Failure): string {
     case 'leader_must_hand_over': return 'Trưởng nhóm cần chuyển quyền cho người khác trước khi rời nhóm.';
     case 'invalid_role': case 'invalid_member': return 'Không thể thực hiện với thành viên này.';
     case 'invalid_reply': return 'Không trả lời được tin nhắn này vì nó đã bị thu hồi hoặc không còn nữa.';
+    case 'invalid_query': return 'Hãy nhập từ cần tìm (tối đa 100 ký tự).';
     case 'use_leave': return 'Muốn ra khỏi nhóm thì chọn "Rời nhóm".';
     case 'not_your_message': return 'Chỉ thu hồi được tin nhắn của chính bạn.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
