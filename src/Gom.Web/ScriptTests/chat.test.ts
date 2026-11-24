@@ -3181,3 +3181,15 @@ describe('chat: a server without uploads', () => {
     expect(upload).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('chat: the account menu', () => {
+  it('shows a door beside the sign-out entry, like the other entries have their icons', async () => {
+    start({ path: '/', chats: [chat(C1, 'Minh')] });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-gear]')!.click();
+    await flush();
+    const signOut = root.querySelector('[data-signout]')!;
+    expect(signOut.querySelector('svg.i path')).not.toBeNull();
+    expect(text(signOut)).toBe('Đăng xuất');
+  });
+});

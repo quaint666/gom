@@ -416,7 +416,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <div class="gearmenu" role="menu" aria-label="Tài khoản" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { gearOpen = false; update(); } }}>
         <a class="mi" role="menuitem" href="/settings">${icons.gear()}<span>Cài đặt</span></a>
         ${me?.isOwner ? html`<a class="mi" role="menuitem" href="/owner">${icons.users()}<span>Lời mời và thành viên</span></a>` : nothing}
-        <button class="mi" type="button" role="menuitem" data-signout @click=${() => void signOut()}><span>Đăng xuất</span></button>
+        <button class="mi" type="button" role="menuitem" data-signout @click=${() => void signOut()}>${icons.signOut()}<span>Đăng xuất</span></button>
       </div>` : nothing}`;
 
   async function signOut(): Promise<void> {

@@ -59,6 +59,29 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Contains("position: relative", rule.Groups[1].Value);
     }
 
+    /// <summary>A bubble is as wide as its picture. A percentage in the picture grid's maximum width is ignored when the bubble works out its own width, so the bubble then stretches to its limit and leaves an uneven strip beside the picture.</summary>
+    [Fact]
+    public void The_picture_grid_has_a_fixed_maximum_width_so_the_bubble_fits_the_picture()
+    {
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Gom.Web", "wwwroot", "css", "gom.css"));
+        var rule = System.Text.RegularExpressions.Regex.Match(css, @"(?m)^\.pics \{([^}]*)\}");
+        Assert.True(rule.Success);
+        var max = System.Text.RegularExpressions.Regex.Match(rule.Groups[1].Value, @"max-inline-size:\s*([^;]+);");
+        Assert.True(max.Success);
+        Assert.DoesNotContain("%", max.Groups[1].Value);
+    }
+
+    /// <summary>The chat page must never scroll as a page: on a phone a page that can scroll a little ends up with its header off the top and a blank strip under the composer.</summary>
+    [Fact]
+    public void The_chat_page_itself_cannot_scroll()
+    {
+        var css = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Gom.Web", "wwwroot", "css", "gom.css"));
+        var rule = System.Text.RegularExpressions.Regex.Match(css, @"(?m)^html:has\(> body\[data-page=""home""\]\), body\[data-page=""home""\] \{([^}]*)\}");
+        Assert.True(rule.Success);
+        Assert.Contains("overflow: hidden", rule.Groups[1].Value);
+        Assert.Contains("data-page=\"home\"", File.ReadAllText(Path.Combine(RepoRoot(), "src", "Gom.Web", "wwwroot", "pages", "home.html")));
+    }
+
     /// <summary>On a phone the keyboard must shrink the page, not cover the composer or leave a gap.</summary>
     [Fact]
     public void Every_page_lets_the_keyboard_resize_the_content()
