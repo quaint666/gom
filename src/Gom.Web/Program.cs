@@ -1,3 +1,4 @@
+using Gom.Web;
 using Gom.Web.Auth;
 using Gom.Web.Chat;
 using Gom.Web.Chat.Live;
@@ -91,9 +92,11 @@ if (proxyHops > 0) app.UseForwardedHeaders();
 app.UseMiddleware<SecurityHeaders>();
 app.UseStaticFiles(new StaticFileOptions
 {
-    // No fingerprints yet, so every file is checked with the server (ETag) on each use, except fonts, which never change under one name.
+    // A fingerprinted file never changes under its name: kept for a year. Fonts never change under one name either: a week. Every
+    // other file is checked with the server (ETag) on each use.
     OnPrepareResponse = c => c.Context.Response.Headers.CacheControl =
-        c.File.Name.EndsWith(".woff2", StringComparison.Ordinal) ? "public, max-age=604800" : "no-cache",
+        Assets.IsFingerprinted(c.File.Name) ? "public, max-age=31536000, immutable"
+        : c.File.Name.EndsWith(".woff2", StringComparison.Ordinal) ? "public, max-age=604800" : "no-cache",
 });
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(25) });
 app.UseMiddleware<OriginCheck>();
@@ -110,9 +113,14 @@ app.MapAttachments();
 app.MapReceipts();
 app.MapSocket();
 
-// One small HTML file per page; the script in /js/main.js picks the page from data-page.
+// One small HTML file per page; the script in /js/main.js picks the page from data-page. The files a page loads are named by their
+// fingerprinted copies (see Assets), so a browser may keep them.
+var fingerprints = Assets.Load(app.Environment.WebRootFileProvider, app.Logger);
 void MapPage(string route, string file) => app.MapMethods(route, ["GET", "HEAD"], (IWebHostEnvironment env) =>
-    Results.File(env.WebRootFileProvider.GetFileInfo($"pages/{file}").CreateReadStream(), "text/html; charset=utf-8"));
+{
+    using var reader = new StreamReader(env.WebRootFileProvider.GetFileInfo($"pages/{file}").CreateReadStream());
+    return Results.Content(Assets.Apply(reader.ReadToEnd(), fingerprints), "text/html; charset=utf-8");
+});
 MapPage("/", "home.html");
 MapPage("/c/{id}", "home.html");
 MapPage("/sign-in", "sign-in.html");

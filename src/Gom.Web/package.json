@@ -2,11 +2,11 @@
   "name": "gom-web-scripts",
   "version": "0.0.0",
   "private": true,
-  "description": "The TypeScript of the Gom pages, bundled to wwwroot/js/main.js.",
+  "description": "The TypeScript of the Gom pages, bundled to wwwroot/js/main.js (with fingerprinted copies of the files a page loads).",
   "type": "module",
   "scripts": {
-    "build": "esbuild Scripts/main.ts --bundle --format=esm --target=es2022 --minify --sourcemap --outfile=wwwroot/js/main.js",
-    "watch": "esbuild Scripts/main.ts --bundle --format=esm --target=es2022 --sourcemap --outfile=wwwroot/js/main.js --watch",
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run"
   },
