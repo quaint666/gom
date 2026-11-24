@@ -61,6 +61,8 @@ public class ConversationMember
     public long JoinedSeq { get; set; }
     /// <summary>The creator of a group is its leader (one per group); the leader names deputies. See docs/decisions.md.</summary>
     public GroupRole Role { get; set; }
+    /// <summary>This person muted the conversation: it keeps its unread count but is quiet (no push, a grey badge). Theirs alone.</summary>
+    public bool Muted { get; set; }
 }
 
 /// <summary>The materialized state of one message. The event stream (<see cref="MessageEvent"/>) is what clients follow.</summary>

@@ -39,7 +39,7 @@ export interface ChatEvent { seq: number; kind: 'created' | 'deleted'; message: 
 export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
-  unread: number; lastMessage: LastMessage | null; memberCount?: number;
+  unread: number; lastMessage: LastMessage | null; memberCount?: number; muted?: boolean;
 }
 /** A member of a group. The Gom ID is there only for you and your friends. */
 export interface GroupMember {
@@ -88,6 +88,7 @@ export interface Api {
   groupMembers(conversation: string): Promise<Result<GroupMember[]>>;
   addMember(conversation: string, gomId: string): Promise<Result<void>>;
   leaveGroup(conversation: string): Promise<Result<void>>;
+  setMute(conversation: string, muted: boolean): Promise<Result<void>>;
   removeMember(conversation: string, userId: string): Promise<Result<void>>;
   setRole(conversation: string, userId: string, role: 'deputy' | 'member'): Promise<Result<void>>;
   handOver(conversation: string, userId: string): Promise<Result<void>>;
@@ -150,6 +151,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     createGroup: (title, members) => call('POST', '/api/conversations/group', { title, members }),
     groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
+    setMute: (conversation, muted) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, { muted }),
     leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
     removeMember: (conversation, userId) => call('DELETE', `/api/conversations/${enc(conversation)}/members/${enc(userId)}`),
     setRole: (conversation, userId, role) => call('PUT', `/api/conversations/${enc(conversation)}/members/${enc(userId)}/role`, { role }),

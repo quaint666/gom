@@ -9,6 +9,7 @@ namespace Gom.Web.Social;
 public static class ConversationEndpoints
 {
     public sealed record OpenRequest(string? GomId);
+    public sealed record MuteRequest(bool? Muted);
 
     /// <summary>The list carries only the start of the last message; history has the whole of it.</summary>
     private const int PreviewChars = 200;
@@ -18,6 +19,7 @@ public static class ConversationEndpoints
         var api = app.MapGroup("/api/conversations").RequireAuthorization();
         api.MapGet("", List);
         api.MapPost("/direct", OpenDirect);
+        api.MapPut("/{id:guid}/mute", SetMute);
     }
 
     private static async Task<IResult> OpenDirect(OpenRequest request, HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
@@ -57,6 +59,17 @@ public static class ConversationEndpoints
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 
+    /// <summary>Mutes or unmutes a conversation for this person only. Their other devices are told to reload the list.</summary>
+    private static async Task<IResult> SetMute(Guid id, MuteRequest request, HttpContext http, GomDbContext db, Chat.Live.LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        if (request.Muted is not { } muted) return Results.Json(new { error = "invalid_mute" }, statusCode: StatusCodes.Status400BadRequest);
+        var changed = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s.SetProperty(m => m.Muted, muted), ct);
+        if (changed == 0) return Results.NotFound();
+        live.ConversationsChanged([me]);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> List(HttpContext http, GomDbContext db, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
@@ -67,7 +80,7 @@ public static class ConversationEndpoints
             orderby (c.LastMessageAt ?? c.CreatedAt) descending
             select new
             {
-                c.Id, c.Kind, c.Title, c.LastSeq, m.LastReadSeq,
+                c.Id, c.Kind, c.Title, c.LastSeq, m.LastReadSeq, m.Muted,
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new { u.GomId, u.DisplayName }).FirstOrDefault(),
@@ -89,6 +102,7 @@ public static class ConversationEndpoints
             lastSeq = r.LastSeq,
             lastReadSeq = r.LastReadSeq,
             unread = r.Unread,
+            muted = r.Muted,
             lastMessage = r.Last is null ? null : new
             {
                 seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt, deleted = r.Last.Deleted,

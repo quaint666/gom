@@ -129,6 +129,12 @@ namespace Gom.Web.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("last_read_seq");
 
+                    b.Property<bool>("Muted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("muted");
+
                     b.Property<int>("Role")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")

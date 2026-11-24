@@ -112,7 +112,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <div class="im">
         <div class="l1"><span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv">${preview(c)}</span>
-          ${c.unread > 0 ? html`<span class="badge" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>` : nothing}</div>
+          ${c.muted ? html`<span class="mute-mark" role="img" aria-label="Đã tắt thông báo">${icons.bellOff()}</span>` : nothing}
+          ${c.unread > 0 ? html`<span class="badge ${c.muted ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>` : nothing}</div>
       </div></a></li>`;
 
   const banner = () => offline ? html`<div class="warn" role="status">${icons.wifiOff()}<span>Mất kết nối. Đang kết nối lại…</span></div>` : nothing;
@@ -210,6 +211,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a>
           ${avatar(c?.title ?? '?')}
           <div class="th-title"><b>${c?.title ?? '…'}</b>${c?.peer ? html`<small>@${c.peer.gomId}</small>` : nothing}${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>
+          ${c === undefined ? nothing : html`<button class="ib" type="button" data-mute aria-pressed=${c.muted ? 'true' : 'false'}
+            aria-label=${c.muted ? 'Bật lại thông báo' : 'Tắt thông báo'} @click=${() => void toggleMute(c)}>${c.muted ? icons.bellOff() : icons.bell()}</button>`}
           ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label="Thông tin nhóm">${icons.users()}</a>` : nothing}
         </header>
         ${banner()}
@@ -411,6 +414,19 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (!result.ok) return;   // only a nicety: without it the line just does not show
     threadOf(id).reads = { enabled: result.data.enabled, seqs: new Map(result.data.reads.map((r) => [r.userId, r.seq])) };
     update();
+  }
+
+  // ---- muting
+
+  /** Shows the new state at once, and puts it back with the reason if the server says no. */
+  async function toggleMute(c: Conversation): Promise<void> {
+    const wanted = c.muted !== true;
+    c.muted = wanted;
+    update();
+    const result = await api.setMute(c.id, wanted);
+    if (result.ok) return;
+    c.muted = !wanted;
+    handleFailure(result);
   }
 
   // ---- answering and copying

@@ -221,3 +221,8 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .fw-text { overflow-wrap: anywhere; }
 .fw-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .fw-list .btn { inline-size: 100%; justify-content: flex-start; }
+
+/* a muted conversation */
+.badge.muted { background: var(--muted); }
+.mute-mark { display: grid; place-items: center; color: var(--muted); flex: none; }
+.mute-mark svg { inline-size: 16px; block-size: 16px; }

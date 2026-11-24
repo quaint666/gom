@@ -1670,3 +1670,56 @@ describe('chat: passing a message on', () => {
     expect(row('id1').querySelector('button[data-menu]')).toBeNull();
   });
 });
+
+describe('chat: muting', () => {
+  const chats = [chat(C1, 'Minh', { lastSeq: 3, unread: 2, muted: true }), chat(C2, 'Lan', { lastSeq: 1, unread: 1 })];
+  const open = (extra: Record<string, unknown> = {}, path = `/c/${C2}`) => start({ path, chats, history: { [C1]: [msg(1, 'minh')], [C2]: [msg(1, 'minh', 'x', at(10, 1), C2)] }, api: extra });
+  const bell = () => root.querySelector<HTMLButtonElement>('.th-head button[data-mute]')!;
+
+  it('marks a muted conversation in the list and greys its badge, and not the others', async () => {
+    open({}, '/');
+    await flush();
+    const muted = root.querySelector(`[data-chat="${C1}"]`)!;
+    const loud = root.querySelector(`[data-chat="${C2}"]`)!;
+    expect(muted.querySelector('.mute-mark')).not.toBeNull();
+    expect(muted.querySelector('.badge')!.classList.contains('muted')).toBe(true);
+    expect(loud.querySelector('.mute-mark')).toBeNull();
+    expect(loud.querySelector('.badge')!.classList.contains('muted')).toBe(false);
+  });
+
+  it('shows the switch in the thread with the state it is in', async () => {
+    open({}, `/c/${C1}`);
+    await flush();
+    expect(bell().getAttribute('aria-pressed')).toBe('true');
+    expect(bell().getAttribute('aria-label')).toBe('Bật lại thông báo');
+  });
+
+  it('mutes at once and asks the server', async () => {
+    const h = open();
+    await flush();
+    expect(bell().getAttribute('aria-pressed')).toBe('false');
+    bell().click();
+    expect(bell().getAttribute('aria-pressed')).toBe('true');
+    await flush();
+    expect(h.api.setMute).toHaveBeenCalledWith(C2, true);
+    expect(root.querySelector(`[data-chat="${C2}"] .mute-mark`)).not.toBeNull();
+  });
+
+  it('unmutes the same way', async () => {
+    const h = open({}, `/c/${C1}`);
+    await flush();
+    bell().click();
+    await flush();
+    expect(h.api.setMute).toHaveBeenCalledWith(C1, false);
+    expect(bell().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('puts the switch back and says why when the server refuses', async () => {
+    open({ setMute: vi.fn(async () => fail('server', 500)) });
+    await flush();
+    bell().click();
+    await flush();
+    expect(bell().getAttribute('aria-pressed')).toBe('false');
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+});
