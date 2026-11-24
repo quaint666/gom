@@ -27,3 +27,7 @@ export const bellOff = () => icon('M6 16V11a6 6 0 0112 0v5l1.5 2h-15z', 'M10 21h
 export const down = () => icon('M12 5v14', 'M6 13l6 6 6-6');
 export const search = () => icon('M11 4a7 7 0 100 14 7 7 0 000-14z', 'M20 20l-4-4');
 export const pin = () => icon('M9 3h6l-1 6 3 3v2H7v-2l3-3z', 'M12 14v7');
+export const reply = () => icon('M9 7L4 12l5 5', 'M4 12h10a6 6 0 016 6v1');
+export const forward = () => icon('M15 7l5 5-5 5', 'M20 12H10a6 6 0 00-6 6v1');
+export const trash = () => icon('M4 7h16', 'M9 7V4h6v3', 'M6 7l1 13h10l1-13', 'M10 11v6M14 11v6');
+export const undo = () => icon('M9 14L4 9l5-5', 'M4 9h10a6 6 0 010 12h-3');

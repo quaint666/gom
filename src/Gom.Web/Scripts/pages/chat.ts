@@ -1,6 +1,7 @@
 import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
+import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
 import type { Api, ChatEvent, ChatMessage, Conversation, Failure, Reply, User } from '../api.js';
 import { buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
@@ -84,7 +85,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let outbox: ReturnType<ChatDeps['outbox']> | null = null;
   let live: LiveControl | null = null;
   let scrollAnchor: number | null = null;
-  let menu: { id: string; confirming: boolean; hide?: boolean } | null = null;
+  /** `at` is where it was asked for (the pointer or the button), so a mouse gets it there; a finger always gets the sheet at the bottom. */
+  let menu: { id: string; confirming: boolean; hide?: boolean; at?: { x: number; y: number } } | null = null;
   /** The search bar of the open conversation: what was asked, and what came back (null while waiting for the first answer). */
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
   let found: string | null = null;
@@ -145,28 +147,45 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const recalledText = (mine: boolean, name: string | null): string =>
     mine ? 'Bạn đã thu hồi một tin nhắn' : name === null ? 'Tin nhắn đã được thu hồi' : `${name} đã thu hồi một tin nhắn`;
 
-  const menuFor = (m: Shown, mine: boolean) => menu?.id !== m.id ? nothing : html`
-    <div class="menu ${mine ? 'mine' : ''}" role="group" aria-label="Tùy chọn tin nhắn">
+  /** One line of the menu: an icon and a word. */
+  const menuItem = (attr: string, icon: TemplateResult, label: string, run: () => void, danger = false): TemplateResult =>
+    staticHtml`<button class="mi ${danger ? 'danger' : ''}" type="button" role="menuitem" data-${unsafeStatic(attr)} @click=${run}>${icon}<span>${label}</span></button>`;
+
+  /**
+   * The menu of the open message: a small list beside the pointer for a mouse, a sheet at the bottom for a finger (the
+   * stylesheet decides which). It floats over the thread, so opening it never moves the messages.
+   */
+  const menuOverlay = (t: Thread) => {
+    if (menu === null) return nothing;
+    const m = [...t.messages, ...t.pending].find((x) => x.id === menu!.id);
+    if (m === undefined) return nothing;
+    const mine = m.sender.id === me?.id;
+    const close = () => { menu = null; update(); };
+    const pinned = t.pins.some((p) => p.id === m.id);
+    return html`
+      <div class="scrim" data-scrim @click=${close}></div>
+      <div class="menu ${mine ? 'mine' : ''}" role="menu" aria-label="Tùy chọn tin nhắn" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') close(); }}>
       ${menu.hide ? html`
         <p>Xóa tin nhắn này chỉ ở phía bạn? Người khác vẫn thấy nó.</p>
-        <button class="btn small" type="button" data-confirm-hide @click=${() => void hide(m)}>Xóa với tôi</button>
-        <button class="btn secondary small" type="button" data-cancel-hide @click=${() => { menu = null; update(); }}>Hủy</button>` : menu.confirming ? html`
+        <div class="ask"><button class="btn small" type="button" data-confirm-hide @click=${() => void hide(m)}>Xóa với tôi</button>
+        <button class="btn secondary small" type="button" data-cancel-hide @click=${close}>Hủy</button></div>` : menu.confirming ? html`
         <p>Thu hồi tin nhắn này với mọi người?</p>
-        <button class="btn small" type="button" data-confirm-recall @click=${() => void recall(m)}>Thu hồi</button>
-        <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Hủy</button>` : html`
+        <div class="ask"><button class="btn small" type="button" data-confirm-recall @click=${() => void recall(m)}>Thu hồi</button>
+        <button class="btn secondary small" type="button" data-cancel-recall @click=${close}>Hủy</button></div>` : html`
         <div class="emoji-row" role="group" aria-label="Thả cảm xúc">${EMOJI.map((e) => html`
           <button class="emoji" type="button" data-react=${e} aria-label=${`Thả ${e}`} @click=${() => void setReaction(m, e)}>${e}</button>`)}</div>
-        <button class="btn secondary small" type="button" data-reply @click=${() => startReply(m)}>Trả lời</button>
-        <button class="btn secondary small" type="button" data-copy @click=${() => void copyText(m)}>Sao chép</button>
-        ${threadOf(m.conversationId).pins.some((p) => p.id === m.id)
-          ? html`<button class="btn secondary small" type="button" data-unpin @click=${() => void setPin(m, false)}>Bỏ ghim</button>`
-          : html`<button class="btn secondary small" type="button" data-pin @click=${() => void setPin(m, true)}>Ghim</button>`}
-        <button class="btn secondary small" type="button" data-forward @click=${() => { menu = null; forwarding = m; update(); }}>Chuyển tiếp</button>
-        <button class="btn secondary small" type="button" data-hide @click=${() => { menu = { id: m.id, confirming: false, hide: true }; update(); }}>Xóa với tôi</button>
-        ${mine ? html`<button class="btn secondary small" type="button" data-edit @click=${() => startEdit(m)}>Chỉnh sửa</button>` : nothing}
-        ${mine ? html`<button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>` : nothing}
-        <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Đóng</button>`}
-    </div>`;
+        <div class="items-grid">
+        ${menuItem('reply', icons.reply(), 'Trả lời', () => startReply(m))}
+        ${menuItem('copy', icons.copy(), 'Sao chép', () => void copyText(m))}
+        ${pinned ? menuItem('unpin', icons.pin(), 'Bỏ ghim', () => void setPin(m, false)) : menuItem('pin', icons.pin(), 'Ghim', () => void setPin(m, true))}
+        ${menuItem('forward', icons.forward(), 'Chuyển tiếp', () => { menu = null; forwarding = m; update(); })}
+        ${mine ? menuItem('edit', icons.pencil(), 'Chỉnh sửa', () => startEdit(m)) : nothing}
+        ${menuItem('hide', icons.trash(), 'Xóa với tôi', () => { menu = { id: m.id, confirming: false, hide: true }; update(); })}
+        ${mine ? menuItem('recall', icons.undo(), 'Thu hồi', () => { menu = { id: m.id, confirming: true }; update(); }, true) : nothing}
+        </div>
+        <button class="btn secondary small close-menu" type="button" data-cancel-recall @click=${close}>Đóng</button>`}
+      </div>`;
+  };
 
   /** The reactions under a message: each emoji with how many chose it; yours is marked, and tapping a chip is choosing it or taking yours back. */
   const chips = (m: Shown) => m.deleted || !m.reactions || m.reactions.length === 0 ? nothing : html`
@@ -189,17 +208,25 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${found === m.id ? 'found' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
+    const tools = hasMenu ? html`
+      <div class="tools" role="group" aria-label="Tùy chọn tin nhắn">
+        <button class="ib small" type="button" data-quick-reply aria-label="Trả lời" @click=${() => startReply(m)}>${icons.reply()}</button>
+        <button class="ib small menu-btn" type="button" data-menu aria-label="Tùy chọn tin nhắn" aria-haspopup="menu" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
+          @click=${(e: MouseEvent) => { menu = menu?.id === m.id ? null : { id: m.id, confirming: false, at: pointAt(e) }; update(); }}>${icons.more()}</button>
+      </div>` : nothing;
+    // The time shows on the last message of a run; the others show it when held over (title) and to a screen reader.
+    const sending = m.state === 'sending' || m.state === 'queued';
+    const showTime = item.last || sending || m.editedAt !== undefined && m.editedAt !== null && !m.deleted;
     return html`
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
-        ${hasMenu ? html`<button class="ib small menu-btn" type="button" data-menu aria-label="Tùy chọn tin nhắn" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
-          @click=${() => { menu = menu?.id === m.id ? null : { id: m.id, confirming: false }; update(); }}>${icons.more()}</button>` : nothing}
+        ${item.mine ? tools : nothing}
         ${others ? (item.last ? html`<div class="av sm a1" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
-        <div class="bub" @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
+        <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
           @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
-          <span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
+          ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
+        ${!item.mine ? tools : nothing}
       </div>
       ${chips(m)}
-      ${menuFor(m, item.mine)}
       ${seen === null ? nothing : html`<div class="seen">${icons.checks()}<span>${seen}</span></div>`}
       ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? 'Sẽ gửi khi có mạng' : 'Sẽ thử gửi lại'}</div>` : nothing}
       ${m.state === 'failed' ? html`
@@ -289,6 +316,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
         </div>
+        ${menuOverlay(t)}
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${t.editing === null ? nothing : html`
@@ -326,6 +354,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function update(): void {
     render(view(), root);
+    placeMenu();
     const after = root.querySelector<HTMLElement>('.msgs');
     if (after === null || openId === null) return;
     const t = threadOf(openId);
@@ -526,11 +555,30 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- opening the menu without the button
 
+  /**
+   * Puts the menu where it was asked for. Set through the style object after drawing: the page's content security policy
+   * refuses a style attribute (also the one a template would write on the first draw), but allows this.
+   */
+  function placeMenu(): void {
+    const at = menu?.at;
+    const pop = root.querySelector<HTMLElement>('.menu');
+    if (at === undefined || pop === null) return;
+    pop.style.setProperty('--x', `${Math.round(at.x)}px`);
+    pop.style.setProperty('--y', `${Math.round(at.y)}px`);
+  }
+
+  /** Where a click happened; the keyboard (no pointer) gets the button's own corner. */
+  function pointAt(e: MouseEvent): { x: number; y: number } {
+    if (e.clientX !== 0 || e.clientY !== 0) return { x: e.clientX, y: e.clientY };
+    const r = (e.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    return { x: r?.left ?? 0, y: r?.bottom ?? 0 };
+  }
+
   /** Right-click (or the context-menu key) on a message that has a menu opens it there, instead of the browser's own. */
   function onContext(e: MouseEvent, m: Shown, hasMenu: boolean): void {
     if (!hasMenu) return;
     e.preventDefault();
-    menu = { id: m.id, confirming: false };
+    menu = { id: m.id, confirming: false, at: { x: e.clientX, y: e.clientY } };
     update();
   }
 

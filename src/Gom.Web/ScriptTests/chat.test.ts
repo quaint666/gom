@@ -2517,3 +2517,38 @@ describe('chat: opening the menu by right-click or by a long press', () => {
     expect(menuFor()).not.toBeNull();
   });
 });
+
+describe('chat: where the menu opens', () => {
+  const base = [msg(1, 'minh', 'tin của Minh')];
+  it('is placed at the pointer, through the style object (a style attribute is refused by the page policy)', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 1 })], history: { [C1]: base } });
+    await flush();
+    root.querySelector('[data-msg="id1"] .bub')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 300.4, clientY: 150 }));
+    await flush();
+    const menu = root.querySelector<HTMLElement>('.menu')!;
+    expect(menu.style.getPropertyValue('--x')).toBe('300px');
+    expect(menu.style.getPropertyValue('--y')).toBe('150px');
+  });
+
+  it('closes when the dimmed area behind it is pressed, and on Escape', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 1 })], history: { [C1]: base } });
+    await flush();
+    const open = async () => { root.querySelector('[data-msg="id1"] .bub')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); await flush(); };
+    await open();
+    root.querySelector<HTMLElement>('[data-scrim]')!.click(); await flush();
+    expect(root.querySelector('.menu')).toBeNull();
+    await open();
+    root.querySelector('.menu')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await flush();
+    expect(root.querySelector('.menu')).toBeNull();
+  });
+});
+
+describe('chat: runs of messages', () => {
+  it('shows the time on the last message of a run only, and keeps it for a screen reader on the others', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: [msg(1, 'minh', 'một'), msg(2, 'minh', 'hai')] } });
+    await flush();
+    expect(root.querySelector('[data-msg="id1"] .ts')).toBeNull();
+    expect(root.querySelector('[data-msg="id1"] .sr-only')!.textContent).toMatch(/\d{2}:\d{2}/);
+    expect(root.querySelector('[data-msg="id2"] .ts')!.textContent).toMatch(/\d{2}:\d{2}/);
+  });
+});
