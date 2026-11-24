@@ -445,7 +445,10 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         await SendText(ws, $$"""{"t":"sync","c":"{{chat}}","after":0}""");
         var reply = await Next(ws);
 
-        Assert.Equal(["sau"], reply.GetProperty("events").EnumerateArray().Select(e => e.GetProperty("message").GetProperty("body").GetString()!).ToArray());
+        var events = reply.GetProperty("events").EnumerateArray().Select(e => e.GetProperty("message")).ToList();
+        // Their own "added" line, then what was said after: nothing from before.
+        Assert.Equal(["", "sau"], events.Select(m => m.GetProperty("body").GetString()!).ToArray());
+        Assert.Equal("added", events[0].GetProperty("notice").GetProperty("type").GetString());
     }
 
     // ---- recall
@@ -512,7 +515,9 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal("deleted", (await Next(existing)).GetProperty("event").GetProperty("kind").GetString());
         await AssertSilent(newcomer);
         await SendText(newcomer, $$"""{"t":"sync","c":"{{chat}}","after":0}""");
-        Assert.Empty((await Next(newcomer)).GetProperty("events").EnumerateArray());
+        // The only thing there is for them is their own "added" line; the recalled message is not theirs.
+        var events = (await Next(newcomer)).GetProperty("events").EnumerateArray().ToList();
+        Assert.Equal("added", Assert.Single(events).GetProperty("message").GetProperty("notice").GetProperty("type").GetString());
     }
 
     // ---- read receipts
