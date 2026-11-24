@@ -4,7 +4,8 @@ export type ErrorCode =
   | 'wrong_password' | 'cannot_disable_owner' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
-  | 'group_full' | 'not_a_group' | 'not_your_message' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
+  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave'
+  | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
@@ -12,6 +13,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
+  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -40,6 +42,7 @@ export interface Conversation {
 /** A member of a group. The Gom ID is there only for you and your friends. */
 export interface GroupMember {
   id: string; displayName: string; isMe: boolean; isFriend: boolean; gomId: string | null; request: 'none' | 'sent' | 'received';
+  role: 'leader' | 'deputy' | 'member';
 }
 
 export interface Api {
@@ -83,6 +86,10 @@ export interface Api {
   groupMembers(conversation: string): Promise<Result<GroupMember[]>>;
   addMember(conversation: string, gomId: string): Promise<Result<void>>;
   leaveGroup(conversation: string): Promise<Result<void>>;
+  removeMember(conversation: string, userId: string): Promise<Result<void>>;
+  setRole(conversation: string, userId: string, role: 'deputy' | 'member'): Promise<Result<void>>;
+  handOver(conversation: string, userId: string): Promise<Result<void>>;
+  disband(conversation: string): Promise<Result<void>>;
   askMember(conversation: string, userId: string): Promise<Result<{ status: 'pending' | 'friends' }>>;
 }
 
@@ -142,6 +149,10 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
     leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
+    removeMember: (conversation, userId) => call('DELETE', `/api/conversations/${enc(conversation)}/members/${enc(userId)}`),
+    setRole: (conversation, userId, role) => call('PUT', `/api/conversations/${enc(conversation)}/members/${enc(userId)}/role`, { role }),
+    handOver: (conversation, userId) => call('POST', `/api/conversations/${enc(conversation)}/leader`, { userId }),
+    disband: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}`),
     askMember: (conversation, userId) => call('POST', `/api/conversations/${enc(conversation)}/members/${enc(userId)}/friend-request`),
     reads: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/reads`),
     setReceipts: (enabled) => call('PATCH', '/api/me/receipts', { enabled }),

@@ -8,11 +8,16 @@ using Npgsql;
 
 namespace Gom.Web.Social;
 
-/// <summary>Groups: make one from your friends, add more of your friends, leave, see who is in it, and ask another member to be friends.</summary>
+/// <summary>
+/// Groups: make one from your friends, add more of your friends, leave, see who is in it, ask another member to be friends, and the
+/// leader's and deputies' powers: remove a member, name deputies, hand leadership over, disband.
+/// </summary>
 public static class GroupEndpoints
 {
     public sealed record CreateRequest(string? Title, string[]? Members);
     public sealed record AddRequest(string? GomId);
+    public sealed record RoleRequest(string? Role);
+    public sealed record LeaderRequest(Guid? UserId);
 
     public static void MapGroups(this IEndpointRouteBuilder app)
     {
@@ -21,6 +26,10 @@ public static class GroupEndpoints
         api.MapGet("/{id:guid}/members", ListMembers);
         api.MapPost("/{id:guid}/members", AddMember);
         api.MapDelete("/{id:guid}/members/me", Leave);
+        api.MapDelete("/{id:guid}/members/{userId:guid}", Remove);
+        api.MapPut("/{id:guid}/members/{userId:guid}/role", SetRole);
+        api.MapPost("/{id:guid}/leader", HandOver);
+        api.MapDelete("/{id:guid}", Disband);
         api.MapPost("/{id:guid}/members/{userId:guid}/friend-request", AskMember);
     }
 
@@ -54,7 +63,8 @@ public static class GroupEndpoints
         var now = clock.GetUtcNow();
         var chat = new Conversation { Id = Guid.NewGuid(), Kind = ConversationKind.Group, Title = title, CreatedBy = me, CreatedAt = now };
         db.Conversations.Add(chat);
-        foreach (var person in people.Append(me)) db.Members.Add(new ConversationMember { ConversationId = chat.Id, UserId = person, JoinedAt = now });
+        foreach (var person in people.Append(me))
+            db.Members.Add(new ConversationMember { ConversationId = chat.Id, UserId = person, JoinedAt = now, Role = person == me ? GroupRole.Leader : GroupRole.Member });
         await db.SaveChangesAsync(ct);
 
         live.ConversationsChanged(people.Append(me));
@@ -94,8 +104,125 @@ public static class GroupEndpoints
         if (access is null) return Results.NotFound();
         if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
 
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockGroup(db, id, ct);
+        var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
+        if (!everyone.Contains(me)) return Results.NotFound();
+        if (access.Role == GroupRole.Leader)
+        {
+            // The leader hands over first. Alone in the group, there is nobody to hand over to: leaving ends it.
+            if (everyone.Count > 1) return Error(StatusCodes.Status409Conflict, "leader_must_hand_over");
+            await DeleteGroup(db, id, ct);
+            await tx.CommitAsync(ct);
+            live.ConversationsChanged(everyone);
+            return Results.NoContent();
+        }
+
         await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteDeleteAsync(ct);
-        live.ConversationsChanged((await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct)).Append(me));
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(everyone);
+        return Results.NoContent();
+    }
+
+    /// <summary>The same lock a send and an add take, so who is in the group and who leads it cannot change under a decision.</summary>
+    private static Task<int> LockGroup(GomDbContext db, Guid id, CancellationToken ct) =>
+        db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
+
+    /// <summary>Takes a group and everything in it out of the database. Every key is Restrict, so this goes from the leaves inward.</summary>
+    private static async Task DeleteGroup(GomDbContext db, Guid id, CancellationToken ct)
+    {
+        await db.Events.Where(e => e.ConversationId == id).ExecuteDeleteAsync(ct);
+        await db.Messages.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);
+        await db.Members.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);
+        await db.Conversations.Where(c => c.Id == id).ExecuteDeleteAsync(ct);
+    }
+
+    /// <summary>A leader or a deputy takes a member out. A deputy cannot take out the leader or another deputy. The person is gone as if they had left.</summary>
+    private static async Task<IResult> Remove(Guid id, Guid userId, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (userId == me) return Error(StatusCodes.Status400BadRequest, "use_leave");
+        if (access.Role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockGroup(db, id, ct);
+        // Read again under the lock: the roles may have changed while this request was waiting.
+        var mine = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).Select(m => (GroupRole?)m.Role).SingleOrDefaultAsync(ct);
+        var theirs = await db.Members.Where(m => m.ConversationId == id && m.UserId == userId).Select(m => (GroupRole?)m.Role).SingleOrDefaultAsync(ct);
+        if (mine is null) return Results.NotFound();
+        if (theirs is null) return Results.NotFound();
+        if (mine == GroupRole.Member || (mine == GroupRole.Deputy && theirs != GroupRole.Member)) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+
+        var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
+        await db.Members.Where(m => m.ConversationId == id && m.UserId == userId).ExecuteDeleteAsync(ct);
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(everyone);
+        return Results.NoContent();
+    }
+
+    /// <summary>The leader names a deputy, or takes the title back.</summary>
+    private static async Task<IResult> SetRole(Guid id, Guid userId, RoleRequest request, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    {
+        var role = request.Role switch { "deputy" => GroupRole.Deputy, "member" => GroupRole.Member, _ => (GroupRole?)null };
+        if (role is null) return Error(StatusCodes.Status400BadRequest, "invalid_role");
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role != GroupRole.Leader) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        if (userId == me) return Error(StatusCodes.Status400BadRequest, "invalid_role");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockGroup(db, id, ct);
+        var changed = await db.Members.Where(m => m.ConversationId == id && m.UserId == userId && m.Role != GroupRole.Leader)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.Role, role.Value), ct);
+        if (changed == 0) return Results.NotFound();
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct));
+        return Results.NoContent();
+    }
+
+    /// <summary>The leader makes another member the leader, and becomes a plain member.</summary>
+    private static async Task<IResult> HandOver(Guid id, LeaderRequest request, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role != GroupRole.Leader) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        if (request.UserId is not { } next || next == me) return Error(StatusCodes.Status400BadRequest, "invalid_member");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockGroup(db, id, ct);
+        if (!await db.Members.AnyAsync(m => m.ConversationId == id && m.UserId == me && m.Role == GroupRole.Leader, ct)) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        if (!await db.Members.AnyAsync(m => m.ConversationId == id && m.UserId == next, ct)) return Results.NotFound();
+        // Two steps, in this order: there is never a moment with two leaders (the index would refuse it).
+        await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s.SetProperty(m => m.Role, GroupRole.Member), ct);
+        await db.Members.Where(m => m.ConversationId == id && m.UserId == next).ExecuteUpdateAsync(s => s.SetProperty(m => m.Role, GroupRole.Leader), ct);
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct));
+        return Results.NoContent();
+    }
+
+    /// <summary>The leader ends the group: its messages go for everyone.</summary>
+    private static async Task<IResult> Disband(Guid id, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role != GroupRole.Leader) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockGroup(db, id, ct);
+        if (!await db.Members.AnyAsync(m => m.ConversationId == id && m.UserId == me && m.Role == GroupRole.Leader, ct)) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
+        await DeleteGroup(db, id, ct);
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(everyone);
         return Results.NoContent();
     }
 
@@ -105,7 +232,7 @@ public static class GroupEndpoints
         if (await Access.Of(db, id, me, ct) is null) return Results.NotFound();
 
         var members = await (from m in db.Members where m.ConversationId == id join u in db.Users on m.UserId equals u.Id orderby u.DisplayName, u.Id
-                             select new { u.Id, u.GomId, u.DisplayName }).ToListAsync(ct);
+                             select new { u.Id, u.GomId, u.DisplayName, m.Role }).ToListAsync(ct);
         var mine = await db.Friendships.Where(f => f.UserLow == me || f.UserHigh == me).ToListAsync(ct);
 
         return Results.Ok(members.Select(m =>
@@ -117,6 +244,7 @@ public static class GroupEndpoints
                 id = m.Id,
                 displayName = m.DisplayName,
                 isMe = m.Id == me,
+                role = m.Role.ToString().ToLowerInvariant(),
                 isFriend,
                 // A Gom ID is shown to the person themself and to their friends, and to nobody else.
                 gomId = m.Id == me || isFriend ? m.GomId : null,

@@ -47,6 +47,9 @@ public class Conversation
     public DateTimeOffset? LastMessageAt { get; set; }
 }
 
+/// <summary>What a member may do in a group. A one-to-one chat has only plain members.</summary>
+public enum GroupRole { Member = 0, Deputy = 1, Leader = 2 }
+
 public class ConversationMember
 {
     public Guid ConversationId { get; set; }
@@ -56,6 +59,8 @@ public class ConversationMember
     public long LastReadSeq { get; set; }
     /// <summary>The conversation's counter when this member joined: they see only what comes after. Zero for a one-to-one chat.</summary>
     public long JoinedSeq { get; set; }
+    /// <summary>The creator of a group is its leader (one per group); the leader names deputies. See docs/decisions.md.</summary>
+    public GroupRole Role { get; set; }
 }
 
 /// <summary>The materialized state of one message. The event stream (<see cref="MessageEvent"/>) is what clients follow.</summary>

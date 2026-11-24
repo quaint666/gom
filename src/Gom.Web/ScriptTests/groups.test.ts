@@ -17,16 +17,19 @@ describe('api: groups', () => {
     const fetchFn = vi.fn(async () => new Response(null, { status: 204 }));
     const api = createApi(fetchFn);
     await api.createGroup('Nhà', ['a', 'b']); await api.groupMembers(G); await api.addMember(G, 'x'); await api.leaveGroup(G); await api.askMember(G, 'u-1');
+    await api.removeMember(G, 'u-2'); await api.setRole(G, 'u-2', 'deputy'); await api.handOver(G, 'u-2'); await api.disband(G);
     const calls = fetchFn.mock.calls.map((c) => [(c as unknown as [string, RequestInit])[0], (c as unknown as [string, RequestInit])[1].method]);
     expect(calls).toEqual([
       ['/api/conversations/group', 'POST'], [`/api/conversations/${G}/members`, 'GET'], [`/api/conversations/${G}/members`, 'POST'],
       [`/api/conversations/${G}/members/me`, 'DELETE'], [`/api/conversations/${G}/members/u-1/friend-request`, 'POST'],
+      [`/api/conversations/${G}/members/u-2`, 'DELETE'], [`/api/conversations/${G}/members/u-2/role`, 'PUT'],
+      [`/api/conversations/${G}/leader`, 'POST'], [`/api/conversations/${G}`, 'DELETE'],
     ]);
     expect(JSON.parse((fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ title: 'Nhà', members: ['a', 'b'] });
   });
 
   it('knows the new error codes and says each in words', async () => {
-    for (const code of ['invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group'] as const) {
+    for (const code of ['invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave'] as const) {
       expect(await createApi(async () => json({ error: code }, 400)).createGroup('x', ['y'])).toMatchObject({ ok: false, error: code });
       expect(errorText(fail(code)).length).toBeGreaterThan(10);
       expect(errorText(fail(code))).not.toBe(errorText(fail('unknown')));
@@ -125,11 +128,11 @@ describe('new group page', () => {
 
 describe('group page', () => {
   const members: GroupMember[] = [
-    { id: 'u-mom', displayName: 'Mẹ', isMe: true, isFriend: false, gomId: 'mom', request: 'none' },
-    { id: 'u-minh', displayName: 'Minh', isMe: false, isFriend: true, gomId: 'minh', request: 'none' },
-    { id: 'u-ba', displayName: 'Chị Ba', isMe: false, isFriend: false, gomId: null, request: 'none' },
-    { id: 'u-tu', displayName: 'Chú Tư', isMe: false, isFriend: false, gomId: null, request: 'sent' },
-    { id: 'u-nam', displayName: 'Anh Nam', isMe: false, isFriend: false, gomId: null, request: 'received' },
+    { id: 'u-mom', displayName: 'Mẹ', isMe: true, isFriend: false, gomId: 'mom', request: 'none', role: 'member' },
+    { id: 'u-minh', displayName: 'Minh', isMe: false, isFriend: true, gomId: 'minh', request: 'none', role: 'member' },
+    { id: 'u-ba', displayName: 'Chị Ba', isMe: false, isFriend: false, gomId: null, request: 'none', role: 'member' },
+    { id: 'u-tu', displayName: 'Chú Tư', isMe: false, isFriend: false, gomId: null, request: 'sent', role: 'member' },
+    { id: 'u-nam', displayName: 'Anh Nam', isMe: false, isFriend: false, gomId: null, request: 'received', role: 'member' },
   ];
   const friends = { friends: [{ gomId: 'minh', displayName: 'Minh' }, { gomId: 'lan', displayName: 'Lan' }], incoming: [], outgoing: [] };
   const api = (extra = {}) => fakeApi({ me: vi.fn(async () => ok(me)), groupMembers: vi.fn(async () => ok(members)), friends: vi.fn(async () => ok(friends)), ...extra });
@@ -234,5 +237,137 @@ describe('group page', () => {
     mountGroup(root, api({ groupMembers: vi.fn(async () => fail('unknown', 404)) }), vi.fn(), G);
     await flush();
     expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+});
+
+describe('group page: leader and deputies', () => {
+  const person = (id: string, name: string, role: GroupMember['role'], isMe = false): GroupMember =>
+    ({ id, displayName: name, isMe, isFriend: false, gomId: null, request: 'sent', role });
+  const team = (myRole: GroupMember['role']): GroupMember[] => [
+    person('u-me', 'Mẹ', myRole, true), person('u-lead', 'Bố', myRole === 'leader' ? 'member' : 'leader'),
+    person('u-dep', 'Cô Hai', 'deputy'), person('u-plain', 'Chú Tư', 'member'),
+  ];
+  const mount = (myRole: GroupMember['role'], extra = {}, list?: GroupMember[]) => {
+    const a = fakeApi({ me: vi.fn(async () => ok(me)), groupMembers: vi.fn(async () => ok(list ?? team(myRole))), friends: vi.fn(async () => ok({ friends: [], incoming: [], outgoing: [] })), ...extra });
+    const go = vi.fn();
+    mountGroup(root, a, go, G);
+    return { a, go };
+  };
+  const row = (id: string) => root.querySelector(`[data-member="${id}"]`)!;
+  const click = (selector: string) => root.querySelector<HTMLButtonElement>(selector)!.click();
+  const open = async (id: string) => { row(id).querySelector<HTMLButtonElement>('[data-manage]')!.click(); await flush(); };
+
+  it('shows who leads and who is a deputy', async () => {
+    mount('member');
+    await flush();
+    expect(row('u-lead').querySelector('[data-role="leader"]')!.textContent).toBe('Trưởng nhóm');
+    expect(row('u-dep').querySelector('[data-role="deputy"]')!.textContent).toBe('Phó nhóm');
+    expect(row('u-plain').querySelector('[data-role]')).toBeNull();
+  });
+
+  it('gives a plain member no controls over anyone, and no way to disband', async () => {
+    mount('member');
+    await flush();
+    expect(root.querySelector('[data-manage]')).toBeNull();
+    expect(root.querySelector('[data-disband]')).toBeNull();
+  });
+
+  it('lets a deputy manage plain members only', async () => {
+    mount('deputy');
+    await flush();
+    expect(row('u-plain').querySelector('[data-manage]')).not.toBeNull();
+    expect(row('u-lead').querySelector('[data-manage]')).toBeNull();
+    expect(row('u-dep').querySelector('[data-manage]')).toBeNull();
+    await open('u-plain');
+    expect(root.querySelector('[data-remove]')).not.toBeNull();
+    expect(root.querySelector('[data-make-deputy]')).toBeNull();
+    expect(root.querySelector('[data-hand-over]')).toBeNull();
+    expect(root.querySelector('[data-disband]')).toBeNull();
+  });
+
+  it('lets the leader manage everyone else, with the right choices for a member and for a deputy', async () => {
+    mount('leader');
+    await flush();
+    expect(row('u-me').querySelector('[data-manage]')).toBeNull();
+    await open('u-plain');
+    expect(root.querySelector('[data-make-deputy]')).not.toBeNull();
+    expect(root.querySelector('[data-drop-deputy]')).toBeNull();
+    await open('u-dep');
+    expect(root.querySelector('[data-drop-deputy]')).not.toBeNull();
+    expect(root.querySelector('[data-make-deputy]')).toBeNull();
+    expect(root.querySelector('[data-disband]')).not.toBeNull();
+  });
+
+  it('names and drops a deputy at once, then reloads', async () => {
+    const { a } = mount('leader');
+    await flush();
+    await open('u-plain'); click('[data-make-deputy]'); await flush();
+    expect(a.setRole).toHaveBeenCalledWith(G, 'u-plain', 'deputy');
+    await open('u-dep'); click('[data-drop-deputy]'); await flush();
+    expect(a.setRole).toHaveBeenCalledWith(G, 'u-dep', 'member');
+    expect(a.groupMembers).toHaveBeenCalledTimes(3);
+  });
+
+  it('asks before removing, says who, and removes only after yes', async () => {
+    const { a } = mount('leader');
+    await flush();
+    await open('u-plain'); click('[data-remove]'); await flush();
+    expect(text(root)).toContain('Xóa Chú Tư khỏi nhóm?');
+    expect(a.removeMember).not.toHaveBeenCalled();
+    click('[data-confirm-sure]'); await flush();
+    expect(a.removeMember).toHaveBeenCalledWith(G, 'u-plain');
+    expect(a.groupMembers).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops the question when you say no', async () => {
+    const { a } = mount('leader');
+    await flush();
+    await open('u-plain'); click('[data-remove]'); await flush();
+    click('[data-cancel-sure]'); await flush();
+    expect(a.removeMember).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-confirm-sure]')).toBeNull();
+  });
+
+  it('asks before handing over leadership', async () => {
+    const { a } = mount('leader');
+    await flush();
+    await open('u-dep'); click('[data-hand-over]'); await flush();
+    expect(text(root)).toContain('Chuyển quyền trưởng nhóm cho Cô Hai?');
+    expect(a.handOver).not.toHaveBeenCalled();
+    click('[data-confirm-sure]'); await flush();
+    expect(a.handOver).toHaveBeenCalledWith(G, 'u-dep');
+  });
+
+  it('asks before disbanding and goes home afterwards', async () => {
+    const { a, go } = mount('leader');
+    await flush();
+    click('[data-disband]'); await flush();
+    expect(text(root)).toContain('Giải tán nhóm này?');
+    expect(a.disband).not.toHaveBeenCalled();
+    click('[data-confirm-sure]'); await flush();
+    expect(a.disband).toHaveBeenCalledWith(G);
+    expect(go).toHaveBeenCalledWith('/');
+  });
+
+  it('stays on the page and says why when the server refuses', async () => {
+    const { go } = mount('leader', { removeMember: vi.fn(async () => fail('not_allowed')) });
+    await flush();
+    await open('u-plain'); click('[data-remove]'); await flush(); click('[data-confirm-sure]'); await flush();
+    expect(text(root)).toContain('Bạn không có quyền');
+    expect(go).not.toHaveBeenCalled();
+  });
+
+  it('keeps a leader with others in the group from leaving, and says to hand over first', async () => {
+    mount('leader');
+    await flush();
+    expect(root.querySelector<HTMLButtonElement>('[data-leave]')!.disabled).toBe(true);
+    expect(root.querySelector('[data-leader-note]')).not.toBeNull();
+  });
+
+  it('lets a leader who is alone leave', async () => {
+    mount('leader', {}, [person('u-me', 'Mẹ', 'leader', true)]);
+    await flush();
+    expect(root.querySelector<HTMLButtonElement>('[data-leave]')!.disabled).toBe(false);
+    expect(root.querySelector('[data-leader-note]')).toBeNull();
   });
 });

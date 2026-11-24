@@ -129,8 +129,19 @@ namespace Gom.Web.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("last_read_seq");
 
+                    b.Property<int>("Role")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("role");
+
                     b.HasKey("ConversationId", "UserId")
                         .HasName("pk_conversation_members");
+
+                    b.HasIndex("ConversationId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_conversation_members_conversation_id")
+                        .HasFilter("role = 2");
 
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_conversation_members_user_id");
@@ -140,6 +151,8 @@ namespace Gom.Web.Migrations
                             t.HasCheckConstraint("ck_conversation_members_joined", "joined_seq >= 0");
 
                             t.HasCheckConstraint("ck_conversation_members_read", "last_read_seq >= 0");
+
+                            t.HasCheckConstraint("ck_conversation_members_role", "role IN (0, 1, 2)");
                         });
                 });
 
