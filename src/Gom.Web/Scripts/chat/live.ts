@@ -38,17 +38,29 @@ export interface LiveControl {
 
 export interface LiveDeps {
   socket(url: string): SocketLike;
+  /** Milliseconds, any steady clock. */
+  now(): number;
+  /** Calls fn every `ms` until the returned function is called. */
+  interval(fn: () => void, ms: number): () => void;
   timer: { set(fn: () => void, ms: number): number; clear(id: number): void };
   random(): number;
 }
 
 const realDeps: LiveDeps = {
   socket: (url) => new WebSocket(url) as unknown as SocketLike,
+  now: () => Date.now(),
+  interval: (fn, ms) => { const id = window.setInterval(fn, ms); return () => window.clearInterval(id); },
   timer: { set: (fn, ms) => window.setTimeout(fn, ms), clear: (id) => window.clearTimeout(id) },
   random: () => Math.random(),
 };
 
 const MAX_WAIT_MS = 30_000;
+/** The server sends "still here" every 25 s. This long with nothing at all means the line is dead even if the browser does not know it. */
+const SILENT_MS = 60_000;
+/** How often the page checks for that. */
+const WATCH_EVERY_MS = 15_000;
+/** When the tab is shown again or the network returns, silence this long already proves the connection is gone (two beats missed). */
+const STALE_ON_RETURN_MS = 35_000;
 
 export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps = realDeps): LiveControl {
   let socket: SocketLike | null = null;
@@ -56,12 +68,31 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
   let attempt = 0;
   let timer: number | null = null;
   let stopped = true;
+  let lastFrameAt = 0;
+  let stopWatching: (() => void) | null = null;
+
+  /** Lets go of a connection the browser still calls open, and comes back at once: nothing arrives on it. */
+  function abandon(): void {
+    const s = socket;
+    if (s === null) return;
+    socket = null;
+    ready = false;
+    s.onclose = null;
+    s.onmessage = null;
+    try { s.close(); } catch { /* it is gone either way */ }
+    handlers.state(false);
+    if (!stopped) connect();
+  }
 
   function connect(): void {
     const s = deps.socket(url);
     socket = s;
     ready = false;
+    lastFrameAt = deps.now();
+    stopWatching ??= deps.interval(() => { if (socket !== null && deps.now() - lastFrameAt > SILENT_MS) abandon(); }, WATCH_EVERY_MS);
     s.onmessage = (e) => {
+      if (socket !== s) return;
+      lastFrameAt = deps.now();
       let frame: { t?: unknown; c?: unknown; u?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown; m?: unknown };
       try { frame = JSON.parse(e.data) as typeof frame; } catch { return; }
       if (typeof frame !== 'object' || frame === null) return;
@@ -94,11 +125,15 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
       if (timer !== null) { deps.timer.clear(timer); timer = null; }
       const s = socket;
       socket = null;
+      stopWatching?.();
+      stopWatching = null;
       s?.close();
     },
     sync(conversation, after) { if (ready && socket) socket.send(JSON.stringify({ t: 'sync', c: conversation, after })); },
     retryNow() {
-      if (stopped || socket !== null) return;
+      if (stopped) return;
+      // The browser still calls it open, but nothing has come for a while: it is not.
+      if (socket !== null) { if (deps.now() - lastFrameAt > STALE_ON_RETURN_MS) abandon(); return; }
       if (timer !== null) { deps.timer.clear(timer); timer = null; }
       connect();
     },

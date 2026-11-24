@@ -42,20 +42,46 @@ public static class SocketEndpoint
         var connection = new Connection(GomClaims.User(http.User), GomClaims.Session(http.User), new WebSocketSink(socket),
             o.SocketQueue, TimeSpan.FromSeconds(o.SocketSendTimeoutSeconds), loggers.CreateLogger<Connection>());
         registry.Add(connection);
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         var writer = connection.RunWriter();
+        using var beating = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted);
+        var heartbeat = Heartbeat(connection, TimeSpan.FromSeconds(Math.Max(1, o.HeartbeatSeconds)), beating.Token);
+        var lost = "";
         try
         {
             connection.TryEnqueue(Frames.Ready());
             await ReceiveLoop(socket, connection, scopes, o.MaxBadFrames, http.RequestAborted);
         }
-        catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException) { }
+        catch (WebSocketException) { lost = "line lost, no close frame"; }
+        catch (IOException) { lost = "line lost, no close frame"; }
+        catch (OperationCanceledException) { lost = "request aborted"; }
         finally
         {
             registry.Remove(connection);
+            await beating.CancelAsync();
             connection.Finish();
             await writer;
+            await heartbeat;
+            // Who ended it, with what code and how old it was: facts only. What a client writes as its reason is never logged.
+            var age = (int)Math.Round(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds);
+            var log = loggers.CreateLogger("Gom.Web.Chat.Live.Socket");
+            if (lost != "") log.LogInformation("Socket closed: {Who}, after {AgeSeconds} s", lost, age);
+            else if (connection.ClosedByServer) log.LogInformation("Socket closed: by the server, code {Code}, reason {Reason}, after {AgeSeconds} s", connection.CloseCode, connection.CloseReason, age);
+            else log.LogInformation("Socket closed: by the client, code {Code}, after {AgeSeconds} s", socket.CloseStatus is { } c ? (int)c : 1005, age);
         }
         return Results.Empty;
+    }
+
+    /// <summary>Sends "still here" at a steady pace until the connection ends, so a quiet line is never silent.</summary>
+    private static async Task Heartbeat(Connection connection, TimeSpan every, CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(every);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                if (!connection.TryEnqueue(Frames.Heartbeat())) return;
+        }
+        catch (OperationCanceledException) { }
     }
 
     private static async Task ReceiveLoop(WebSocket socket, Connection connection, IServiceScopeFactory scopes, int maxBadFrames, CancellationToken ct)

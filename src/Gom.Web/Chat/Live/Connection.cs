@@ -20,6 +20,13 @@ public sealed class Connection(Guid userId, Guid sessionId, IFrameSink sink, int
     private int _closing;
     private int _closeCode = 1000;
     private string _closeReason = "";
+    private volatile bool _closedByServer;
+
+    /// <summary>True when the server decided to end it (too slow, bad frames, replaced), as opposed to the client closing or the line dropping.</summary>
+    public bool ClosedByServer => _closedByServer;
+    public int CloseCode => _closeCode;
+    /// <summary>Why the server ended it: always one of our own fixed texts, never anything the client wrote.</summary>
+    public string CloseReason => _closeReason;
 
     public Guid UserId { get; } = userId;
     public Guid SessionId { get; } = sessionId;
@@ -39,6 +46,7 @@ public sealed class Connection(Guid userId, Guid sessionId, IFrameSink sink, int
         if (Interlocked.Exchange(ref _closing, 1) == 1) return;
         _closeCode = code;
         _closeReason = reason;
+        _closedByServer = true;
         _queue.Writer.TryComplete();
         _stop.Cancel();
     }
