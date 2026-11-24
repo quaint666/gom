@@ -122,6 +122,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.SenderId, x.ClientId }).IsUnique();
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+            // NoAction, not Restrict: ending a group deletes a message and its answers in one statement, and Restrict checks row by row.
+            e.HasOne<Message>().WithMany().HasForeignKey(x => x.ReplyToId).OnDelete(DeleteBehavior.NoAction);
         });
 
         b.Entity<MessageEvent>(e =>

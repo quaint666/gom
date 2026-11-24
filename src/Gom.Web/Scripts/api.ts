@@ -4,7 +4,7 @@ export type ErrorCode =
   | 'wrong_password' | 'cannot_disable_owner' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
-  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave'
+  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply'
   | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
@@ -13,7 +13,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
-  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave',
+  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -31,7 +31,9 @@ export interface FriendRequest extends Person { createdAt: string }
 export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; outgoing: FriendRequest[] }
 /** Who wrote a message: a name and an opaque id. The Gom ID is shown to friends only, so it is not here. */
 export interface Sender { id: string; displayName: string }
-export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean }
+/** The quote above an answer. With no sender and no snippet, the quoted message is not there for this reader. */
+export interface Reply { id: string; sender: Sender | null; snippet: string | null }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted'; message: ChatMessage }
 export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean }
@@ -80,7 +82,7 @@ export interface Api {
   /** How far the other members have read. Empty, with `enabled: false`, when you have hidden yours. */
   reads(conversation: string): Promise<Result<{ enabled: boolean; reads: { userId: string; seq: number }[] }>>;
   setReceipts(enabled: boolean): Promise<Result<void>>;
-  send(conversation: string, clientId: string, body: string): Promise<Result<ChatMessage>>;
+  send(conversation: string, clientId: string, body: string, replyTo?: string): Promise<Result<ChatMessage>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
   createGroup(title: string, members: string[]): Promise<Result<{ id: string }>>;
   groupMembers(conversation: string): Promise<Result<GroupMember[]>>;
@@ -144,7 +146,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     conversations: () => call('GET', '/api/conversations'),
     openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
     history: (conversation, before) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}`),
-    send: (conversation, clientId, body) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body }),
+    send: (conversation, clientId, body, replyTo) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body, replyTo }),
     createGroup: (title, members) => call('POST', '/api/conversations/group', { title, members }),
     groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),

@@ -496,7 +496,7 @@ describe('chat: writing', () => {
     submitForm();
     await flush();
 
-    expect(send).toHaveBeenCalledWith(C1, 'new-1', 'xin chào');
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', 'xin chào', undefined);
     const pending = root.querySelector('[data-msg="new-1"]')!;
     expect(pending.textContent).toContain('xin chào');
     expect(pending.getAttribute('data-state')).toBe('sending');
@@ -992,7 +992,7 @@ describe('chat: the outbox survives a reload', () => {
     const h = open({ send }, [{ conversation: C1, clientId: 'old-1', body: 'từ lần trước', createdAt: at(11) }]);
     await flush();
 
-    expect(send).toHaveBeenCalledWith(C1, 'old-1', 'từ lần trước');
+    expect(send).toHaveBeenCalledWith(C1, 'old-1', 'từ lần trước', undefined);
     expect(root.querySelector('[data-msg="id2"]')).not.toBeNull();
     expect(h.outbox.items).toEqual([]);
   });
@@ -1114,11 +1114,19 @@ describe('chat: taking a message back', () => {
     expect(text(root.querySelector('[data-msg="id1"]')!)).toContain('Minh đã thu hồi một tin nhắn');
   });
 
-  it('offers the menu on your own sent messages only', async () => {
+  it('offers the menu on every message that has arrived, and "Thu hồi" only on your own', async () => {
     open({ send: vi.fn(async () => fail('network', 0)) });
     await flush();
     expect(row('id1').querySelector('button[data-menu]')).not.toBeNull();
-    expect(row('id2').querySelector('button[data-menu]')).toBeNull();
+    expect(row('id2').querySelector('button[data-menu]')).not.toBeNull();
+    row('id1').querySelector<HTMLButtonElement>('button[data-menu]')!.click();
+    await flush();
+    expect(root.querySelector('button[data-recall]')).not.toBeNull();
+    row('id2').querySelector<HTMLButtonElement>('button[data-menu]')!.click();
+    await flush();
+    expect(root.querySelector('button[data-recall]')).toBeNull();
+    expect(root.querySelector('button[data-reply]')).not.toBeNull();
+    expect(root.querySelector('button[data-copy]')).not.toBeNull();
 
     compose('chưa gửi được');
     submitForm();
@@ -1409,5 +1417,150 @@ describe('chat: who has seen your message', () => {
     h.handlers().read(G, 'u-c', 1);   // a new person is one more
     await flush();
     expect(text(seen()!)).toBe('Đã xem bởi 3');
+  });
+});
+
+describe('chat: answering and copying', () => {
+  const answer = (seq: number, from: 'mom' | 'minh', body: string, reply: ChatMessage['reply']): ChatMessage => ({ ...msg(seq, from, body), reply });
+  const open = (extra: Record<string, unknown> = {}, messages: ChatMessage[] = [msg(1, 'minh', 'Tối nay ăn gì?'), msg(2, 'mom', 'tin của mẹ')]) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: messages.length })], history: { [C1]: messages }, api: extra });
+  const row = (id: string) => root.querySelector(`[data-msg="${id}"]`)!;
+  const menuOf = async (id: string) => { row(id).querySelector<HTMLButtonElement>('button[data-menu]')!.click(); await flush(); };
+  const type = (body: string) => { const t = root.querySelector<HTMLTextAreaElement>('textarea')!; t.value = body; t.dispatchEvent(new Event('input', { bubbles: true })); };
+  const submit = () => root.querySelector<HTMLFormElement>('form.composer')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+
+  it('starts an answer from the menu: a bar above the composer names who and shows the start of the message', async () => {
+    open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    const bar = root.querySelector('[data-replybar]')!;
+    expect(text(bar)).toContain('Đang trả lời Minh');
+    expect(text(bar)).toContain('Tối nay ăn gì?');
+    expect(root.querySelector('.menu')).toBeNull();
+  });
+
+  it('says "chính bạn" when you answer your own message', async () => {
+    open();
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    expect(text(root.querySelector('[data-replybar]')!)).toContain('Đang trả lời chính bạn');
+  });
+
+  it('cuts the bar at a hundred characters without breaking an emoji', async () => {
+    const long = '👍'.repeat(150);
+    open({}, [msg(1, 'minh', long)]);
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    expect(root.querySelector('.replybar .rb-text span')!.textContent).toBe('👍'.repeat(100));
+  });
+
+  it('sends the answer with the id of the message it answers, and the bar goes', async () => {
+    // A real server gives back the very client id it was sent.
+    const send = vi.fn(async (_c: string, clientId: string) => ok({ ...msg(3, 'mom', 'ăn phở'), clientId, reply: { id: 'id1', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: 'Tối nay ăn gì?' } }));
+    open({ send });
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    type('ăn phở');
+    submit();
+    await flush();
+    expect(send).toHaveBeenCalledWith(C1, expect.any(String), 'ăn phở', 'id1');
+    expect(root.querySelector('[data-replybar]')).toBeNull();
+    expect(text(root.querySelector('[data-quote="id1"]')!)).toContain('Tối nay ăn gì?');
+  });
+
+  it('shows the quote at once on a message still on its way', async () => {
+    open({ send: vi.fn(() => new Promise(() => undefined)) });
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    type('đang gửi');
+    submit();
+    await flush();
+    expect(text(root.querySelector('[data-state="sending"] [data-quote]')!)).toContain('Minh');
+  });
+
+  it('cancels the answer with the close button', async () => {
+    const send = vi.fn(async (_c: string, clientId: string) => ok({ ...msg(3, 'mom', 'x'), clientId }));
+    open({ send });
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-cancel-reply]')!.click();
+    await flush();
+    expect(root.querySelector('[data-replybar]')).toBeNull();
+    type('thường');
+    submit();
+    await flush();
+    expect(send).toHaveBeenCalledWith(C1, expect.any(String), 'thường', undefined);
+  });
+
+  it('drops the bar when the message being answered is taken back', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    h.handlers().event(C1, recalled(msg(1, 'minh', 'Tối nay ăn gì?'), 3));
+    await flush();
+    expect(root.querySelector('[data-replybar]')).toBeNull();
+  });
+
+  it('shows a quote with who wrote it, and says so when the quoted message is not there to see', async () => {
+    open({}, [
+      answer(1, 'minh', 'đáp một', { id: 'x1', sender: { id: 'u-mom', displayName: 'Mẹ' }, snippet: 'gốc của mẹ' }),
+      answer(2, 'minh', 'đáp hai', { id: 'x2', sender: null, snippet: null }),
+    ]);
+    await flush();
+    const q1 = text(root.querySelector('[data-quote="x1"]')!);
+    expect(q1).toContain('Bạn');
+    expect(q1).toContain('gốc của mẹ');
+    const q2 = text(root.querySelector('[data-quote="x2"]')!);
+    expect(q2).toContain('Tin nhắn không còn hiển thị');
+  });
+
+  it('keeps the quote in the outbox so an answer written offline is still an answer after a reload', async () => {
+    const h = open({ send: vi.fn(async () => fail('network', 0)) });
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    type('trả lời lúc mất mạng');
+    submit();
+    await flush();
+    const saved = h.outbox.items as unknown as { body: string; replyTo?: { id: string; snippet: string } }[];
+    expect(saved[0]?.body).toBe('trả lời lúc mất mạng');
+    expect(saved[0]?.replyTo).toMatchObject({ id: 'id1', snippet: 'Tối nay ăn gì?' });
+  });
+
+  it('copies the text of a message and says so', async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-copy]')!.click();
+    await flush();
+    expect(writeText).toHaveBeenCalledWith('Tối nay ăn gì?');
+    expect(text(root)).toContain('Đã sao chép tin nhắn');
+  });
+
+  it('says when copying is not possible', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => { throw new Error('no'); }) }, configurable: true });
+    open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-copy]')!.click();
+    await flush();
+    expect(text(root)).toContain('Không sao chép được');
   });
 });

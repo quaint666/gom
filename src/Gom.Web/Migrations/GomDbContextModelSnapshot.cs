@@ -234,6 +234,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<Guid?>("ReplyToId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reply_to_id");
+
                     b.Property<Guid>("SenderId")
                         .HasColumnType("uuid")
                         .HasColumnName("sender_id");
@@ -244,6 +248,9 @@ namespace Gom.Web.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_messages");
+
+                    b.HasIndex("ReplyToId")
+                        .HasDatabaseName("ix_messages_reply_to_id");
 
                     b.HasIndex("ConversationId", "Seq")
                         .IsUnique()
@@ -555,6 +562,12 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_messages_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.Message", null)
+                        .WithMany()
+                        .HasForeignKey("ReplyToId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .HasConstraintName("fk_messages_reply_to_id");
 
                     b.HasOne("Gom.Web.Data.User", null)
                         .WithMany()

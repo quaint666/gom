@@ -11,11 +11,11 @@ namespace Gom.Web.Chat;
 /// <summary>Sending, history and read position. The database is the truth; nothing here depends on a live connection.</summary>
 public static class MessageEndpoints
 {
-    public sealed record SendRequest(string? ClientId, string? Body);
+    public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null);
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -31,7 +31,7 @@ public static class MessageEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    private static MessageDto ToDto(Message m, PersonDto sender) => new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null);
+    internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null) => new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply);
 
     // ---- what a message may contain
 
@@ -65,10 +65,19 @@ public static class MessageEndpoints
 
         // A retry of something already stored gets the stored message back, whatever else has changed since.
         var existing = await FindExisting(db, me, clientId, ct);
-        if (existing is not null) return Same(existing, id, sender);
+        if (existing is not null) return await Same(db, existing, id, sender, access.JoinedSeq, ct);
 
         var (body, problem) = Clean(request.Body, options.Value.MaxChars);
         if (body is null) return Error(StatusCodes.Status400BadRequest, problem!);
+
+        // An answer must point at a message of this conversation that this person can see and that is still there.
+        long? parentSeq = null;
+        if (request.ReplyTo is { } parentId)
+        {
+            parentSeq = await db.Messages.Where(m => m.Id == parentId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null)
+                .Select(m => (long?)m.Seq).SingleOrDefaultAsync(ct);
+            if (parentSeq is null) return Error(StatusCodes.Status400BadRequest, "invalid_reply");
+        }
 
         if (kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
 
@@ -88,7 +97,7 @@ public static class MessageEndpoints
             var seq = (await db.Database.SqlQuery<long>(
                 $"UPDATE conversations SET last_seq = last_seq + 1, last_message_at = {now} WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
 
-            message = new Message { Id = Guid.NewGuid(), ConversationId = id, Seq = seq, SenderId = me, ClientId = clientId, Body = body, CreatedAt = now };
+            message = new Message { Id = Guid.NewGuid(), ConversationId = id, Seq = seq, SenderId = me, ClientId = clientId, Body = body, CreatedAt = now, ReplyToId = request.ReplyTo };
             db.Messages.Add(message);
             db.Events.Add(new MessageEvent { ConversationId = id, Seq = seq, Kind = EventKind.Created, MessageId = message.Id, CreatedAt = now });
             try
@@ -101,7 +110,7 @@ public static class MessageEndpoints
                 await tx.RollbackAsync(ct);
                 db.ChangeTracker.Clear();
                 var winner = await FindExisting(db, me, clientId, ct);
-                return winner is null ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable) : Same(winner, id, sender);
+                return winner is null ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable) : await Same(db, winner, id, sender, access.JoinedSeq, ct);
             }
 
             await db.Members.Where(m => m.ConversationId == id && m.UserId == me && m.LastReadSeq < seq)
@@ -110,8 +119,9 @@ public static class MessageEndpoints
         }
 
         // Only now is it sent: the live delivery and the answer both follow the commit.
-        var dto = ToDto(message, sender);
-        await live.PublishAsync(db, dto.Seq, "created", dto);
+        var reply = (await Replies.For(db, [message], access.JoinedSeq, ct)).GetValueOrDefault(message.Id);
+        var dto = ToDto(message, sender, reply);
+        await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
         return Results.Ok(dto);
     }
@@ -119,8 +129,10 @@ public static class MessageEndpoints
     private static Task<Message?> FindExisting(GomDbContext db, Guid sender, Guid clientId, CancellationToken ct) =>
         db.Messages.AsNoTracking().Where(m => m.SenderId == sender && m.ClientId == clientId).SingleOrDefaultAsync(ct);
 
-    private static IResult Same(Message existing, Guid conversation, PersonDto sender) =>
-        existing.ConversationId == conversation ? Results.Ok(ToDto(existing, sender)) : Error(StatusCodes.Status409Conflict, "client_id_reused");
+    private static async Task<IResult> Same(GomDbContext db, Message existing, Guid conversation, PersonDto sender, long joinedSeq, CancellationToken ct) =>
+        existing.ConversationId == conversation
+            ? Results.Ok(ToDto(existing, sender, (await Replies.For(db, [existing], joinedSeq, ct)).GetValueOrDefault(existing.Id)))
+            : Error(StatusCodes.Status409Conflict, "client_id_reused");
 
     /// <summary>In a one-to-one conversation, both must still be friends (an unfriend or a block ends sending, not reading).</summary>
     private static async Task<bool> StillFriends(GomDbContext db, Guid conversation, Guid me, CancellationToken ct)
@@ -183,9 +195,11 @@ public static class MessageEndpoints
             join u in db.Users on m.SenderId equals u.Id
             select new { Message = m, u.Id, u.DisplayName }).Take(take + 1).ToListAsync(ct);
 
+        var page = rows.Take(take).ToList();
+        var replies = await Replies.For(db, page.Select(r => r.Message), access.JoinedSeq, ct);
         return Results.Ok(new
         {
-            messages = rows.Take(take).Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName))),
+            messages = page.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id))),
             hasMore = rows.Count > take,
             // Where the stream stands, so a device can ask for "everything after this" from here on.
             lastSeq = await db.Conversations.Where(c => c.Id == id).Select(c => c.LastSeq).SingleAsync(ct),

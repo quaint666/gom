@@ -109,9 +109,10 @@ public static class SocketEndpoint
             join u in db.Users on m.SenderId equals u.Id
             select new { e.Seq, e.Kind, Message = m, u.Id, u.DisplayName }).Take(SyncPage + 1).ToListAsync(ct);
 
-        var events = rows.Take(SyncPage).Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),
-            new MessageEndpoints.MessageDto(r.Message.Id, r.Message.Seq, r.Message.ConversationId, r.Message.ClientId,
-                new MessageEndpoints.PersonDto(r.Id, r.DisplayName), r.Message.Body, r.Message.CreatedAt, r.Message.DeletedAt != null))).ToList();
+        var page = rows.Take(SyncPage).ToList();
+        var replies = await Replies.For(db, page.Select(r => r.Message), access.JoinedSeq, ct);
+        var events = page.Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),
+            MessageEndpoints.ToDto(r.Message, new MessageEndpoints.PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id)))).ToList();
         return (Frames.Events(conversation, events, rows.Count > SyncPage), false);
     }
 }

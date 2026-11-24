@@ -84,6 +84,32 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
     private Task<HttpResponseMessage> Send(string cookie, Guid chat, string body, Guid? client = null) =>
         app.Call(HttpMethod.Post, $"/api/conversations/{chat}/messages", new { clientId = client ?? Guid.NewGuid(), body }, cookie);
 
+    // ---- answers
+
+    [Fact]
+    public async Task A_live_answer_shows_the_quote_to_those_who_may_see_it_and_an_empty_one_to_those_who_may_not()
+    {
+        var (a, ca) = await app.Member(); var (b, cb) = await app.Member(); var (c, cc) = await app.Member(); var (d, cd) = await app.Member();
+        foreach (var x in new[] { b, c, d }) await app.Befriend(a, x);
+        using var made = await app.Call(HttpMethod.Post, "/api/conversations/group", new { title = "Nhà", members = new[] { b.GomId, c.GomId } }, ca);
+        var chat = (await AppFixture.Json(made)).GetProperty("id").GetGuid();
+        using var first = await Send(ca, chat, "chuyện cũ");
+        var firstId = (await AppFixture.Json(first)).GetProperty("id").GetGuid();
+        (await app.Call(HttpMethod.Post, $"/api/conversations/{chat}/members", new { gomId = d.GomId }, ca)).Dispose();
+        using var wsC = await ConnectReady(cc);
+        using var wsD = await ConnectReady(cd);
+
+        using var answer = await app.Call(HttpMethod.Post, $"/api/conversations/{chat}/messages", new { clientId = Guid.NewGuid(), body = "nhắc lại", replyTo = firstId }, cb);
+        Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
+
+        var forC = (await NextOfType(wsC, "event")).GetProperty("event").GetProperty("message").GetProperty("reply");
+        var forD = (await NextOfType(wsD, "event")).GetProperty("event").GetProperty("message").GetProperty("reply");
+        Assert.Equal("chuyện cũ", forC.GetProperty("snippet").GetString());
+        Assert.Equal(firstId, forD.GetProperty("id").GetGuid());
+        Assert.Equal(JsonValueKind.Null, forD.GetProperty("snippet").ValueKind);
+        Assert.Equal(JsonValueKind.Null, forD.GetProperty("sender").ValueKind);
+    }
+
     // ---- getting in
 
     [Fact]
