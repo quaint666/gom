@@ -1,3 +1,4 @@
+using Gom.Web.Auth;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,6 +9,9 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("ConnectionStrings:Default is not set.");
 
 builder.Services.AddDbContext<GomDbContext>(options => options.UseNpgsql(connectionString));
+
+builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
+builder.Services.AddSingleton<PasswordService>();
 
 var app = builder.Build();
 
