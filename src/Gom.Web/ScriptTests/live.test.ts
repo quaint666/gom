@@ -37,7 +37,7 @@ const deps = (random = 1): LiveDeps => ({
 });
 
 function handlers(): LiveHandlers & { [K in keyof LiveHandlers]: ReturnType<typeof vi.fn> } {
-  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), read: vi.fn(), pins: vi.fn(), hidden: vi.fn(), ended: vi.fn(), replaced: vi.fn() } as never;
+  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), read: vi.fn(), pins: vi.fn(), hidden: vi.fn(), ended: vi.fn(), replaced: vi.fn(), slow: vi.fn() } as never;
 }
 const last = () => FakeSocket.all[FakeSocket.all.length - 1]!;
 const fireTimer = () => { const t = timers.shift()!; t.fn(); };
@@ -53,6 +53,19 @@ describe('live socket', () => {
     expect(h.state).not.toHaveBeenCalledWith(true);
     last().say({ t: 'ready' });
     expect(h.state).toHaveBeenLastCalledWith(true);
+  });
+
+  it('tells the page which catch-up was turned away as too fast, and ignores other error frames', () => {
+    const h = handlers();
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept(); last().say({ t: 'ready' });
+    last().say({ t: 'error', c: 'c1', error: 'slow_down' });
+    expect(h.slow).toHaveBeenCalledTimes(1);
+    expect(h.slow).toHaveBeenCalledWith('c1');
+    last().say({ t: 'error', c: 'c1', error: 'not_found' });     // another kind of answer
+    last().say({ t: 'error', error: 'slow_down' });               // no conversation named: nothing to ask again
+    last().say({ t: 'error', c: 7, error: 'slow_down' });
+    expect(h.slow).toHaveBeenCalledTimes(1);
   });
 
   it('passes live events and sync pages on, and ignores rubbish', () => {
