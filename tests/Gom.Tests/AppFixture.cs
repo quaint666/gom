@@ -152,6 +152,14 @@ public sealed class AppFixture : IAsyncLifetime
         await db.SaveChangesAsync();
     }
 
+    /// <summary>Opens the one-to-one conversation between the signed-in person and a friend; returns its id.</summary>
+    public async Task<Guid> OpenChat(string cookie, string friendGomId)
+    {
+        using var r = await Call(HttpMethod.Post, "/api/conversations/direct", new { gomId = friendGomId }, cookie);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        return (await Json(r)).GetProperty("id").GetGuid();
+    }
+
     public static async Task<System.Text.Json.JsonElement> Json(HttpResponseMessage response) =>
         await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
 

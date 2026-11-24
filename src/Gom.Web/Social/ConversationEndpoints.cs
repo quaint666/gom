@@ -10,6 +10,9 @@ public static class ConversationEndpoints
 {
     public sealed record OpenRequest(string? GomId);
 
+    /// <summary>The list carries only the start of the last message; history has the whole of it.</summary>
+    private const int PreviewChars = 200;
+
     public static void MapConversations(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/conversations").RequireAuthorization();
@@ -61,12 +64,18 @@ public static class ConversationEndpoints
             from m in db.Members
             where m.UserId == me
             join c in db.Conversations on m.ConversationId equals c.Id
-            orderby c.CreatedAt descending
+            orderby (c.LastMessageAt ?? c.CreatedAt) descending
             select new
             {
                 c.Id, c.Kind, c.Title, c.LastSeq, m.LastReadSeq,
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new { u.GomId, u.DisplayName }).FirstOrDefault(),
+                Last = db.Messages.Where(x => x.ConversationId == c.Id).OrderByDescending(x => x.Seq)
+                    .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
+                    {
+                        x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.CreatedAt, u.GomId, u.DisplayName,
+                    }).FirstOrDefault(),
+                Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me),
             }).ToListAsync(ct);
 
         return Results.Ok(rows.Select(r => new
@@ -77,6 +86,12 @@ public static class ConversationEndpoints
             peer = r.Kind == ConversationKind.Direct && r.Peer is not null ? new { gomId = r.Peer.GomId, displayName = r.Peer.DisplayName } : null,
             lastSeq = r.LastSeq,
             lastReadSeq = r.LastReadSeq,
+            unread = r.Unread,
+            lastMessage = r.Last is null ? null : new
+            {
+                seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt,
+                sender = new { gomId = r.Last.GomId, displayName = r.Last.DisplayName },
+            },
         }));
     }
 }

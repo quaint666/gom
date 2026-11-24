@@ -12,6 +12,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<Block> Blocks => Set<Block>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ConversationMember> Members => Set<ConversationMember>();
+    public DbSet<Message> Messages => Set<Message>();
+    public DbSet<MessageEvent> Events => Set<MessageEvent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -95,6 +97,35 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => x.UserId);
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<Message>(e =>
+        {
+            e.ToTable("messages", t =>
+            {
+                t.HasCheckConstraint("ck_messages_seq", "seq > 0");
+                t.HasCheckConstraint("ck_messages_body", "deleted_at IS NOT NULL OR length(body) > 0");
+            });
+            e.Property(x => x.Body).HasMaxLength(16000);
+            // Order inside a conversation, and "this device already sent this one".
+            e.HasIndex(x => new { x.ConversationId, x.Seq }).IsUnique();
+            e.HasIndex(x => new { x.SenderId, x.ClientId }).IsUnique();
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<MessageEvent>(e =>
+        {
+            e.ToTable("message_events", t =>
+            {
+                t.HasCheckConstraint("ck_message_events_seq", "seq > 0");
+                t.HasCheckConstraint("ck_message_events_kind", "kind IN ('created', 'deleted')");
+            });
+            e.HasKey(x => new { x.ConversationId, x.Seq });
+            e.Property(x => x.Kind).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<EventKind>(v, true)).HasMaxLength(10);
+            e.HasIndex(x => x.MessageId);
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
         });
 
         // Postgres convention: snake_case names, whatever the C# property is called.

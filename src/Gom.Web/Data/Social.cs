@@ -43,6 +43,8 @@ public class Conversation
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>The sequence number of the newest message; bumped in the same transaction as the insert.</summary>
     public long LastSeq { get; set; }
+    /// <summary>When the newest message arrived; null before the first. Orders the list without a scan.</summary>
+    public DateTimeOffset? LastMessageAt { get; set; }
 }
 
 public class ConversationMember
@@ -52,4 +54,31 @@ public class ConversationMember
     public DateTimeOffset JoinedAt { get; set; }
     /// <summary>How far this member has read: one number per member, however many messages it covers.</summary>
     public long LastReadSeq { get; set; }
+}
+
+/// <summary>The materialized state of one message. The event stream (<see cref="MessageEvent"/>) is what clients follow.</summary>
+public class Message
+{
+    public Guid Id { get; set; }
+    public Guid ConversationId { get; set; }
+    /// <summary>The conversation sequence number of the event that created it. Orders history.</summary>
+    public long Seq { get; set; }
+    public Guid SenderId { get; set; }
+    /// <summary>Chosen by the sender's device; with the sender it makes a send safe to retry.</summary>
+    public Guid ClientId { get; set; }
+    public string Body { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+public enum EventKind { Created, Deleted }
+
+/// <summary>One step in a conversation's ordered stream. A device that was away asks for "everything after seq N".</summary>
+public class MessageEvent
+{
+    public Guid ConversationId { get; set; }
+    public long Seq { get; set; }
+    public EventKind Kind { get; set; }
+    public Guid MessageId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }
