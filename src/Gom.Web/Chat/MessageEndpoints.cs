@@ -146,7 +146,7 @@ public static class MessageEndpoints
             : Error(StatusCodes.Status409Conflict, "client_id_reused");
 
     /// <summary>In a one-to-one conversation, both must still be friends (an unfriend or a block ends sending, not reading).</summary>
-    private static async Task<bool> StillFriends(GomDbContext db, Guid conversation, Guid me, CancellationToken ct)
+    internal static async Task<bool> StillFriends(GomDbContext db, Guid conversation, Guid me, CancellationToken ct)
     {
         var peer = await db.Members.Where(m => m.ConversationId == conversation && m.UserId != me).Select(m => m.UserId).SingleAsync(ct);
         var (low, high) = Friendship.Order(me, peer);

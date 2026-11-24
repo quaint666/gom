@@ -15,6 +15,8 @@ Needs the .NET 10 SDK, Node 22 or newer, and Docker.
     dotnet run --project src/Gom.Web --urls http://127.0.0.1:5080
     curl -sf http://127.0.0.1:5080/healthz
 
+Uploads need a folder: set `Uploads__Path` to one (without it the upload endpoints answer 503). On Linux the picture library needs `fontconfig` installed (`apk add fontconfig` on Alpine, `libfontconfig1` on Debian and Ubuntu; Fedora has it).
+
 The first start needs an owner account: set `Owner__GomId` and `Owner__Password` (10 characters or more) once, on an empty database, then remove the password from the configuration. Apply the database migrations first (`dotnet dotnet-ef database update --project src/Gom.Web`); the app does not do it for you.
 
 Decisions and their reasons are in `docs/decisions.md`. The mockups and design notes are in `design/`.
