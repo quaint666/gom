@@ -1286,3 +1286,128 @@ describe('chat: taking a message back', () => {
     expect(text(rows()[1]!.querySelector('.pv')!)).toBe('Tin nhắn đã được thu hồi');
   });
 });
+
+
+describe('chat: who has seen your message', () => {
+  const mine1 = msg(1, 'mom', 'tôi viết');
+  const theirs2 = msg(2, 'minh', 'bạn viết');
+  const chats = [withLast(theirs2, { lastReadSeq: 2 })];
+  const open = (reads: { enabled: boolean; reads: { userId: string; seq: number }[] }, history = [mine1, theirs2], extra: Record<string, unknown> = {}) =>
+    start({ path: `/c/${C1}`, chats, history: { [C1]: history }, api: { reads: vi.fn(async () => ok(reads)), ...extra } });
+  const seen = () => root.querySelector('.seen');
+
+  it('says "Đã xem" under your last message once the other person has read up to it', async () => {
+    open({ enabled: true, reads: [{ userId: 'u-minh', seq: 1 }] });
+    await flush();
+    expect(text(seen()!)).toBe('Đã xem');
+    expect(root.querySelector('[data-msg="id1"]')!.nextElementSibling).toBe(seen());
+  });
+
+  it('says nothing until they have read that far', async () => {
+    open({ enabled: true, reads: [{ userId: 'u-minh', seq: 0 }] });
+    await flush();
+    expect(seen()).toBeNull();
+  });
+
+  it('says nothing when you have hidden yours, which hides theirs too', async () => {
+    open({ enabled: false, reads: [] });
+    await flush();
+    expect(seen()).toBeNull();
+  });
+
+  it('puts the line under your last message only, not under earlier ones', async () => {
+    open({ enabled: true, reads: [{ userId: 'u-minh', seq: 9 }] }, [mine1, theirs2, msg(3, 'mom', 'tin sau')]);
+    await flush();
+    expect(root.querySelectorAll('.seen')).toHaveLength(1);
+    expect(root.querySelector('[data-msg="id3"]')!.nextElementSibling).toBe(seen());
+  });
+
+  it('skips a message you took back, and shows nothing when you have written nothing', async () => {
+    open({ enabled: true, reads: [{ userId: 'u-minh', seq: 9 }] }, [mine1, { ...msg(3, 'mom', ''), deleted: true }]);
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')!.nextElementSibling).toBe(seen());
+
+    root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
+    open({ enabled: true, reads: [{ userId: 'u-minh', seq: 9 }] }, [theirs2]);
+    await flush();
+    expect(seen()).toBeNull();
+  });
+
+  it('does not show it for a message still on its way', async () => {
+    open({ enabled: true, reads: [{ userId: 'u-minh', seq: 9 }] }, [theirs2], { send: vi.fn(async () => fail('network', 0)) });
+    await flush();
+    compose('chưa gửi được');
+    submitForm();
+    await flush();
+    expect(seen()).toBeNull();
+  });
+
+  it('shows it as soon as they read, with no reload', async () => {
+    const h = open({ enabled: true, reads: [] });
+    await flush();
+    expect(seen()).toBeNull();
+    h.handlers().read(C1, 'u-minh', 1);
+    await flush();
+    expect(text(seen()!)).toBe('Đã xem');
+  });
+
+  it('never goes backwards when an older reading arrives late', async () => {
+    const h = open({ enabled: true, reads: [{ userId: 'u-minh', seq: 1 }] });
+    await flush();
+    h.handlers().read(C1, 'u-minh', 0);
+    await flush();
+    expect(text(seen()!)).toBe('Đã xem');
+  });
+
+  it('ignores a reading in a conversation that is not open, and one while you have it hidden', async () => {
+    const h = open({ enabled: false, reads: [] });
+    await flush();
+    h.handlers().read(C1, 'u-minh', 1);
+    await flush();
+    expect(seen()).toBeNull();
+
+    root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
+    const h2 = open({ enabled: true, reads: [] });
+    await flush();
+    h2.handlers().read(C2, 'u-minh', 1);
+    await flush();
+    expect(seen()).toBeNull();
+  });
+
+  it('asks again when told the list changed, because a switch may have been flipped', async () => {
+    const h = open({ enabled: true, reads: [] });
+    await flush();
+    const before = (h.api.reads as ReturnType<typeof vi.fn>).mock.calls.length;
+    h.handlers().conversations();
+    await flush();
+    expect((h.api.reads as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1);
+  });
+
+  it('asks again after the connection comes back', async () => {
+    const h = open({ enabled: true, reads: [] });
+    await flush();
+    const before = (h.api.reads as ReturnType<typeof vi.fn>).mock.calls.length;
+    h.handlers().state(false);
+    h.handlers().state(true);
+    await flush();
+    expect((h.api.reads as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it('counts the people in a group who have seen it', async () => {
+    const G = '33333333-3333-4333-8333-333333333333';
+    const mineG: ChatMessage = { ...msg(1, 'mom', 'cả nhà ơi', at(10), G) };
+    const h = start({
+      path: `/c/${G}`, history: { [G]: [mineG] },
+      chats: [{ id: G, kind: 'group', title: 'Nhóm', peer: null, lastSeq: 1, lastReadSeq: 1, unread: 0, lastMessage: null, memberCount: 4 }],
+      api: { reads: vi.fn(async () => ok({ enabled: true, reads: [{ userId: 'u-a', seq: 1 }, { userId: 'u-b', seq: 1 }, { userId: 'u-c', seq: 0 }] })) },
+    });
+    await flush();
+    expect(text(seen()!)).toBe('Đã xem bởi 2');
+    h.handlers().read(G, 'u-a', 5);   // the same person reading further is still one person
+    await flush();
+    expect(text(seen()!)).toBe('Đã xem bởi 2');
+    h.handlers().read(G, 'u-c', 1);   // a new person is one more
+    await flush();
+    expect(text(seen()!)).toBe('Đã xem bởi 3');
+  });
+});

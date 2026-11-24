@@ -33,6 +33,8 @@ interface Thread {
   loaded: boolean;
   /** The last step of the stream this device knows of. It runs ahead of the newest message when a message was taken back. */
   cursor: number;
+  /** How far each other member has read, if you and they both share it. */
+  reads: { enabled: boolean; seqs: Map<string, number> };
   /** What you had read, and how many were new, when you opened it: the "new messages" divider. */
   lastReadAtOpen: number;
   unreadAtOpen: number;
@@ -75,7 +77,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, draft: '', stick: true, cursor: 0, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, draft: '', stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -131,7 +133,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Đóng</button>`}
     </div>`;
 
-  const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean): TemplateResult => {
+  const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
     const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''}`;
@@ -146,6 +148,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <span class="ts">${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
       </div>
       ${menuFor(m)}
+      ${seen === null ? nothing : html`<div class="seen">${icons.checks()}<span>${seen}</span></div>`}
       ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? 'Sẽ gửi khi có mạng' : 'Sẽ thử gửi lại'}</div>` : nothing}
       ${m.state === 'failed' ? html`
         <div class="failed" role="alert">${icons.alert()}<span>${m.error ? errorText(m.error) : 'Chưa gửi được.'}</span>
@@ -153,11 +156,18 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="btn secondary small" type="button" data-discard @click=${() => discard(m.conversationId, m.clientId)}>Xóa</button></div>` : nothing}`;
   };
 
-  const threadItem = (item: ThreadItem, group: boolean) => {
+  const threadItem = (item: ThreadItem, group: boolean, seenText: (msg: Shown) => string | null) => {
     if (item.kind === 'day') return html`<div class="day">${item.label}</div>`;
     if (item.kind === 'new') return html`<div class="newdiv"><span>${item.count} tin nhắn mới</span></div>`;
-    return bubble(item, group);
+    return bubble(item, group, seenText(item.msg));
   };
+
+  /** The "seen" line goes under your last sent message that has not been taken back, once someone has read up to it. */
+  function seenText(t: Thread, group: boolean): (msg: Shown) => string | null {
+    const lastMine = [...t.messages].reverse().find((m) => m.sender.id === me?.id && m.deleted !== true);
+    const count = lastMine === undefined ? 0 : [...t.reads.seqs.values()].filter((seq) => seq >= lastMine.seq).length;
+    return (msg) => lastMine !== undefined && msg.id === lastMine.id && count > 0 ? (group ? `Đã xem bởi ${count}` : 'Đã xem') : null;
+  }
 
   function threadPane(): TemplateResult {
     const c = chatOf(openId);
@@ -180,7 +190,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${banner()}
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
-          ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group'))}
+          ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
         </div>
         <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
           <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
@@ -280,6 +290,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     t.loaded = true;
     update();
     markRead(id);
+    void fetchReads(id);
   }
 
   async function loadOlder(id: string): Promise<void> {
@@ -358,6 +369,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     }
     update();
     if (conversation === openId) markRead(conversation);
+  }
+
+  // ---- who has read
+
+  async function fetchReads(id: string): Promise<void> {
+    const result = await api.reads(id);
+    if (!result.ok) return;   // only a nicety: without it the line just does not show
+    threadOf(id).reads = { enabled: result.data.enabled, seqs: new Map(result.data.reads.map((r) => [r.userId, r.seq])) };
+    update();
   }
 
   // ---- taking a message back
@@ -508,11 +528,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       void refreshList().then(() => {
         if (openId === null) return;
         const t = threads.get(openId);
-        if (t?.loaded) live?.sync(openId, t.cursor);
+        if (t?.loaded) { live?.sync(openId, t.cursor); void fetchReads(openId); }
       });
     },
     event: (conversation, event) => apply(conversation, event),
-    conversations() { void refreshList(); },
+    conversations() {
+      void refreshList();
+      if (openId !== null) void fetchReads(openId);   // a switch may have been flipped by someone
+    },
+    read(conversation, userId, seq) {
+      const t = threads.get(conversation);
+      if (t === undefined || !t.reads.enabled || seq <= (t.reads.seqs.get(userId) ?? -1)) return;
+      t.reads.seqs.set(userId, seq);
+      update();
+    },
     events(conversation, events, hasMore) {
       for (const e of events) apply(conversation, e);
       const last = events[events.length - 1];

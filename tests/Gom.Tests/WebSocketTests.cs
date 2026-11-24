@@ -41,6 +41,16 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
 
     private sealed class ClosedException(int code) : Exception($"closed with {code}") { public int Code { get; } = code; }
 
+    /// <summary>The next frame of this type; other kinds (a "read" frame follows every send) are passed over.</summary>
+    private static async Task<JsonElement> NextOfType(WebSocket ws, string type)
+    {
+        while (true)
+        {
+            var frame = await Next(ws);
+            if (frame.GetProperty("t").GetString() == type) return frame;
+        }
+    }
+
     private static async Task<int> WaitForClose(WebSocket ws)
     {
         try { while (true) await Next(ws); }
@@ -161,7 +171,7 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         for (var i = 1; i <= 5; i++) { using var r = await Send(p.CA, p.Chat, $"m{i}"); }
 
         var seqs = new List<long>();
-        for (var i = 0; i < 5; i++) seqs.Add((await Next(ws)).GetProperty("event").GetProperty("seq").GetInt64());
+        for (var i = 0; i < 5; i++) seqs.Add((await NextOfType(ws, "event")).GetProperty("event").GetProperty("seq").GetInt64());
 
         Assert.Equal([1L, 2, 3, 4, 5], seqs);
     }
@@ -189,8 +199,9 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         using var again = await Send(p.CA, p.Chat, "once", client);
         using var empty = await Send(p.CA, p.Chat, "   ");
 
-        Assert.Equal(1, (await Next(ws)).GetProperty("event").GetProperty("seq").GetInt64());
-        await AssertSilent(ws);
+        Assert.Equal(1, (await NextOfType(ws, "event")).GetProperty("event").GetProperty("seq").GetInt64());
+        await NextOfType(ws, "read");   // the sender's own reading moved: the one other thing a send says
+        await AssertSilent(ws);          // and nothing for the repeated or refused sends
     }
 
     [Fact]
@@ -449,6 +460,97 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         await AssertSilent(newcomer);
         await SendText(newcomer, $$"""{"t":"sync","c":"{{chat}}","after":0}""");
         Assert.Empty((await Next(newcomer)).GetProperty("events").EnumerateArray());
+    }
+
+    // ---- read receipts
+
+    private Task<HttpResponseMessage> Read(string cookie, Guid chat, long seq) =>
+        app.Call(HttpMethod.Post, $"/api/conversations/{chat}/read", new { seq }, cookie);
+
+    private async Task Receipts(string cookie, bool enabled)
+    {
+        using var r = await app.Call(HttpMethod.Patch, "/api/me/receipts", new { enabled }, cookie);
+        Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reading_tells_the_other_members_who_share_and_nobody_else()
+    {
+        var p = await NewPair();
+        var (_, stranger) = await app.Member();
+        using var first = await Send(p.CA, p.Chat, "đọc đi");
+        using var a = await ConnectReady(p.CA);
+        using var bSelf = await ConnectReady(p.CB);
+        using var other = await ConnectReady(stranger);
+
+        using var read = await Read(p.CB, p.Chat, 1);
+
+        var frame = await Next(a);
+        Assert.Equal(("read", p.Chat, p.B.Id, 1L), (frame.GetProperty("t").GetString(), frame.GetProperty("c").GetGuid(), frame.GetProperty("u").GetGuid(), frame.GetProperty("seq").GetInt64()));
+        await AssertSilent(bSelf);    // you are not told about your own reading
+        await AssertSilent(other);
+    }
+
+    [Fact]
+    public async Task Nothing_is_sent_when_the_reader_hides_theirs_or_the_watcher_hides_theirs()
+    {
+        var p = await NewPair();
+        using var first = await Send(p.CA, p.Chat, "một");
+        using var second = await Send(p.CA, p.Chat, "hai");
+        using var a = await ConnectReady(p.CA);
+        await Receipts(p.CB, false);
+        await ExpectListChanged(a);
+        using var hidden = await Read(p.CB, p.Chat, 1);
+        await AssertSilent(a);                     // B hides: A hears nothing
+
+        await Receipts(p.CB, true);
+        await ExpectListChanged(a);                // the switch tells the people it concerns to look again
+        await Receipts(p.CA, false);
+        await ExpectListChanged(a);
+        using var visible = await Read(p.CB, p.Chat, 2);
+        await AssertSilent(a);                     // A hides: A may not see B's reading
+    }
+
+    [Fact]
+    public async Task Reading_the_same_place_twice_tells_nobody_the_second_time()
+    {
+        var p = await NewPair();
+        using var first = await Send(p.CA, p.Chat, "một");
+        using var a = await ConnectReady(p.CA);
+        using var once = await Read(p.CB, p.Chat, 1);
+        Assert.Equal("read", (await Next(a)).GetProperty("t").GetString());
+
+        using var twice = await Read(p.CB, p.Chat, 1);
+
+        await AssertSilent(a);
+    }
+
+    [Fact]
+    public async Task Sending_tells_the_others_you_have_read_up_to_your_own_message()
+    {
+        var p = await NewPair();
+        using var b = await ConnectReady(p.CB);
+
+        using var sent = await Send(p.CA, p.Chat, "tôi viết");
+
+        var first = await Next(b);
+        var second = await Next(b);
+        var read = new[] { first, second }.Single(f => f.GetProperty("t").GetString() == "read");
+        Assert.Equal((p.A.Id, 1L), (read.GetProperty("u").GetGuid(), read.GetProperty("seq").GetInt64()));
+    }
+
+    [Fact]
+    public async Task Switching_the_setting_tells_the_people_you_talk_to_to_look_again()
+    {
+        var p = await NewPair();
+        var (_, lonely) = await app.Member();
+        using var b = await ConnectReady(p.CB);
+        using var other = await ConnectReady(lonely);
+
+        await Receipts(p.CA, false);
+
+        await ExpectListChanged(b);
+        await AssertSilent(other);
     }
 
     // ---- when the session ends, the socket ends

@@ -15,6 +15,7 @@ public static class GomClaims
     public const string GomId = "gomid";
     public const string DisplayName = "displayname";
     public const string IsOwner = "isowner";
+    public const string ReadReceipts = "receipts";
 
     public static Guid User(ClaimsPrincipal p) => Guid.Parse(p.FindFirstValue(UserId)!);
     public static Guid Session(ClaimsPrincipal p) => Guid.Parse(p.FindFirstValue(SessionId)!);
@@ -57,6 +58,7 @@ public sealed class SessionAuthenticationHandler(
             new Claim(GomClaims.GomId, found.User.GomId),
             new Claim(GomClaims.DisplayName, found.User.DisplayName),
             new Claim(GomClaims.IsOwner, found.User.IsOwner ? "true" : "false"),
+            new Claim(GomClaims.ReadReceipts, found.User.ShareReadReceipts ? "true" : "false"),
         ], GomClaims.Scheme);
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), GomClaims.Scheme));
     }

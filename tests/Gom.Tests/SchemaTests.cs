@@ -33,6 +33,15 @@ public class SchemaTests(TestDatabase database) : IClassFixture<TestDatabase>
     }
 
     [Fact]
+    public async Task Read_receipts_are_on_for_a_member_row_that_does_not_mention_them()
+    {
+        await using var db = database.NewContext();
+        await db.Database.ExecuteSqlAsync($"INSERT INTO users (id, gom_id, display_name, password_hash, is_owner, created_at) VALUES ({Guid.NewGuid()}, 'old_member', 'old_member', 'x', false, now())");
+
+        Assert.True(await db.Users.Where(u => u.GomId == "old_member").Select(u => u.ShareReadReceipts).SingleAsync());
+    }
+
+    [Fact]
     public async Task A_Gom_ID_must_be_unique()
     {
         await using var db = database.NewContext();

@@ -54,6 +54,7 @@ app.MapFriends();
 app.MapConversations();
 app.MapGroups();
 app.MapMessages();
+app.MapReceipts();
 app.MapSocket();
 
 // One small HTML file per page; the script in /js/main.js picks the page from data-page.

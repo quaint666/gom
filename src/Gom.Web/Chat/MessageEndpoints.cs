@@ -112,6 +112,7 @@ public static class MessageEndpoints
         // Only now is it sent: the live delivery and the answer both follow the commit.
         var dto = ToDto(message, sender);
         await live.PublishAsync(db, dto.Seq, "created", dto);
+        await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
         return Results.Ok(dto);
     }
 
@@ -193,7 +194,7 @@ public static class MessageEndpoints
 
     // ---- read position
 
-    private static async Task<IResult> MarkRead(Guid id, ReadRequest request, HttpContext http, GomDbContext db, CancellationToken ct)
+    private static async Task<IResult> MarkRead(Guid id, ReadRequest request, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         if (await Access.Of(db, id, me, ct) is null) return Results.NotFound();
@@ -202,8 +203,9 @@ public static class MessageEndpoints
         // Forward only, and never past the newest message.
         var newest = await db.Conversations.Where(c => c.Id == id).Select(c => c.LastSeq).SingleAsync(ct);
         var target = Math.Min(request.Seq.Value, newest);
-        await db.Members.Where(m => m.ConversationId == id && m.UserId == me && m.LastReadSeq < target)
+        var moved = await db.Members.Where(m => m.ConversationId == id && m.UserId == me && m.LastReadSeq < target)
             .ExecuteUpdateAsync(s => s.SetProperty(m => m.LastReadSeq, target), ct);
+        if (moved > 0) await live.ReadChangedAsync(db, id, me, target);   // only when it actually moved
         return Results.NoContent();
     }
 }

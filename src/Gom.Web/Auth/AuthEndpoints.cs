@@ -18,6 +18,7 @@ public static class AuthEndpoints
             gomId = c.User.FindFirst(GomClaims.GomId)!.Value,
             displayName = c.User.FindFirst(GomClaims.DisplayName)!.Value,
             isOwner = c.User.FindFirst(GomClaims.IsOwner)!.Value == "true",
+            readReceipts = c.User.FindFirst(GomClaims.ReadReceipts)!.Value == "true",
         })).RequireAuthorization();
         app.MapGet("/api/sessions", ListSessions).RequireAuthorization();
         app.MapDelete("/api/sessions/{id:guid}", EndSession).RequireAuthorization();

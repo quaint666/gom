@@ -16,6 +16,8 @@ public static class Frames
 
     /// <summary>"Your list of conversations changed" (you were added to a group, someone joined or left): reload it.</summary>
     public static byte[] ConversationsChanged() => Json(new { t = "conversations" });
+    /// <summary>"This person has now read up to here": for the thread's "seen" line.</summary>
+    public static byte[] Read(Guid conversation, Guid reader, long seq) => Json(new { t = "read", c = conversation, u = reader, seq });
     public static byte[] Ready() => Json(new { t = "ready" });
     public static byte[] Live(Guid conversation, EventDto e) => Json(new { t = "event", c = conversation, @event = e });
     public static byte[] Events(Guid conversation, IReadOnlyList<EventDto> events, bool hasMore) => Json(new { t = "events", c = conversation, events, hasMore });

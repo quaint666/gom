@@ -1,4 +1,5 @@
 import { html, nothing, render } from 'lit-html';
+import { live } from 'lit-html/directives/live.js';
 import type { Api, Failure, SessionInfo, User } from '../api.js';
 import { appBar, errorBox, formatTime, passwordField } from '../ui.js';
 
@@ -12,6 +13,8 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let next = '';
   let shown = false;
   let passwordStatus = '';
+  let receipts = true;
+  let receiptsStatus = '';
   let busy = false;
 
   const row = (s: SessionInfo) => html`
@@ -38,6 +41,13 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
           <button class="btn" type="submit" ?disabled=${busy}>Lưu tên</button>
           <p class="hint" role="status" data-nickname-status>${nicknameStatus}</p>
         </form>
+        <h2 class="section">Trạng thái đã xem</h2>
+        <div class="card">
+          <div class="pick"><input type="checkbox" id="receipts" name="receipts" .checked=${live(receipts)} @change=${(e: Event) => void saveReceipts((e.target as HTMLInputElement).checked)}>
+            <label for="receipts">Cho người khác biết khi tôi đã xem tin nhắn</label></div>
+          <p class="hint">Nếu tắt, bạn cũng không thấy người khác đã xem tin nhắn của bạn.</p>
+          <p class="hint" role="status" data-receipts-status>${receiptsStatus}</p>
+        </div>
         <h2 class="section">Đổi mật khẩu</h2>
         <form class="card" data-password @submit=${savePassword}>
           <input class="sr-only" name="username" type="text" autocomplete="username" readonly tabindex="-1" aria-hidden="true" .value=${user.gomId}>
@@ -58,6 +68,13 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   async function load(): Promise<void> {
     const result = await api.sessions();
     if (result.ok) sessions = result.data; else error = result;
+    update();
+  }
+
+  async function saveReceipts(enabled: boolean): Promise<void> {
+    receipts = enabled; receiptsStatus = ''; error = null;
+    const result = await api.setReceipts(enabled);
+    if (result.ok) receiptsStatus = 'Đã lưu.'; else { receipts = !enabled; error = result; }
     update();
   }
 
@@ -103,6 +120,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     }
     user = result.data;
     nickname = result.data.displayName;
+    receipts = result.data.readReceipts !== false;
     await load();
   });
 }

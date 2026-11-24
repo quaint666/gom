@@ -17,6 +17,28 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
 
     /// <summary>Sends one step of the stream (a message created or recalled) to every member's devices.</summary>
     /// <param name="eventSeq">The step's own number; for a recall it is later than the message's.</param>
+    /// <summary>
+    /// Tells the other members that this person has read up to here, but only if they share their reading and the other member does too.
+    /// Never to the reader themself.
+    /// </summary>
+    public async Task ReadChangedAsync(GomDbContext db, Guid conversation, Guid reader, long seq)
+    {
+        try
+        {
+            if (!await db.Users.AsNoTracking().Where(u => u.Id == reader).Select(u => u.ShareReadReceipts).SingleAsync()) return;
+            var watchers = await (from m in db.Members.AsNoTracking() where m.ConversationId == conversation && m.UserId != reader
+                                  join u in db.Users on m.UserId equals u.Id where u.ShareReadReceipts select m.UserId).ToListAsync();
+            var frame = Frames.Read(conversation, reader, seq);
+            foreach (var user in watchers)
+                foreach (var connection in registry.For(user))
+                    connection.TryEnqueue(frame);
+        }
+        catch (Exception e)
+        {
+            logger.LogWarning(e, "read notification failed; devices will see it the next time they look");
+        }
+    }
+
     public async Task PublishAsync(GomDbContext db, long eventSeq, string kind, MessageEndpoints.MessageDto message)
     {
         try

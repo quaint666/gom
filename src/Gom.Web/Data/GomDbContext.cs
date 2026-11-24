@@ -24,6 +24,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             // At most one row with is_owner = true.
             e.HasIndex(x => x.IsOwner).IsUnique().HasFilter("is_owner");
             e.Property(x => x.DisplayName).HasMaxLength(60);
+            // On for everyone who was here before the switch existed, too: the database says so, not only the C# default.
+            e.Property(x => x.ShareReadReceipts).HasDefaultValue(true);
         });
 
         b.Entity<Session>(e =>

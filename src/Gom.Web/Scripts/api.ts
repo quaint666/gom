@@ -17,7 +17,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
 export type Result<T> = { ok: true; data: T } | Failure;
 
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean }
 export interface SessionInfo { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }
 export interface Invite { id: string; createdAt: string; expiresAt: string; usedBy: string | null; status: 'pending' | 'used' | 'revoked' | 'expired' }
 export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; createdAt: string }
@@ -74,6 +74,9 @@ export interface Api {
   openDirect(gomId: string): Promise<Result<{ id: string }>>;
   history(conversation: string, before?: number): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean; lastSeq: number }>>;
   recall(conversation: string, message: string): Promise<Result<void>>;
+  /** How far the other members have read. Empty, with `enabled: false`, when you have hidden yours. */
+  reads(conversation: string): Promise<Result<{ enabled: boolean; reads: { userId: string; seq: number }[] }>>;
+  setReceipts(enabled: boolean): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string): Promise<Result<ChatMessage>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
   createGroup(title: string, members: string[]): Promise<Result<{ id: string }>>;
@@ -140,6 +143,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
     leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
     askMember: (conversation, userId) => call('POST', `/api/conversations/${enc(conversation)}/members/${enc(userId)}/friend-request`),
+    reads: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/reads`),
+    setReceipts: (enabled) => call('PATCH', '/api/me/receipts', { enabled }),
     recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
     markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };

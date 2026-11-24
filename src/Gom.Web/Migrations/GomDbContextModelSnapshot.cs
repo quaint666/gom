@@ -442,6 +442,12 @@ namespace Gom.Web.Migrations
                         .HasColumnType("text")
                         .HasColumnName("password_hash");
 
+                    b.Property<bool>("ShareReadReceipts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("share_read_receipts");
+
                     b.HasKey("Id")
                         .HasName("pk_users");
 
