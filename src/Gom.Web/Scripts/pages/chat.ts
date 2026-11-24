@@ -46,6 +46,8 @@ interface Thread {
   pins: ChatMessage[];
   /** Whether the list of pins (more than the newest) is open. */
   pinsOpen: boolean;
+  /** The message of yours whose words are being changed in the composer. */
+  editing: { id: string } | null;
   draft: string;
   /** The message the next one will answer, shown above the composer. */
   replying: Reply | null;
@@ -96,7 +98,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, pins: [], pinsOpen: false, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, pins: [], pinsOpen: false, editing: null, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -161,6 +163,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           : html`<button class="btn secondary small" type="button" data-pin @click=${() => void setPin(m, true)}>Ghim</button>`}
         <button class="btn secondary small" type="button" data-forward @click=${() => { menu = null; forwarding = m; update(); }}>Chuyển tiếp</button>
         <button class="btn secondary small" type="button" data-hide @click=${() => { menu = { id: m.id, confirming: false, hide: true }; update(); }}>Xóa với tôi</button>
+        ${mine ? html`<button class="btn secondary small" type="button" data-edit @click=${() => startEdit(m)}>Chỉnh sửa</button>` : nothing}
         ${mine ? html`<button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>` : nothing}
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Đóng</button>`}
     </div>`;
@@ -192,7 +195,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           @click=${() => { menu = menu?.id === m.id ? null : { id: m.id, confirming: false }; update(); }}>${icons.more()}</button>` : nothing}
         ${others ? (item.last ? html`<div class="av sm a1" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
         <div class="bub">${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
-          <span class="ts">${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
+          <span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
       </div>
       ${chips(m)}
       ${menuFor(m, item.mine)}
@@ -287,6 +290,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         </div>
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
+        ${t.editing === null ? nothing : html`
+          <div class="replybar" data-editbar>
+            <div class="rb-text"><b>Đang chỉnh sửa tin nhắn</b></div>
+            <button class="ib" type="button" data-cancel-edit aria-label="Hủy chỉnh sửa" @click=${() => { t.editing = null; t.draft = ''; update(); }}>${icons.close()}</button>
+          </div>`}
         ${t.replying === null ? nothing : html`
           <div class="replybar" data-replybar>
             <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.snippet ?? ''}</span></div>
@@ -459,6 +467,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       t.pending = t.pending.filter((p) => p.clientId !== message.clientId);
       // The message being answered was taken back: there is nothing left to answer.
       if (event.kind === 'deleted' && t.replying?.id === message.id) t.replying = null;
+      if (event.kind === 'deleted' && t.editing?.id === message.id) { t.editing = null; t.draft = ''; }
+      if (event.kind === 'updated' && t.pins.some((p) => p.id === message.id)) void refreshPins(conversation);
       const had2 = t.messages.length;
       // A change to a message this device has not loaded is not added: a lone old message would break the paging.
       if (event.kind !== 'updated' || t.messages.some((x) => x.id === message.id)) t.messages = mergeMessages(t.messages, [message]);
@@ -511,6 +521,33 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (result.ok) return;
     c.muted = !wanted;
     handleFailure(result);
+  }
+
+  // ---- editing
+
+  /** Puts the words of one of your messages in the composer; sending then changes that message instead of making a new one. */
+  function startEdit(m: Shown): void {
+    menu = null;
+    const t = threadOf(m.conversationId);
+    t.editing = { id: m.id };
+    t.replying = null;
+    t.draft = m.body;
+    update();
+    const field = root.querySelector<HTMLTextAreaElement>('.composer textarea');
+    field?.focus();
+  }
+
+  async function saveEdit(id: string): Promise<void> {
+    const t = threadOf(id);
+    const body = t.draft.trim();
+    if (t.editing === null || body === '') return;
+    const target = t.editing.id;
+    const result = await api.edit(id, target, body);
+    if (!result.ok) { error = result; update(); return; }   // what was typed stays, so it can be tried again
+    error = null;
+    t.editing = null;
+    t.draft = '';
+    update();
   }
 
   // ---- reactions
@@ -630,6 +667,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (t !== undefined) {
       t.messages = t.messages.filter((x) => x.id !== messageId);
       if (t.replying?.id === messageId) t.replying = null;
+      if (t.editing?.id === messageId) { t.editing = null; t.draft = ''; }
     }
     if (menu?.id === messageId) menu = null;
     if (searching?.results) searching.results = searching.results.filter((r) => r.id !== messageId);
@@ -671,6 +709,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   async function send(id: string): Promise<void> {
     const t = threadOf(id);
+    if (t.editing !== null) { await saveEdit(id); return; }
     const body = t.draft.trim();
     if (body === '' || me === null) return;
     t.draft = '';

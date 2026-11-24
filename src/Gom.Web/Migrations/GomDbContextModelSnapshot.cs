@@ -241,6 +241,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("edited_at");
+
                     b.Property<Guid?>("ReplyToId")
                         .HasColumnType("uuid")
                         .HasColumnName("reply_to_id");

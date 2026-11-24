@@ -2242,3 +2242,140 @@ describe('chat: reactions', () => {
     expect(h.live.sync).toHaveBeenCalledWith(C1, 3);
   });
 });
+
+describe('chat: editing a message', () => {
+  const base = [msg(1, 'minh', 'tin của Minh'), msg(2, 'mom', 'tin của mẹ')];
+  const open = (extra: Record<string, unknown> = {}, messages: ChatMessage[] = base) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: messages }, api: extra });
+  const row = (id: string) => root.querySelector(`[data-msg="${id}"]`)!;
+  const menuOf = async (id: string) => { row(id).querySelector<HTMLButtonElement>('button[data-menu]')!.click(); await flush(); };
+  const field = () => root.querySelector<HTMLTextAreaElement>('.composer textarea')!;
+  const type = (body: string) => { field().value = body; field().dispatchEvent(new Event('input', { bubbles: true })); };
+  const submit = () => root.querySelector<HTMLFormElement>('form.composer')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+
+  it('offers "Chỉnh sửa" on your own message and not on someone else\'s', async () => {
+    open();
+    await flush();
+    await menuOf('id2');
+    expect(root.querySelector('button[data-edit]')).not.toBeNull();
+    await menuOf('id1');
+    expect(root.querySelector('button[data-edit]')).toBeNull();
+  });
+
+  it('puts the words in the composer with a bar that says so', async () => {
+    open();
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    expect(field().value).toBe('tin của mẹ');
+    expect(text(root.querySelector('[data-editbar]')!)).toContain('Đang chỉnh sửa');
+    expect(root.querySelector('.menu')).toBeNull();
+  });
+
+  it('sends the change to that message and not a new one, then leaves edit mode', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    type('  tin đã sửa  ');
+    submit();
+    await flush();
+    expect(h.api.edit).toHaveBeenCalledWith(C1, 'id2', 'tin đã sửa');
+    expect(h.api.send).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-editbar]')).toBeNull();
+    expect(field().value).toBe('');
+  });
+
+  it('does not send an empty change', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    type('   ');
+    submit();
+    await flush();
+    expect(h.api.edit).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-editbar]')).not.toBeNull();
+  });
+
+  it('keeps what was typed and says why when the server refuses', async () => {
+    open({ edit: vi.fn(async () => fail('message_too_long', 400)) });
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    type('quá dài');
+    submit();
+    await flush();
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+    expect(field().value).toBe('quá dài');
+    expect(root.querySelector('[data-editbar]')).not.toBeNull();
+  });
+
+  it('cancels with the close button and restores an empty composer', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-cancel-edit]')!.click();
+    await flush();
+    expect(root.querySelector('[data-editbar]')).toBeNull();
+    expect(field().value).toBe('');
+    expect(h.api.edit).not.toHaveBeenCalled();
+  });
+
+  it('leaves edit mode when the message is taken back meanwhile', async () => {
+    const h = open();
+    await flush();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    h.handlers().event(C1, recalled(base[1]!, 3));
+    await flush();
+    expect(root.querySelector('[data-editbar]')).toBeNull();
+    expect(field().value).toBe('');
+  });
+
+  it('leaves a reply behind when you start editing', async () => {
+    open();
+    await flush();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-reply]')!.click();
+    await flush();
+    expect(root.querySelector('[data-replybar]')).not.toBeNull();
+    await menuOf('id2');
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    expect(root.querySelector('[data-replybar]')).toBeNull();
+    expect(root.querySelector('[data-editbar]')).not.toBeNull();
+  });
+
+  it('marks an edited message and shows the new words that arrive live', async () => {
+    const h = open();
+    await flush();
+    expect(text(row('id1'))).not.toContain('đã chỉnh sửa');
+    h.handlers().event(C1, { seq: 3, kind: 'updated', message: { ...base[0]!, body: 'đã sửa rồi', editedAt: at(11) } });
+    await flush();
+    expect(text(row('id1'))).toContain('đã sửa rồi');
+    expect(text(row('id1'))).toContain('đã chỉnh sửa');
+  });
+
+  it('does not mark a message taken back as edited', async () => {
+    open({}, [{ ...base[0]!, deleted: true, body: '', editedAt: at(11) }, base[1]!]);
+    await flush();
+    expect(text(row('id1'))).not.toContain('đã chỉnh sửa');
+  });
+
+  it('asks for the pins again when a pinned message is edited', async () => {
+    const h = open({ pins: vi.fn(async () => ok({ pins: [base[0]!] })) });
+    await flush();
+    const calls = h.api.pins.mock.calls.length;
+    h.handlers().event(C1, { seq: 3, kind: 'updated', message: { ...base[0]!, body: 'mới', editedAt: at(11) } });
+    await flush();
+    expect(h.api.pins.mock.calls.length).toBe(calls + 1);
+  });
+});

@@ -37,7 +37,7 @@ export interface Sender { id: string; displayName: string }
 export interface Reaction { emoji: string; users: Sender[] }
 /** The quote above an answer. With no sender and no snippet, the quoted message is not there for this reader. */
 export interface Reply { id: string; sender: Sender | null; snippet: string | null }
-export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean }
@@ -88,6 +88,7 @@ export interface Api {
   setReceipts(enabled: boolean): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string, replyTo?: string): Promise<Result<ChatMessage>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
+  edit(conversation: string, message: string, body: string): Promise<Result<void>>;
   react(conversation: string, message: string, emoji: string): Promise<Result<void>>;
   unreact(conversation: string, message: string): Promise<Result<void>>;
   search(conversation: string, query: string): Promise<Result<{ results: ChatMessage[] }>>;
@@ -181,6 +182,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     unpin: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),
     react: (conversation, message, emoji) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/reaction`, { emoji }),
     unreact: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/reaction`),
+    edit: (conversation, message, body) => call('PATCH', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`, { body }),
     markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };
 }

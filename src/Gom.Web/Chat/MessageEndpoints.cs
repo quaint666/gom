@@ -13,10 +13,11 @@ public static class MessageEndpoints
 {
     public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null);
     public sealed record ReactRequest(string? Emoji);
+    public sealed record EditRequest(string? Body);
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -30,6 +31,7 @@ public static class MessageEndpoints
         api.MapPost("/read", MarkRead);
         api.MapDelete("/messages/{messageId:guid}", Recall);
         api.MapPut("/messages/{messageId:guid}/hidden", Hide);
+        api.MapPatch("/messages/{messageId:guid}", Edit);
         api.MapPut("/messages/{messageId:guid}/reaction", React);
         api.MapDelete("/messages/{messageId:guid}/reaction", Unreact);
         api.MapGet("/pins", ListPins);
@@ -40,7 +42,7 @@ public static class MessageEndpoints
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
     internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null) =>
-        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions);
+        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt);
 
     // ---- what a message may contain
 
@@ -275,6 +277,49 @@ public static class MessageEndpoints
         if (await Access.Of(db, id, me, ct) is null) return Results.NotFound();
         var removed = await db.Pins.Where(p => p.ConversationId == id && p.MessageId == messageId).ExecuteDeleteAsync(ct);
         if (removed > 0) await live.PinsChangedAsync(db, id);
+        return Results.NoContent();
+    }
+
+    // ---- edit
+
+    /// <summary>
+    /// Changes the words of one of your own messages. Everyone in the conversation is told through the stream ("updated"), and the
+    /// message shows that it was edited. The old words are not kept. Writing the same words again changes nothing.
+    /// </summary>
+    private static async Task<IResult> Edit(Guid id, Guid messageId, EditRequest request, HttpContext http, GomDbContext db, TimeProvider clock,
+        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null).SingleOrDefaultAsync(ct);
+        if (found is null) return Results.NotFound();
+        if (found.SenderId != me) return Error(StatusCodes.Status403Forbidden, "not_your_message");
+        var (body, problem) = Clean(request.Body, options.Value.MaxChars);
+        if (body is null) return Error(StatusCodes.Status400BadRequest, problem!);
+        if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
+        if (body == found.Body) return Results.NoContent();
+
+        var wait = limiter.TryTake(me);
+        if (wait is not null)
+        {
+            http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.Value.TotalSeconds)).ToString();
+            return Error(StatusCodes.Status429TooManyRequests, "too_many_messages");
+        }
+
+        var now = clock.GetUtcNow();
+        long seq;
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
+            // Only while it is still there and still yours: a recall may have come while this waited for the lock.
+            var changed = await db.Messages.Where(m => m.Id == messageId && m.DeletedAt == null && m.Body != body)
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Body, body).SetProperty(m => m.EditedAt, (DateTimeOffset?)now), ct);
+            if (changed == 0) return Results.NoContent();
+            seq = await NextUpdate(db, id, messageId, now, ct);
+            await tx.CommitAsync(ct);
+        }
+        await PublishUpdate(db, found, seq, me, ct, live);
         return Results.NoContent();
     }
 
