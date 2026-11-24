@@ -3130,3 +3130,54 @@ describe('chat: notices in a group', () => {
     expect(root.querySelector('[data-jump-bottom]')).toBeNull();
   });
 });
+
+describe('chat: a server without uploads', () => {
+  const photo = new File([new Uint8Array([1, 2, 3])], 'a.jpg', { type: 'image/jpeg' });
+  const open = (uploads: boolean | undefined, upload = vi.fn(async () => fail('uploads_disabled', 503))) => {
+    const mine = uploads === undefined ? me : { ...me, uploads };
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [] }, api: { me: vi.fn(async () => ok(mine)), upload } });
+    return { h, upload };
+  };
+  const drop = (files: File[]) => {
+    const event = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: { files, types: ['Files'] } });
+    root.querySelector('.thread-pane')!.dispatchEvent(event);
+    return event;
+  };
+
+  it('offers no attach button when the server says it takes no uploads', async () => {
+    open(false);
+    await flush();
+    expect(root.querySelector('[data-attach]')).toBeNull();
+    expect(root.querySelector('input[name="files"]')).toBeNull();
+  });
+
+  it('still offers it when the server takes uploads, or does not say (an older server)', async () => {
+    open(true);
+    await flush();
+    expect(root.querySelector('[data-attach]')).not.toBeNull();
+    document.body.replaceChildren(root);
+    open(undefined);
+    await flush();
+    expect(root.querySelector('[data-attach]')).not.toBeNull();
+  });
+
+  it('does not upload a dropped file, and does not let the browser open it in place of the page', async () => {
+    const { upload } = open(false);
+    await flush();
+    const event = drop([photo]);
+    await flush();
+    expect(upload).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-tray-item]')).toBeNull();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('uploads a dropped file when the server takes uploads', async () => {
+    const upload = vi.fn(async () => ok({ id: 'a1', kind: 'image' as const, name: 'a.webp', size: 10, width: 4, height: 3 }));
+    open(true, upload as never);
+    await flush();
+    drop([photo]);
+    await flush();
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+});

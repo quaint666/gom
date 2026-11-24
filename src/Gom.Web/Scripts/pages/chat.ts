@@ -525,7 +525,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           </div>`}
         ${trayView(t)}
         <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
-          ${t.editing === null ? html`
+          ${t.editing === null && uploadsOn() ? html`
             <button class="ib attach" type="button" data-attach aria-label="Đính kèm ảnh hoặc tệp" @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
             <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
               @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
@@ -1002,10 +1002,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- pictures and files
 
+  /** False only when the server says it takes no uploads; an answer without the field (an older server) means yes. */
+  const uploadsOn = (): boolean => me?.uploads !== false;
+
   /** Puts what was chosen, pasted or dropped in the tray and starts sending it up. */
   function addFiles(id: string, files: File[]): void {
     const t = threadOf(id);
-    if (t.editing !== null || files.length === 0) return;
+    if (t.editing !== null || files.length === 0 || !uploadsOn()) return;
     const room = MAX_ATTACHMENTS - t.tray.length;
     for (const file of files.slice(0, Math.max(0, room))) t.tray.push({ key: ++trayKey, name: file.name || 'tệp', file, state: 'waiting', progress: 0 });
     if (files.length > room) { notice = `Mỗi tin nhắn có tối đa ${MAX_ATTACHMENTS} tệp.`; }
@@ -1015,7 +1018,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function onPaste(e: ClipboardEvent): void {
     const files = [...(e.clipboardData?.files ?? [])];
-    if (files.length === 0 || openId === null) return;   // text pastes as text
+    if (files.length === 0 || openId === null || !uploadsOn()) return;   // text pastes as text
     e.preventDefault();
     addFiles(openId, files);
   }

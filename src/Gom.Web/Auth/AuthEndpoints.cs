@@ -12,13 +12,15 @@ public static class AuthEndpoints
     {
         app.MapPost("/api/session", SignIn);
         app.MapDelete("/api/session", SignOut).RequireAuthorization();
-        app.MapGet("/api/me", (HttpContext c) => Results.Ok(new
+        app.MapGet("/api/me", (HttpContext c, Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions> uploads) => Results.Ok(new
         {
             id = GomClaims.User(c.User),
             gomId = c.User.FindFirst(GomClaims.GomId)!.Value,
             displayName = c.User.FindFirst(GomClaims.DisplayName)!.Value,
             isOwner = c.User.FindFirst(GomClaims.IsOwner)!.Value == "true",
             readReceipts = c.User.FindFirst(GomClaims.ReadReceipts)!.Value == "true",
+            // Whether this server takes pictures and files, so the page does not offer what can only fail.
+            uploads = !string.IsNullOrWhiteSpace(uploads.Value.Path),
         })).RequireAuthorization();
         app.MapGet("/api/sessions", ListSessions).RequireAuthorization();
         app.MapDelete("/api/sessions/{id:guid}", EndSession).RequireAuthorization();
