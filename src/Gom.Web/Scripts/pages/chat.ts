@@ -73,6 +73,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let live: LiveControl | null = null;
   let scrollAnchor: number | null = null;
   let menu: { id: string; confirming: boolean } | null = null;
+  /** The message being passed on, while the person picks where to. */
+  let forwarding: Shown | null = null;
 
   function idFromPath(): string | null { return CONVERSATION_PATH.exec(deps.nav.path())?.[1]?.toLowerCase() ?? null; }
   const chatOf = (id: string | null): Conversation | undefined => (id === null ? undefined : chats?.find((c) => c.id === id));
@@ -135,6 +137,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Hủy</button>` : html`
         <button class="btn secondary small" type="button" data-reply @click=${() => startReply(m)}>Trả lời</button>
         <button class="btn secondary small" type="button" data-copy @click=${() => void copyText(m)}>Sao chép</button>
+        <button class="btn secondary small" type="button" data-forward @click=${() => { menu = null; forwarding = m; update(); }}>Chuyển tiếp</button>
         ${mine ? html`<button class="btn secondary small" type="button" data-recall @click=${() => { menu = { id: m.id, confirming: true }; update(); }}>Thu hồi</button>` : nothing}
         <button class="btn secondary small" type="button" data-cancel-recall @click=${() => { menu = null; update(); }}>Đóng</button>`}
     </div>`;
@@ -181,6 +184,16 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return (msg) => lastMine !== undefined && msg.id === lastMine.id && count > 0 ? (group ? `Đã xem bởi ${count}` : 'Đã xem') : null;
   }
 
+  /** Where to pass a message on: your conversations, newest first. The message goes as a new message from you, with nothing saying who wrote it first. */
+  const forwardPanel = (m: Shown) => html`
+    <div class="forward card" role="group" aria-label="Chuyển tiếp tin nhắn" data-forward-panel>
+      <p><b>Chuyển tiếp đến</b></p>
+      <p class="hint fw-text">${m.body.length > 120 ? [...m.body].slice(0, 120).join('') + '…' : m.body}</p>
+      <ul class="fw-list">${(chats ?? []).map((c) => html`
+        <li><button class="btn secondary" type="button" data-forward-to=${c.id} @click=${() => void forward(m, c.id)}>${c.title ?? '…'}</button></li>`)}</ul>
+      <button class="btn secondary small" type="button" data-cancel-forward @click=${() => { forwarding = null; update(); }}>Hủy</button>
+    </div>`;
+
   function threadPane(): TemplateResult {
     const c = chatOf(openId);
     if (openId === null) return html`<section class="thread-pane none"><div class="empty"><p class="lead">Chọn một cuộc trò chuyện</p></div></section>`;
@@ -204,6 +217,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
         </div>
+        ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${t.replying === null ? nothing : html`
           <div class="replybar" data-replybar>
             <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.snippet ?? ''}</span></div>
@@ -414,6 +428,34 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   async function copyText(m: Shown): Promise<void> {
     menu = null;
     try { await navigator.clipboard.writeText(m.body); notice = 'Đã sao chép tin nhắn.'; } catch { notice = 'Không sao chép được. Hãy chọn và chép bằng tay.'; }
+    update();
+  }
+
+  /**
+   * Sends the words of a message to another conversation as a new message from you. It uses the same queue as writing, so a
+   * lost connection does not lose it; a refusal for good (no longer friends, say) is told here, not left in a thread you are not in.
+   */
+  async function forward(m: Shown, target: string): Promise<void> {
+    forwarding = null;
+    if (me === null) return;
+    const name = chatOf(target)?.title ?? '';
+    const t = threadOf(target);
+    const clientId = deps.newId();
+    const waiting = t.pending.some((x) => x.state === 'queued');
+    t.pending.push({
+      id: clientId, clientId, seq: 0, conversationId: target, sender: { id: me.id, displayName: me.displayName }, body: m.body,
+      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending',
+    });
+    persist();
+    update();
+    if (!waiting) await flush(target);
+    const p = t.pending.find((x) => x.clientId === clientId);
+    if (p?.state === 'failed') {
+      notice = p.error ? errorText(p.error) : 'Chưa chuyển tiếp được.';
+      t.pending = t.pending.filter((x) => x.clientId !== clientId);
+      persist();
+    } else if (p !== undefined) notice = `Chưa gửi được đến ${name}. Sẽ gửi khi có mạng.`;
+    else notice = `Đã chuyển tiếp đến ${name}.`;
     update();
   }
 

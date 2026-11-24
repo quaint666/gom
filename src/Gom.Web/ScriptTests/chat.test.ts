@@ -1564,3 +1564,109 @@ describe('chat: answering and copying', () => {
     expect(text(root)).toContain('Không sao chép được');
   });
 });
+
+describe('chat: passing a message on', () => {
+  const chats = [chat(C1, 'Minh', { lastSeq: 2 }), chat(C2, 'Lan')];
+  const open = (extra: Record<string, unknown> = {}, messages: ChatMessage[] = [msg(1, 'minh', 'Tối nay ăn gì?'), msg(2, 'mom', 'tin của mẹ')]) =>
+    start({ path: `/c/${C1}`, chats, history: { [C1]: messages }, api: extra });
+  const row = (id: string) => root.querySelector(`[data-msg="${id}"]`)!;
+  const pick = async (id: string) => {
+    row(id).querySelector<HTMLButtonElement>('button[data-menu]')!.click(); await flush();
+    root.querySelector<HTMLButtonElement>('button[data-forward]')!.click(); await flush();
+  };
+  const echo = vi.fn(async (conversation: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(11), conversation), id: `fw-${clientId}`, clientId }));
+
+  it('lists your conversations to choose from, and shows the start of the message', async () => {
+    open();
+    await flush();
+    await pick('id1');
+    const panel = root.querySelector('[data-forward-panel]')!;
+    expect(text(panel)).toContain('Tối nay ăn gì?');
+    expect([...panel.querySelectorAll('[data-forward-to]')].map((b) => b.getAttribute('data-forward-to'))).toEqual([C1, C2]);
+    expect(root.querySelector('.menu')).toBeNull();
+  });
+
+  it('sends the words to the chosen conversation as a new message with no answer attached, and says so', async () => {
+    const send = echo.mockClear();
+    open({ send });
+    await flush();
+    await pick('id1');
+    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
+    await flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(C2, expect.any(String), 'Tối nay ăn gì?', undefined);
+    expect(text(root)).toContain('Đã chuyển tiếp đến Lan');
+    expect(root.querySelector('[data-forward-panel]')).toBeNull();
+  });
+
+  it('passes on a message that was itself an answer without its quote', async () => {
+    const send = echo.mockClear();
+    const answered: ChatMessage = { ...msg(1, 'minh', 'đáp'), reply: { id: 'x', sender: { id: 'u-mom', displayName: 'Mẹ' }, snippet: 'gốc' } };
+    open({ send }, [answered]);
+    await flush();
+    await pick('id1');
+    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
+    await flush();
+    expect(send).toHaveBeenCalledWith(C2, expect.any(String), 'đáp', undefined);
+  });
+
+  it('cancels without sending anything', async () => {
+    const send = echo.mockClear();
+    open({ send });
+    await flush();
+    await pick('id1');
+    root.querySelector<HTMLButtonElement>('[data-cancel-forward]')!.click();
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-forward-panel]')).toBeNull();
+  });
+
+  it('tells you when it was refused for good, and leaves nothing waiting in the other conversation', async () => {
+    const h = open({ send: vi.fn(async () => fail('not_friends', 403)) });
+    await flush();
+    await pick('id1');
+    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
+    await flush();
+    expect(text(root.querySelector('.note')!)).toContain('bạn bè');
+    expect(h.outbox.items).toHaveLength(0);
+  });
+
+  it('leaves no failed message behind in the conversation it was refused by', async () => {
+    open({ send: vi.fn(async () => fail('not_friends', 403)) });
+    await flush();
+    await pick('id1');
+    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
+    await flush();
+    root.querySelector<HTMLAnchorElement>(`a[data-chat="${C2}"]`)!.click();
+    await flush();
+    expect(root.querySelector('[data-state="failed"]')).toBeNull();
+    expect(root.querySelector('[data-msg]')).toBeNull();
+  });
+
+  it('writes it down before the send finishes, so closing the page does not lose it', async () => {
+    const h = open({ send: vi.fn(() => new Promise(() => undefined)) });
+    await flush();
+    await pick('id1');
+    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
+    await flush();
+    expect(h.outbox.items).toHaveLength(1);
+    expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'Tối nay ăn gì?' });
+  });
+
+  it('keeps it waiting, and says so, when the network is down', async () => {
+    const h = open({ send: vi.fn(async () => fail('network', 0)) });
+    await flush();
+    await pick('id1');
+    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
+    await flush();
+    expect(text(root.querySelector('.note')!)).toContain('Sẽ gửi khi có mạng');
+    expect(h.outbox.items).toHaveLength(1);
+    expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'Tối nay ăn gì?' });
+  });
+
+  it('offers no forwarding on a message taken back', async () => {
+    open({}, [{ ...msg(1, 'minh', ''), deleted: true }]);
+    await flush();
+    expect(row('id1').querySelector('button[data-menu]')).toBeNull();
+  });
+});
