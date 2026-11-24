@@ -25,20 +25,68 @@ public static class ImageProcessor
         || head.Length >= 8 && head[..8].SequenceEqual(PngSignature)                                                // PNG
         || head.Length >= 12 && head[..4].SequenceEqual("RIFF"u8) && head.Slice(8, 4).SequenceEqual("WEBP"u8);              // WebP
 
-    public static ImageResult Process(byte[] bytes, UploadOptions o)
+    /// <summary>How a picture will be handled, worked out from its header alone (no pixel is made yet).</summary>
+    /// <param name="DecodeWidth">The size it is decoded at: a big JPEG or WebP is decoded already scaled down (a half, a quarter or an eighth), which takes far less memory and time.</param>
+    /// <param name="Cost">About how many bytes of memory processing will hold at its peak.</param>
+    public sealed record ImagePlan(int DecodeWidth, int DecodeHeight, SKEncodedOrigin Origin, long Cost);
+
+    public sealed record PlanResult(ImagePlan? Plan, ImageProblem? Problem);
+
+    /// <summary>Memory beyond the decoded pixels: the scaled copy, the small version, the encoders and their output.</summary>
+    private const long Overhead = 16L * 1024 * 1024;
+
+    public static PlanResult Plan(byte[] bytes, UploadOptions o)
     {
         try
         {
             using var codec = SKCodec.Create(new MemoryStream(bytes, writable: false));
             if (codec is null || codec.EncodedFormat is not (SKEncodedImageFormat.Jpeg or SKEncodedImageFormat.Png or SKEncodedImageFormat.Webp))
-                return new ImageResult(null, ImageProblem.NotAnImage);
+                return new PlanResult(null, ImageProblem.NotAnImage);
             // Judged from the header, before any pixel is made: a few kilobytes can describe a picture of many gigabytes.
-            if ((long)codec.Info.Width * codec.Info.Height > o.MaxPixels) return new ImageResult(null, ImageProblem.TooManyPixels);
+            if ((long)codec.Info.Width * codec.Info.Height > o.MaxPixels) return new PlanResult(null, ImageProblem.TooManyPixels);
+
+            // The smallest scale that still has at least the stored size on its longer side (a codec that cannot scale says its own size).
+            var width = codec.Info.Width; var height = codec.Info.Height;
+            foreach (var scale in new[] { 0.125f, 0.25f, 0.5f })
+            {
+                var size = codec.GetScaledDimensions(scale);
+                if (size.Width > 0 && size.Height > 0 && Math.Max(size.Width, size.Height) >= o.ImageMaxEdge && size.Width * size.Height < width * height)
+                {
+                    width = size.Width; height = size.Height;
+                    break;
+                }
+            }
+            var upright = codec.EncodedOrigin is SKEncodedOrigin.TopLeft or SKEncodedOrigin.Default;
+            var decoded = (long)width * height * 4;
+            return new PlanResult(new ImagePlan(width, height, codec.EncodedOrigin, decoded * (upright ? 1 : 2) + Overhead), null);
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException or NullReferenceException)
+        {
+            return new PlanResult(null, ImageProblem.Unreadable);
+        }
+    }
+
+    /// <summary>Plans and processes in one go (for callers that need no waiting for memory).</summary>
+    public static ImageResult Process(byte[] bytes, UploadOptions o)
+    {
+        var planned = Plan(bytes, o);
+        return planned.Plan is null ? new ImageResult(null, planned.Problem) : Process(bytes, planned.Plan, o);
+    }
+
+    public static ImageResult Process(byte[] bytes, ImagePlan plan, UploadOptions o)
+    {
+        try
+        {
+            using var codec = SKCodec.Create(new MemoryStream(bytes, writable: false));
+            if (codec is null) return new ImageResult(null, ImageProblem.NotAnImage);
 
             // All of it or nothing: a picture cut short is refused, not shown half grey.
-            using var decoded = new SKBitmap(codec.Info);
-            if (codec.GetPixels(codec.Info, decoded.GetPixels()) != SKCodecResult.Success) return new ImageResult(null, ImageProblem.Unreadable);
-            using var upright = Orient(decoded, codec.EncodedOrigin);
+            var info = codec.Info.WithSize(plan.DecodeWidth, plan.DecodeHeight);
+            using var decoded = new SKBitmap(info);
+            if (codec.GetPixels(info, decoded.GetPixels()) != SKCodecResult.Success) return new ImageResult(null, ImageProblem.Unreadable);
+            // An upright picture is used as it is; one that needs turning makes a turned copy (the plan counted it).
+            using var turned = codec.EncodedOrigin is SKEncodedOrigin.TopLeft or SKEncodedOrigin.Default ? null : Orient(decoded, codec.EncodedOrigin);
+            var upright = turned ?? decoded;
 
             using var main = Scale(upright, o.ImageMaxEdge);
             using var thumb = Scale(main, o.ThumbEdge);

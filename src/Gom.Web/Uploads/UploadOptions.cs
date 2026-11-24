@@ -25,6 +25,12 @@ public sealed class UploadOptions
     /// <summary>A picture with more pixels than this is refused before it is decoded (a small file can hold a huge picture).</summary>
     public long MaxPixels { get; set; } = 60_000_000;
 
+    /// <summary>
+    /// Megabytes of memory that pictures may use at once while they are made smaller, and the same again for uploads being received.
+    /// 0 means a share of the memory the container has (35% and 25%).
+    /// </summary>
+    public int MemoryMegabytes { get; set; }
+
     /// <summary>How many pictures are decoded and encoded at once (each takes about half a second and some memory). 0 means half the CPU cores.</summary>
     public int ImageSlots { get; set; }
 

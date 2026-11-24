@@ -26,7 +26,7 @@ public static class AttachmentEndpoints
     }
 
     private static async Task<IResult> Upload(Guid id, string? name, HttpContext http, GomDbContext db, TimeProvider clock, IServiceProvider services,
-        IOptions<UploadOptions> options, UploadLimiter limiter, ImageLimiter images, CancellationToken ct)
+        IOptions<UploadOptions> options, UploadLimiter limiter, ImageLimiter images, UploadMemory memory, CancellationToken ct)
     {
         var o = options.Value;
         if (string.IsNullOrWhiteSpace(o.Path)) return Error(StatusCodes.Status503ServiceUnavailable, "uploads_disabled");
@@ -36,10 +36,10 @@ public static class AttachmentEndpoints
         if (access is null) return Results.NotFound();
         if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
 
-        var wait = limiter.TryTake(me);
-        if (wait is not null)
+        var slow = limiter.TryTake(me);
+        if (slow is not null)
         {
-            http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.Value.TotalSeconds)).ToString();
+            http.Response.Headers.RetryAfter = ((int)Math.Ceiling(slow.Value.TotalSeconds)).ToString();
             return Error(StatusCodes.Status429TooManyRequests, "too_many_uploads");
         }
 
@@ -47,6 +47,11 @@ public static class AttachmentEndpoints
         var most = Math.Max(o.MaxFileBytes, o.MaxImageBytes);
         if (http.Request.ContentLength > most) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
         http.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize = most;
+
+        // The bytes being received are held in memory: wait for room, so a few big uploads cannot use up the whole container.
+        var wait = TimeSpan.FromSeconds(o.ImageWaitSeconds);
+        using var bodyHold = await memory.Bodies.EnterAsync(Math.Min(http.Request.ContentLength ?? most, memory.Bodies.Total), wait);
+        if (bodyHold is null) return Error(StatusCodes.Status503ServiceUnavailable, "busy");
         var received = await ReadLimited(http.Request.Body, most, ct);
         if (received is null) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
         if (received.Length == 0) return Error(StatusCodes.Status400BadRequest, "empty_upload");
@@ -60,7 +65,14 @@ public static class AttachmentEndpoints
         if (ImageProcessor.LooksLikeImage(received))
         {
             if (received.Length > o.MaxImageBytes) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
-            var result = await images.RunAsync(() => ImageProcessor.Process(received, o));
+            var planned = ImageProcessor.Plan(received, o);
+            if (planned.Problem is { } early) return Error(StatusCodes.Status422UnprocessableEntity, early == ImageProblem.TooManyPixels ? "image_dimensions" : "invalid_image");
+            var plan = planned.Plan!;
+            // A picture that would need more memory than there is for pictures is turned away in words, not allowed to bring the site down.
+            if (!memory.Images.Fits(plan.Cost)) return Error(StatusCodes.Status422UnprocessableEntity, "image_dimensions");
+            using var imageHold = await memory.Images.EnterAsync(plan.Cost, wait);
+            if (imageHold is null) return Error(StatusCodes.Status503ServiceUnavailable, "busy");
+            var result = await images.RunAsync(() => ImageProcessor.Process(received, plan, o));
             if (result is null) return Error(StatusCodes.Status503ServiceUnavailable, "busy");
             if (result.Problem is { } problem)
                 return Error(StatusCodes.Status422UnprocessableEntity, problem == ImageProblem.TooManyPixels ? "image_dimensions" : "invalid_image");

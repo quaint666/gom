@@ -305,3 +305,159 @@ public class AttachmentCleanerTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.NotNull(store.OpenRead(newUnused.ToString())); Assert.NotNull(store.OpenRead(oldUsed.ToString()));
     }
 }
+
+public class MemoryGateTests
+{
+    private static readonly TimeSpan Short = TimeSpan.FromMilliseconds(80);
+
+    [Fact]
+    public async Task Bytes_that_fit_are_held_at_once_and_given_back_by_disposing_once()
+    {
+        var gate = new MemoryGate(100);
+        var a = await gate.EnterAsync(60, Short);
+        Assert.Equal(60, gate.Used);
+        var b = await gate.EnterAsync(40, Short);
+        Assert.Equal(100, gate.Used);
+        a!.Dispose(); a.Dispose();   // twice changes nothing
+        Assert.Equal(40, gate.Used);
+        b!.Dispose();
+        Assert.Equal(0, gate.Used);
+    }
+
+    [Fact]
+    public async Task More_than_the_whole_budget_is_known_in_advance_and_never_waits()
+    {
+        var gate = new MemoryGate(100);
+        Assert.True(gate.Fits(100)); Assert.False(gate.Fits(101));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => gate.EnterAsync(101, Short));
+    }
+
+    [Fact]
+    public async Task A_request_that_does_not_fit_now_waits_for_room_and_gets_it_when_bytes_are_given_back()
+    {
+        var gate = new MemoryGate(100);
+        var first = await gate.EnterAsync(80, Short);
+        var waiting = gate.EnterAsync(50, TimeSpan.FromSeconds(10));
+        await Task.Delay(30);
+        Assert.False(waiting.IsCompleted);
+        first!.Dispose();
+        var second = await waiting;
+        Assert.NotNull(second);
+        Assert.Equal(50, gate.Used);
+    }
+
+    [Fact]
+    public async Task Waiting_ends_in_nothing_after_its_time_and_the_place_in_line_is_given_up()
+    {
+        var gate = new MemoryGate(100);
+        var first = await gate.EnterAsync(90, Short);
+        Assert.Null(await gate.EnterAsync(50, Short));
+        first!.Dispose();
+        Assert.Equal(0, gate.Used);                           // nothing was held for the one that gave up
+        Assert.NotNull(await gate.EnterAsync(100, Short));    // and nothing is left in line to be served ahead
+    }
+
+    [Fact]
+    public async Task A_big_request_is_not_kept_waiting_forever_by_small_ones_that_come_after_it()
+    {
+        var gate = new MemoryGate(100);
+        var holding = await gate.EnterAsync(60, Short);
+        var big = gate.EnterAsync(90, TimeSpan.FromSeconds(10));    // does not fit until the 60 is back
+        await Task.Delay(30);
+        var small = gate.EnterAsync(10, TimeSpan.FromSeconds(10));  // would fit now, but the big one is first in line
+        await Task.Delay(30);
+        Assert.False(small.IsCompleted);
+        holding!.Dispose();
+        var bigHold = await big;
+        var smallHold = await small;                                // 10 more fits (100 in all), so it is served right behind the big one
+        Assert.NotNull(smallHold);
+        Assert.Equal(100, gate.Used);
+        bigHold!.Dispose();
+        smallHold.Dispose();
+        Assert.Equal(0, gate.Used);
+    }
+
+    [Fact]
+    public async Task Many_at_once_never_hold_more_than_the_budget()
+    {
+        var gate = new MemoryGate(100);
+        var peak = 0L;
+        var tasks = Enumerable.Range(0, 40).Select(async i =>
+        {
+            using var hold = await gate.EnterAsync(30 + i % 4 * 10, TimeSpan.FromSeconds(20));
+            Assert.NotNull(hold);
+            lock (gate) peak = Math.Max(peak, gate.Used);
+            await Task.Delay(5);
+        });
+        await Task.WhenAll(tasks);
+        Assert.InRange(peak, 1, 100);
+        Assert.Equal(0, gate.Used);
+    }
+}
+
+public class ImagePlanTests
+{
+    private static readonly UploadOptions O = new() { MaxPixels = 100_000_000, ImageMaxEdge = 800 };
+    private const long Overhead = 16L * 1024 * 1024;
+
+    [Fact]
+    public void A_big_jpeg_is_decoded_already_scaled_down_by_the_smallest_step_that_keeps_the_stored_size()
+    {
+        var plan = ImageProcessor.Plan(TestImages.Jpeg(3200, 2400), O).Plan!;
+        Assert.Equal((800, 600), (plan.DecodeWidth, plan.DecodeHeight));                  // a quarter, not an eighth (400 is under 800)
+        Assert.Equal(800L * 600 * 4 + Overhead, plan.Cost);
+        var wider = ImageProcessor.Plan(TestImages.Jpeg(3200, 2400), new UploadOptions { MaxPixels = 100_000_000, ImageMaxEdge = 1000 }).Plan!;
+        Assert.Equal((1600, 1200), (wider.DecodeWidth, wider.DecodeHeight));              // a quarter would be 800, under 1000
+    }
+
+    [Fact]
+    public void A_picture_not_bigger_than_the_stored_size_is_decoded_whole()
+    {
+        var plan = ImageProcessor.Plan(TestImages.Jpeg(600, 400), O).Plan!;
+        Assert.Equal((600, 400), (plan.DecodeWidth, plan.DecodeHeight));
+    }
+
+    [Fact]
+    public void A_png_cannot_be_decoded_scaled_so_its_cost_is_its_whole_size()
+    {
+        var plan = ImageProcessor.Plan(TestImages.PlainPng(3200, 2400), O).Plan!;
+        Assert.Equal((3200, 2400), (plan.DecodeWidth, plan.DecodeHeight));
+        Assert.Equal(3200L * 2400 * 4 + Overhead, plan.Cost);
+    }
+
+    [Fact]
+    public void A_picture_that_must_be_turned_costs_for_a_second_copy()
+    {
+        var upright = ImageProcessor.Plan(TestImages.WithExif(TestImages.Jpeg(600, 400), 1), O).Plan!;
+        var turned = ImageProcessor.Plan(TestImages.WithExif(TestImages.Jpeg(600, 400), 6), O).Plan!;
+        Assert.Equal(600L * 400 * 4 + Overhead, upright.Cost);
+        Assert.Equal(2 * 600L * 400 * 4 + Overhead, turned.Cost);
+    }
+
+    [Fact]
+    public void Planning_refuses_what_is_not_a_picture_and_what_has_too_many_pixels_without_decoding_anything()
+    {
+        Assert.Equal(ImageProblem.NotAnImage, ImageProcessor.Plan("hello"u8.ToArray(), O).Problem);
+        Assert.Equal(ImageProblem.TooManyPixels, ImageProcessor.Plan(TestImages.PlainPng(1500, 1000), new UploadOptions { MaxPixels = 1_000_000 }).Problem);
+    }
+
+    [Fact]
+    public void Decoding_scaled_gives_the_same_stored_size_as_decoding_whole()
+    {
+        var jpeg = TestImages.Jpeg(3200, 2400);
+        var scaled = ImageProcessor.Process(jpeg, O).Image!;
+        Assert.Equal((800, 600), (scaled.Width, scaled.Height));
+        // The same picture with the scaling switched off ends at the same size: the final step does the rest.
+        using var codec = SKCodec.Create(new MemoryStream(jpeg))!;
+        var whole = new ImageProcessor.ImagePlan(codec.Info.Width, codec.Info.Height, codec.EncodedOrigin, 0);
+        var full = ImageProcessor.Process(jpeg, whole, O).Image!;
+        Assert.Equal((full.Width, full.Height), (scaled.Width, scaled.Height));
+    }
+
+    [Fact]
+    public void A_cut_off_picture_is_still_refused_when_decoded_scaled()
+    {
+        var broken = TestImages.Jpeg(3200, 2400); Array.Resize(ref broken, broken.Length / 3);
+        Assert.NotNull(ImageProcessor.Process(broken, O).Problem);
+    }
+}
