@@ -9,7 +9,7 @@ public sealed class SecurityHeaders(RequestDelegate next)
 {
     private const string Policy =
         "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; " +
-        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self'";
 
     public Task Invoke(HttpContext context)
     {
