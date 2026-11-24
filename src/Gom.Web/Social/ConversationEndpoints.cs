@@ -80,7 +80,7 @@ public static class ConversationEndpoints
             orderby (c.LastMessageAt ?? c.CreatedAt) descending
             select new
             {
-                c.Id, c.Kind, c.Title, c.LastSeq, m.LastReadSeq, m.Muted,
+                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, m.LastReadSeq, m.Muted,
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new { u.GomId, u.DisplayName }).FirstOrDefault(),
@@ -103,6 +103,7 @@ public static class ConversationEndpoints
             lastReadSeq = r.LastReadSeq,
             unread = r.Unread,
             muted = r.Muted,
+            joinApproval = r.Kind == ConversationKind.Group && r.JoinApproval,
             lastMessage = r.Last is null ? null : new
             {
                 seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt, deleted = r.Last.Deleted,

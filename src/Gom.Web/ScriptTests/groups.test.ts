@@ -315,7 +315,7 @@ describe('group page: leader and deputies', () => {
     expect(text(root)).toContain('Xóa Chú Tư khỏi nhóm?');
     expect(a.removeMember).not.toHaveBeenCalled();
     click('[data-confirm-sure]'); await flush();
-    expect(a.removeMember).toHaveBeenCalledWith(G, 'u-plain');
+    expect(a.removeMember).toHaveBeenCalledWith(G, 'u-plain', false);
     expect(a.groupMembers).toHaveBeenCalledTimes(2);
   });
 
@@ -431,5 +431,141 @@ describe('group page: the name', () => {
     await flush();
     expect(text(root)).toContain('Bạn không có quyền');
     expect(field().value).toBe('Tên mới');
+  });
+});
+
+describe('group page: approval, requests and bans', () => {
+  const person = (id: string, name: string, role: GroupMember['role'], isMe = false): GroupMember =>
+    ({ id, displayName: name, isMe, isFriend: false, gomId: null, request: 'sent', role });
+  const rows = (myRole: GroupMember['role']) => [person('u-me', 'Mẹ', myRole, true), person('u-x', 'Bố', myRole === 'leader' ? 'member' : 'leader'), person('u-y', 'Chú Tư', 'member')];
+  const chats = (approval: boolean) => [{ id: G, kind: 'group', title: 'Nhà', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 3, joinApproval: approval }];
+  const waiting = [{ id: 'u-d', displayName: 'Bạn Dũng', by: { id: 'u-y', displayName: 'Chú Tư' }, createdAt: '2026-12-01T09:00:00Z' }];
+  const banned = [{ id: 'u-z', displayName: 'Anh Ba', createdAt: '2026-12-01T09:00:00Z' }];
+  const mount = (myRole: GroupMember['role'], extra: Record<string, unknown> = {}, approval = false) => {
+    const a = fakeApi({
+      me: vi.fn(async () => ok(me)), groupMembers: vi.fn(async () => ok(rows(myRole))),
+      friends: vi.fn(async () => ok({ friends: [{ gomId: 'lan', displayName: 'Lan' }], incoming: [], outgoing: [] })), conversations: vi.fn(async () => ok(chats(approval))),
+      joinRequests: vi.fn(async () => ok({ requests: waiting })), bans: vi.fn(async () => ok({ bans: banned })), ...extra,
+    });
+    mountGroup(root, a, vi.fn(), G);
+    return a;
+  };
+  const click = (selector: string) => root.querySelector<HTMLElement>(selector)!.click();
+
+  it('shows the approval switch to the leader only, in the state it is in', async () => {
+    mount('deputy', {}, true);
+    await flush();
+    expect(root.querySelector('[data-join-approval]')).toBeNull();
+    mount('leader', {}, true);
+    await flush();
+    expect(root.querySelector<HTMLInputElement>('[data-join-approval]')!.checked).toBe(true);
+  });
+
+  it('turns the switch on and off through the server and reloads', async () => {
+    const a = mount('leader');
+    await flush();
+    const box = root.querySelector<HTMLInputElement>('[data-join-approval]')!;
+    box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(a.setJoinApproval).toHaveBeenCalledWith(G, true);
+    expect(a.groupMembers).toHaveBeenCalledTimes(2);
+  });
+
+  it('lists what waits to leader and deputies, with who asked, and not to a plain member', async () => {
+    const leader = mount('leader');
+    await flush();
+    expect(text(root.querySelector('[data-request="u-d"]')!)).toContain('Bạn Dũng');
+    expect(text(root.querySelector('[data-request="u-d"]')!)).toContain('Chú Tư muốn thêm');
+    expect(leader.joinRequests).toHaveBeenCalledWith(G);
+    mount('deputy');
+    await flush();
+    expect(root.querySelector('[data-request="u-d"]')).not.toBeNull();
+    const member = mount('member');
+    await flush();
+    expect(root.querySelector('[data-requests]')).toBeNull();
+    expect(member.joinRequests).not.toHaveBeenCalled();
+  });
+
+  it('approves and declines, then reloads', async () => {
+    const a = mount('leader');
+    await flush();
+    click('[data-request="u-d"] [data-approve]'); await flush();
+    expect(a.approveRequest).toHaveBeenCalledWith(G, 'u-d');
+    click('[data-request="u-d"] [data-decline]'); await flush();
+    expect(a.declineRequest).toHaveBeenCalledWith(G, 'u-d');
+    expect(a.groupMembers.mock.calls.length).toBe(3);
+  });
+
+  it('says the request was sent when adding in a group that asks for approval', async () => {
+    const a = mount('member', { addMember: vi.fn(async () => ok({ status: 'pending' })) });
+    await flush();
+    click('[data-addable="lan"] button'); await flush();
+    expect(a.addMember).toHaveBeenCalledWith(G, 'lan');
+    expect(text(root.querySelector('[data-add-status]')!)).toContain('chờ trưởng nhóm hoặc phó nhóm duyệt');
+  });
+
+  it('says why when adding fails, for instance for someone who was banned', async () => {
+    mount('leader', { addMember: vi.fn(async () => fail('banned', 403)) });
+    await flush();
+    click('[data-addable="lan"] button'); await flush();
+    expect(text(root.querySelector('[role="alert"]')!)).toContain('chặn khỏi nhóm');
+    expect(root.querySelector('[data-add-status]')).toBeNull();
+  });
+
+  it('says nothing special when the person was added at once', async () => {
+    mount('leader');
+    await flush();
+    click('[data-addable="lan"] button'); await flush();
+    expect(root.querySelector('[data-add-status]')).toBeNull();
+  });
+
+  it('removes without a ban unless the box is ticked, and with one when it is', async () => {
+    const a = mount('leader');
+    await flush();
+    click('[data-member="u-y"] [data-manage]'); await flush();
+    click('[data-remove]'); await flush();
+    expect(root.querySelector<HTMLInputElement>('[data-ban]')!.checked).toBe(false);
+    click('[data-confirm-sure]'); await flush();
+    expect(a.removeMember).toHaveBeenLastCalledWith(G, 'u-y', false);
+    click('[data-member="u-y"] [data-manage]'); await flush();
+    click('[data-remove]'); await flush();
+    const box = root.querySelector<HTMLInputElement>('[data-ban]')!;
+    box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true }));
+    click('[data-confirm-sure]'); await flush();
+    expect(a.removeMember).toHaveBeenLastCalledWith(G, 'u-y', true);
+  });
+
+  it('forgets the ban box when the question is cancelled', async () => {
+    mount('leader');
+    await flush();
+    click('[data-member="u-y"] [data-manage]'); await flush();
+    click('[data-remove]'); await flush();
+    const box = root.querySelector<HTMLInputElement>('[data-ban]')!;
+    box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true }));
+    click('[data-cancel-sure]'); await flush();
+    click('[data-remove]'); await flush();   // the member's menu is still open
+    expect(root.querySelector<HTMLInputElement>('[data-ban]')!.checked).toBe(false);
+  });
+
+  it('lists who may not come back to leader and deputies, and only the leader lifts it', async () => {
+    const leader = mount('leader');
+    await flush();
+    expect(text(root.querySelector('[data-ban-row="u-z"]')!)).toContain('Anh Ba');
+    click('[data-ban-row="u-z"] [data-unban]'); await flush();
+    expect(leader.unban).toHaveBeenCalledWith(G, 'u-z');
+    mount('deputy');
+    await flush();
+    expect(root.querySelector('[data-ban-row="u-z"]')).not.toBeNull();
+    expect(root.querySelector('[data-unban]')).toBeNull();
+    mount('member');
+    await flush();
+    expect(root.querySelector('[data-bans]')).toBeNull();
+  });
+
+  it('says why when the server refuses an approval', async () => {
+    mount('leader', { approveRequest: vi.fn(async () => fail('group_full', 409)) });
+    await flush();
+    click('[data-request="u-d"] [data-approve]'); await flush();
+    expect(text(root)).toContain('tối đa');
   });
 });

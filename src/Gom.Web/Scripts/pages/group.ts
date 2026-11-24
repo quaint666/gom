@@ -1,6 +1,6 @@
 import { html, nothing, render } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
-import type { Api, Failure, GroupMember, Person } from '../api.js';
+import type { Api, BanRow, Failure, GroupMember, JoinRequestRow, Person } from '../api.js';
 import { initials } from '../chat/model.js';
 import { appBar, errorBox } from '../ui.js';
 
@@ -10,6 +10,12 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
   let title = '';
   let draftTitle = '';
   let renaming = false;
+  let joinApproval = false;
+  let requests: JoinRequestRow[] = [];
+  let bans: BanRow[] = [];
+  /** "Do not let them back" ticked in the question about removing someone. */
+  let banThem = false;
+  let addStatus = '';
   let friends: Person[] = [];
   let confirming = false;
   /** Whose menu is open, and the step that needs a yes first. */
@@ -25,6 +31,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
 
   const mine = (): GroupMember | undefined => members?.find((m) => m.isMe);
   const leads = () => mine()?.role === 'leader';
+  const mayManage = () => mine()?.role === 'leader' || mine()?.role === 'deputy';
 
   /** A leader acts on anyone else; a deputy only on plain members. */
   const manages = (m: GroupMember) => {
@@ -40,7 +47,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
       ${leads() && m.role === 'member' ? html`<button class="btn secondary" type="button" data-make-deputy @click=${() => run(() => api.setRole(conversation, m.id, 'deputy'))}>Đặt làm phó nhóm</button>` : nothing}
       ${leads() && m.role === 'deputy' ? html`<button class="btn secondary" type="button" data-drop-deputy @click=${() => run(() => api.setRole(conversation, m.id, 'member'))}>Bỏ phó nhóm</button>` : nothing}
       ${leads() ? html`<button class="btn secondary" type="button" data-hand-over @click=${() => { sure = { kind: 'handover', member: m }; update(); }}>Chuyển quyền trưởng nhóm</button>` : nothing}
-      <button class="btn secondary" type="button" data-remove @click=${() => { sure = { kind: 'remove', member: m }; update(); }}>Xóa khỏi nhóm</button>
+      <button class="btn secondary" type="button" data-remove @click=${() => { sure = { kind: 'remove', member: m }; banThem = false; update(); }}>Xóa khỏi nhóm</button>
     </div>`;
 
   const memberRow = (m: GroupMember) => html`
@@ -60,6 +67,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
       : { q: 'Giải tán nhóm này?', hint: 'Nhóm và toàn bộ tin nhắn sẽ bị xóa với mọi người. Không thể khôi phục.', yes: 'Giải tán nhóm' };
     return html`<div class="card" role="group" aria-labelledby="sure-q">
       <p id="sure-q"><b>${text.q}</b></p><p class="hint">${text.hint}</p>
+      ${s.kind === 'remove' ? html`<label class="check"><input type="checkbox" data-ban .checked=${liveValue(banThem)} @change=${(e: Event) => { banThem = (e.target as HTMLInputElement).checked; }}> Không cho vào lại nhóm</label>` : nothing}
       <button class="btn" type="button" data-confirm-sure @click=${proceed}>${text.yes}</button>
       <button class="btn secondary" type="button" data-cancel-sure @click=${() => { sure = null; update(); }}>Hủy</button>
     </div>`;
@@ -67,7 +75,8 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
 
   async function proceed(): Promise<void> {
     const s = sure;
-    sure = null; menuFor = null;
+    const ban = banThem;
+    sure = null; menuFor = null; banThem = false;
     if (!s) return;
     if (s.kind === 'disband') {
       const result = await api.disband(conversation);
@@ -77,7 +86,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     }
     const member = s.member;
     if (!member) return;
-    await run(() => s.kind === 'remove' ? api.removeMember(conversation, member.id) : api.handOver(conversation, member.id));
+    await run(() => s.kind === 'remove' ? api.removeMember(conversation, member.id, ban) : api.handOver(conversation, member.id));
   }
 
   /** The leader and the deputies may rename; everyone else just sees the name. */
@@ -107,8 +116,32 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
           <ul class="list">${addable().map((f) => html`
             <li class="li" data-addable=${f.gomId}>
               <div class="t"><b>${f.displayName}</b><small>@${f.gomId}</small></div>
-              <button class="btn secondary small" type="button" @click=${() => run(() => api.addMember(conversation, f.gomId))}>Thêm</button>
+              <button class="btn secondary small" type="button" @click=${() => void add(f.gomId)}>Thêm</button>
             </li>`)}</ul>`}
+
+        ${addStatus === '' ? nothing : html`<p class="hint" role="status" data-add-status>${addStatus}</p>`}
+
+        ${leads() ? html`
+          <label class="check card" data-approval-switch><input type="checkbox" data-join-approval .checked=${liveValue(joinApproval)}
+            @change=${(e: Event) => { void run(() => api.setJoinApproval(conversation, (e.target as HTMLInputElement).checked)); }}>
+            Thành viên thêm người cần được trưởng nhóm hoặc phó nhóm duyệt</label>` : nothing}
+
+        ${mayManage() && requests.length > 0 ? html`
+          <h2 class="section">Chờ duyệt</h2>
+          <ul class="list" data-requests>${requests.map((r) => html`
+            <li class="li" data-request=${r.id}>
+              <div class="t"><b>${r.displayName}</b><small>${r.by.displayName} muốn thêm</small></div>
+              <button class="btn small" type="button" data-approve @click=${() => run(() => api.approveRequest(conversation, r.id))}>Duyệt</button>
+              <button class="btn secondary small" type="button" data-decline @click=${() => run(() => api.declineRequest(conversation, r.id))}>Từ chối</button>
+            </li>`)}</ul>` : nothing}
+
+        ${mayManage() && bans.length > 0 ? html`
+          <h2 class="section">Không được vào lại</h2>
+          <ul class="list" data-bans>${bans.map((b) => html`
+            <li class="li" data-ban-row=${b.id}>
+              <div class="t"><b>${b.displayName}</b></div>
+              ${leads() ? html`<button class="btn secondary small" type="button" data-unban @click=${() => run(() => api.unban(conversation, b.id))}>Bỏ chặn</button>` : nothing}
+            </li>`)}</ul>` : nothing}
 
         ${sure ? question(sure) : nothing}
 
@@ -142,11 +175,26 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     await reload();
   }
 
+  /** Adds a friend, or (in a group that asks for approval) asks for it to be approved. */
+  async function add(gomId: string): Promise<void> {
+    const result = await api.addMember(conversation, gomId);
+    if (!result.ok) { error = result; update(); return; }
+    addStatus = result.data?.status === 'pending' ? 'Đã gửi yêu cầu, chờ trưởng nhóm hoặc phó nhóm duyệt.' : '';
+    await reload();
+  }
+
   async function reload(): Promise<void> {
     const [m, f, c] = await Promise.all([api.groupMembers(conversation), api.friends(), api.conversations()]);
     if (m.ok) members = m.data; else { error = m; update(); return; }
     if (f.ok) friends = f.data.friends;
-    if (c.ok) { title = c.data.find((x) => x.id === conversation)?.title ?? ''; draftTitle = title; }
+    if (c.ok) { const row = c.data.find((x) => x.id === conversation); title = row?.title ?? ''; draftTitle = title; joinApproval = row?.joinApproval === true; }
+    // The leader and the deputies also see what waits for an answer and who may not come back.
+    requests = []; bans = [];
+    if (mayManage()) {
+      const [rq, bn] = await Promise.all([api.joinRequests(conversation), api.bans(conversation)]);
+      if (rq.ok) requests = rq.data.requests;
+      if (bn.ok) bans = bn.data.bans;
+    }
     error = null;
     update();
   }

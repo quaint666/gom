@@ -19,6 +19,7 @@ public static class GroupEndpoints
     public sealed record RoleRequest(string? Role);
     public sealed record LeaderRequest(Guid? UserId);
     public sealed record RenameRequest(string? Title);
+    public sealed record SettingsRequest(bool? JoinApproval);
 
     public static void MapGroups(this IEndpointRouteBuilder app)
     {
@@ -32,6 +33,12 @@ public static class GroupEndpoints
         api.MapPost("/{id:guid}/leader", HandOver);
         api.MapDelete("/{id:guid}", Disband);
         api.MapPatch("/{id:guid}", Rename);
+        api.MapPut("/{id:guid}/settings", SetSettings);
+        api.MapGet("/{id:guid}/requests", ListRequests);
+        api.MapPost("/{id:guid}/requests/{userId:guid}/approve", Approve);
+        api.MapDelete("/{id:guid}/requests/{userId:guid}", Decline);
+        api.MapGet("/{id:guid}/bans", ListBans);
+        api.MapDelete("/{id:guid}/bans/{userId:guid}", Unban);
         api.MapPost("/{id:guid}/members/{userId:guid}/friend-request", AskMember);
     }
 
@@ -86,17 +93,43 @@ public static class GroupEndpoints
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         // Lock the conversation row: the same lock a send takes, so "how many" and "what number we are at" cannot move under us.
-        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
+        await LockGroup(db, id, ct);
+        // Read again under the lock: the role (and the setting) may have changed while this request was waiting.
+        var role = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).Select(m => (GroupRole?)m.Role).SingleOrDefaultAsync(ct);
+        if (role is null) return Results.NotFound();
         if (await db.Members.AnyAsync(m => m.ConversationId == id && m.UserId == other, ct)) return Error(StatusCodes.Status409Conflict, "already_member");
-        if (await db.Members.CountAsync(m => m.ConversationId == id, ct) >= options.Value.MaxGroupMembers) return Error(StatusCodes.Status409Conflict, "group_full");
+        if (await db.Bans.AnyAsync(x => x.ConversationId == id && x.UserId == other, ct)) return Error(StatusCodes.Status403Forbidden, "banned");
 
-        var seq = await db.Conversations.Where(c => c.Id == id).Select(c => c.LastSeq).SingleAsync(ct);
-        db.Members.Add(new ConversationMember { ConversationId = id, UserId = other.Value, JoinedAt = clock.GetUtcNow(), JoinedSeq = seq, LastReadSeq = seq });
-        await db.SaveChangesAsync(ct);
+        // A group that asks for approval takes a plain member's addition as a request for the leader or a deputy to answer.
+        if (role == GroupRole.Member && await db.Conversations.Where(c => c.Id == id).Select(c => c.JoinApproval).SingleAsync(ct))
+        {
+            if (await db.JoinRequests.AnyAsync(x => x.ConversationId == id && x.UserId == other, ct)) return Error(StatusCodes.Status409Conflict, "already_requested");
+            db.JoinRequests.Add(new JoinRequest { ConversationId = id, UserId = other.Value, RequestedBy = me, CreatedAt = clock.GetUtcNow() });
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id && m.Role != GroupRole.Member).Select(m => m.UserId).ToListAsync(ct));
+            return Results.Json(new { status = "pending" }, statusCode: StatusCodes.Status202Accepted);
+        }
+
+        var problem = await AdmitAsync(db, id, other.Value, clock.GetUtcNow(), options.Value.MaxGroupMembers, ct);
+        if (problem is not null) return problem;
         await tx.CommitAsync(ct);
-
         live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct));
         return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Puts a person into the group: they see only what comes after. Call it inside the transaction, with the group locked.
+    /// Returns the refusal, or null when they are in. A request they had waiting is gone.
+    /// </summary>
+    private static async Task<IResult?> AdmitAsync(GomDbContext db, Guid id, Guid person, DateTimeOffset now, int maxMembers, CancellationToken ct)
+    {
+        if (await db.Members.CountAsync(m => m.ConversationId == id, ct) >= maxMembers) return Error(StatusCodes.Status409Conflict, "group_full");
+        var seq = await db.Conversations.Where(c => c.Id == id).Select(c => c.LastSeq).SingleAsync(ct);
+        db.Members.Add(new ConversationMember { ConversationId = id, UserId = person, JoinedAt = now, JoinedSeq = seq, LastReadSeq = seq });
+        await db.SaveChangesAsync(ct);
+        await db.JoinRequests.Where(x => x.ConversationId == id && x.UserId == person).ExecuteDeleteAsync(ct);
+        return null;
     }
 
     private static async Task<IResult> Leave(Guid id, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
@@ -133,6 +166,8 @@ public static class GroupEndpoints
     /// <summary>Takes a group and everything in it out of the database. Every key is Restrict, so this goes from the leaves inward.</summary>
     private static async Task DeleteGroup(GomDbContext db, Guid id, CancellationToken ct)
     {
+        await db.JoinRequests.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
+        await db.Bans.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Reactions.Where(r => db.Messages.Any(m => m.Id == r.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
         await db.Pins.Where(p => p.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Hides.Where(h => db.Messages.Any(m => m.Id == h.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
@@ -143,7 +178,7 @@ public static class GroupEndpoints
     }
 
     /// <summary>A leader or a deputy takes a member out. A deputy cannot take out the leader or another deputy. The person is gone as if they had left.</summary>
-    private static async Task<IResult> Remove(Guid id, Guid userId, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    private static async Task<IResult> Remove(Guid id, Guid userId, bool? ban, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -163,6 +198,8 @@ public static class GroupEndpoints
 
         var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
         await db.Members.Where(m => m.ConversationId == id && m.UserId == userId).ExecuteDeleteAsync(ct);
+        // "And do not let them back": nobody can add them until the leader lifts it.
+        if (ban == true) await db.Database.ExecuteSqlAsync($"INSERT INTO group_bans (conversation_id, user_id, banned_by, created_at) VALUES ({id}, {userId}, {me}, {clock.GetUtcNow()}) ON CONFLICT DO NOTHING", ct);
         await tx.CommitAsync(ct);
         live.ConversationsChanged(everyone);
         return Results.NoContent();
@@ -233,6 +270,109 @@ public static class GroupEndpoints
         var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
         await tx.CommitAsync(ct);
         live.ConversationsChanged(everyone);
+        return Results.NoContent();
+    }
+
+    /// <summary>The leader turns "adding people needs approval" on or off.</summary>
+    private static async Task<IResult> SetSettings(Guid id, SettingsRequest request, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    {
+        if (request.JoinApproval is not { } on) return Error(StatusCodes.Status400BadRequest, "invalid_setting");
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role != GroupRole.Leader) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockGroup(db, id, ct);
+        if (!await db.Members.AnyAsync(m => m.ConversationId == id && m.UserId == me && m.Role == GroupRole.Leader, ct)) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        await db.Conversations.Where(c => c.Id == id).ExecuteUpdateAsync(s => s.SetProperty(c => c.JoinApproval, on), ct);
+        // Turning it off: what is waiting is no longer waiting for anyone to say yes, so it is dropped (the people can be added directly).
+        if (!on) await db.JoinRequests.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
+        var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(everyone);
+        return Results.NoContent();
+    }
+
+    /// <summary>What waits for an answer: who is to be added and who asked. For the leader and the deputies; the people to add are shown by name, not by Gom ID.</summary>
+    private static async Task<IResult> ListRequests(Guid id, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        var rows = await (from r in db.JoinRequests.AsNoTracking() where r.ConversationId == id
+                          join u in db.Users on r.UserId equals u.Id
+                          join asker in db.Users on r.RequestedBy equals asker.Id
+                          orderby r.CreatedAt
+                          select new { Id = u.Id, u.DisplayName, By = new { asker.Id, asker.DisplayName }, r.CreatedAt }).ToListAsync(ct);
+        return Results.Ok(new { requests = rows });
+    }
+
+    /// <summary>The leader or a deputy says yes: the person is in, seeing only what comes after.</summary>
+    private static async Task<IResult> Approve(Guid id, Guid userId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockGroup(db, id, ct);
+        var role = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).Select(m => (GroupRole?)m.Role).SingleOrDefaultAsync(ct);
+        if (role is null) return Results.NotFound();
+        if (role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        if (!await db.JoinRequests.AnyAsync(x => x.ConversationId == id && x.UserId == userId, ct)) return Results.NotFound();
+        if (await db.Bans.AnyAsync(x => x.ConversationId == id && x.UserId == userId, ct)) return Error(StatusCodes.Status403Forbidden, "banned");
+        var problem = await AdmitAsync(db, id, userId, clock.GetUtcNow(), options.Value.MaxGroupMembers, ct);
+        if (problem is not null) return problem;
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct));
+        return Results.NoContent();
+    }
+
+    /// <summary>The leader or a deputy says no, or the member who asked takes the request back.</summary>
+    private static async Task<IResult> Decline(Guid id, Guid userId, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        var request = await db.JoinRequests.AsNoTracking().Where(x => x.ConversationId == id && x.UserId == userId).SingleOrDefaultAsync(ct);
+        if (request is null) return Results.NotFound();
+        if (access.Role == GroupRole.Member && request.RequestedBy != me) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        await db.JoinRequests.Where(x => x.ConversationId == id && x.UserId == userId).ExecuteDeleteAsync(ct);
+        live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id && (m.Role != GroupRole.Member || m.UserId == request.RequestedBy)).Select(m => m.UserId).ToListAsync(ct));
+        return Results.NoContent();
+    }
+
+    /// <summary>Who may not be added back. For the leader and the deputies.</summary>
+    private static async Task<IResult> ListBans(Guid id, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        var rows = await (from x in db.Bans.AsNoTracking() where x.ConversationId == id
+                          join u in db.Users on x.UserId equals u.Id
+                          orderby x.CreatedAt
+                          select new { u.Id, u.DisplayName, x.CreatedAt }).ToListAsync(ct);
+        return Results.Ok(new { bans = rows });
+    }
+
+    /// <summary>The leader lets someone be added again.</summary>
+    private static async Task<IResult> Unban(Guid id, Guid userId, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role != GroupRole.Leader) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        await db.Bans.Where(x => x.ConversationId == id && x.UserId == userId).ExecuteDeleteAsync(ct);
         return Results.NoContent();
     }
 
