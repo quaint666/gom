@@ -25,3 +25,4 @@ export const close = () => icon('M6 6l12 12', 'M18 6L6 18');
 export const bell = () => icon('M6 16V11a6 6 0 0112 0v5l1.5 2h-15z', 'M10 21h4');
 export const bellOff = () => icon('M6 16V11a6 6 0 0112 0v5l1.5 2h-15z', 'M10 21h4', 'M4 4l16 16');
 export const down = () => icon('M12 5v14', 'M6 13l6 6 6-6');
+export const search = () => icon('M11 4a7 7 0 100 14 7 7 0 000-14z', 'M20 20l-4-4');

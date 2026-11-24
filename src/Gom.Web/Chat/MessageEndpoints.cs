@@ -25,6 +25,7 @@ public static class MessageEndpoints
         var api = app.MapGroup("/api/conversations/{id:guid}").RequireAuthorization();
         api.MapPost("/messages", Send);
         api.MapGet("/messages", History);
+        api.MapGet("/search", Search);
         api.MapPost("/read", MarkRead);
         api.MapDelete("/messages/{messageId:guid}", Recall);
         api.MapPut("/messages/{messageId:guid}/hidden", Hide);
@@ -178,6 +179,39 @@ public static class MessageEndpoints
         var sender = new PersonDto(me, http.User.FindFirst(GomClaims.DisplayName)!.Value);
         await live.PublishAsync(db, seq, "deleted", ToDto(new Message { Id = messageId, ConversationId = id, Seq = found.Seq, SenderId = me, ClientId = found.ClientId, Body = "", CreatedAt = found.CreatedAt, DeletedAt = now }, sender));
         return Results.NoContent();
+    }
+
+    // ---- search
+
+    /// <summary>Most results one search returns; the newest come first.</summary>
+    private const int SearchLimit = 30;
+    private const int SearchMaxChars = 100;
+
+    /// <summary>
+    /// Finds messages of one conversation that contain the words, ignoring capitals and accents ("pho" finds "Phở"). Only what this
+    /// person can see: after they joined, not taken back, not deleted for themself. Reads the conversation's own messages (no index
+    /// yet): fine for chats of this size, and the first thing to index if one grows large.
+    /// </summary>
+    private static async Task<IResult> Search(Guid id, string? q, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        var text = (q ?? "").Trim();
+        if (text.Length == 0 || new StringInfo(text).LengthInTextElements > SearchMaxChars) return Error(StatusCodes.Status400BadRequest, "invalid_query");
+
+        // % _ and \ typed by a person are ordinary characters.
+        var pattern = "%" + text.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        var rows = await (
+            from m in db.Messages.AsNoTracking()
+            where m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null
+                && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
+                && EF.Functions.ILike(EF.Functions.Unaccent(m.Body), EF.Functions.Unaccent(pattern), "\\")
+            orderby m.Seq descending
+            join u in db.Users on m.SenderId equals u.Id
+            select new { Message = m, u.Id, u.DisplayName }).Take(SearchLimit).ToListAsync(ct);
+
+        return Results.Ok(new { results = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName))) });
     }
 
     // ---- delete for me
