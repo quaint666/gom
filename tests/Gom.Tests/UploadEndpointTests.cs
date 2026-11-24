@@ -383,6 +383,21 @@ public class UploadEndpointTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task The_page_is_told_whether_this_server_takes_uploads()
+    {
+        var (_, cookie) = await app.Member();
+        using var on = await app.Call(Get, "/api/me", cookie: cookie);
+        Assert.True((await AppFixture.Json(on)).GetProperty("uploads").GetBoolean());
+
+        using var off = app.Factory.WithWebHostBuilder(b => b.UseSetting("Uploads:Path", ""));
+        using var client = off.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false, BaseAddress = new Uri(AppFixture.Origin) });
+        var request = new HttpRequestMessage(Get, "/api/me");
+        request.Headers.Add("Cookie", $"{Gom.Web.Auth.SessionCookie.Name}={cookie}");
+        using var r = await client.SendAsync(request);
+        Assert.False((await AppFixture.Json(r)).GetProperty("uploads").GetBoolean());
+    }
+
+    [Fact]
     public async Task The_table_records_who_uploaded_what_where_and_how_big()
     {
         var p = await NewPair();

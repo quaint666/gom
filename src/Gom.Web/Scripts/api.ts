@@ -23,7 +23,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
 export type Result<T> = { ok: true; data: T } | Failure;
 
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean }
 export interface SessionInfo { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }
 /** A link the owner gives out. It works for `maxUses` people (any number when null) until it expires or is revoked. */
 export interface Invite {
