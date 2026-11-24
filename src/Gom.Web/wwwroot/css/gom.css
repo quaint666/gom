@@ -260,6 +260,17 @@ form { display: flex; flex-direction: column; gap: 14px; }
 /* edited messages */
 .edited { color: var(--muted); }
 
+/* the menu without the always-there button: on hover or focus with a mouse; a long press with a finger */
+.bub { -webkit-touch-callout: none; }
+@media (hover: hover) and (pointer: fine) {
+  .mrow .menu-btn { opacity: 0; }
+  .mrow:hover .menu-btn, .mrow:focus-within .menu-btn, .menu-btn[aria-expanded="true"] { opacity: 1; }
+}
+@media (pointer: coarse) {
+  /* Still in the page for a screen reader and a keyboard, but not drawn: a long press is how a finger opens it. */
+  .mrow .menu-btn { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  .mrow .menu-btn:focus-visible { position: static; inline-size: 44px; block-size: 44px; clip-path: none; }
+}
 /* group settings */
 .check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; }
 .check input { inline-size: 22px; block-size: 22px; accent-color: var(--btn); flex: none; }

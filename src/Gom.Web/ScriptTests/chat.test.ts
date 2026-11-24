@@ -2379,3 +2379,141 @@ describe('chat: editing a message', () => {
     expect(h.api.pins.mock.calls.length).toBe(calls + 1);
   });
 });
+
+describe('chat: opening the menu by right-click or by a long press', () => {
+  const base = [msg(1, 'minh', 'tin của Minh'), msg(2, 'mom', 'tin của mẹ')];
+  const open = (extra: Record<string, unknown> = {}, messages: ChatMessage[] = base) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: messages }, api: extra });
+  const bubble = (id: string) => root.querySelector(`[data-msg="${id}"] .bub`)!;
+  const pointer = (type: string, init: { pointerType?: string; clientX?: number; clientY?: number } = {}) =>
+    Object.assign(new Event(type, { bubbles: true }), { pointerType: init.pointerType ?? 'touch', clientX: init.clientX ?? 100, clientY: init.clientY ?? 100 });
+  const menuFor = () => root.querySelector('.menu');
+
+  it('opens the menu of the message that was right-clicked, and keeps the browser\'s own menu away', async () => {
+    open();
+    await flush();
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    bubble('id1').dispatchEvent(event);
+    await flush();
+    expect(event.defaultPrevented).toBe(true);
+    expect(menuFor()).not.toBeNull();
+    expect(root.querySelector('button[data-reply]')).not.toBeNull();
+  });
+
+  it('right-clicking again on the same message keeps the menu open, and on another message moves it', async () => {
+    open();
+    await flush();
+    bubble('id1').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); await flush();
+    bubble('id1').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); await flush();
+    expect(root.querySelectorAll('.menu')).toHaveLength(1);
+    expect(root.querySelector('button[data-recall]')).toBeNull();
+    bubble('id2').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); await flush();
+    expect(root.querySelectorAll('.menu')).toHaveLength(1);
+    expect(root.querySelector('button[data-recall]')).not.toBeNull();
+  });
+
+  it('leaves the browser\'s menu alone on a message that has none (taken back, or still on its way)', async () => {
+    open({ send: vi.fn(async () => fail('network', 0)) }, [{ ...base[0]!, deleted: true, body: '' }, base[1]!]);
+    await flush();
+    const gone = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    bubble('id1').dispatchEvent(gone);
+    expect(gone.defaultPrevented).toBe(false);
+    expect(menuFor()).toBeNull();
+  });
+
+  it('opens the menu after a finger is held on a message for 450 ms', async () => {
+    const h = open();
+    await flush();
+    bubble('id1').dispatchEvent(pointer('pointerdown'));
+    const timer = h.timers[h.timers.length - 1]!;
+    expect(timer.ms).toBe(450);
+    expect(menuFor()).toBeNull();
+    timer.fn();
+    await flush();
+    expect(menuFor()).not.toBeNull();
+  });
+
+  it('does not open it when the finger is lifted early', async () => {
+    const h = open();
+    await flush();
+    bubble('id1').dispatchEvent(pointer('pointerdown'));
+    const timer = h.timers[h.timers.length - 1]!;
+    bubble('id1').dispatchEvent(pointer('pointerup'));
+    timer.fn();
+    await flush();
+    expect(menuFor()).toBeNull();
+  });
+
+  it('does not open it when the finger moves on: that is scrolling', async () => {
+    const h = open();
+    await flush();
+    bubble('id1').dispatchEvent(pointer('pointerdown', { clientX: 100, clientY: 100 }));
+    const timer = h.timers[h.timers.length - 1]!;
+    bubble('id1').dispatchEvent(pointer('pointermove', { clientX: 100, clientY: 130 }));
+    timer.fn();
+    await flush();
+    expect(menuFor()).toBeNull();
+  });
+
+  it('still opens it when the finger only drifts a little', async () => {
+    const h = open();
+    await flush();
+    bubble('id1').dispatchEvent(pointer('pointerdown', { clientX: 100, clientY: 100 }));
+    const timer = h.timers[h.timers.length - 1]!;
+    bubble('id1').dispatchEvent(pointer('pointermove', { clientX: 103, clientY: 104 }));
+    timer.fn();
+    await flush();
+    expect(menuFor()).not.toBeNull();
+  });
+
+  it('does not open it when the finger is cancelled or leaves the message', async () => {
+    const h = open();
+    await flush();
+    for (const end of ['pointercancel', 'pointerleave']) {
+      bubble('id1').dispatchEvent(pointer('pointerdown'));
+      const timer = h.timers[h.timers.length - 1]!;
+      bubble('id1').dispatchEvent(pointer(end));
+      timer.fn();
+      await flush();
+      expect(menuFor()).toBeNull();
+    }
+  });
+
+  it('forgets an earlier press when a new finger goes down on another message', async () => {
+    const h = open();
+    await flush();
+    bubble('id1').dispatchEvent(pointer('pointerdown'));
+    const first = h.timers[h.timers.length - 1]!;
+    bubble('id2').dispatchEvent(pointer('pointerdown'));
+    first.fn();
+    await flush();
+    expect(menuFor()).toBeNull();
+  });
+
+  it('does not start a long press for a mouse', async () => {
+    const h = open();
+    await flush();
+    const before = h.timers.length;
+    bubble('id1').dispatchEvent(pointer('pointerdown', { pointerType: 'mouse' }));
+    expect(h.timers.length).toBe(before);
+  });
+
+  it('does not start a long press on a message with no menu', async () => {
+    const h = open({}, [{ ...base[0]!, deleted: true, body: '' }, base[1]!]);
+    await flush();
+    const before = h.timers.length;
+    bubble('id1').dispatchEvent(pointer('pointerdown'));
+    expect(h.timers.length).toBe(before);
+  });
+
+  it('keeps the button for keyboard and screen reader use', async () => {
+    open();
+    await flush();
+    const button = root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!;
+    expect(button.getAttribute('aria-label')).toBe('Tùy chọn tin nhắn');
+    expect(button.hidden).toBe(false);   // the stylesheet may hide it from the eye, never from the page
+    button.click();
+    await flush();
+    expect(menuFor()).not.toBeNull();
+  });
+});
