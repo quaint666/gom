@@ -1,11 +1,11 @@
 export type ErrorCode =
   | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
   | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
-  | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
+  | 'wrong_password' | 'cannot_disable_owner' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
-  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin',
+  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -33,6 +33,10 @@ export interface Api {
   revokeInvite(id: string): Promise<Result<void>>;
   members(): Promise<Result<Member[]>>;
   resetLink(gomId: string): Promise<Result<Issued>>;
+  setNickname(displayName: string): Promise<Result<User>>;
+  changePassword(current: string, password: string): Promise<Result<void>>;
+  disableMember(gomId: string): Promise<Result<void>>;
+  enableMember(gomId: string): Promise<Result<void>>;
 }
 
 /** The browser sends the Origin header itself on same-origin POST and DELETE; the server checks it. */
@@ -71,6 +75,10 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     revokeInvite: (id) => call('DELETE', `/api/invites/${enc(id)}`),
     members: () => call('GET', '/api/users'),
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
+    setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
+    changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
+    disableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/disable`),
+    enableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/enable`),
   };
 }
 

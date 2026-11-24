@@ -11,6 +11,8 @@ export const errorBox = (failure: Failure | null): TemplateResult | typeof nothi
 
 export interface PasswordFieldOptions {
   label: string;
+  /** The field's name and id; two password fields on one page need two. */
+  name?: string;
   autocomplete: 'current-password' | 'new-password';
   value: string;
   shown: boolean;
@@ -22,9 +24,9 @@ export interface PasswordFieldOptions {
 /** One password field (never asked twice) with a show/hide button. Pasting is allowed. */
 export const passwordField = (o: PasswordFieldOptions): TemplateResult => html`
   <div class="field">
-    <label for="password">${o.label}</label>
+    <label for=${o.name ?? 'password'}>${o.label}</label>
     <div class="input">
-      <input id="password" name="password" type=${o.shown ? 'text' : 'password'} autocomplete=${o.autocomplete} required
+      <input id=${o.name ?? 'password'} name=${o.name ?? 'password'} type=${o.shown ? 'text' : 'password'} autocomplete=${o.autocomplete} required
         enterkeyhint="done" .value=${o.value} @input=${(e: Event) => o.onInput((e.target as HTMLInputElement).value)}>
       <button type="button" class="ib" aria-pressed=${o.shown ? 'true' : 'false'} aria-label="Hiện mật khẩu" @click=${o.onToggle}>${icons.eye()}</button>
     </div>

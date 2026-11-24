@@ -12,6 +12,8 @@ export function fakeApi(overrides: Partial<{ [K in keyof Api]: ReturnType<typeof
     me: nope(), signIn: nope(), signOut: vi.fn(async () => ok(undefined)), peekInvite: nope(), join: nope(), peekReset: nope(),
     reset: nope(), sessions: nope(), endSession: vi.fn(async () => ok(undefined)), createInvite: nope(), invites: nope(),
     revokeInvite: vi.fn(async () => ok(undefined)), members: nope(), resetLink: nope(),
+    setNickname: nope(), changePassword: vi.fn(async () => ok(undefined)), disableMember: vi.fn(async () => ok(undefined)),
+    enableMember: vi.fn(async () => ok(undefined)),
   };
   return { ...base, ...overrides } as never;
 }

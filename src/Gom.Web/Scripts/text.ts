@@ -14,6 +14,8 @@ export function errorText(failure: Failure): string {
     case 'password_too_long': return 'Mật khẩu dài tối đa 128 ký tự.';
     case 'password_too_common': return 'Mật khẩu này quá phổ biến. Hãy chọn mật khẩu khác.';
     case 'invalid_display_name': return 'Tên hiển thị tối đa 60 ký tự và không được có ký tự điều khiển.';
+    case 'wrong_password': return 'Mật khẩu hiện tại không đúng.';
+    case 'cannot_disable_owner': return 'Không thể khóa tài khoản của chủ Gom.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
     case 'network': return 'Không kết nối được. Kiểm tra mạng rồi thử lại.';
     case 'server': return 'Gom đang gặp sự cố. Hãy thử lại sau ít phút.';
