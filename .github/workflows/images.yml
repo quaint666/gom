@@ -109,7 +109,8 @@ jobs:
           req() { curl -s -H 'Host: gom-staging.example' "$@"; }
           [ "$(req -o /dev/null -w '%{http_code}' -I "http://$IP:8080/healthz")" = 200 ]
           [ "$(req -o /dev/null -w '%{http_code}' -I "http://$IP:8080/sign-in")" = 200 ]
-          [ "$(req -o /dev/null -w '%{http_code}' -X PUT "http://$IP:8080/healthz")" = 405 ]
+          # A PUT with no Origin is refused with 403 before routing; with the site's own Origin the method rule answers 405.
+          [ "$(req -o /dev/null -w '%{http_code}' -X PUT -H 'Origin: https://gom-staging.example' "http://$IP:8080/healthz")" = 405 ]
           req -D "$RUNNER_TEMP/h" -o /dev/null "http://$IP:8080/sign-in"
           grep -qi '^permissions-policy:' "$RUNNER_TEMP/h"
           ! grep -qi '^server:' "$RUNNER_TEMP/h"
