@@ -16,6 +16,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<MessageEvent> Events => Set<MessageEvent>();
     public DbSet<MessageHide> Hides => Set<MessageHide>();
     public DbSet<MessagePin> Pins => Set<MessagePin>();
+    public DbSet<MessageReaction> Reactions => Set<MessageReaction>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -137,7 +138,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("message_events", t =>
             {
                 t.HasCheckConstraint("ck_message_events_seq", "seq > 0");
-                t.HasCheckConstraint("ck_message_events_kind", "kind IN ('created', 'deleted')");
+                t.HasCheckConstraint("ck_message_events_kind", "kind IN ('created', 'deleted', 'updated')");
             });
             e.HasKey(x => new { x.ConversationId, x.Seq });
             e.Property(x => x.Kind).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<EventKind>(v, true)).HasMaxLength(10);
@@ -164,6 +165,15 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.PinnedBy).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<MessageReaction>(e =>
+        {
+            e.ToTable("message_reactions");
+            e.HasKey(x => new { x.MessageId, x.UserId });
+            e.Property(x => x.Emoji).HasMaxLength(16);
+            e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
 
         // Postgres convention: snake_case names, whatever the C# property is called.
