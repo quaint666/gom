@@ -30,11 +30,23 @@ builder.Services.AddHostedService<OwnerSeedingService>();
 
 var app = builder.Build();
 
+app.UseMiddleware<SecurityHeaders>();
+app.UseStaticFiles();
 app.UseMiddleware<OriginCheck>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuth();
 app.MapLinks();
+
+// One small HTML file per page; the script in /js/main.js picks the page from data-page.
+void MapPage(string route, string file) => app.MapGet(route, (IWebHostEnvironment env) =>
+    Results.File(env.WebRootFileProvider.GetFileInfo($"pages/{file}").CreateReadStream(), "text/html; charset=utf-8"));
+MapPage("/", "home.html");
+MapPage("/sign-in", "sign-in.html");
+MapPage("/join/{token}", "join.html");
+MapPage("/reset/{token}", "reset.html");
+MapPage("/settings", "settings.html");
+MapPage("/owner", "owner.html");
 
 // 200 only when the database answers; a monitor or a proxy can poll this.
 app.MapGet("/healthz", async (GomDbContext db, CancellationToken ct) =>

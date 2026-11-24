@@ -1,0 +1,22 @@
+import type { Failure } from './api.js';
+
+/** The sentence for a failure, in Vietnamese. The sign-in sentence never says whether the ID exists. */
+export function errorText(failure: Failure): string {
+  switch (failure.error) {
+    case 'invalid_credentials': return 'Gom ID hoặc mật khẩu không đúng. Hãy thử lại.';
+    case 'too_many_attempts':
+      return failure.retryAfter === undefined
+        ? 'Bạn thử quá nhiều lần. Hãy đợi một lúc rồi thử lại.'
+        : `Bạn thử quá nhiều lần. Hãy đợi ${failure.retryAfter} giây rồi thử lại.`;
+    case 'id_taken': return 'Gom ID này đã có người dùng. Hãy chọn ID khác.';
+    case 'invalid_gom_id': return 'Gom ID chỉ gồm chữ thường, số và dấu gạch dưới, từ 3 đến 20 ký tự, và không được là từ dành riêng.';
+    case 'password_too_short': return 'Mật khẩu cần ít nhất 10 ký tự.';
+    case 'password_too_long': return 'Mật khẩu dài tối đa 128 ký tự.';
+    case 'password_too_common': return 'Mật khẩu này quá phổ biến. Hãy chọn mật khẩu khác.';
+    case 'invalid_display_name': return 'Tên hiển thị tối đa 60 ký tự và không được có ký tự điều khiển.';
+    case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
+    case 'network': return 'Không kết nối được. Kiểm tra mạng rồi thử lại.';
+    case 'server': return 'Gom đang gặp sự cố. Hãy thử lại sau ít phút.';
+    default: return 'Có lỗi xảy ra. Hãy thử lại.';
+  }
+}

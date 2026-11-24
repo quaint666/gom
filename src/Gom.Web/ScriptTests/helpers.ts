@@ -1,0 +1,33 @@
+import { vi } from 'vitest';
+import type { Api, Failure, Result } from '../Scripts/api.js';
+
+export const ok = <T>(data: T): Result<T> => ({ ok: true, data });
+export const fail = (error: Failure['error'], status = 400, retryAfter?: number): Failure =>
+  retryAfter === undefined ? { ok: false, status, error } : { ok: false, status, error, retryAfter };
+
+/** An Api whose every call answers "unauthorized" unless a test says otherwise. */
+export function fakeApi(overrides: Partial<{ [K in keyof Api]: ReturnType<typeof vi.fn> }> = {}): Api & { [K in keyof Api]: ReturnType<typeof vi.fn> } {
+  const nope = () => vi.fn(async () => fail('unauthorized', 401));
+  const base = {
+    me: nope(), signIn: nope(), signOut: vi.fn(async () => ok(undefined)), peekInvite: nope(), join: nope(), peekReset: nope(),
+    reset: nope(), sessions: nope(), endSession: vi.fn(async () => ok(undefined)), createInvite: nope(), invites: nope(),
+    revokeInvite: vi.fn(async () => ok(undefined)), members: nope(), resetLink: nope(),
+  };
+  return { ...base, ...overrides } as never;
+}
+
+/** Waits for pending promises and a render. */
+export const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+export function fill(root: ParentNode, selector: string, value: string): void {
+  const input = root.querySelector<HTMLInputElement>(selector);
+  if (!input) throw new Error(`No ${selector}`);
+  input.value = value;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+export function submit(root: ParentNode): void {
+  root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+}
+
+export const text = (root: ParentNode): string => root.textContent?.replace(/\s+/g, ' ').trim() ?? '';
