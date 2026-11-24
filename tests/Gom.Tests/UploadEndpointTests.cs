@@ -1,6 +1,8 @@
 using System.Net;
 using Gom.Web.Data;
 using Gom.Web.Uploads;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
 
 namespace Gom.Tests;
@@ -295,6 +297,75 @@ public class UploadEndpointTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(HttpStatusCode.TooManyRequests, r.StatusCode);
         Assert.Equal("too_many_uploads", await ErrorOf(r));
         Assert.NotNull(r.Headers.RetryAfter);
+    }
+
+    private HttpRequestMessage UploadRequest(WebApplicationFactory<Program> factory, Guid chat, string cookie, byte[] body)
+    {
+        var request = new HttpRequestMessage(Post, $"/api/conversations/{chat}/attachments") { Content = new ByteArrayContent(body) };
+        request.Headers.Add("Cookie", $"{Gom.Web.Auth.SessionCookie.Name}={cookie}");
+        request.Headers.Add("Origin", AppFixture.Origin);
+        return request;
+    }
+
+    [Fact]
+    public async Task A_picture_needing_more_memory_than_there_is_for_pictures_is_turned_away_in_words_not_allowed_to_bring_the_site_down()
+    {
+        var p = await NewPair();
+        using var small = app.Factory.WithWebHostBuilder(b => b.UseSetting("Uploads:MemoryMegabytes", "1"));
+        using var client = small.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false, BaseAddress = new Uri(AppFixture.Origin) });
+        using var picture = await client.SendAsync(UploadRequest(small, p.Chat, p.CA, TestImages.Jpeg(300, 200)));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, picture.StatusCode);
+        Assert.Equal("image_dimensions", await ErrorOf(picture));
+        using var file = await client.SendAsync(UploadRequest(small, p.Chat, p.CA, new byte[] { 1, 2, 3 }));   // a file needs no picture memory
+        Assert.Equal(HttpStatusCode.Created, file.StatusCode);
+    }
+
+    [Fact]
+    public async Task When_the_picture_memory_is_all_in_use_an_upload_waits_its_time_and_then_says_it_is_busy()
+    {
+        var p = await NewPair();
+        using var busy = app.Factory.WithWebHostBuilder(b => { b.UseSetting("Uploads:MemoryMegabytes", "64"); b.UseSetting("Uploads:ImageWaitSeconds", "0"); });
+        using var client = busy.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false, BaseAddress = new Uri(AppFixture.Origin) });
+        var memory = busy.Services.GetRequiredService<UploadMemory>();
+        var hold = await memory.Images.EnterAsync(memory.Images.Total, TimeSpan.Zero);
+        using var refused = await client.SendAsync(UploadRequest(busy, p.Chat, p.CA, TestImages.Jpeg(300, 200)));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, refused.StatusCode);
+        Assert.Equal("busy", await ErrorOf(refused));
+        hold!.Dispose();
+        using var served = await client.SendAsync(UploadRequest(busy, p.Chat, p.CA, TestImages.Jpeg(300, 200)));
+        Assert.Equal(HttpStatusCode.Created, served.StatusCode);
+        Assert.Equal(0, memory.Images.Used);   // and everything is given back afterwards
+        Assert.Equal(0, memory.Bodies.Used);
+    }
+
+    [Fact]
+    public async Task When_the_memory_for_bytes_being_received_is_all_in_use_even_a_small_file_waits_its_time_and_then_says_it_is_busy()
+    {
+        var p = await NewPair();
+        using var busy = app.Factory.WithWebHostBuilder(b => { b.UseSetting("Uploads:MemoryMegabytes", "1"); b.UseSetting("Uploads:ImageWaitSeconds", "0"); });
+        using var client = busy.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false, BaseAddress = new Uri(AppFixture.Origin) });
+        var memory = busy.Services.GetRequiredService<UploadMemory>();
+        var hold = await memory.Bodies.EnterAsync(memory.Bodies.Total, TimeSpan.Zero);
+        using var refused = await client.SendAsync(UploadRequest(busy, p.Chat, p.CA, new byte[] { 1, 2, 3 }));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, refused.StatusCode);
+        hold!.Dispose();
+        using var served = await client.SendAsync(UploadRequest(busy, p.Chat, p.CA, new byte[] { 1, 2, 3 }));
+        Assert.Equal(HttpStatusCode.Created, served.StatusCode);
+    }
+
+    [Fact]
+    public async Task Memory_is_given_back_after_every_kind_of_upload_including_failed_ones()
+    {
+        var p = await NewPair();
+        var memory = app.Factory.Services.GetRequiredService<UploadMemory>();
+        var broken = TestImages.Jpeg(100, 100); Array.Resize(ref broken, 400);
+        (await Upload(p.Chat, p.CA, TestImages.Jpeg(300, 200))).Dispose();
+        (await Upload(p.Chat, p.CA, broken)).Dispose();
+        (await Upload(p.Chat, p.CA, TestImages.PlainPng(1500, 1000))).Dispose();
+        (await Upload(p.Chat, p.CA, new byte[300_001])).Dispose();
+        (await Upload(p.Chat, p.CA, [])).Dispose();
+        Assert.Equal(0, memory.Images.Used);
+        Assert.Equal(0, memory.Bodies.Used);
     }
 
     [Fact]

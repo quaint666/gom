@@ -50,6 +50,16 @@ builder.Services.AddSingleton<UploadLimiter>(sp =>
     var o = sp.GetRequiredService<IOptions<UploadOptions>>().Value;
     return new UploadLimiter(new SendLimiter(sp.GetRequiredService<TimeProvider>(), o.UploadBurst, o.UploadPerSecond));
 });
+builder.Services.AddSingleton<UploadMemory>(sp =>
+{
+    var o = sp.GetRequiredService<IOptions<UploadOptions>>().Value;
+    // The container's own limit when it has one (the runtime reads it): pictures may use 35% of it, uploads being received 25%.
+    var available = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+    var most = Math.Max(o.MaxFileBytes, o.MaxImageBytes);
+    var images = o.MemoryMegabytes > 0 ? o.MemoryMegabytes * 1024L * 1024 : Math.Max(48L * 1024 * 1024, available * 35 / 100);
+    var bodies = o.MemoryMegabytes > 0 ? Math.Max(o.MemoryMegabytes * 1024L * 1024, most) : Math.Max(most, available * 25 / 100);
+    return new UploadMemory(new MemoryGate(bodies), new MemoryGate(images));
+});
 builder.Services.AddSingleton<ImageLimiter>(sp =>
 {
     var o = sp.GetRequiredService<IOptions<UploadOptions>>().Value;
