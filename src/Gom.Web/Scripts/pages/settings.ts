@@ -2,12 +2,13 @@ import { html, nothing, render } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
 import type { Api, Failure, SessionInfo, User } from '../api.js';
 import { chosenScheme, chooseScheme, type Choice } from '../theme.js';
+import type { Installer } from '../install.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
 
 /** The choices for the colour scheme, in the order shown. */
 const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', 'Theo hệ thống'], ['light', 'Sáng'], ['dark', 'Tối']];
 
-export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void): void {
+export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer): void {
   let user: User | null = null;
   let sessions: SessionInfo[] = [];
   let error: Failure | null = null;
@@ -21,6 +22,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let receiptsStatus = '';
   let busy = false;
   let scheme: Choice = chosenScheme();
+  let installStatus = '';
 
   const row = (s: SessionInfo) => html`
     <li class="li" data-session=${s.id}>
@@ -47,6 +49,12 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
           <button class="btn" type="submit" ?disabled=${busy}>Lưu tên</button>
           <p class="hint" role="status" data-nickname-status>${nicknameStatus}</p>
         </form>
+        ${installer?.available() ? html`
+          <h2 class="section">Ứng dụng</h2>
+          <div class="card" data-install>
+            <p class="hint">Thêm Gom vào màn hình chính để mở như một ứng dụng, không cần mở trình duyệt.</p>
+            <button class="btn" type="button" data-install-button @click=${installApp}>Cài đặt Gom</button>
+          </div>` : installStatus === '' ? nothing : html`<p class="hint" role="status" data-install-status>${installStatus}</p>`}
         <h2 class="section">Giao diện</h2>
         <fieldset class="choices" data-scheme>
           <legend class="sr-only">Màu giao diện</legend>
@@ -94,6 +102,12 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
 
   const toggleShown = () => { shown = !shown; update(); };
 
+  async function installApp(): Promise<void> {
+    const result = await installer?.install();
+    installStatus = result === 'accepted' ? 'Đã cài đặt. Mở Gom từ màn hình chính.' : '';
+    update();
+  }
+
   async function saveNickname(event: Event): Promise<void> {
     event.preventDefault();
     if (busy) return;
@@ -126,6 +140,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     if (result.ok || result.error === 'unauthorized') go('/sign-in'); else { error = result; update(); }
   }
 
+  installer?.onChange(update);
   update();
   void api.me().then(async (result) => {
     if (!result.ok) {
