@@ -15,6 +15,8 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
   let copied = '';
   let busy = false;
   let error: Failure | null = null;
+  /** Unfriending and blocking ask first: one tap on the wrong row is easy. */
+  let sure: { kind: 'unfriend' | 'block'; person: Person } | null = null;
 
   const button = (label: string, attr: string, run: () => void, secondary = true): TemplateResult =>
     html`<button class="btn ${secondary ? 'secondary ' : ''}small" type="button" data-action=${attr} @click=${run}>${label}</button>`;
@@ -25,6 +27,18 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
   const section = (title: string, rows: TemplateResult[]) => rows.length === 0 ? nothing : html`
     <h2 class="section">${title}</h2>
     <ul class="list">${rows}</ul>`;
+
+  const question = (s: NonNullable<typeof sure>) => {
+    const name = s.person.displayName;
+    const text = s.kind === 'unfriend'
+      ? { q: `Xóa bạn với ${name}?`, hint: 'Hai người vẫn đọc được tin nhắn cũ, nhưng không nhắn thêm được cho đến khi kết bạn lại.', yes: 'Xóa bạn' }
+      : { q: `Chặn ${name}?`, hint: `${name} sẽ không còn là bạn của bạn và không gửi được lời mời cho bạn. Bạn có thể bỏ chặn sau.`, yes: 'Chặn' };
+    return html`<li class="card" role="group" aria-labelledby="sure-q" data-sure=${s.person.gomId}>
+      <p id="sure-q"><b>${text.q}</b></p><p class="hint">${text.hint}</p>
+      <button class="btn" type="button" data-confirm-sure @click=${() => { sure = null; void act(() => s.kind === 'unfriend' ? api.unfriend(s.person.gomId) : api.block(s.person.gomId)); }}>${text.yes}</button>
+      <button class="btn secondary" type="button" data-cancel-sure @click=${() => { sure = null; update(); }}>Hủy</button>
+    </li>`;
+  };
 
   const view = () => html`
     ${appBar({ title: 'Bạn bè', back: '/' })}
@@ -62,8 +76,9 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
         <ul class="list">${lists.friends.map((p) => html`
           <li class="li" data-friend=${p.gomId}>${who(p)}
             ${button('Nhắn tin', 'message', () => void message(p.gomId), false)}
-            ${button('Xóa bạn', 'unfriend', () => act(() => api.unfriend(p.gomId)))}
-            ${button('Chặn', 'block', () => act(() => api.block(p.gomId)))}</li>`)}</ul>`}
+            ${button('Xóa bạn', 'unfriend', () => { sure = { kind: 'unfriend', person: p }; update(); })}
+            ${button('Chặn', 'block', () => { sure = { kind: 'block', person: p }; update(); })}</li>
+          ${sure?.person.gomId === p.gomId ? question(sure) : nothing}`)}</ul>`}
 
         ${section('Đã chặn', blocked.map((p) => html`
           <li class="li" data-blocked=${p.gomId}>${who(p)}
