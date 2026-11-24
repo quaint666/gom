@@ -2,13 +2,13 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
-import type { Api, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, Reply, User } from '../api.js';
+import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, Reply, User } from '../api.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMessages, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { errorBox } from '../ui.js';
 import { matches } from '../search.js';
-import { errorText } from '../text.js';
+import { errorText, formatSize } from '../text.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -24,7 +24,15 @@ export interface ChatDeps {
   outbox(gomId: string): { load(): OutboxItem[]; save(items: OutboxItem[]): void };
 }
 
-export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply }
+export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply; attachments?: Attachment[] }
+
+/** How many pictures and files one message may carry (the server's limit is the same by default). */
+const MAX_ATTACHMENTS = 10;
+/** How many uploads go up at the same time. */
+const UPLOADS_AT_ONCE = 2;
+
+/** One picture or file chosen for the next message: it goes up at once, and joins the message when that is sent. */
+interface TrayItem { key: number; name: string; file: File | null; state: 'waiting' | 'uploading' | 'done' | 'failed'; progress: number; attachment?: Attachment; error?: Failure }
 
 /** The mark on your own message: one check when sent, two when seen, none otherwise. */
 type Tick = 'sent' | 'seen' | null;
@@ -53,6 +61,8 @@ interface Thread {
   /** The message of yours whose words are being changed in the composer. */
   editing: { id: string } | null;
   draft: string;
+  /** The pictures and files chosen for the next message. */
+  tray: TrayItem[];
   /** The message the next one will answer, shown above the composer. */
   replying: Reply | null;
   stick: boolean;
@@ -95,6 +105,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const fresh = new Set<string>();
   /** The gear menu in the side rail, and the info panel beside a thread (its open or closed state is remembered on this device). */
   let gearOpen = false;
+  /** The picture shown large: which message, and which of its pictures. */
+  let viewer: { messageId: string; index: number } | null = null;
+  let trayKey = 0;
   let infoOpen = ((): boolean => { try { return localStorage.getItem('gom-info') === '1'; } catch { return false; } })();
   const people = new Map<string, GroupMember[]>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
@@ -111,7 +124,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, pins: [], pinsOpen: false, editing: null, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, pins: [], pinsOpen: false, editing: null, draft: '', tray: [], replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -212,6 +225,58 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ? html`<span class="gone">Tin nhắn không còn hiển thị</span>`
       : html`<b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><span>${r.snippet}</span>`}</div>`;
 
+  /** The pictures of a message as a grid, then its files as cards. */
+  const attachmentsOf = (m: ChatMessage): TemplateResult | typeof nothing => {
+    const all = m.attachments ?? [];
+    if (all.length === 0) return nothing;
+    const pictures = all.filter((a) => a.kind === 'image');
+    const files = all.filter((a) => a.kind === 'file');
+    return html`
+      ${pictures.length === 0 ? nothing : html`<div class=${`pics n${Math.min(pictures.length, 5)}`} data-pics>${pictures.map((a, i) => html`
+        <button class="pic" type="button" data-pic=${a.id} aria-label=${`Xem ảnh ${i + 1} trên ${pictures.length}`} @click=${() => { viewer = { messageId: m.id, index: i }; update(); root.querySelector<HTMLElement>('.viewer')?.focus(); }}>
+          <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}
+      ${files.map((a) => html`
+        <a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-file=${a.id}>${icons.file()}
+          <span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span>${icons.download()}</a>`)}`;
+  };
+
+  /** The big picture, with the others of its message one step away. Escape or a click outside closes it. */
+  const viewerView = () => {
+    if (viewer === null || openId === null) return nothing;
+    const message = threadOf(openId).messages.find((x) => x.id === viewer!.messageId) ?? threadOf(openId).pending.find((x) => x.id === viewer!.messageId);
+    const pictures = (message?.attachments ?? []).filter((a) => a.kind === 'image');
+    const current = pictures[viewer.index];
+    if (current === undefined) return nothing;
+    const step = (by: number) => { viewer = { messageId: viewer!.messageId, index: (viewer!.index + by + pictures.length) % pictures.length }; update(); };
+    return html`
+      <div class="viewer" role="dialog" aria-modal="true" aria-label="Xem ảnh" tabindex="-1" data-viewer
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { viewer = null; update(); } else if (e.key === 'ArrowLeft' && pictures.length > 1) step(-1); else if (e.key === 'ArrowRight' && pictures.length > 1) step(1); }}
+        @click=${(e: MouseEvent) => { if (e.target === e.currentTarget) { viewer = null; update(); } }}>
+        <div class="viewer-bar">
+          <span>${viewer.index + 1} / ${pictures.length}</span>
+          <a class="ib" href=${`/api/attachments/${current.id}`} download=${current.name} aria-label="Tải ảnh xuống" data-viewer-download>${icons.download()}</a>
+          <button class="ib" type="button" data-viewer-close aria-label="Đóng" @click=${() => { viewer = null; update(); }}>${icons.close()}</button>
+        </div>
+        ${pictures.length > 1 ? html`<button class="ib vprev" type="button" data-viewer-prev aria-label="Ảnh trước" @click=${() => step(-1)}>${icons.back()}</button>
+          <button class="ib vnext" type="button" data-viewer-next aria-label="Ảnh sau" @click=${() => step(1)}>${icons.next()}</button>` : nothing}
+        <img class="vimg" src=${`/api/attachments/${current.id}`} alt=${current.name}>
+      </div>`;
+  };
+
+  /** What is chosen for the next message, above the box where it is written. */
+  const trayView = (t: Thread) => t.tray.length === 0 ? nothing : html`
+    <div class="atray" role="group" aria-label="Tệp đính kèm" data-tray>
+      ${repeat(t.tray, (i) => i.key, (i) => html`
+        <div class=${`tray-item ${i.state}`} data-tray-item=${i.key}>
+          ${i.state === 'done' && i.attachment?.kind === 'image' ? html`<img src=${`/api/attachments/${i.attachment.id}/thumb`} alt=${i.name}>`
+            : html`<div class="tray-file">${icons.file()}<span>${i.name}</span></div>`}
+          ${i.state === 'uploading' || i.state === 'waiting' ? html`<progress max="1" value=${i.state === 'waiting' ? 0 : i.progress} aria-label=${`Đang tải lên ${i.name}`}></progress>` : nothing}
+          ${i.state === 'failed' ? html`<div class="tray-err" role="alert">${i.error ? errorText(i.error) : 'Không tải lên được.'}
+            <button class="btn secondary small" type="button" data-tray-retry @click=${() => retryTray(i)}>Thử lại</button></div>` : nothing}
+          <button class="ib tray-x" type="button" data-tray-remove aria-label=${`Gỡ ${i.name}`} @click=${() => { t.tray = t.tray.filter((x) => x !== i); update(); }}>${icons.close()}</button>
+        </div>`)}
+    </div>`;
+
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null, tick: Tick): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
@@ -232,7 +297,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? html`<div class="av sm a${avatarTone(m.sender.displayName)}" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
-          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
+          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${m.body}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? 'Đã xem' : 'Đã gửi'}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${!item.mine ? tools : nothing}
       </div>
@@ -345,6 +410,19 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  /** The pictures and files seen so far in this thread (what has been loaded, newest first), in the side panel. */
+  const media = (t: Thread) => {
+    const loaded = [...t.messages].reverse().filter((m) => m.deleted !== true);
+    const pictures = loaded.flatMap((m) => (m.attachments ?? []).filter((a) => a.kind === 'image').map((a) => ({ m, a }))).slice(0, 8);
+    const files = loaded.flatMap((m) => (m.attachments ?? []).filter((a) => a.kind === 'file').map((a) => ({ m, a }))).slice(0, 5);
+    return html`
+      ${pictures.length === 0 ? nothing : html`<h3>Ảnh</h3>
+        <div class="info-media" data-info-media>${pictures.map(({ m, a }) => html`
+          <button class="pic" type="button" data-info-pic=${a.id} aria-label=${a.name} @click=${() => void reveal(m)}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy"></button>`)}</div>`}
+      ${files.length === 0 ? nothing : html`<h3>Tệp</h3>
+        <ul class="info-list" data-info-files>${files.map(({ a }) => html`<li><a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name}>${icons.file()}<span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span></a></li>`)}</ul>`}`;
+  };
+
   /** The panel beside a thread: who it is, ways to find things in it, what is pinned, and who is in a group. */
   const infoPanel = (c: Conversation, t: Thread) => html`
     <aside class="info" aria-label="Thông tin cuộc trò chuyện" data-info-panel>
@@ -362,6 +440,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
           <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
           <span>${[...p.body].length > 100 ? [...p.body].slice(0, 100).join('') + '…' : p.body}</span></button></li>`)}</ul>`}
+      ${media(t)}
       ${c.kind !== 'group' ? nothing : html`
         <h3>Thành viên</h3>
         <ul class="info-list">${(people.get(c.id) ?? []).map((m) => html`<li class="info-person" data-info-member=${m.id}>
@@ -381,7 +460,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const t = threadOf(openId);
     const items = buildThread(t.messages, me?.id ?? '', t.lastReadAtOpen, t.unreadAtOpen, deps.now(), t.pending);
     return html`
-      <section class="thread-pane">
+      <section class="thread-pane" @dragover=${(e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }}
+        @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
           <a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a>
           ${avatar(c?.title ?? '?')}
@@ -401,6 +481,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group'), tickOf(t, c)))}
         </div>
         ${menuOverlay(t)}
+        ${viewerView()}
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${t.editing === null ? nothing : html`
@@ -413,10 +494,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.snippet ?? ''}</span></div>
             <button class="ib" type="button" data-cancel-reply aria-label="Hủy trả lời" @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
           </div>`}
+        ${trayView(t)}
         <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
+          ${t.editing === null ? html`
+            <button class="ib attach" type="button" data-attach aria-label="Đính kèm ảnh hoặc tệp" @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
+            <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
+              @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
           <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
-            .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey}></textarea>
-          <button class="send" type="submit" aria-label="Gửi">${icons.send()}</button>
+            .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}></textarea>
+          <button class="send" type="submit" aria-label="Gửi" ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
         </form>
       </section>`;
   }
@@ -883,21 +969,75 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  // ---- pictures and files
+
+  /** Puts what was chosen, pasted or dropped in the tray and starts sending it up. */
+  function addFiles(id: string, files: File[]): void {
+    const t = threadOf(id);
+    if (t.editing !== null || files.length === 0) return;
+    const room = MAX_ATTACHMENTS - t.tray.length;
+    for (const file of files.slice(0, Math.max(0, room))) t.tray.push({ key: ++trayKey, name: file.name || 'tệp', file, state: 'waiting', progress: 0 });
+    if (files.length > room) { notice = `Mỗi tin nhắn có tối đa ${MAX_ATTACHMENTS} tệp.`; }
+    update();
+    pumpTray(id);
+  }
+
+  function onPaste(e: ClipboardEvent): void {
+    const files = [...(e.clipboardData?.files ?? [])];
+    if (files.length === 0 || openId === null) return;   // text pastes as text
+    e.preventDefault();
+    addFiles(openId, files);
+  }
+
+  /** Keeps a couple of uploads going until every waiting one has gone up (or failed). */
+  function pumpTray(id: string): void {
+    const t = threadOf(id);
+    for (;;) {
+      if (t.tray.filter((i) => i.state === 'uploading').length >= UPLOADS_AT_ONCE) return;
+      const next = t.tray.find((i) => i.state === 'waiting');
+      if (next === undefined) return;
+      void uploadOne(id, t, next);
+    }
+  }
+
+  async function uploadOne(id: string, t: Thread, item: TrayItem): Promise<void> {
+    item.state = 'uploading';
+    item.progress = 0;
+    update();
+    const result = await api.upload(id, item.file!, (fraction) => { item.progress = fraction; update(); });
+    if (!t.tray.includes(item)) { pumpTray(id); return; }   // taken out while it was going up
+    if (result.ok) { item.state = 'done'; item.attachment = result.data; item.file = null; delete item.error; }
+    else if (result.error === 'unauthorized') { go('/sign-in'); return; }
+    else { item.state = 'failed'; item.error = result; }
+    update();
+    pumpTray(id);
+  }
+
+  function retryTray(item: TrayItem): void {
+    if (item.file === null) return;
+    item.state = 'waiting'; delete item.error;
+    update();
+    if (openId !== null) pumpTray(openId);
+  }
+
   // ---- writing
 
   /** The whole outbox, written down so a reload or a discarded tab does not lose what has not gone yet. */
   function persist(): void {
     if (outbox === null) return;
     outbox.save([...threads].flatMap(([id, t]) => t.pending.filter((p) => p.state !== 'failed')
-      .map((p) => ({ conversation: id, clientId: p.clientId, body: p.body, createdAt: p.createdAt, ...(p.reply ? { replyTo: p.reply } : {}) }))));
+      .map((p) => ({ conversation: id, clientId: p.clientId, body: p.body, createdAt: p.createdAt, ...(p.reply ? { replyTo: p.reply } : {}), ...(p.attachments && p.attachments.length > 0 ? { attachments: p.attachments } : {}) }))));
   }
 
   async function send(id: string): Promise<void> {
     const t = threadOf(id);
     if (t.editing !== null) { await saveEdit(id); return; }
     const body = t.draft.trim();
-    if (body === '' || me === null) return;
+    const ready = t.tray.filter((i) => i.state === 'done' && i.attachment !== undefined).map((i) => i.attachment!);
+    if ((body === '' && ready.length === 0) || me === null) return;
+    if (t.tray.some((i) => i.state !== 'done')) return;   // still going up, or failed: remove or retry it first
     t.draft = '';
+    t.tray = [];
     const reply = t.replying;
     t.replying = null;
     const clientId = deps.newId();
@@ -905,7 +1045,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const waiting = t.pending.some((x) => x.state === 'queued');
     t.pending.push({
       id: clientId, clientId, seq: 0, conversationId: id, sender: { id: me.id, displayName: me.displayName }, body,
-      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(reply ? { reply } : {}),
+      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(reply ? { reply } : {}), ...(ready.length > 0 ? { attachments: ready } : {}),
     });
     t.stick = true;
     persist();
@@ -925,7 +1065,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         p.state = 'sending';
         delete p.error;
         update();
-        const result = await api.send(id, p.clientId, p.body, p.reply?.id);
+        const files = p.attachments?.map((a) => a.id) ?? [];
+        const result = files.length > 0 ? await api.send(id, p.clientId, p.body, p.reply?.id, files) : await api.send(id, p.clientId, p.body, p.reply?.id);
         if (result.ok) {
           t.failures = 0;
           t.attempts.delete(p.clientId);
@@ -1000,7 +1141,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (chatOf(item.conversation) === undefined) continue;   // no longer in that conversation: let it go
       threadOf(item.conversation).pending.push({
         id: item.clientId, clientId: item.clientId, seq: 0, conversationId: item.conversation,
-        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued', ...(item.replyTo ? { reply: item.replyTo } : {}),
+        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued', ...(item.replyTo ? { reply: item.replyTo } : {}), ...(item.attachments && item.attachments.length > 0 ? { attachments: item.attachments } : {}),
       });
     }
     persist();

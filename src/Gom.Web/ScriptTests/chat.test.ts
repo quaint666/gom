@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { avatarTone } from '../Scripts/chat/model.js';
-import type { ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
+import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
-import { mountChat, type ChatDeps } from '../Scripts/pages/chat.js';
+import { mountChat, type ChatDeps, type OutboxItem } from '../Scripts/pages/chat.js';
 import { fail, fakeApi, fill, flush, ok, text } from './helpers.js';
 
 let root: HTMLElement;
@@ -35,7 +35,7 @@ interface Harness {
   visible: { value: boolean };
   coarse: { value: boolean };
   timers: { ms: number; fn: () => void; live: boolean }[];
-  outbox: { items: { conversation: string; clientId: string; body: string; createdAt: string }[]; saves: number };
+  outbox: { items: OutboxItem[]; saves: number };
 }
 
 function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown> } = {}): Harness {
@@ -2770,5 +2770,200 @@ describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
     expect(root.querySelector('[data-info-panel]')).not.toBeNull();
     expect(h.api.groupMembers).not.toHaveBeenCalled();
     expect(root.querySelector('[data-info-member]')).toBeNull();
+  });
+});
+
+describe('chat: pictures and files', () => {
+  const photo = (name = 'a.jpg') => new File([new Uint8Array([1, 2, 3])], name, { type: 'image/jpeg' });
+  const att = (id: string, kind: 'image' | 'file' = 'image', name = 'a.webp'): Attachment => ({ id, kind, name, size: 2048, width: 40, height: 30 });
+  const open = (extra: Record<string, unknown> = {}, history: ChatMessage[] = []) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: history.length })], history: { [C1]: history }, api: extra });
+  const choose = async (files: File[]) => {
+    const input = root.querySelector<HTMLInputElement>('input[name="files"]')!;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+  };
+  const trayItems = () => [...root.querySelectorAll<HTMLElement>('[data-tray-item]')];
+
+  it('uploads what was chosen, shows it in the tray, and sends the message with the uploads, in the order chosen', async () => {
+    const upload = vi.fn(async (_c: string, file: { name?: string }) => ok(att(`id-${file.name}`, 'image', file.name)));
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    const h = open({ upload, send });
+    await flush();
+    await choose([photo('1.jpg'), photo('2.jpg')]);
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(trayItems()).toHaveLength(2);
+    expect(trayItems()[0]!.querySelector('img')!.getAttribute('src')).toBe('/api/attachments/id-1.jpg/thumb');
+
+    compose('xem này');
+    submitForm();
+    await flush();
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', 'xem này', undefined, ['id-1.jpg', 'id-2.jpg']);
+    expect(trayItems()).toHaveLength(0);
+    expect(h.api.upload).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends only pictures with no words', async () => {
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    open({ upload: vi.fn(async () => ok(att('p1'))), send });
+    await flush();
+    await choose([photo()]);
+    submitForm();
+    await flush();
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', '', undefined, ['p1']);
+  });
+
+  it('does not send while a file is still going up, and the send button says so', async () => {
+    const finish: Array<(v: unknown) => void> = [];
+    const send = vi.fn();
+    open({ upload: vi.fn(() => new Promise((resolve) => { finish.push(resolve); })), send });
+    await flush();
+    await choose([photo()]);
+    expect(root.querySelector<HTMLButtonElement>('.composer .send')!.disabled).toBe(true);
+    expect(root.querySelector('[data-tray-item] progress')).not.toBeNull();
+    compose('xin chào');
+    submitForm();
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+    finish[0]!(ok(att('p1')));
+    await flush();
+    expect(root.querySelector<HTMLButtonElement>('.composer .send')!.disabled).toBe(false);
+  });
+
+  it('shows why an upload failed in words and lets the person try again or remove it', async () => {
+    const upload = vi.fn()
+      .mockResolvedValueOnce(fail('too_large', 413))
+      .mockResolvedValueOnce(ok(att('p1')));
+    open({ upload });
+    await flush();
+    await choose([photo()]);
+    expect(text(root.querySelector('[data-tray-item] [role="alert"]')!)).toContain('Tệp quá lớn');
+    expect(root.querySelector<HTMLButtonElement>('.composer .send')!.disabled).toBe(true);
+    root.querySelector<HTMLButtonElement>('[data-tray-retry]')!.click();
+    await flush();
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(root.querySelector('[data-tray-item] img')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-tray-remove]')!.click();
+    await flush();
+    expect(trayItems()).toHaveLength(0);
+  });
+
+  it('takes at most ten and says so', async () => {
+    const upload = vi.fn(async (_c: string, f: { name?: string }) => ok(att(`id-${f.name}`)));
+    open({ upload });
+    await flush();
+    await choose(Array.from({ length: 12 }, (_, i) => photo(`${i}.jpg`)));
+    expect(trayItems()).toHaveLength(10);
+    expect(upload).toHaveBeenCalledTimes(10);
+    expect(root.textContent).toContain('tối đa 10 tệp');
+  });
+
+  it('goes up two at a time', async () => {
+    const finish: Array<(v: unknown) => void> = [];
+    const upload = vi.fn(() => new Promise((resolve) => { finish.push(resolve); }));
+    open({ upload });
+    await flush();
+    await choose([photo('1'), photo('2'), photo('3')]);
+    expect(upload).toHaveBeenCalledTimes(2);
+    finish[0]!(ok(att('a')));
+    await flush();
+    expect(upload).toHaveBeenCalledTimes(3);
+  });
+
+  it('takes pictures pasted into the box, and leaves pasted text alone', async () => {
+    const upload = vi.fn(async () => ok(att('p1')));
+    open({ upload });
+    await flush();
+    const area = root.querySelector('textarea')!;
+    const textPaste = new Event('paste', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent;
+    Object.defineProperty(textPaste, 'clipboardData', { value: { files: [] } });
+    area.dispatchEvent(textPaste);
+    expect(textPaste.defaultPrevented).toBe(false);
+    const filePaste = new Event('paste', { bubbles: true, cancelable: true }) as unknown as ClipboardEvent;
+    Object.defineProperty(filePaste, 'clipboardData', { value: { files: [photo()] } });
+    area.dispatchEvent(filePaste);
+    await flush();
+    expect(filePaste.defaultPrevented).toBe(true);
+    expect(upload).toHaveBeenCalledOnce();
+  });
+
+  it('draws the pictures of a message as thumbnails and its files as cards, with no empty bubble of words', async () => {
+    const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [att('p1'), att('p2'), att('f1', 'file', 'ghi chú.txt')] };
+    open({}, [m]);
+    await flush();
+    const bubble = root.querySelector('[data-msg="id1"] .bub')!;
+    expect(bubble.querySelectorAll('.pic img')).toHaveLength(2);
+    expect(bubble.querySelector('.pic img')!.getAttribute('src')).toBe('/api/attachments/p1/thumb');
+    expect(bubble.querySelector('.pic img')!.getAttribute('width')).toBe('40');
+    const card = bubble.querySelector<HTMLAnchorElement>('.filecard')!;
+    expect(card.getAttribute('href')).toBe('/api/attachments/f1');
+    expect(card.getAttribute('download')).toBe('ghi chú.txt');
+    expect(text(card)).toContain('2 KB');
+    expect(bubble.querySelector('.txt')).toBeNull();
+  });
+
+  it('opens a picture large, moves between the pictures of the message, and closes with Escape', async () => {
+    const m: ChatMessage = { ...msg(1, 'minh', 'ảnh', at(10)), attachments: [att('p1'), att('p2'), att('p3')] };
+    open({}, [m]);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-pic="p2"]')!.click();
+    await flush();
+    const viewer = () => root.querySelector('[data-viewer]');
+    expect(viewer()!.querySelector('.vimg')!.getAttribute('src')).toBe('/api/attachments/p2');
+    expect(text(viewer()!.querySelector('.viewer-bar span')!)).toBe('2 / 3');
+    root.querySelector<HTMLButtonElement>('[data-viewer-next]')!.click();
+    await flush();
+    expect(viewer()!.querySelector('.vimg')!.getAttribute('src')).toBe('/api/attachments/p3');
+    root.querySelector<HTMLButtonElement>('[data-viewer-next]')!.click();
+    await flush();
+    expect(viewer()!.querySelector('.vimg')!.getAttribute('src')).toBe('/api/attachments/p1');   // round again
+    viewer()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    await flush();
+    expect(viewer()!.querySelector('.vimg')!.getAttribute('src')).toBe('/api/attachments/p3');
+    viewer()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(viewer()).toBeNull();
+  });
+
+  it('has no arrows for a single picture and closes with the button', async () => {
+    open({}, [{ ...msg(1, 'minh', '', at(10)), attachments: [att('p1')] }]);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-pic="p1"]')!.click();
+    await flush();
+    expect(root.querySelector('[data-viewer-next]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-viewer-close]')!.click();
+    await flush();
+    expect(root.querySelector('[data-viewer]')).toBeNull();
+  });
+
+  it('shows the pictures it has sent while the message is still going, and keeps them in the outbox across a reload', async () => {
+    const send = vi.fn(() => new Promise(() => undefined));
+    const h = open({ upload: vi.fn(async () => ok(att('p1'))), send });
+    await flush();
+    await choose([photo()]);
+    submitForm();
+    await flush();
+    expect(root.querySelector('[data-msg="new-1"] .pic img')).not.toBeNull();
+    expect(h.outbox.items[0]!.attachments![0]!.id).toBe('p1');
+  });
+
+  it('puts back an outbox message with its pictures and sends the same upload ids', async () => {
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    start({
+      path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [] }, api: { send },
+      outbox: [{ conversation: C1, clientId: 'old-1', body: '', createdAt: at(9), attachments: [att('p9')] }],
+    });
+    await flush();
+    expect(send).toHaveBeenCalledWith(C1, 'old-1', '', undefined, ['p9']);
+  });
+
+  it('lists the pictures and files seen so far in the side panel', async () => {
+    localStorage.setItem('gom-info', '1');
+    open({}, [{ ...msg(1, 'minh', '', at(10)), attachments: [att('p1'), att('f1', 'file', 'bảng.xlsx')] }]);
+    await flush();
+    expect(root.querySelector('[data-info-media] [data-info-pic="p1"]')).not.toBeNull();
+    expect(text(root.querySelector('[data-info-files]')!)).toContain('bảng.xlsx');
+    localStorage.removeItem('gom-info');
   });
 });

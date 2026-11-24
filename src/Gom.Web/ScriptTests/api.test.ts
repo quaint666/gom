@@ -60,3 +60,68 @@ describe('api', () => {
     ]);
   });
 });
+
+describe('api: uploading a picture or a file', () => {
+  class FakeXhr {
+    method = ''; url = ''; headers: Record<string, string> = {}; withCredentials = false; sent: unknown = null;
+    status = 0; responseText = '';
+    upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = { onprogress: null };
+    onload: (() => void) | null = null; onerror: (() => void) | null = null; ontimeout: (() => void) | null = null;
+    open(method: string, url: string) { this.method = method; this.url = url; }
+    setRequestHeader(k: string, v: string) { this.headers[k] = v; }
+    send(body: unknown) { this.sent = body; }
+  }
+  const make = () => { const x = new FakeXhr(); return { x, api: createApi(vi.fn(), () => x as unknown as XMLHttpRequest) }; };
+  const file = Object.assign(new Blob([new Uint8Array([1, 2, 3])]), { name: 'ảnh nghỉ hè.jpg' });
+
+  it('posts the raw bytes with the name in the query, reports progress, and gives back the attachment', async () => {
+    const { x, api } = make();
+    const seen: number[] = [];
+    const pending = api.upload('c1', file, (f) => seen.push(f));
+    x.upload.onprogress!({ lengthComputable: true, loaded: 1, total: 4 });
+    x.upload.onprogress!({ lengthComputable: false, loaded: 2, total: 0 });
+    x.status = 201; x.responseText = JSON.stringify({ id: 'a1', kind: 'image', name: 'x.webp', size: 3, width: 1, height: 1 });
+    x.onload!();
+    const result = await pending;
+    expect(x.method).toBe('POST');
+    expect(x.url).toBe(`/api/conversations/c1/attachments?name=${encodeURIComponent('ảnh nghỉ hè.jpg')}`);
+    expect(x.withCredentials).toBe(true);
+    expect(x.headers['Content-Type']).toBe('application/octet-stream');
+    expect(x.sent).toBe(file);
+    expect(seen).toEqual([0.25]);
+    expect(result).toEqual({ ok: true, data: { id: 'a1', kind: 'image', name: 'x.webp', size: 3, width: 1, height: 1 } });
+  });
+
+  it('turns the server\'s reason, a proxy\'s plain 413, and a lost connection into an error', async () => {
+    let r = make();
+    let pending = r.api.upload('c1', file, () => undefined);
+    r.x.status = 422; r.x.responseText = '{"error":"invalid_image"}'; r.x.onload!();
+    expect(await pending).toMatchObject({ ok: false, status: 422, error: 'invalid_image' });
+
+    r = make(); pending = r.api.upload('c1', file, () => undefined);
+    r.x.status = 413; r.x.responseText = '<html>too big</html>'; r.x.onload!();
+    expect(await pending).toMatchObject({ ok: false, status: 413, error: 'too_large' });
+
+    r = make(); pending = r.api.upload('c1', file, () => undefined);
+    r.x.status = 502; r.x.responseText = ''; r.x.onload!();
+    expect(await pending).toMatchObject({ ok: false, error: 'server' });
+
+    r = make(); pending = r.api.upload('c1', file, () => undefined);
+    r.x.status = 401; r.x.responseText = '{}'; r.x.onload!();
+    expect(await pending).toMatchObject({ ok: false, error: 'unauthorized' });
+
+    r = make(); pending = r.api.upload('c1', file, () => undefined);
+    r.x.onerror!();
+    expect(await pending).toEqual({ ok: false, status: 0, error: 'network' });
+  });
+
+  it('sends the upload ids with a message only when there are some', async () => {
+    const fetchFn = vi.fn(async () => new Response('{}', { status: 200 }));
+    const api = createApi(fetchFn);
+    await api.send('c1', 'k1', 'hi', undefined, ['a', 'b']);
+    await api.send('c1', 'k2', 'hi');
+    const bodies = fetchFn.mock.calls.map((c) => JSON.parse((c as unknown as [string, RequestInit])[1].body as string));
+    expect(bodies[0]).toMatchObject({ attachments: ['a', 'b'] });
+    expect('attachments' in bodies[1]).toBe(false);
+  });
+});

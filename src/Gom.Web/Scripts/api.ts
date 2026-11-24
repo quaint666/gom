@@ -6,6 +6,7 @@ export type ErrorCode =
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit' | 'invalid_reaction' | 'banned' | 'already_requested' | 'invalid_setting'
+  | 'too_large' | 'image_dimensions' | 'invalid_image' | 'busy' | 'too_many_uploads' | 'uploads_disabled' | 'empty_upload' | 'invalid_attachment' | 'too_many_attachments'
   | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
@@ -16,6 +17,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
+  'too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -93,7 +95,9 @@ export interface Api {
   /** How far the other members have read. Empty, with `enabled: false`, when you have hidden yours. */
   reads(conversation: string): Promise<Result<{ enabled: boolean; reads: { userId: string; seq: number }[] }>>;
   setReceipts(enabled: boolean): Promise<Result<void>>;
-  send(conversation: string, clientId: string, body: string, replyTo?: string): Promise<Result<ChatMessage>>;
+  send(conversation: string, clientId: string, body: string, replyTo?: string, attachments?: string[]): Promise<Result<ChatMessage>>;
+  /** Sends one picture or file to a conversation (not yet in a message). `onProgress` gets 0 to 1 while the bytes go up. */
+  upload(conversation: string, file: Blob & { name?: string }, onProgress: (fraction: number) => void): Promise<Result<Attachment>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
   edit(conversation: string, message: string, body: string): Promise<Result<void>>;
   react(conversation: string, message: string, emoji: string): Promise<Result<void>>;
@@ -124,7 +128,7 @@ export interface Api {
 }
 
 /** The browser sends the Origin header itself on same-origin POST and DELETE; the server checks it. */
-export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init)): Api {
+export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest()): Api {
   async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
     let response: Response;
     try {
@@ -143,8 +147,31 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     return failure(response);
   }
 
+  /** fetch cannot tell how much of an upload has gone, so uploads use XMLHttpRequest. */
+  function upload(conversation: string, file: Blob & { name?: string }, onProgress: (fraction: number) => void): Promise<Result<Attachment>> {
+    return new Promise((resolve) => {
+      const xhr = makeXhr();
+      xhr.open('POST', `/api/conversations/${encodeURIComponent(conversation)}/attachments?name=${encodeURIComponent(file.name ?? 'tệp')}`);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total); };
+      xhr.onerror = xhr.ontimeout = () => resolve({ ok: false, status: 0, error: 'network' });
+      xhr.onload = () => {
+        let json: unknown = null;
+        try { json = JSON.parse(xhr.responseText); } catch { /* not JSON: a proxy's own answer */ }
+        if (xhr.status >= 200 && xhr.status < 300 && json !== null) { resolve({ ok: true, data: json as Attachment }); return; }
+        const code = typeof json === 'object' && json !== null ? (json as { error?: unknown }).error : undefined;
+        const error: ErrorCode = typeof code === 'string' && SERVER_CODES.has(code) ? (code as ErrorCode)
+          : xhr.status === 413 ? 'too_large' : xhr.status === 401 ? 'unauthorized' : xhr.status >= 500 ? 'server' : 'unknown';
+        resolve({ ok: false, status: xhr.status, error });
+      };
+      xhr.send(file);
+    });
+  }
+
   const enc = encodeURIComponent;
   return {
+    upload,
     me: () => call('GET', '/api/me'),
     signIn: (gomId, password) => call('POST', '/api/session', { gomId, password }),
     signOut: () => call('DELETE', '/api/session'),
@@ -174,7 +201,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     conversations: () => call('GET', '/api/conversations'),
     openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
     history: (conversation, before) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}`),
-    send: (conversation, clientId, body, replyTo) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body, replyTo }),
+    send: (conversation, clientId, body, replyTo, attachments) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body, replyTo, ...(attachments && attachments.length > 0 ? { attachments } : {}) }),
     createGroup: (title, members) => call('POST', '/api/conversations/group', { title, members }),
     groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
