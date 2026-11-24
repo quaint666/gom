@@ -1,4 +1,5 @@
 import { html, nothing, render } from 'lit-html';
+import { live as liveValue } from 'lit-html/directives/live.js';
 import type { Api, Failure, GroupMember, Person } from '../api.js';
 import { initials } from '../chat/model.js';
 import { appBar, errorBox } from '../ui.js';
@@ -6,6 +7,9 @@ import { appBar, errorBox } from '../ui.js';
 /** Who is in a group and who leads it, asking another member to be friends, adding friends, leaving, and what a leader or deputy may do. */
 export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => void, conversation: string): void {
   let members: GroupMember[] | null = null;
+  let title = '';
+  let draftTitle = '';
+  let renaming = false;
   let friends: Person[] = [];
   let confirming = false;
   /** Whose menu is open, and the step that needs a yes first. */
@@ -76,11 +80,25 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     await run(() => s.kind === 'remove' ? api.removeMember(conversation, member.id) : api.handOver(conversation, member.id));
   }
 
+  /** The leader and the deputies may rename; everyone else just sees the name. */
+  const mayRename = () => mine()?.role === 'leader' || mine()?.role === 'deputy';
+
+  const nameSection = () => !mayRename()
+    ? html`<h2 class="section" data-group-name>${title}</h2>`
+    : html`
+      <form class="card" data-rename @submit=${onRename}>
+        <label for="group-name">Tên nhóm</label>
+        <input id="group-name" name="title" type="text" maxlength="60" autocomplete="off" .value=${liveValue(draftTitle)}
+          @input=${(e: Event) => { draftTitle = (e.target as HTMLInputElement).value; update(); }}>
+        <button class="btn" type="submit" ?disabled=${renaming || draftTitle.trim() === '' || draftTitle.trim() === title}>Lưu tên</button>
+      </form>`;
+
   const view = () => html`
     ${appBar({ title: 'Thành viên nhóm', back: `/c/${conversation}` })}
     <div class="page">
       ${errorBox(error)}
       ${members === null ? nothing : html`
+        ${nameSection()}
         <h2 class="section">${members.length} thành viên</h2>
         <ul class="list">${members.map(memberRow)}</ul>
 
@@ -113,10 +131,22 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     return friends.filter((f) => !inside.has(f.gomId));
   }
 
+  async function onRename(event: Event): Promise<void> {
+    event.preventDefault();
+    const wanted = draftTitle.trim();
+    if (renaming || wanted === '' || wanted === title) return;
+    renaming = true; update();
+    const result = await api.renameGroup(conversation, wanted);
+    renaming = false;
+    if (!result.ok) { error = result; update(); return; }
+    await reload();
+  }
+
   async function reload(): Promise<void> {
-    const [m, f] = await Promise.all([api.groupMembers(conversation), api.friends()]);
+    const [m, f, c] = await Promise.all([api.groupMembers(conversation), api.friends(), api.conversations()]);
     if (m.ok) members = m.data; else { error = m; update(); return; }
     if (f.ok) friends = f.data.friends;
+    if (c.ok) { title = c.data.find((x) => x.id === conversation)?.title ?? ''; draftTitle = title; }
     error = null;
     update();
   }
