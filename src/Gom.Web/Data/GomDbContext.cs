@@ -18,6 +18,9 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        // Search ignores accents ("pho" finds "Phở"). The extension ships with PostgreSQL's contrib package and is trusted, so the database's own owner can create it.
+        b.HasPostgresExtension("unaccent");
+
         b.Entity<User>(e =>
         {
             e.ToTable("users", t => t.HasCheckConstraint("ck_users_gom_id", $"gom_id ~ '{GomId.DatabasePattern}'"));

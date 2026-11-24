@@ -226,3 +226,17 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .badge.muted { background: var(--muted); }
 .mute-mark { display: grid; place-items: center; color: var(--muted); flex: none; }
 .mute-mark svg { inline-size: 16px; block-size: 16px; }
+
+/* new messages below the part you are reading */
+.jump { align-self: center; display: inline-flex; align-items: center; gap: 6px; margin: -44px auto 8px; min-block-size: 36px; padding-inline: 14px; border: 0; border-radius: 18px; background: var(--btn); color: var(--on-btn); font: inherit; font-size: 14px; font-weight: 600; box-shadow: 0 2px 8px rgb(0 0 0 / .25); cursor: pointer; position: relative; }
+.jump svg { inline-size: 16px; block-size: 16px; }
+
+/* searching one conversation */
+.searchbar { padding: 8px 12px; background: var(--surface); border-block-end: 1px solid var(--border); }
+.searchbar form { display: flex; gap: 8px; }
+.searchbar input { flex: 1; min-inline-size: 0; min-block-size: 44px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 22px; background: var(--bg); color: var(--text); font: inherit; font-size: 16px; }
+.results { list-style: none; margin: 8px 0 0; padding: 0; max-block-size: 40vh; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.result { inline-size: 100%; text-align: start; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+.result span { grid-column: 1 / -1; overflow-wrap: anywhere; color: var(--muted); }
+.result small { color: var(--muted); }
+.mrow.found .bub { outline: 2px solid var(--btn); outline-offset: 2px; }

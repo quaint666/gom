@@ -38,6 +38,10 @@ interface Thread {
   /** What you had read, and how many were new, when you opened it: the "new messages" divider. */
   lastReadAtOpen: number;
   unreadAtOpen: number;
+  /** Opened with unread messages: the next time the divider is drawn, scroll to it instead of to the bottom. */
+  jump: boolean;
+  /** Messages from others that arrived while you were reading further up. */
+  below: number;
   draft: string;
   /** The message the next one will answer, shown above the composer. */
   replying: Reply | null;
@@ -73,6 +77,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let live: LiveControl | null = null;
   let scrollAnchor: number | null = null;
   let menu: { id: string; confirming: boolean; hide?: boolean } | null = null;
+  /** The search bar of the open conversation: what was asked, and what came back (null while waiting for the first answer). */
+  let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
+  let found: string | null = null;
   /** The message being passed on, while the person picks where to. */
   let forwarding: Shown | null = null;
 
@@ -83,7 +90,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, draft: '', replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -156,7 +163,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
-    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''}`;
+    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${found === m.id ? 'found' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
     return html`
@@ -189,6 +196,23 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return (msg) => lastMine !== undefined && msg.id === lastMine.id && count > 0 ? (group ? `Đã xem bởi ${count}` : 'Đã xem') : null;
   }
 
+  /** Looking for words in this conversation: a field, and the messages that contain them, newest first. */
+  const searchPanel = (s: NonNullable<typeof searching>) => html`
+    <div class="searchbar" role="search">
+      <form data-search-form @submit=${(e: Event) => { e.preventDefault(); void runSearch(); }}>
+        <input type="search" name="q" aria-label="Từ cần tìm" placeholder="Tìm tin nhắn" autocomplete="off" maxlength="100"
+          .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; }}
+          @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { searching = null; update(); } }}>
+        <button class="btn small" type="submit" data-do-search>Tìm</button>
+      </form>
+      ${s.results === null ? nothing : s.results.length === 0
+        ? html`<p class="hint" data-no-results>Không tìm thấy tin nhắn nào.</p>`
+        : html`<ul class="results">${s.results.map((r) => html`
+          <li><button type="button" class="result" data-result=${r.id} @click=${() => void reveal(r)}>
+            <b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><small>${listTime(r.createdAt, deps.now())}</small>
+            <span>${[...r.body].length > 160 ? [...r.body].slice(0, 160).join('') + '…' : r.body}</span></button></li>`)}</ul>`}
+    </div>`;
+
   /** Where to pass a message on: your conversations, newest first. The message goes as a new message from you, with nothing saying who wrote it first. */
   const forwardPanel = (m: Shown) => html`
     <div class="forward card" role="group" aria-label="Chuyển tiếp tin nhắn" data-forward-panel>
@@ -215,15 +239,19 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a>
           ${avatar(c?.title ?? '?')}
           <div class="th-title"><b>${c?.title ?? '…'}</b>${c?.peer ? html`<small>@${c.peer.gomId}</small>` : nothing}${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>
-          ${c === undefined ? nothing : html`<button class="ib" type="button" data-mute aria-pressed=${c.muted ? 'true' : 'false'}
+          ${c === undefined ? nothing : html`<button class="ib" type="button" data-search aria-label="Tìm trong cuộc trò chuyện" aria-expanded=${searching ? 'true' : 'false'}
+            @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
+          <button class="ib" type="button" data-mute aria-pressed=${c.muted ? 'true' : 'false'}
             aria-label=${c.muted ? 'Bật lại thông báo' : 'Tắt thông báo'} @click=${() => void toggleMute(c)}>${c.muted ? icons.bellOff() : icons.bell()}</button>`}
           ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label="Thông tin nhóm">${icons.users()}</a>` : nothing}
         </header>
         ${banner()}
+        ${searching === null ? nothing : searchPanel(searching)}
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
         </div>
+        ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${t.replying === null ? nothing : html`
           <div class="replybar" data-replybar>
@@ -258,8 +286,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const after = root.querySelector<HTMLElement>('.msgs');
     if (after === null || openId === null) return;
     const t = threadOf(openId);
-    if (scrollAnchor !== null) { after.scrollTop += after.scrollHeight - scrollAnchor; scrollAnchor = null; }
-    else if (t.stick) after.scrollTop = after.scrollHeight;
+    if (scrollAnchor !== null) { after.scrollTop += after.scrollHeight - scrollAnchor; scrollAnchor = null; return; }
+    if (t.jump) {
+      // The first unread message is where reading starts. It can be drawn only once the history is here.
+      const divider = after.querySelector<HTMLElement>('.newdiv');
+      if (divider !== null) { t.jump = false; t.stick = false; divider.scrollIntoView?.({ block: 'start' }); return; }
+      if (t.loaded) t.jump = false;   // the first unread one is further back than what was loaded: read from the end
+    }
+    if (t.stick) after.scrollTop = after.scrollHeight;
   }
 
   // ---- the person's actions
@@ -279,7 +313,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   function onScroll(id: string, box: HTMLElement): void {
-    threadOf(id).stick = box.scrollHeight - box.scrollTop - box.clientHeight < GAP_NEAR_BOTTOM_PX;
+    const t = threadOf(id);
+    t.stick = box.scrollHeight - box.scrollTop - box.clientHeight < GAP_NEAR_BOTTOM_PX;
+    if (t.stick && t.below > 0) { t.below = 0; update(); }
   }
 
   function onDraft(e: Event): void {
@@ -308,6 +344,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const c = chatOf(id);
     if (c !== undefined) { t.lastReadAtOpen = c.lastReadSeq; t.unreadAtOpen = c.unread; }
     t.stick = true;
+    t.jump = t.unreadAtOpen > 0;
+    t.below = 0;
     update();
     if (!t.loaded) void loadHistory(id);
     else markRead(id);
@@ -386,7 +424,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       t.pending = t.pending.filter((p) => p.clientId !== message.clientId);
       // The message being answered was taken back: there is nothing left to answer.
       if (event.kind === 'deleted' && t.replying?.id === message.id) t.replying = null;
+      const had2 = t.messages.length;
       t.messages = mergeMessages(t.messages, [message]);
+      // Something new from someone else while you are reading further up: say so, and offer the way down.
+      if (event.kind === 'created' && t.loaded && !t.stick && t.messages.length > had2 && message.sender.id !== me?.id && conversation === openId) t.below++;
       // A number is missing: ask the server to fill in from the last step we knew of.
       if (t.loaded && event.seq > had + 1) live?.sync(conversation, had);
       t.cursor = Math.max(t.cursor, event.seq);
@@ -479,6 +520,38 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  // ---- searching
+
+  async function runSearch(): Promise<void> {
+    if (searching === null || openId === null) return;
+    const s = searching;
+    const q = s.q.trim();
+    if (q === '') return;
+    // Only the newest question may fill the list: an older, slower answer is dropped.
+    const ticket = ++s.ticket;
+    s.asked = q;
+    const result = await api.search(openId, q);
+    if (searching !== s || s.ticket !== ticket) return;
+    if (!result.ok) { handleFailure(result); return; }
+    s.results = result.data.results;
+    error = null;
+    update();
+  }
+
+  /** Goes to a message found by the search: older pages are loaded until it is there, then it is brought into view and marked for a moment. */
+  async function reveal(m: ChatMessage): Promise<void> {
+    const id = m.conversationId;
+    const t = threadOf(id);
+    searching = null;
+    t.stick = false;
+    update();
+    for (let pages = 0; !t.messages.some((x) => x.id === m.id) && t.hasMore && pages < 40; pages++) await loadOlder(id);
+    found = m.id;
+    update();
+    root.querySelector<HTMLElement>(`[data-msg="${m.id}"]`)?.scrollIntoView?.({ block: 'center' });
+    deps.timer.set(() => { if (found === m.id) { found = null; update(); } }, 2500);
+  }
+
   // ---- deleting a message for yourself
 
   /** Takes a message out of this device's view: it goes from the thread, and the list is asked again (the preview may have changed). */
@@ -489,6 +562,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (t.replying?.id === messageId) t.replying = null;
     }
     if (menu?.id === messageId) menu = null;
+    if (searching?.results) searching.results = searching.results.filter((r) => r.id !== messageId);
     update();
     void refreshList();
   }

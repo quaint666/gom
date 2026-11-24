@@ -1810,3 +1810,214 @@ describe('chat: deleting a message for yourself', () => {
     expect(root.querySelector('[data-replybar]')).toBeNull();
   });
 });
+
+describe('chat: where reading starts', () => {
+  const scrolled: Element[] = [];
+  beforeEach(() => {
+    scrolled.length = 0;
+    (Element.prototype as unknown as { scrollIntoView: (o?: unknown) => void }).scrollIntoView = function (this: Element) { scrolled.push(this); };
+  });
+  const history = { [C1]: [msg(1, 'mom'), msg(2, 'minh'), msg(3, 'minh')] };
+  const unreadChats = [withLast(msg(3, 'minh'), { lastReadSeq: 1, unread: 2 }), chat(C2, 'Lan')];
+
+  it('scrolls to the first unread message when a conversation with unread messages is opened', async () => {
+    start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    expect(scrolled).toHaveLength(1);
+    expect(scrolled[0]!.classList.contains('newdiv')).toBe(true);
+  });
+
+  it('does not scroll to a divider when nothing is unread', async () => {
+    start({ path: `/c/${C1}`, chats: [withLast(msg(3, 'minh'), { lastReadSeq: 3, unread: 0 })], history });
+    await flush();
+    expect(scrolled).toHaveLength(0);
+  });
+
+  it('jumps once, and a new message afterwards does not drag you back to the divider', async () => {
+    const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
+    await flush();
+    expect(scrolled).toHaveLength(1);
+  });
+
+  it('also jumps when you open a conversation you had already loaded', async () => {
+    const h = start({ chats: unreadChats, history });
+    await flush();
+    root.querySelectorAll<HTMLAnchorElement>('a[data-chat]')[0]!.click();
+    await flush();
+    expect(scrolled).toHaveLength(1);
+    expect(h.nav.push).toHaveBeenCalledWith(`/c/${C1}`);
+  });
+
+  it('says how many new messages arrived while you read further up, and the button takes you down', async () => {
+    const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+    h.handlers().event(C1, created(msg(4, 'minh', 'mới một')));
+    h.handlers().event(C1, created(msg(5, 'minh', 'mới hai')));
+    await flush();
+    const pill = root.querySelector<HTMLButtonElement>('[data-jump-bottom]')!;
+    expect(text(pill)).toContain('2 tin mới');
+    pill.click();
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+
+  it('does not count your own messages or a repeat of one already shown', async () => {
+    const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    h.handlers().event(C1, created(msg(4, 'mom', 'của mẹ')));
+    h.handlers().event(C1, created(msg(3, 'minh')));
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+
+  it('takes the button away when you scroll down to the end yourself', async () => {
+    const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
+    await flush();
+    h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).not.toBeNull();
+    root.querySelector('.msgs')!.dispatchEvent(new Event('scroll'));   // jsdom has no layout: every box is "at the bottom"
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+
+  it('shows no button while you are at the bottom', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [withLast(msg(3, 'minh'), { lastReadSeq: 3, unread: 0 })], history });
+    await flush();
+    h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
+    await flush();
+    expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+});
+
+describe('chat: searching a conversation', () => {
+  const scrolled: Element[] = [];
+  beforeEach(() => {
+    scrolled.length = 0;
+    (Element.prototype as unknown as { scrollIntoView: (o?: unknown) => void }).scrollIntoView = function (this: Element) { scrolled.push(this); };
+  });
+  const messages = [msg(1, 'minh', 'Tối nay ăn phở'), msg(2, 'mom', 'ok')];
+  const hit = (m: ChatMessage): ChatMessage => m;
+  const open = (extra: Record<string, unknown> = {}) => start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: messages }, api: extra });
+  const toggle = async () => { root.querySelector<HTMLButtonElement>('.th-head button[data-search]')!.click(); await flush(); };
+  const ask = async (q: string) => {
+    const input = root.querySelector<HTMLInputElement>('.searchbar input')!;
+    input.value = q; input.dispatchEvent(new Event('input', { bubbles: true }));
+    root.querySelector<HTMLFormElement>('[data-search-form]')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    await flush();
+  };
+
+  it('opens a search bar from the header and closes it again', async () => {
+    open();
+    await flush();
+    expect(root.querySelector('.searchbar')).toBeNull();
+    await toggle();
+    expect(root.querySelector('.searchbar input')).not.toBeNull();
+    await toggle();
+    expect(root.querySelector('.searchbar')).toBeNull();
+  });
+
+  it('asks the server about this conversation and lists who said it, when, and the words', async () => {
+    const search = vi.fn(async () => ok({ results: [hit(messages[0]!)] }));
+    open({ search });
+    await flush();
+    await toggle();
+    await ask('  phở ');
+    expect(search).toHaveBeenCalledWith(C1, 'phở');
+    const row = root.querySelector('[data-result="id1"]')!;
+    expect(text(row)).toContain('Minh');
+    expect(text(row)).toContain('Tối nay ăn phở');
+  });
+
+  it('says so when nothing was found', async () => {
+    open();
+    await flush();
+    await toggle();
+    await ask('xyz');
+    expect(root.querySelector('[data-no-results]')).not.toBeNull();
+  });
+
+  it('does not ask for an empty search', async () => {
+    const h = open();
+    await flush();
+    await toggle();
+    await ask('   ');
+    expect(h.api.search).not.toHaveBeenCalled();
+  });
+
+  it('shows what went wrong when the search fails', async () => {
+    open({ search: vi.fn(async () => fail('server', 500)) });
+    await flush();
+    await toggle();
+    await ask('phở');
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('closes on Escape', async () => {
+    open();
+    await flush();
+    await toggle();
+    root.querySelector('.searchbar input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(root.querySelector('.searchbar')).toBeNull();
+  });
+
+  it('lets only the newest answer fill the list, even if an older one comes last', async () => {
+    const finish: Array<(v: unknown) => void> = [];
+    const search = vi.fn(() => new Promise((resolve) => { finish.push(resolve); }));
+    open({ search });
+    await flush();
+    await toggle();
+    await ask('một');
+    await ask('hai');
+    finish[1]!(ok({ results: [hit(messages[1]!)] })); await flush();
+    finish[0]!(ok({ results: [hit(messages[0]!)] })); await flush();
+    expect(root.querySelector('[data-result="id2"]')).not.toBeNull();
+    expect(root.querySelector('[data-result="id1"]')).toBeNull();
+  });
+
+  it('takes you to a result that is already on screen, and marks it for a moment', async () => {
+    const h = open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
+    await flush();
+    await toggle();
+    await ask('phở');
+    scrolled.length = 0;
+    root.querySelector<HTMLButtonElement>('[data-result="id1"]')!.click();
+    await flush();
+    expect(root.querySelector('.searchbar')).toBeNull();
+    expect(scrolled.some((e) => e.getAttribute('data-msg') === 'id1')).toBe(true);
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
+    h.timers[h.timers.length - 1]!.fn();
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(false);
+  });
+
+  it('loads older messages until a result that is further back is there', async () => {
+    const old = msg(1, 'minh', 'xa lắm phở');
+    const history = vi.fn(async (_id: string, before?: number) => before === undefined
+      ? ok({ messages: [msg(3, 'minh'), msg(2, 'mom')], hasMore: true, lastSeq: 3 })
+      : ok({ messages: [old], hasMore: false, lastSeq: 3 }));
+    open({ history, search: vi.fn(async () => ok({ results: [hit(old)] })) });
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')).toBeNull();
+    await toggle();
+    await ask('phở');
+    root.querySelector<HTMLButtonElement>('[data-result="id1"]')!.click();
+    await flush();
+    expect(history).toHaveBeenCalledWith(C1, 2);
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
+  });
+
+  it('drops a result from the list when you delete that message for yourself', async () => {
+    const h = open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
+    await flush();
+    await toggle();
+    await ask('phở');
+    h.handlers().hidden(C1, 'id1');
+    await flush();
+    expect(root.querySelector('[data-result="id1"]')).toBeNull();
+  });
+});
