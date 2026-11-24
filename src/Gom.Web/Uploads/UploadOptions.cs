@@ -9,6 +9,9 @@ public sealed class UploadOptions
     /// <summary>The largest picture accepted, in bytes, before it is made smaller.</summary>
     public long MaxImageBytes { get; set; } = 10 * 1024 * 1024;
 
+    /// <summary>How many pictures and files one message may carry.</summary>
+    public int MaxPerMessage { get; set; } = 10;
+
     /// <summary>The largest file accepted, in bytes. Files are kept as they are.</summary>
     public long MaxFileBytes { get; set; } = 25 * 1024 * 1024;
 

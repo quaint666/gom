@@ -37,10 +37,13 @@ export interface Sender { id: string; displayName: string }
 export interface Reaction { emoji: string; users: Sender[] }
 /** The quote above an answer. With no sender and no snippet, the quoted message is not there for this reader. */
 export interface Reply { id: string; sender: Sender | null; snippet: string | null }
-export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null }
+/** A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb. */
+export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
-export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean }
+/** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
+export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'file' | null }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; muted?: boolean; joinApproval?: boolean;

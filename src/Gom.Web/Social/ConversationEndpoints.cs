@@ -88,6 +88,7 @@ public static class ConversationEndpoints
                     .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
                     {
                         x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.CreatedAt, Deleted = x.DeletedAt != null, SenderId = u.Id, u.DisplayName,
+                        Attached = db.Attachments.Where(a => a.MessageId == x.Id).OrderBy(a => a.Position).Select(a => (int?)a.Kind).FirstOrDefault(),
                     }).FirstOrDefault(),
                 Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)),
             }).ToListAsync(ct);
@@ -107,6 +108,7 @@ public static class ConversationEndpoints
             lastMessage = r.Last is null ? null : new
             {
                 seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt, deleted = r.Last.Deleted,
+                attachment = r.Last.Attached is null ? null : r.Last.Attached == (int)AttachmentKind.Image ? "image" : "file",
                 sender = new { id = r.Last.SenderId, displayName = r.Last.DisplayName },
             },
         }));

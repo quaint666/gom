@@ -125,7 +125,6 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("messages", t =>
             {
                 t.HasCheckConstraint("ck_messages_seq", "seq > 0");
-                t.HasCheckConstraint("ck_messages_body", "deleted_at IS NOT NULL OR length(body) > 0");
             });
             e.Property(x => x.Body).HasMaxLength(16000);
             // Order inside a conversation, and "this device already sent this one".

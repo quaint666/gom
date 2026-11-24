@@ -74,12 +74,13 @@ public class MessageSchemaTests(TestDatabase database) : IClassFixture<TestDatab
     }
 
     [Fact]
-    public async Task The_sequence_starts_at_one_and_an_empty_body_is_refused_unless_recalled()
+    public async Task The_sequence_starts_at_one_and_an_empty_body_is_allowed_for_a_message_that_is_only_pictures()
     {
         var (user, chat) = await Setup();
         await Refused(Msg(user, chat, 0));
         await Refused(Msg(user, chat, -3));
-        await Refused(Msg(user, chat, 5, body: ""));
+        // Words may be empty when the message is only pictures or files; the API refuses a message with neither (see MessageAttachmentTests).
+        await Save(Msg(user, chat, 5, body: ""));
 
         var recalled = Msg(user, chat, 6, body: "");
         recalled.DeletedAt = DateTimeOffset.UtcNow;

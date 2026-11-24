@@ -2,6 +2,7 @@ using Gom.Web.Auth;
 using Gom.Web.Chat;
 using Gom.Web.Chat.Live;
 using Gom.Web.Data;
+using Gom.Web.Uploads;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -132,7 +133,7 @@ public static class GroupEndpoints
         return null;
     }
 
-    private static async Task<IResult> Leave(Guid id, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    private static async Task<IResult> Leave(Guid id, HttpContext http, GomDbContext db, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -147,8 +148,9 @@ public static class GroupEndpoints
         {
             // The leader hands over first. Alone in the group, there is nobody to hand over to: leaving ends it.
             if (everyone.Count > 1) return Error(StatusCodes.Status409Conflict, "leader_must_hand_over");
-            await DeleteGroup(db, id, ct);
+            var files = await DeleteGroup(db, id, ct);
             await tx.CommitAsync(ct);
+            AttachmentFiles.Forget(blobs, files);
             live.ConversationsChanged(everyone);
             return Results.NoContent();
         }
@@ -164,8 +166,11 @@ public static class GroupEndpoints
         db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
 
     /// <summary>Takes a group and everything in it out of the database. Every key is Restrict, so this goes from the leaves inward.</summary>
-    private static async Task DeleteGroup(GomDbContext db, Guid id, CancellationToken ct)
+    private static async Task<List<Guid>> DeleteGroup(GomDbContext db, Guid id, CancellationToken ct)
     {
+        // The uploads of the conversation, used or not; their files are removed after the commit.
+        var files = await db.Attachments.Where(a => a.ConversationId == id).Select(a => a.Id).ToListAsync(ct);
+        await db.Attachments.Where(a => a.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.JoinRequests.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Bans.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Reactions.Where(r => db.Messages.Any(m => m.Id == r.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
@@ -175,6 +180,7 @@ public static class GroupEndpoints
         await db.Messages.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Members.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Conversations.Where(c => c.Id == id).ExecuteDeleteAsync(ct);
+        return files;
     }
 
     /// <summary>A leader or a deputy takes a member out. A deputy cannot take out the leader or another deputy. The person is gone as if they had left.</summary>
@@ -377,7 +383,7 @@ public static class GroupEndpoints
     }
 
     /// <summary>The leader ends the group: its messages go for everyone.</summary>
-    private static async Task<IResult> Disband(Guid id, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    private static async Task<IResult> Disband(Guid id, HttpContext http, GomDbContext db, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -389,8 +395,9 @@ public static class GroupEndpoints
         await LockGroup(db, id, ct);
         if (!await db.Members.AnyAsync(m => m.ConversationId == id && m.UserId == me && m.Role == GroupRole.Leader, ct)) return Error(StatusCodes.Status403Forbidden, "not_allowed");
         var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
-        await DeleteGroup(db, id, ct);
+        var files = await DeleteGroup(db, id, ct);
         await tx.CommitAsync(ct);
+        AttachmentFiles.Forget(blobs, files);
         live.ConversationsChanged(everyone);
         return Results.NoContent();
     }
