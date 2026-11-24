@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,5 +57,62 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
         // At Information, EF prints every statement; the level is set in appsettings.json for every environment.
         var level = app.Factory.Services.GetRequiredService<IConfiguration>()["Logging:LogLevel:Microsoft.EntityFrameworkCore.Database.Command"];
         Assert.Equal("Warning", level);
+    }
+}
+
+/// <summary>What the app believes about the visitor behind a proxy chain.</summary>
+public class ProxyTests(AppFixture app) : IClassFixture<AppFixture>
+{
+    /// <summary>Shows the address the app ends up with, after the forwarded-headers step, in a response header.</summary>
+    private sealed class ShowAddress : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => builder =>
+        {
+            builder.Use(async (context, run) =>
+            {
+                context.Response.OnStarting(() =>
+                {
+                    context.Response.Headers["X-Seen"] = $"{context.Connection.RemoteIpAddress}|{context.Request.Scheme}";
+                    return Task.CompletedTask;
+                });
+                await run();
+            });
+            next(builder);
+        };
+    }
+
+    private async Task<string> Seen(string? hops)
+    {
+        var factory = app.Factory.WithWebHostBuilder(b =>
+        {
+            if (hops is not null) b.UseSetting("ForwardedHeaders:Hops", hops);
+            b.ConfigureServices(s => s.AddSingleton<IStartupFilter, ShowAddress>());
+        });
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/healthz");
+        request.Headers.Add("X-Test-Ip", "10.9.9.9");
+        request.Headers.Add("X-Forwarded-For", "1.2.3.4, 5.6.7.8");
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        using var response = await client.SendAsync(request);
+        return response.Headers.GetValues("X-Seen").Single();
+    }
+
+    [Fact]
+    public async Task With_no_proxy_the_forwarded_headers_are_not_believed() =>
+        Assert.Equal("10.9.9.9|http", await Seen(null));
+
+    [Fact]
+    public async Task With_two_proxies_the_visitor_is_the_second_address_from_the_right() =>
+        Assert.Equal("1.2.3.4|https", await Seen("2"));
+
+    [Fact]
+    public async Task With_one_proxy_the_visitor_is_the_last_address() =>
+        Assert.Equal("5.6.7.8|https", await Seen("1"));
+
+    [Fact]
+    public void A_negative_number_of_proxies_stops_the_app_at_start()
+    {
+        var factory = app.Factory.WithWebHostBuilder(b => b.UseSetting("ForwardedHeaders:Hops", "-1"));
+        Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
     }
 }
