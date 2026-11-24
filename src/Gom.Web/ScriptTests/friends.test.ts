@@ -185,8 +185,6 @@ describe('friends page', () => {
     ['accepts', '[data-incoming="lan"] button[data-action="accept"]', 'acceptFriend', 'lan'],
     ['declines', '[data-incoming="lan"] button[data-action="decline"]', 'withdrawFriend', 'lan'],
     ['cancels', '[data-outgoing="hoa"] button[data-action="cancel"]', 'withdrawFriend', 'hoa'],
-    ['unfriends', '[data-friend="minh"] button[data-action="unfriend"]', 'unfriend', 'minh'],
-    ['blocks a friend', '[data-friend="minh"] button[data-action="block"]', 'block', 'minh'],
     ['unblocks', '[data-blocked="bad"] button[data-action="unblock"]', 'unblock', 'bad'],
   ] as const)('%s and reloads the lists', async (_name, selector, method, id) => {
     const a = mount();
@@ -195,6 +193,46 @@ describe('friends page', () => {
     await flush();
     expect(a[method]).toHaveBeenCalledWith(id);
     expect(a.friends).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['unfriending', 'unfriend', 'Xóa bạn với'],
+    ['blocking', 'block', 'Chặn'],
+  ] as const)('asks before %s, names the person, and does nothing until yes', async (_name, method, words) => {
+    const a = mount();
+    await flush();
+    root.querySelector<HTMLButtonElement>(`[data-friend="minh"] button[data-action="${method}"]`)!.click();
+    await flush();
+    expect(text(root.querySelector('[data-sure="minh"]')!)).toContain(words);
+    expect(text(root.querySelector('[data-sure="minh"]')!)).toContain('Minh');
+    expect(a[method]).not.toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>('[data-confirm-sure]')!.click();
+    await flush();
+    expect(a[method]).toHaveBeenCalledWith('minh');
+    expect(a.friends).toHaveBeenCalledTimes(2);
+    expect(root.querySelector('[data-sure]')).toBeNull();
+  });
+
+  it('asks only under the friend you tapped, not under the others', async () => {
+    const two = { ...lists, friends: [{ gomId: 'minh', displayName: 'Minh' }, { gomId: 'cuong', displayName: 'Cường' }] };
+    mount(api({ friends: vi.fn(async () => ok(two)) }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-friend="cuong"] button[data-action="block"]')!.click();
+    await flush();
+    expect(root.querySelectorAll('[data-sure]')).toHaveLength(1);
+    expect(root.querySelector('[data-sure="cuong"]')).not.toBeNull();
+    expect(text(root.querySelector('[data-sure]')!)).toContain('Cường');
+  });
+
+  it.each(['unfriend', 'block'] as const)('drops the question on "Hủy" and %s is not called', async (method) => {
+    const a = mount();
+    await flush();
+    root.querySelector<HTMLButtonElement>(`[data-friend="minh"] button[data-action="${method}"]`)!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-cancel-sure]')!.click();
+    await flush();
+    expect(a[method]).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-sure]')).toBeNull();
   });
 
   it('opens a conversation with a friend and goes to it', async () => {
