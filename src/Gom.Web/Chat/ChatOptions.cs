@@ -9,4 +9,10 @@ public sealed class ChatOptions
     public int SendBurst { get; set; } = 20;
     /// <summary>After the burst, how many more per second.</summary>
     public double SendPerSecond { get; set; } = 2;
+    /// <summary>Open sockets one person may hold (phone, laptop, a tab or two). The oldest is closed to make room.</summary>
+    public int MaxSocketsPerUser { get; set; } = 5;
+    /// <summary>Frames waiting for one socket. A client that falls this far behind is closed and catches up from its cursor.</summary>
+    public int SocketQueue { get; set; } = 64;
+    /// <summary>How long one frame may take to leave before the socket is given up on.</summary>
+    public int SocketSendTimeoutSeconds { get; set; } = 10;
 }

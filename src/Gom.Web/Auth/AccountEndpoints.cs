@@ -1,3 +1,4 @@
+using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -31,7 +32,7 @@ public static class AccountEndpoints
     }
 
     private static async Task<IResult> ChangePassword(PasswordRequest request, HttpContext http, GomDbContext db, PasswordService passwords,
-        HashLimiter limiter, SignInThrottle throttle, TimeProvider clock, CancellationToken ct)
+        HashLimiter limiter, SignInThrottle throttle, TimeProvider clock, ConnectionRegistry sockets, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(request.Current) || request.Password is null) return Results.BadRequest(new { error = "missing_fields" });
 
@@ -75,11 +76,12 @@ public static class AccountEndpoints
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), ct);
         await tx.CommitAsync(ct);
 
+        sockets.CloseUser(me, here);
         throttle.Succeeded(gomId);
         return Results.NoContent();
     }
 
-    private static async Task<IResult> Disable(string gomId, GomDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> Disable(string gomId, GomDbContext db, TimeProvider clock, ConnectionRegistry sockets, CancellationToken ct)
     {
         var id = gomId.Trim().ToLowerInvariant();
         var target = await db.Users.Where(u => u.GomId == id).Select(u => new { u.Id, u.IsOwner }).SingleOrDefaultAsync(ct);
@@ -91,6 +93,7 @@ public static class AccountEndpoints
         await db.Users.Where(u => u.Id == target.Id && u.DisabledAt == null).ExecuteUpdateAsync(s => s.SetProperty(u => u.DisabledAt, (DateTimeOffset?)now), ct);
         await db.Sessions.Where(s => s.UserId == target.Id && s.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), ct);
         await tx.CommitAsync(ct);
+        sockets.CloseUser(target.Id);
         return Results.NoContent();
     }
 

@@ -1,3 +1,4 @@
+using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -86,11 +87,12 @@ public static class AuthEndpoints
         return (issued.Token, expires);
     }
 
-    private static async Task<IResult> SignOut(HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> SignOut(HttpContext http, GomDbContext db, TimeProvider clock, ConnectionRegistry sockets, CancellationToken ct)
     {
         var sid = GomClaims.Session(http.User);
         var now = clock.GetUtcNow();
         await db.Sessions.Where(s => s.Id == sid).ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), ct);
+        sockets.CloseSession(sid);
         SessionCookie.Clear(http.Response);
         return Results.NoContent();
     }
@@ -108,13 +110,14 @@ public static class AuthEndpoints
         return Results.Ok(rows);
     }
 
-    private static async Task<IResult> EndSession(Guid id, HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> EndSession(Guid id, HttpContext http, GomDbContext db, TimeProvider clock, ConnectionRegistry sockets, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var now = clock.GetUtcNow();
         var ended = await db.Sessions.Where(s => s.Id == id && s.UserId == me && s.RevokedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), ct);
         if (ended == 0) return Results.NotFound();
+        sockets.CloseSession(id);
         if (id == GomClaims.Session(http.User)) SessionCookie.Clear(http.Response);
         return Results.NoContent();
     }

@@ -1,5 +1,6 @@
 using Gom.Web.Auth;
 using Gom.Web.Chat;
+using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Gom.Web.Social;
 using Microsoft.AspNetCore.Authentication;
@@ -17,6 +18,8 @@ builder.Services.AddDbContext<GomDbContext>(options => options.UseNpgsql(connect
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<ChatOptions>(builder.Configuration.GetSection("Chat"));
+builder.Services.AddSingleton<ConnectionRegistry>();
+builder.Services.AddSingleton<LiveDelivery>();
 builder.Services.AddSingleton<SendLimiter>(sp =>
 {
     var o = sp.GetRequiredService<IOptions<ChatOptions>>().Value;
@@ -40,6 +43,7 @@ var app = builder.Build();
 
 app.UseMiddleware<SecurityHeaders>();
 app.UseStaticFiles();
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(25) });
 app.UseMiddleware<OriginCheck>();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -49,6 +53,7 @@ app.MapAccount();
 app.MapFriends();
 app.MapConversations();
 app.MapMessages();
+app.MapSocket();
 
 // One small HTML file per page; the script in /js/main.js picks the page from data-page.
 void MapPage(string route, string file) => app.MapGet(route, (IWebHostEnvironment env) =>

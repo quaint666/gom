@@ -1,5 +1,6 @@
 using System.Globalization;
 using Gom.Web.Auth;
+using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -57,7 +58,7 @@ public static class MessageEndpoints
     // ---- sending
 
     private static async Task<IResult> Send(Guid id, SendRequest request, HttpContext http, GomDbContext db, TimeProvider clock,
-        SendLimiter limiter, IOptions<ChatOptions> options, CancellationToken ct)
+        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var kind = await KindIfMember(db, id, me, ct);
@@ -112,8 +113,10 @@ public static class MessageEndpoints
             await tx.CommitAsync(ct);
         }
 
-        // Only now is it sent: the answer (and, later, the live delivery) follow the commit.
-        return Results.Ok(ToDto(message, sender));
+        // Only now is it sent: the live delivery and the answer both follow the commit.
+        var dto = ToDto(message, sender);
+        await live.PublishCreatedAsync(db, dto);
+        return Results.Ok(dto);
     }
 
     private static Task<Message?> FindExisting(GomDbContext db, Guid sender, Guid clientId, CancellationToken ct) =>
