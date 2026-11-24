@@ -15,6 +15,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<MessageEvent> Events => Set<MessageEvent>();
     public DbSet<MessageHide> Hides => Set<MessageHide>();
+    public DbSet<MessagePin> Pins => Set<MessagePin>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -153,6 +154,16 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => x.MessageId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<MessagePin>(e =>
+        {
+            e.ToTable("message_pins");
+            e.HasKey(x => new { x.ConversationId, x.MessageId });
+            e.HasIndex(x => x.MessageId);
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.PinnedBy).OnDelete(DeleteBehavior.Restrict);
         });
 
         // Postgres convention: snake_case names, whatever the C# property is called.

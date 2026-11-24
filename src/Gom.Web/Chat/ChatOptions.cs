@@ -21,4 +21,6 @@ public sealed class ChatOptions
     public int MaxBadFrames { get; set; } = 5;
     /// <summary>How often a socket is sent a small "still here" message, in seconds. Anything in the path that cuts idle connections sees traffic, and the page can tell a dead connection from a quiet one.</summary>
     public int HeartbeatSeconds { get; set; } = 25;
+    /// <summary>How many messages may be pinned in one conversation.</summary>
+    public int MaxPins { get; set; } = 3;
 }

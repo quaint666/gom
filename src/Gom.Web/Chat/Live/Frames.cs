@@ -22,6 +22,8 @@ public static class Frames
     public static byte[] Hidden(Guid conversation, Guid message) => Json(new { t = "hidden", c = conversation, m = message });
     /// <summary>"Still here", sent every few seconds. The page closes and reconnects if nothing at all arrives for a minute.</summary>
     public static byte[] Heartbeat() => Json(new { t = "hb" });
+    /// <summary>"The pinned messages of this conversation changed": ask for them again.</summary>
+    public static byte[] Pins(Guid conversation) => Json(new { t = "pins", c = conversation });
     public static byte[] Ready() => Json(new { t = "ready" });
     public static byte[] Live(Guid conversation, EventDto e) => Json(new { t = "event", c = conversation, @event = e });
     public static byte[] Events(Guid conversation, IReadOnlyList<EventDto> events, bool hasMore) => Json(new { t = "events", c = conversation, events, hasMore });
