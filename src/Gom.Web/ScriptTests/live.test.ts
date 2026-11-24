@@ -21,8 +21,14 @@ class FakeSocket implements SocketLike {
 
 let timers: { id: number; ms: number; fn: () => void }[];
 let nextTimer: number;
+let clock = 0;
+let watchers: { fn: () => void; ms: number; live: boolean }[] = [];
+/** Moves the clock and runs the page's silence check once, as its timer would. */
+const tickWatch = (afterMs: number) => { clock += afterMs; for (const w of watchers) if (w.live) w.fn(); };
 const deps = (random = 1): LiveDeps => ({
   socket: (url) => new FakeSocket(url),
+  now: () => clock,
+  interval: (fn, ms) => { const w = { fn, ms, live: true }; watchers.push(w); return () => { w.live = false; }; },
   timer: {
     set: (fn, ms) => { const id = ++nextTimer; timers.push({ id, ms, fn }); return id; },
     clear: (id) => { timers = timers.filter((t) => t.id !== id); },
@@ -36,7 +42,7 @@ function handlers(): LiveHandlers & { [K in keyof LiveHandlers]: ReturnType<type
 const last = () => FakeSocket.all[FakeSocket.all.length - 1]!;
 const fireTimer = () => { const t = timers.shift()!; t.fn(); };
 
-beforeEach(() => { FakeSocket.all = []; timers = []; nextTimer = 0; });
+beforeEach(() => { FakeSocket.all = []; timers = []; nextTimer = 0; clock = 0; watchers = []; });
 
 describe('live socket', () => {
   it('connects, and is "connected" only once the server says ready', () => {
@@ -209,5 +215,98 @@ describe('live socket', () => {
     createLive('ws://x/ws', h, deps()).start();
     last().drop();
     expect(h.state).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('live socket: a connection that has gone silent', () => {
+  const up = () => {
+    const h = handlers();
+    const live = createLive('ws://x/ws', h, deps());
+    live.start();
+    last().accept(); last().say({ t: 'ready' });
+    return { h, live };
+  };
+
+  it('keeps a connection that keeps hearing from the server, even if the frames are only heartbeats', () => {
+    const { h } = up();
+    for (let i = 0; i < 6; i++) { tickWatch(25_000); last().say({ t: 'hb' }); }
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(h.state).not.toHaveBeenCalledWith(false);
+  });
+
+  it('lets go of a connection that has been silent for over a minute, and reconnects at once', () => {
+    const { h } = up();
+    const old = last();
+    tickWatch(61_000);
+    expect(h.state).toHaveBeenLastCalledWith(false);
+    expect(old.closed).toBe(true);
+    expect(FakeSocket.all).toHaveLength(2);
+    expect(last()).not.toBe(old);
+  });
+
+  it('does not let go of one that has been quiet for less than that', () => {
+    up();
+    tickWatch(59_000);
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
+  it('gives up on a connection that never says "ready" either', () => {
+    const h = handlers();
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept();
+    tickWatch(61_000);
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
+  it('ignores what a let-go connection says or does afterwards', () => {
+    const { h } = up();
+    const old = last();
+    tickWatch(61_000);
+    const states = h.state.mock.calls.length;
+    old.say({ t: 'conversations' });
+    old.drop(1006);
+    expect(h.conversations).not.toHaveBeenCalled();
+    expect(h.state.mock.calls.length).toBe(states);
+    expect(timers).toHaveLength(0);   // no second reconnect was scheduled
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
+  it('on return to the tab, replaces a connection that has been silent for over 35 s', () => {
+    const { live } = up();
+    clock += 36_000;
+    live.retryNow();
+    expect(FakeSocket.all).toHaveLength(2);
+  });
+
+  it('on return to the tab, leaves a connection that was heard from a moment ago', () => {
+    const { live } = up();
+    clock += 20_000;
+    live.retryNow();
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
+  it('stops watching when stopped', () => {
+    const { live } = up();
+    live.stop();
+    tickWatch(120_000);
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(watchers.every((w) => !w.live)).toBe(true);   // the timer itself is gone, not just idle
+  });
+
+  it('counts silence from the moment of connecting, not from the start of the page', () => {
+    clock = 500_000;
+    const h = handlers();
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept();   // still waiting for "ready": nothing has been heard yet, so only the moment of connecting can count from
+    tickWatch(30_000);
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
+  it('starts counting again from the new connection', () => {
+    up();
+    tickWatch(61_000);
+    last().accept(); last().say({ t: 'ready' });
+    tickWatch(30_000);
+    expect(FakeSocket.all).toHaveLength(2);
   });
 });
