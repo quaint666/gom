@@ -32,9 +32,11 @@ interface Harness {
   go: ReturnType<typeof vi.fn>;
   visible: { value: boolean };
   coarse: { value: boolean };
+  timers: { ms: number; fn: () => void; live: boolean }[];
+  outbox: { items: { conversation: string; clientId: string; body: string; createdAt: string }[]; saves: number };
 }
 
-function start(opts: { path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown> } = {}): Harness {
+function start(opts: { outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown> } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(me)),
@@ -55,7 +57,18 @@ function start(opts: { path?: string; chats?: Conversation[]; history?: Record<s
   const coarse = { value: false };
   const go = vi.fn();
   let n = 0;
+  const timers: Harness['timers'] = [];
+  const outbox: Harness['outbox'] = { items: opts.outbox ?? [], saves: 0 };
   const deps: ChatDeps = {
+    timer: {
+      set: (fn, ms) => {
+        const entry = { ms, live: true, fn: () => { if (!entry.live) return; entry.live = false; fn(); } };
+        timers.push(entry);
+        return timers.length;
+      },
+      clear: (id) => { const t = timers[id - 1]; if (t) t.live = false; },
+    },
+    outbox: () => ({ load: () => outbox.items.map((i) => ({ ...i })), save: (items) => { outbox.items = items.map((i) => ({ ...i })); outbox.saves++; } }),
     live: (h) => { captured = h; return live as unknown as LiveControl; },
     nav: { path: () => nav.path, push: nav.push, onPop: (cb) => { popCallback = cb; } },
     now: () => NOW,
@@ -64,7 +77,7 @@ function start(opts: { path?: string; chats?: Conversation[]; history?: Record<s
     visible: () => visible.value,
   };
   mountChat(root, api, go, deps);
-  return { api, handlers: () => captured!, live, nav, go, visible, coarse };
+  return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox };
 }
 
 const rows = () => [...root.querySelectorAll<HTMLElement>('[data-chat]')];
@@ -552,7 +565,7 @@ describe('chat: writing', () => {
 
   it('"Gửi lại" sends the same message with the same id, so it cannot arrive twice', async () => {
     const send = vi.fn()
-      .mockResolvedValueOnce(fail('server', 500))
+      .mockResolvedValueOnce(fail('invalid_message', 400))
       .mockResolvedValueOnce(ok({ ...msg(2, 'mom', 'thử lại'), clientId: 'new-1' }));
     open({ send });
     await flush();
@@ -569,7 +582,7 @@ describe('chat: writing', () => {
   });
 
   it('"Xóa" throws the unsent message away', async () => {
-    open({ send: vi.fn(async () => fail('server', 500)) });
+    open({ send: vi.fn(async () => fail('invalid_message', 400)) });
     await flush();
     compose('bỏ đi');
     submitForm();
@@ -672,5 +685,331 @@ describe('chat: scrolling', () => {
     await flush();
 
     expect(box.scrollTop).toBe(200);
+  });
+});
+
+
+describe('chat: the connection banner', () => {
+  const chats = [chat(C1, 'Minh')];
+
+  it('shows nothing while connected, a warning when the connection is lost, and nothing again when it returns', async () => {
+    const h = start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh')] } });
+    await flush();
+    expect(root.querySelector('.warn')).toBeNull();
+
+    h.handlers().state(false);
+    await flush();
+    expect(root.querySelector('.thread-pane .warn')).not.toBeNull();   // a phone shows only this pane
+    expect(text(root.querySelector('.warn')!)).toContain('Mất kết nối');
+    expect(root.querySelector('.warn')!.getAttribute('role')).toBe('status');
+
+    h.handlers().state(true);
+    await flush();
+    expect(root.querySelector('.warn')).toBeNull();
+  });
+
+  it('shows on the list as well, so a phone showing only the list still knows', async () => {
+    const h = start({ chats });
+    await flush();
+    h.handlers().state(false);
+    await flush();
+    expect(root.querySelector('.list-pane .warn')).not.toBeNull();
+  });
+});
+
+describe('chat: sending while the connection is bad', () => {
+  const chats = [chat(C1, 'Minh')];
+  const open = (extra: Record<string, unknown> = {}, outbox: Harness['outbox']['items'] = []) =>
+    start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh')] }, api: extra, outbox });
+  const pendingOf = (id: string) => root.querySelector(`[data-msg="${id}"]`);
+  const write = (body: string) => { compose(body); submitForm(); };
+  const networkDown = () => fail('network', 0);
+
+  it('keeps a message that could not be sent and waits, with a clock and a note, instead of calling it failed', async () => {
+    open({ send: vi.fn(async () => networkDown()) });
+    await flush();
+
+    write('đi chợ');
+    await flush();
+
+    const queued = pendingOf('new-1')!;
+    expect(queued.getAttribute('data-state')).toBe('queued');
+    expect(queued.querySelector('.ts .i')).not.toBeNull();
+    expect(text(queued.parentElement!)).toContain('Sẽ gửi khi có mạng');
+    expect(root.querySelector('button[data-retry]')).toBeNull();
+  });
+
+  it('says "will try again" rather than "when there is a network" when the server, not the network, was the problem', async () => {
+    open({ send: vi.fn(async () => fail('server', 503)) });
+    await flush();
+    write('máy chủ');
+    await flush();
+    expect(text(pendingOf('new-1')!.parentElement!)).toContain('Sẽ thử gửi lại');
+    expect(text(pendingOf('new-1')!.parentElement!)).not.toContain('có mạng');
+  });
+
+  it('sends it again by itself when the live connection returns, and then it is an ordinary message', async () => {
+    const send = vi.fn()
+      .mockResolvedValueOnce(networkDown())
+      .mockResolvedValueOnce(ok({ ...msg(2, 'mom', 'đi chợ'), clientId: 'new-1' }));
+    const h = open({ send });
+    await flush();
+    write('đi chợ');
+    await flush();
+
+    h.handlers().state(false);
+    h.handlers().state(true);
+    await flush();
+
+    expect(send.mock.calls.map((c) => c[1])).toEqual(['new-1', 'new-1']);
+    expect(pendingOf('new-1')).toBeNull();
+    expect(pendingOf('id2')).not.toBeNull();
+  });
+
+  it('sends it again when the browser says the network is back', async () => {
+    const send = vi.fn().mockResolvedValueOnce(networkDown()).mockResolvedValueOnce(ok({ ...msg(2, 'mom', 'x'), clientId: 'new-1' }));
+    open({ send });
+    await flush();
+    write('x');
+    await flush();
+
+    dispatchEvent(new Event('online'));
+    await flush();
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(pendingOf('id2')).not.toBeNull();
+  });
+
+  it('tries again on a timer too, waiting 1 s, 2 s, 4 s ... and never more than 30 s', async () => {
+    const send = vi.fn(async () => networkDown());
+    const h = open({ send });
+    await flush();
+    write('chờ');
+    await flush();
+
+    const waits: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const timer = h.timers.filter((t) => t.live).at(-1)!;
+      waits.push(timer.ms);
+      timer.fn();
+      await flush();
+    }
+
+    expect(waits).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
+    expect(send).toHaveBeenCalledTimes(9);
+  });
+
+  it('stops the timer once the message has gone', async () => {
+    const send = vi.fn().mockResolvedValueOnce(networkDown()).mockResolvedValueOnce(ok({ ...msg(2, 'mom', 'x'), clientId: 'new-1' }));
+    const h = open({ send });
+    await flush();
+    write('x');
+    await flush();
+    h.handlers().state(true);
+    await flush();
+    const callsBefore = send.mock.calls.length;
+
+    for (const t of h.timers) t.fn();
+    await flush();
+
+    expect(send.mock.calls.length).toBe(callsBefore);
+  });
+
+  it('keeps messages in the order they were written: the second waits for the first', async () => {
+    const order: string[] = [];
+    let n = 0;
+    const send = vi.fn(async (_c: string, clientId: string, body: string) => {
+      order.push(`${clientId}:${body}`);
+      if (clientId === 'new-1' && n++ === 0) return networkDown();
+      return ok({ ...msg(order.length + 1, 'mom', body), clientId });
+    });
+    const h = open({ send });
+    await flush();
+
+    write('một');
+    await flush();
+    write('hai');
+    await flush();
+    expect(order).toEqual(['new-1:một']);                 // the second was not tried while the first waits
+
+    h.handlers().state(true);
+    await flush();
+    expect(order).toEqual(['new-1:một', 'new-1:một', 'new-2:hai']);
+    expect(pendingOf('new-2')).toBeNull();
+  });
+
+  it('retries a busy server a few times and then gives up with the usual two choices', async () => {
+    const send = vi.fn(async () => fail('server', 503));
+    const h = open({ send });
+    await flush();
+    write('máy chủ bận');
+    await flush();
+    for (let i = 0; i < 6; i++) {
+      h.timers.filter((t) => t.live).at(-1)?.fn();
+      await flush();
+    }
+
+    expect(send.mock.calls.length).toBe(5);
+    expect(pendingOf('new-1')!.getAttribute('data-state')).toBe('failed');
+    expect(root.querySelector('button[data-retry]')).not.toBeNull();
+    expect(root.querySelector('button[data-discard]')).not.toBeNull();
+  });
+
+  it('waits as long as the server asks when told to slow down', async () => {
+    const send = vi.fn(async () => fail('too_many_messages', 429, 7));
+    const h = open({ send });
+    await flush();
+    write('nhanh quá');
+    await flush();
+
+    expect(pendingOf('new-1')!.getAttribute('data-state')).toBe('queued');
+    expect(h.timers.filter((t) => t.live).at(-1)!.ms).toBe(7000);
+  });
+
+  it('never waits less than a second, even if told zero', async () => {
+    const h = open({ send: vi.fn(async () => fail('too_many_messages', 429, 0)) });
+    await flush();
+    write('ngay');
+    await flush();
+    expect(h.timers.filter((t) => t.live).at(-1)!.ms).toBe(1000);
+  });
+
+  it('keeps only one retry timer going even when two things are waiting', async () => {
+    const send = vi.fn(async (_c: string, clientId: string) => (clientId === 'new-1' ? fail('invalid_message', 400) : fail('network', 0)));
+    const h = open({ send });
+    await flush();
+    write('bị từ chối');
+    await flush();
+    write('chờ mạng');
+    await flush();
+    expect(h.timers.filter((t) => t.live)).toHaveLength(1);
+
+    root.querySelector<HTMLButtonElement>('button[data-retry]')!.click();
+    await flush();
+
+    expect(h.timers.filter((t) => t.live)).toHaveLength(1);
+  });
+
+  it('starts the waits from one second again after something has gone through', async () => {
+    const results = [fail('network', 0), fail('network', 0)];
+    const send = vi.fn(async (_c: string, clientId: string) => results.shift() ?? ok({ ...msg(9, 'mom', 'x'), clientId, id: `ok-${clientId}` }));
+    const h = open({ send });
+    await flush();
+    write('một');
+    await flush();
+    h.timers.filter((t) => t.live).at(-1)!.fn();   // second failure: the wait grows to 2 s
+    await flush();
+    expect(h.timers.filter((t) => t.live).at(-1)!.ms).toBe(2000);
+    h.timers.filter((t) => t.live).at(-1)!.fn();   // goes through
+    await flush();
+
+    send.mockResolvedValueOnce(fail('network', 0));
+    write('hai');
+    await flush();
+    expect(h.timers.filter((t) => t.live).at(-1)!.ms).toBe(1000);
+  });
+
+  it('a message the server refuses does not hold back the ones after it', async () => {
+    const send = vi.fn(async (_c: string, clientId: string) =>
+      clientId === 'new-1' ? fail('not_friends', 403) : ok({ ...msg(2, 'mom', 'tiếp'), clientId }));
+    open({ send });
+    await flush();
+    write('bị từ chối');
+    await flush();
+    write('tiếp');
+    await flush();
+
+    expect(pendingOf('new-1')!.getAttribute('data-state')).toBe('failed');
+    expect(pendingOf('id2')).not.toBeNull();
+  });
+
+  it('"Gửi lại" on a failed message puts it back in line and sends it', async () => {
+    const send = vi.fn()
+      .mockResolvedValueOnce(fail('empty_message', 400))
+      .mockResolvedValueOnce(ok({ ...msg(2, 'mom', 'lại'), clientId: 'new-1' }));
+    open({ send });
+    await flush();
+    write('lại');
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-retry]')!.click();
+    await flush();
+    expect(pendingOf('id2')).not.toBeNull();
+  });
+
+  it('goes to sign-in when the session has gone, and keeps the message', async () => {
+    const h = open({ send: vi.fn(async () => fail('unauthorized', 401)) });
+    await flush();
+    write('hết phiên');
+    await flush();
+    expect(h.go).toHaveBeenCalledWith('/sign-in');
+    expect(h.outbox.items.map((i) => i.body)).toEqual(['hết phiên']);
+  });
+});
+
+describe('chat: the outbox survives a reload', () => {
+  const chats = [chat(C1, 'Minh')];
+  const open = (extra: Record<string, unknown> = {}, outbox: Harness['outbox']['items'] = []) =>
+    start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh')] }, api: extra, outbox });
+  const write = (body: string) => { compose(body); submitForm(); };
+
+  it('writes a message that could not be sent to the outbox, and takes it out once it has gone', async () => {
+    const send = vi.fn().mockResolvedValueOnce(fail('network', 0)).mockResolvedValueOnce(ok({ ...msg(2, 'mom', 'giữ lại'), clientId: 'new-1' }));
+    const h = open({ send });
+    await flush();
+
+    write('giữ lại');
+    await flush();
+    expect(h.outbox.items).toEqual([{ conversation: C1, clientId: 'new-1', body: 'giữ lại', createdAt: NOW.toISOString() }]);
+
+    h.handlers().state(true);
+    await flush();
+    expect(h.outbox.items).toEqual([]);
+  });
+
+  it('also saves a message the moment it is written, in case the page is closed before the answer', async () => {
+    let finish: (r: unknown) => void = () => undefined;
+    const h = open({ send: vi.fn(() => new Promise((resolve) => { finish = resolve; })) });
+    await flush();
+    write('đang bay');
+    await flush();
+    expect(h.outbox.items.map((i) => i.body)).toEqual(['đang bay']);
+    finish(ok({ ...msg(2, 'mom', 'đang bay'), clientId: 'new-1' }));
+    await flush();
+    expect(h.outbox.items).toEqual([]);
+  });
+
+  it('does not keep a message the server refused, and does not keep one that was thrown away', async () => {
+    const h = open({ send: vi.fn(async () => fail('not_friends', 403)) });
+    await flush();
+    write('bị từ chối');
+    await flush();
+    expect(h.outbox.items).toEqual([]);
+  });
+
+  it('sends what was left over from before the page was closed, as the same message', async () => {
+    const send = vi.fn(async (_c: string, clientId: string, body: string) => ok({ ...msg(2, 'mom', body), clientId }));
+    const h = open({ send }, [{ conversation: C1, clientId: 'old-1', body: 'từ lần trước', createdAt: at(11) }]);
+    await flush();
+
+    expect(send).toHaveBeenCalledWith(C1, 'old-1', 'từ lần trước');
+    expect(root.querySelector('[data-msg="id2"]')).not.toBeNull();
+    expect(h.outbox.items).toEqual([]);
+  });
+
+  it('shows it as waiting until it has gone, and in the right place when sent', async () => {
+    const send = vi.fn(async () => fail('network', 0));
+    open({ send }, [{ conversation: C1, clientId: 'old-1', body: 'chờ nhé', createdAt: at(11) }]);
+    await flush();
+    const waiting = root.querySelector('[data-msg="old-1"]')!;
+    expect(waiting.getAttribute('data-state')).toBe('queued');
+    expect(waiting.textContent).toContain('chờ nhé');
+  });
+
+  it('drops a leftover for a conversation you are no longer in', async () => {
+    const send = vi.fn();
+    const h = open({ send }, [{ conversation: C2, clientId: 'old-2', body: 'đi lạc', createdAt: at(11) }]);
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(h.outbox.items).toEqual([]);
   });
 });

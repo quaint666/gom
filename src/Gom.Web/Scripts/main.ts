@@ -1,7 +1,7 @@
 import { createApi } from './api.js';
 import { mountAdd } from './pages/add.js';
 import { mountFriends } from './pages/friends.js';
-import { mountChat, type ChatDeps } from './pages/chat.js';
+import { mountChat, type ChatDeps, type OutboxItem } from './pages/chat.js';
 import { createLive } from './chat/live.js';
 import { mountJoin } from './pages/join.js';
 import { mountOwner } from './pages/owner.js';
@@ -26,6 +26,17 @@ const chatDeps = (): ChatDeps => ({
   newId: () => crypto.randomUUID(),
   coarsePointer: () => matchMedia('(pointer: coarse)').matches,
   visible: () => document.visibilityState === 'visible',
+  timer: { set: (fn, ms) => window.setTimeout(fn, ms), clear: (id) => window.clearTimeout(id) },
+  outbox: (gomId) => {
+    const key = `gom-outbox:${gomId}`;
+    return {
+      load: () => {
+        try { const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? '[]'); return Array.isArray(parsed) ? (parsed as OutboxItem[]) : []; } catch { return []; }
+      },
+      // Storage can be full or switched off (private browsing): then the queue still works until the page closes.
+      save: (items) => { try { if (items.length === 0) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(items)); } catch { /* keep going without it */ } },
+    };
+  },
 });
 
 if (root) {
