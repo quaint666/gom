@@ -328,6 +328,21 @@ describe('chat: live updates', () => {
     expect(h.api.markRead).toHaveBeenLastCalledWith(C1, 2);
   });
 
+  it('lets a message from someone else rise in once, and not the ones already there', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh')] } });
+      await vi.advanceTimersByTimeAsync(50);
+      h.handlers().event(C1, created(msg(2, 'minh', 'tin mới')));
+      await vi.advanceTimersByTimeAsync(10);
+      expect(bubbles().map((b) => b.closest('.mrow')!.classList.contains('fresh'))).toEqual([false, true]);
+      await vi.advanceTimersByTimeAsync(700);
+      h.handlers().event(C1, created(msg(3, 'minh', 'nữa')));
+      await vi.advanceTimersByTimeAsync(10);
+      expect(bubbles().map((b) => b.closest('.mrow')!.classList.contains('fresh'))).toEqual([false, false, true]);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('counts a message in a conversation that is not open, and moves it to the top', async () => {
     const h = start({ chats, history: {} });
     await flush();
