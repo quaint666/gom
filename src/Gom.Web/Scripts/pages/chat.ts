@@ -26,6 +26,9 @@ export interface ChatDeps {
 
 export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply }
 
+/** The mark on your own message: one check when sent, two when seen, none otherwise. */
+type Tick = 'sent' | 'seen' | null;
+
 interface Thread {
   messages: ChatMessage[];
   pending: Shown[];
@@ -205,7 +208,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ? html`<span class="gone">Tin nhắn không còn hiển thị</span>`
       : html`<b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><span>${r.snippet}</span>`}</div>`;
 
-  const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null): TemplateResult => {
+  const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null, tick: Tick): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
     const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''}`;
@@ -226,7 +229,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${others ? (item.last ? html`<div class="av sm a${avatarTone(m.sender.displayName)}" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
           @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
-          ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
+          ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? 'Đã xem' : 'Đã gửi'}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${!item.mine ? tools : nothing}
       </div>
       ${chips(m)}
@@ -238,17 +241,27 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="btn secondary small" type="button" data-discard @click=${() => discard(m.conversationId, m.clientId)}>Xóa</button></div>` : nothing}`;
   };
 
-  const threadItem = (item: ThreadItem, group: boolean, seenText: (msg: Shown) => string | null) => {
+  const threadItem = (item: ThreadItem, group: boolean, seenText: (msg: Shown) => string | null, tick: (msg: Shown) => Tick) => {
     if (item.kind === 'day') return html`<div class="day">${item.label}</div>`;
     if (item.kind === 'new') return html`<div class="newdiv"><span>${item.count} tin nhắn mới</span></div>`;
-    return bubble(item, group, seenText(item.msg));
+    return bubble(item, group, seenText(item.msg), tick(item.msg));
   };
+
+  /** The mark on your own message: one check once it has gone out, two once it was seen (in a group, by everyone else). Nothing when you hide your reading, or for what is not yours. */
+  function tickOf(t: Thread, c: Conversation | undefined): (msg: Shown) => Tick {
+    const others = c?.kind === 'group' ? Math.max(1, (c.memberCount ?? 2) - 1) : 1;
+    return (msg) => {
+      if (msg.sender.id !== me?.id || msg.state !== undefined || msg.deleted === true) return null;
+      const readers = t.reads.enabled ? [...t.reads.seqs.values()].filter((seq) => seq >= msg.seq).length : 0;
+      return readers >= others ? 'seen' : 'sent';
+    };
+  }
 
   /** The "seen" line goes under your last sent message that has not been taken back, once someone has read up to it. */
   function seenText(t: Thread, group: boolean): (msg: Shown) => string | null {
     const lastMine = [...t.messages].reverse().find((m) => m.sender.id === me?.id && m.deleted !== true);
     const count = lastMine === undefined ? 0 : [...t.reads.seqs.values()].filter((seq) => seq >= lastMine.seq).length;
-    return (msg) => lastMine !== undefined && msg.id === lastMine.id && count > 0 ? (group ? `Đã xem bởi ${count}` : 'Đã xem') : null;
+    return (msg) => group && lastMine !== undefined && msg.id === lastMine.id && count > 0 ? `Đã xem bởi ${count}` : null;
   }
 
   /** Looking for words in this conversation: a field, and the messages that contain them, newest first. */
@@ -319,7 +332,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${pinBar(t)}
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
-          ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group')))}
+          ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group'), tickOf(t, c)))}
         </div>
         ${menuOverlay(t)}
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}

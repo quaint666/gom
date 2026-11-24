@@ -379,3 +379,8 @@ form { display: flex; flex-direction: column; gap: 14px; }
   @media (hover: hover) and (pointer: fine) and (min-width: 600px) { .menu { animation: pop .12s var(--ease); transform-origin: top left; } }
   @media (max-width: 899.98px) { .chat[data-pane="thread"] .thread-pane { animation: slide-in .2s var(--ease); } }
 }
+
+/* ticks on your own messages */
+.tick { display: inline-block; margin-inline-start: 2px; color: var(--muted); }
+.tick .i { inline-size: 14px; block-size: 14px; vertical-align: -3px; }
+.tick.t-seen { color: var(--link); }
