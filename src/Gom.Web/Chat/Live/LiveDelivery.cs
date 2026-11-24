@@ -15,8 +15,6 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
                 connection.TryEnqueue(frame);
     }
 
-    /// <summary>Sends one step of the stream (a message created or recalled) to every member's devices.</summary>
-    /// <param name="eventSeq">The step's own number; for a recall it is later than the message's.</param>
     /// <summary>
     /// Tells the other members that this person has read up to here, but only if they share their reading and the other member does too.
     /// Never to the reader themself.
@@ -39,6 +37,8 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
         }
     }
 
+    /// <summary>Sends one step of the stream (a message created or recalled) to every member's devices.</summary>
+    /// <param name="eventSeq">The step's own number; for a recall it is later than the message's.</param>
     public async Task PublishAsync(GomDbContext db, long eventSeq, string kind, MessageEndpoints.MessageDto message)
     {
         try

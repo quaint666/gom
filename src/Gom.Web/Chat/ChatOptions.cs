@@ -17,4 +17,6 @@ public sealed class ChatOptions
     public int SocketQueue { get; set; } = 64;
     /// <summary>How long one frame may take to leave before the socket is given up on.</summary>
     public int SocketSendTimeoutSeconds { get; set; } = 10;
+    /// <summary>Frames a socket may send that cannot be read before it is closed (1008).</summary>
+    public int MaxBadFrames { get; set; } = 5;
 }

@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 
 // Everything environment-specific comes from configuration, never from code.
 var connectionString = builder.Configuration.GetConnectionString("Default")
@@ -42,7 +43,12 @@ builder.Services.AddHostedService<OwnerSeedingService>();
 var app = builder.Build();
 
 app.UseMiddleware<SecurityHeaders>();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // No fingerprints yet, so every file is checked with the server (ETag) on each use, except fonts, which never change under one name.
+    OnPrepareResponse = c => c.Context.Response.Headers.CacheControl =
+        c.File.Name.EndsWith(".woff2", StringComparison.Ordinal) ? "public, max-age=604800" : "no-cache",
+});
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(25) });
 app.UseMiddleware<OriginCheck>();
 app.UseAuthentication();
@@ -58,7 +64,7 @@ app.MapReceipts();
 app.MapSocket();
 
 // One small HTML file per page; the script in /js/main.js picks the page from data-page.
-void MapPage(string route, string file) => app.MapGet(route, (IWebHostEnvironment env) =>
+void MapPage(string route, string file) => app.MapMethods(route, ["GET", "HEAD"], (IWebHostEnvironment env) =>
     Results.File(env.WebRootFileProvider.GetFileInfo($"pages/{file}").CreateReadStream(), "text/html; charset=utf-8"));
 MapPage("/", "home.html");
 MapPage("/c/{id}", "home.html");
@@ -73,7 +79,7 @@ MapPage("/add/{gomId}", "add.html");
 MapPage("/owner", "owner.html");
 
 // 200 only when the database answers; a monitor or a proxy can poll this.
-app.MapGet("/healthz", async (GomDbContext db, CancellationToken ct) =>
+app.MapMethods("/healthz", ["GET", "HEAD"], async (GomDbContext db, CancellationToken ct) =>
     await db.Database.CanConnectAsync(ct)
         ? Results.Ok(new { status = "ok" })
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
