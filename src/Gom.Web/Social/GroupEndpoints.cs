@@ -18,6 +18,7 @@ public static class GroupEndpoints
     public sealed record AddRequest(string? GomId);
     public sealed record RoleRequest(string? Role);
     public sealed record LeaderRequest(Guid? UserId);
+    public sealed record RenameRequest(string? Title);
 
     public static void MapGroups(this IEndpointRouteBuilder app)
     {
@@ -30,6 +31,7 @@ public static class GroupEndpoints
         api.MapPut("/{id:guid}/members/{userId:guid}/role", SetRole);
         api.MapPost("/{id:guid}/leader", HandOver);
         api.MapDelete("/{id:guid}", Disband);
+        api.MapPatch("/{id:guid}", Rename);
         api.MapPost("/{id:guid}/members/{userId:guid}/friend-request", AskMember);
     }
 
@@ -204,6 +206,30 @@ public static class GroupEndpoints
         await db.Members.Where(m => m.ConversationId == id && m.UserId == next).ExecuteUpdateAsync(s => s.SetProperty(m => m.Role, GroupRole.Leader), ct);
         await tx.CommitAsync(ct);
         live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct));
+        return Results.NoContent();
+    }
+
+    /// <summary>The leader or a deputy gives the group a new name. Everyone in it is told to reload their list.</summary>
+    private static async Task<IResult> Rename(Guid id, RenameRequest request, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind != ConversationKind.Group) return Error(StatusCodes.Status400BadRequest, "not_a_group");
+        if (access.Role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        var title = request.Title is null ? null : DisplayName.Normalize(request.Title, "");
+        if (string.IsNullOrEmpty(title)) return Error(StatusCodes.Status400BadRequest, "invalid_title");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await LockGroup(db, id, ct);
+        // Read again under the lock: the person may have been demoted or removed while this request waited.
+        var role = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).Select(m => (GroupRole?)m.Role).SingleOrDefaultAsync(ct);
+        if (role is null) return Results.NotFound();
+        if (role == GroupRole.Member) return Error(StatusCodes.Status403Forbidden, "not_allowed");
+        await db.Conversations.Where(c => c.Id == id).ExecuteUpdateAsync(s => s.SetProperty(c => c.Title, title), ct);
+        var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(everyone);
         return Results.NoContent();
     }
 

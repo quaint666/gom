@@ -371,3 +371,65 @@ describe('group page: leader and deputies', () => {
     expect(root.querySelector('[data-leader-note]')).toBeNull();
   });
 });
+
+describe('group page: the name', () => {
+  const person = (id: string, name: string, role: GroupMember['role'], isMe = false): GroupMember =>
+    ({ id, displayName: name, isMe, isFriend: false, gomId: null, request: 'sent', role });
+  const chats = (title: string) => [{ id: G, kind: 'group', title, peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 2 }];
+  const mount = (myRole: GroupMember['role'], extra = {}) => {
+    let title = 'Nhà cũ';
+    const a = fakeApi({
+      me: vi.fn(async () => ok(me)), groupMembers: vi.fn(async () => ok([person('u-me', 'Mẹ', myRole, true), person('u-x', 'Bố', myRole === 'leader' ? 'member' : 'leader')])),
+      friends: vi.fn(async () => ok({ friends: [], incoming: [], outgoing: [] })), conversations: vi.fn(async () => ok(chats(title))),
+      renameGroup: vi.fn(async (_c: string, t: string) => { title = t; return ok(undefined); }), ...extra,
+    });
+    mountGroup(root, a, vi.fn(), G);
+    return a;
+  };
+  const field = () => root.querySelector<HTMLInputElement>('form[data-rename] input')!;
+  const save = () => root.querySelector<HTMLButtonElement>('form[data-rename] button[type="submit"]')!;
+  const type = (value: string) => { field().value = value; field().dispatchEvent(new Event('input', { bubbles: true })); };
+
+  it('shows the name to everyone and a form to change it to the leader and the deputies only', async () => {
+    mount('member');
+    await flush();
+    expect(text(root.querySelector('[data-group-name]')!)).toBe('Nhà cũ');
+    expect(root.querySelector('form[data-rename]')).toBeNull();
+    for (const role of ['leader', 'deputy'] as const) {
+      mount(role);
+      await flush();
+      expect(field().value).toBe('Nhà cũ');
+    }
+  });
+
+  it('does not offer to save an empty name or the name it already has', async () => {
+    mount('leader');
+    await flush();
+    expect(save().disabled).toBe(true);
+    type('   '); await flush();
+    expect(save().disabled).toBe(true);
+    type('Nhà mới'); await flush();
+    expect(save().disabled).toBe(false);
+  });
+
+  it('saves the trimmed name, then shows what the server now says', async () => {
+    const a = mount('leader');
+    await flush();
+    type('  Nhà mới  '); await flush();
+    submit(root);
+    await flush();
+    expect(a.renameGroup).toHaveBeenCalledWith(G, 'Nhà mới');
+    expect(field().value).toBe('Nhà mới');
+    expect(save().disabled).toBe(true);
+  });
+
+  it('keeps what was typed and says why when the server refuses', async () => {
+    mount('leader', { renameGroup: vi.fn(async () => fail('not_allowed', 403)) });
+    await flush();
+    type('Tên mới'); await flush();
+    submit(root);
+    await flush();
+    expect(text(root)).toContain('Bạn không có quyền');
+    expect(field().value).toBe('Tên mới');
+  });
+});
