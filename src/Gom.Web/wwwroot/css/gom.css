@@ -113,6 +113,8 @@ form { display: flex; flex-direction: column; gap: 14px; }
 }
 
 /* chat: the list on the left and the thread beside it on a wide screen; one at a time on a phone */
+/* The chat scrolls inside its own panes, never the page itself: a page that can scroll a little leaves the header off the top and a blank strip below the composer once the keyboard has come and gone. */
+html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; overscroll-behavior: none; }
 .chat { display: grid; grid-template-columns: minmax(0, 1fr); block-size: 100dvh; }
 .list-pane, .thread-pane { display: flex; flex-direction: column; min-block-size: 0; min-inline-size: 0; block-size: 100dvh; }
 .list-pane { background: var(--surface); }
@@ -422,21 +424,24 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .letter { margin: 12px 4px 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
 
 /* pictures and files in a message */
-.pics { display: grid; gap: 3px; margin: 0 0 4px; max-inline-size: min(320px, 100%); border-radius: 10px; overflow: hidden; }
+.pics { display: grid; gap: 3px; margin: 0 0 4px; max-inline-size: 320px; border-radius: 10px; overflow: hidden; }
 .pics.n1 { grid-template-columns: 1fr; }
 .pics.n2, .pics.n4 { grid-template-columns: 1fr 1fr; }
 .pics.n3, .pics.n5 { grid-template-columns: 1fr 1fr 1fr; }
+.pics.n1 { inline-size: fit-content; }
+.pics.n1 .pic { inline-size: auto; }
 .pic { display: block; padding: 0; border: 0; background: var(--border); cursor: zoom-in; inline-size: 100%; overflow: hidden; }
 .pic img { display: block; inline-size: 100%; block-size: auto; object-fit: cover; }
 .pics:not(.n1) .pic { aspect-ratio: 1; }
 .pics:not(.n1) .pic img { block-size: 100%; }
-.pics.n1 .pic img { max-block-size: 360px; inline-size: auto; max-inline-size: 100%; margin-inline: auto; }
+.pics.n1 .pic img { max-block-size: 360px; inline-size: auto; max-inline-size: 100%; }
 .filecard { display: flex; align-items: center; gap: 10px; min-inline-size: 200px; padding: 8px 10px; margin-block: 2px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 70%, transparent); color: var(--text); text-decoration: none; }
 .filecard:hover { background: var(--hover); }
 .filecard .fi { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
 .filecard b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filecard small { color: var(--muted); }
 .mrow .bub:has(> .pics:only-child), .mrow .bub:has(> .pics:first-child:nth-last-child(2)) { padding: 4px; }
+.mrow .bub > .pics:only-child { margin-block-end: 0; }
 
 /* what is chosen for the next message */
 .atray { display: flex; gap: 8px; padding: 8px 12px; overflow-x: auto; flex: none; background: var(--surface); border-block-start: 1px solid var(--border); }
