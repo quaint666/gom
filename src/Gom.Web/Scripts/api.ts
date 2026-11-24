@@ -5,7 +5,7 @@ export type ErrorCode =
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
-  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit' | 'invalid_reaction'
+  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit' | 'invalid_reaction' | 'banned' | 'already_requested' | 'invalid_setting'
   | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
@@ -15,7 +15,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
-  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit', 'invalid_reaction',
+  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -43,8 +43,12 @@ export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated
 export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
-  unread: number; lastMessage: LastMessage | null; memberCount?: number; muted?: boolean;
+  unread: number; lastMessage: LastMessage | null; memberCount?: number; muted?: boolean; joinApproval?: boolean;
 }
+/** Someone a member wants to add to a group that asks for approval, and who asked. */
+export interface JoinRequestRow { id: string; displayName: string; by: Sender; createdAt: string }
+/** Someone who may not be added back to a group. */
+export interface BanRow { id: string; displayName: string; createdAt: string }
 /** A member of a group. The Gom ID is there only for you and your friends. */
 export interface GroupMember {
   id: string; displayName: string; isMe: boolean; isFriend: boolean; gomId: string | null; request: 'none' | 'sent' | 'received';
@@ -98,11 +102,18 @@ export interface Api {
   hideMessage(conversation: string, message: string): Promise<Result<void>>;
   createGroup(title: string, members: string[]): Promise<Result<{ id: string }>>;
   groupMembers(conversation: string): Promise<Result<GroupMember[]>>;
-  addMember(conversation: string, gomId: string): Promise<Result<void>>;
+  /** 204 when the person is in; 202 with status "pending" when the group asks for approval first. */
+  addMember(conversation: string, gomId: string): Promise<Result<{ status: 'pending' } | undefined>>;
   leaveGroup(conversation: string): Promise<Result<void>>;
   setMute(conversation: string, muted: boolean): Promise<Result<void>>;
   renameGroup(conversation: string, title: string): Promise<Result<void>>;
-  removeMember(conversation: string, userId: string): Promise<Result<void>>;
+  removeMember(conversation: string, userId: string, ban?: boolean): Promise<Result<void>>;
+  setJoinApproval(conversation: string, on: boolean): Promise<Result<void>>;
+  joinRequests(conversation: string): Promise<Result<{ requests: JoinRequestRow[] }>>;
+  approveRequest(conversation: string, userId: string): Promise<Result<void>>;
+  declineRequest(conversation: string, userId: string): Promise<Result<void>>;
+  bans(conversation: string): Promise<Result<{ bans: BanRow[] }>>;
+  unban(conversation: string, userId: string): Promise<Result<void>>;
   setRole(conversation: string, userId: string, role: 'deputy' | 'member'): Promise<Result<void>>;
   handOver(conversation: string, userId: string): Promise<Result<void>>;
   disband(conversation: string): Promise<Result<void>>;
@@ -167,7 +178,13 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     setMute: (conversation, muted) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, { muted }),
     renameGroup: (conversation, title) => call('PATCH', `/api/conversations/${enc(conversation)}`, { title }),
     leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
-    removeMember: (conversation, userId) => call('DELETE', `/api/conversations/${enc(conversation)}/members/${enc(userId)}`),
+    removeMember: (conversation, userId, ban) => call('DELETE', `/api/conversations/${enc(conversation)}/members/${enc(userId)}${ban ? '?ban=true' : ''}`),
+    setJoinApproval: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/settings`, { joinApproval: on }),
+    joinRequests: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/requests`),
+    approveRequest: (conversation, userId) => call('POST', `/api/conversations/${enc(conversation)}/requests/${enc(userId)}/approve`),
+    declineRequest: (conversation, userId) => call('DELETE', `/api/conversations/${enc(conversation)}/requests/${enc(userId)}`),
+    bans: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/bans`),
+    unban: (conversation, userId) => call('DELETE', `/api/conversations/${enc(conversation)}/bans/${enc(userId)}`),
     setRole: (conversation, userId, role) => call('PUT', `/api/conversations/${enc(conversation)}/members/${enc(userId)}/role`, { role }),
     handOver: (conversation, userId) => call('POST', `/api/conversations/${enc(conversation)}/leader`, { userId }),
     disband: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}`),
