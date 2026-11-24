@@ -1,5 +1,7 @@
 import { createApi } from './api.js';
 import { mountAdd } from './pages/add.js';
+import { mountGroup } from './pages/group.js';
+import { mountNewGroup } from './pages/newgroup.js';
 import { mountFriends } from './pages/friends.js';
 import { mountChat, type ChatDeps, type OutboxItem } from './pages/chat.js';
 import { createLive } from './chat/live.js';
@@ -48,6 +50,8 @@ if (root) {
     case 'settings': mountSettings(root, api, go); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
+    case 'newgroup': mountNewGroup(root, api, go); break;
+    case 'group': mountGroup(root, api, go, token); break;
     case 'owner': mountOwner(root, api, go, location.origin); break;
   }
 }

@@ -89,7 +89,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function preview(c: Conversation): string {
     const last = c.lastMessage;
     if (last === null) return 'Chưa có tin nhắn';
-    return (last.sender.id === me?.id ? 'Bạn: ' : '') + last.body;
+    const who = last.sender.id === me?.id ? 'Bạn: ' : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
+    return who + last.body;
   }
 
   const row = (c: Conversation) => html`
@@ -112,12 +113,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <a class="btn" href="/friends">Thêm bạn bè</a>
     </div>`;
 
-  const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>): TemplateResult => {
+  const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean): TemplateResult => {
     const m = item.msg;
+    const others = group && !item.mine;
     const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''}`;
     return html`
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
-        <div class="bub"><span class="txt">${m.body}</span>
+        ${others ? (item.last ? html`<div class="av sm a1" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
+        <div class="bub">${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}<span class="txt">${m.body}</span>
           <span class="ts">${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
       </div>
       ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? 'Sẽ gửi khi có mạng' : 'Sẽ thử gửi lại'}</div>` : nothing}
@@ -127,10 +130,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="btn secondary small" type="button" data-discard @click=${() => discard(m.conversationId, m.clientId)}>Xóa</button></div>` : nothing}`;
   };
 
-  const threadItem = (item: ThreadItem) => {
+  const threadItem = (item: ThreadItem, group: boolean) => {
     if (item.kind === 'day') return html`<div class="day">${item.label}</div>`;
     if (item.kind === 'new') return html`<div class="newdiv"><span>${item.count} tin nhắn mới</span></div>`;
-    return bubble(item);
+    return bubble(item, group);
   };
 
   function threadPane(): TemplateResult {
@@ -148,12 +151,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <header class="th-head">
           <a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a>
           ${avatar(c?.title ?? '?')}
-          <div class="th-title"><b>${c?.title ?? '…'}</b>${c?.peer ? html`<small>@${c.peer.gomId}</small>` : nothing}</div>
+          <div class="th-title"><b>${c?.title ?? '…'}</b>${c?.peer ? html`<small>@${c.peer.gomId}</small>` : nothing}${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>
+          ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label="Thông tin nhóm">${icons.users()}</a>` : nothing}
         </header>
         ${banner()}
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
-          ${repeat(items, (i) => i.key, threadItem)}
+          ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group'))}
         </div>
         <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
           <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
@@ -167,6 +171,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     <div class="chat" data-pane=${openId === null ? 'list' : 'thread'}>
       <section class="list-pane">
         ${appBar({ title: 'Gom', actions: html`${themeButton()}
+          <a class="ib" href="/groups/new" aria-label="Tạo nhóm mới">${icons.pencil()}</a>
           <a class="ib" href="/friends" aria-label="Bạn bè">${icons.users()}</a>
           <a class="ib" href="/settings" aria-label="Cài đặt">${icons.gear()}</a>` })}
         ${banner()}
@@ -458,6 +463,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       });
     },
     event: (conversation, event) => apply(conversation, event),
+    conversations() { void refreshList(); },
     events(conversation, events, hasMore) {
       for (const e of events) apply(conversation, e);
       const last = events[events.length - 1];

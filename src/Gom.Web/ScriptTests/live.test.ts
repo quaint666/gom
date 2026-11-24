@@ -31,7 +31,7 @@ const deps = (random = 1): LiveDeps => ({
 });
 
 function handlers(): LiveHandlers & { [K in keyof LiveHandlers]: ReturnType<typeof vi.fn> } {
-  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), ended: vi.fn(), replaced: vi.fn() } as never;
+  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), ended: vi.fn(), replaced: vi.fn() } as never;
 }
 const last = () => FakeSocket.all[FakeSocket.all.length - 1]!;
 const fireTimer = () => { const t = timers.shift()!; t.fn(); };
@@ -63,6 +63,14 @@ describe('live socket', () => {
     expect(h.event).toHaveBeenCalledWith('c1', event);
     expect(h.events).toHaveBeenCalledOnce();
     expect(h.events).toHaveBeenCalledWith('c1', [event], true);
+  });
+
+  it('tells the page when its list of conversations changed', () => {
+    const h = handlers();
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept(); last().say({ t: 'ready' });
+    last().say({ t: 'conversations' });
+    expect(h.conversations).toHaveBeenCalledOnce();
   });
 
   it('asks for what it missed with a sync frame, only while open', () => {

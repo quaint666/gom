@@ -66,6 +66,8 @@ MapPage("/join/{token}", "join.html");
 MapPage("/reset/{token}", "reset.html");
 MapPage("/settings", "settings.html");
 MapPage("/friends", "friends.html");
+MapPage("/groups/new", "newgroup.html");
+MapPage("/groups/{id}", "group.html");
 MapPage("/add/{gomId}", "add.html");
 MapPage("/owner", "owner.html");
 

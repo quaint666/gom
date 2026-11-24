@@ -27,6 +27,11 @@ export function errorText(failure: Failure): string {
     case 'invalid_message': return 'Tin nhắn có ký tự không hợp lệ.';
     case 'too_many_messages': return 'Bạn gửi quá nhanh. Hãy đợi một chút rồi gửi lại.';
     case 'client_id_reused': case 'invalid_client_id': case 'invalid_seq': return 'Không gửi được tin nhắn này. Hãy thử lại.';
+    case 'invalid_title': return 'Tên nhóm cần từ 1 đến 60 ký tự và không được có ký tự điều khiển.';
+    case 'no_members': return 'Hãy chọn ít nhất một người bạn để lập nhóm.';
+    case 'group_too_big': case 'group_full': return 'Nhóm đã đủ số thành viên tối đa.';
+    case 'already_member': return 'Người này đã ở trong nhóm.';
+    case 'not_a_group': return 'Đây không phải là một nhóm.';
     case 'missing_fields': return 'Hãy điền đầy đủ các ô.';
     case 'network': return 'Không kết nối được. Kiểm tra mạng rồi thử lại.';
     case 'server': return 'Gom đang gặp sự cố. Hãy thử lại sau ít phút.';

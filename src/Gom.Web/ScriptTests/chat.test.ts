@@ -1013,3 +1013,76 @@ describe('chat: the outbox survives a reload', () => {
     expect(h.outbox.items).toEqual([]);
   });
 });
+
+
+describe('chat: groups', () => {
+  const G1 = '33333333-3333-4333-8333-333333333333';
+  const group = (extra: Partial<Conversation> = {}): Conversation =>
+    ({ id: G1, kind: 'group', title: 'Gia đình', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 4, ...extra });
+  const gmsg = (seq: number, from: 'mom' | 'minh' | 'ba', body = `g${seq}`, when = at(10, seq)): ChatMessage => ({
+    id: `g${seq}`, seq, conversationId: G1, clientId: `gc${seq}`, body, createdAt: when,
+    sender: from === 'mom' ? { id: 'u-mom', displayName: 'Mẹ' } : from === 'minh' ? { id: 'u-minh', displayName: 'Minh' } : { id: 'u-ba', displayName: 'Chị Ba' },
+  });
+
+  it('shows the group name, its size and a link to its members', async () => {
+    start({ path: `/c/${G1}`, chats: [group()], history: { [G1]: [gmsg(1, 'minh')] } });
+    await flush();
+    const head = root.querySelector('.th-head')!;
+    expect(text(head)).toContain('Gia đình');
+    expect(text(head)).toContain('4 thành viên');
+    expect(head.querySelector(`a[href="/groups/${G1}"]`)).not.toBeNull();
+    expect(text(head)).not.toContain('@');
+  });
+
+  it('names who is speaking: the name before a run, the initials beside its last message, nothing for you', async () => {
+    start({ path: `/c/${G1}`, chats: [group()], history: { [G1]: [gmsg(1, 'minh'), gmsg(2, 'minh'), gmsg(3, 'mom'), gmsg(4, 'ba')] } });
+    await flush();
+    const row = (id: string) => root.querySelector(`[data-msg="${id}"]`)!;
+    expect(text(row('g1').querySelector('.sender')!)).toBe('Minh');
+    expect(row('g2').querySelector('.sender')).toBeNull();               // the same run
+    expect(row('g1').querySelector('.av')).toBeNull();                   // not the last of the run
+    expect(row('g2').querySelector('.av')!.textContent).toBe('M');
+    expect(row('g3').querySelector('.sender')).toBeNull();               // you
+    expect(row('g3').querySelector('.av')).toBeNull();
+    expect(text(row('g4').querySelector('.sender')!)).toBe('Chị Ba');
+    expect(row('g4').querySelector('.av')!.textContent).toBe('CB');
+  });
+
+  it('shows no names or initials in a one-to-one conversation', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] } });
+    await flush();
+    expect(root.querySelector('[data-msg="id1"] .sender')).toBeNull();
+    expect(root.querySelector('[data-msg="id1"] .av')).toBeNull();
+  });
+
+  it('puts the speaker in front of a group\'s last message in the list', async () => {
+    start({ chats: [group({ lastSeq: 1, lastMessage: { seq: 1, body: 'tối nay ăn gì', createdAt: at(11), sender: { id: 'u-minh', displayName: 'Minh' } } })] });
+    await flush();
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Minh: tối nay ăn gì');
+    expect(rows()[0]!.querySelector('.av')!.textContent).toBe('GĐ');
+  });
+
+  it('reloads the list when told it changed', async () => {
+    const h = start({ chats: [group()] });
+    await flush();
+    const before = (h.api.conversations as ReturnType<typeof vi.fn>).mock.calls.length;
+    h.handlers().conversations();
+    await flush();
+    expect((h.api.conversations as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before + 1);
+  });
+
+  it('has a way to make a new group from the list', async () => {
+    start({ chats: [] });
+    await flush();
+    expect(root.querySelector('header a[href="/groups/new"]')).not.toBeNull();
+  });
+
+  it('says "you are no longer in this group" when the open group disappears from the list', async () => {
+    const h = start({ path: `/c/${G1}`, chats: [group()], history: { [G1]: [gmsg(1, 'minh')] } });
+    await flush();
+    (h.api.conversations as ReturnType<typeof vi.fn>).mockResolvedValueOnce(ok([]));
+    h.handlers().conversations();
+    await flush();
+    expect(text(root.querySelector('.thread-pane')!)).toContain('Không tìm thấy cuộc trò chuyện');
+  });
+});

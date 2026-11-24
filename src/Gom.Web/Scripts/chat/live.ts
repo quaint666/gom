@@ -15,6 +15,8 @@ export interface LiveHandlers {
   event(conversation: string, event: ChatEvent): void;
   /** A page of what was missed, in order. */
   events(conversation: string, events: ChatEvent[], hasMore: boolean): void;
+  /** Your list of conversations changed (a group was made, you were added, someone left): load it again. */
+  conversations(): void;
   /** The session ended: stop trying and go to sign-in. */
   ended(): void;
   /** Another window took this one's place: stop trying (or two windows would take turns forever). */
@@ -61,6 +63,7 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
       if (typeof frame !== 'object' || frame === null) return;
       if (frame.t === 'ready') { ready = true; attempt = 0; handlers.state(true); }
       else if (frame.t === 'event' && typeof frame.c === 'string') handlers.event(frame.c, frame.event as ChatEvent);
+      else if (frame.t === 'conversations') handlers.conversations();
       else if (frame.t === 'events' && typeof frame.c === 'string' && Array.isArray(frame.events)) handlers.events(frame.c, frame.events as ChatEvent[], frame.hasMore === true);
     };
     s.onclose = (e) => {
