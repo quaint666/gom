@@ -101,11 +101,11 @@ public static class SocketEndpoint
             orderby e.Seq
             join m in db.Messages on e.MessageId equals m.Id
             join u in db.Users on m.SenderId equals u.Id
-            select new { e.Seq, e.Kind, Message = m, u.GomId, u.DisplayName }).Take(SyncPage + 1).ToListAsync(ct);
+            select new { e.Seq, e.Kind, Message = m, u.Id, u.DisplayName }).Take(SyncPage + 1).ToListAsync(ct);
 
         var events = rows.Take(SyncPage).Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),
             new MessageEndpoints.MessageDto(r.Message.Id, r.Message.Seq, r.Message.ConversationId, r.Message.ClientId,
-                new MessageEndpoints.PersonDto(r.GomId, r.DisplayName), r.Message.Body, r.Message.CreatedAt))).ToList();
+                new MessageEndpoints.PersonDto(r.Id, r.DisplayName), r.Message.Body, r.Message.CreatedAt))).ToList();
         return Frames.Events(conversation, events, rows.Count > SyncPage);
     }
 }

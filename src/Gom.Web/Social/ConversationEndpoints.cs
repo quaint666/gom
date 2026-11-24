@@ -73,7 +73,7 @@ public static class ConversationEndpoints
                 Last = db.Messages.Where(x => x.ConversationId == c.Id).OrderByDescending(x => x.Seq)
                     .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
                     {
-                        x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.CreatedAt, u.GomId, u.DisplayName,
+                        x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.CreatedAt, SenderId = u.Id, u.DisplayName,
                     }).FirstOrDefault(),
                 Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me),
             }).ToListAsync(ct);
@@ -90,7 +90,7 @@ public static class ConversationEndpoints
             lastMessage = r.Last is null ? null : new
             {
                 seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt,
-                sender = new { gomId = r.Last.GomId, displayName = r.Last.DisplayName },
+                sender = new { id = r.Last.SenderId, displayName = r.Last.DisplayName },
             },
         }));
     }

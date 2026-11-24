@@ -28,7 +28,7 @@ public static class AccountEndpoints
 
         var me = GomClaims.User(http.User);
         await db.Users.Where(u => u.Id == me).ExecuteUpdateAsync(s => s.SetProperty(u => u.DisplayName, name), ct);
-        return Results.Ok(new { gomId, displayName = name, isOwner = http.User.FindFirst(GomClaims.IsOwner)!.Value == "true" });
+        return Results.Ok(new { id = me, gomId, displayName = name, isOwner = http.User.FindFirst(GomClaims.IsOwner)!.Value == "true" });
     }
 
     private static async Task<IResult> ChangePassword(PasswordRequest request, HttpContext http, GomDbContext db, PasswordService passwords,

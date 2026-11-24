@@ -7,7 +7,7 @@ const at = (day: number, hh = 12, mm = 0) => new Date(Date.UTC(2026, 11, day, hh
 const NOW = new Date(Date.UTC(2026, 11, 10, 12, 30));
 
 const msg = (seq: number, from: string, when: string, body = `m${seq}`): ChatMessage => ({
-  id: `id${seq}`, seq, conversationId: 'c1', clientId: `cl${seq}`, sender: { gomId: from, displayName: from.toUpperCase() }, body, createdAt: when,
+  id: `id${seq}`, seq, conversationId: 'c1', clientId: `cl${seq}`, sender: { id: from, displayName: from.toUpperCase() }, body, createdAt: when,
 });
 
 describe('initials', () => {

@@ -89,7 +89,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function preview(c: Conversation): string {
     const last = c.lastMessage;
     if (last === null) return 'Chưa có tin nhắn';
-    return (last.sender.gomId === me?.gomId ? 'Bạn: ' : '') + last.body;
+    return (last.sender.id === me?.id ? 'Bạn: ' : '') + last.body;
   }
 
   const row = (c: Conversation) => html`
@@ -142,7 +142,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="empty"><p class="lead">Không tìm thấy cuộc trò chuyện này.</p></div>
       </section>`;
     const t = threadOf(openId);
-    const items = buildThread(t.messages, me?.gomId ?? '', t.lastReadAtOpen, t.unreadAtOpen, deps.now(), t.pending);
+    const items = buildThread(t.messages, me?.id ?? '', t.lastReadAtOpen, t.unreadAtOpen, deps.now(), t.pending);
     return html`
       <section class="thread-pane">
         <header class="th-head">
@@ -314,7 +314,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (event.seq > c.lastSeq) {
       c.lastSeq = event.seq;
       c.lastMessage = { seq: message.seq, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body, createdAt: message.createdAt, sender: message.sender };
-      if (message.sender.gomId !== me?.gomId && !(conversation === openId && deps.visible())) c.unread++;
+      if (message.sender.id !== me?.id && !(conversation === openId && deps.visible())) c.unread++;
       chats = [c, ...(chats ?? []).filter((x) => x !== c)];
     }
     update();
@@ -339,7 +339,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     // If an earlier message is still waiting, this one waits behind it: they must reach the server in the order written.
     const waiting = t.pending.some((x) => x.state === 'queued');
     t.pending.push({
-      id: clientId, clientId, seq: 0, conversationId: id, sender: { gomId: me.gomId, displayName: me.displayName }, body,
+      id: clientId, clientId, seq: 0, conversationId: id, sender: { id: me.id, displayName: me.displayName }, body,
       createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending',
     });
     t.stick = true;
@@ -435,7 +435,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (chatOf(item.conversation) === undefined) continue;   // no longer in that conversation: let it go
       threadOf(item.conversation).pending.push({
         id: item.clientId, clientId: item.clientId, seq: 0, conversationId: item.conversation,
-        sender: { gomId: me.gomId, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued',
+        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued',
       });
     }
     persist();

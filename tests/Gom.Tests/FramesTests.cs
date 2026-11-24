@@ -10,7 +10,7 @@ public class FramesTests
     public void Vietnamese_text_goes_out_as_itself_not_as_escapes()
     {
         var chat = Guid.NewGuid();
-        var message = new MessageEndpoints.MessageDto(Guid.NewGuid(), 1, chat, Guid.NewGuid(), new("me", "Chị Hai"), "xin chào, ăn cơm chưa?", DateTimeOffset.UnixEpoch);
+        var message = new MessageEndpoints.MessageDto(Guid.NewGuid(), 1, chat, Guid.NewGuid(), new(Guid.NewGuid(), "Chị Hai"), "xin chào, ăn cơm chưa?", DateTimeOffset.UnixEpoch);
 
         var text = Encoding.UTF8.GetString(Frames.Live(chat, new EventDto(1, "created", message)));
 

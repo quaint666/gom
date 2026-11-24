@@ -147,7 +147,8 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
             var e = frame.GetProperty("event");
             Assert.Equal((1L, "created"), (e.GetProperty("seq").GetInt64(), e.GetProperty("kind").GetString()));
             Assert.Equal("xin chào", e.GetProperty("message").GetProperty("body").GetString());
-            Assert.Equal(p.A.GomId, e.GetProperty("message").GetProperty("sender").GetProperty("gomId").GetString());
+            Assert.Equal(p.A.Id, e.GetProperty("message").GetProperty("sender").GetProperty("id").GetGuid());
+            Assert.False(e.GetProperty("message").GetProperty("sender").TryGetProperty("gomId", out _));
         }
         await AssertSilent(other);
     }

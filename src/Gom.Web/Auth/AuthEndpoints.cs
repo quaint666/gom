@@ -14,6 +14,7 @@ public static class AuthEndpoints
         app.MapDelete("/api/session", SignOut).RequireAuthorization();
         app.MapGet("/api/me", (HttpContext c) => Results.Ok(new
         {
+            id = GomClaims.User(c.User),
             gomId = c.User.FindFirst(GomClaims.GomId)!.Value,
             displayName = c.User.FindFirst(GomClaims.DisplayName)!.Value,
             isOwner = c.User.FindFirst(GomClaims.IsOwner)!.Value == "true",
@@ -70,7 +71,7 @@ public static class AuthEndpoints
         await db.SaveChangesAsync(ct);
 
         SessionCookie.Set(http.Response, started.Token, started.Expires);
-        return Results.Ok(new { gomId = user.GomId, displayName = user.DisplayName, isOwner = user.IsOwner });
+        return Results.Ok(new { id = user.Id, gomId = user.GomId, displayName = user.DisplayName, isOwner = user.IsOwner });
     }
 
     /// <summary>Adds a new session for the user to the context; the caller saves it, then sets the cookie.</summary>

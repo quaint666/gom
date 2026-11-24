@@ -7,14 +7,14 @@ import { fail, fakeApi, fill, flush, ok, text } from './helpers.js';
 let root: HTMLElement;
 beforeEach(() => { root = document.createElement('div'); document.body.replaceChildren(root); });
 
-const me = { gomId: 'mom', displayName: 'Mẹ', isOwner: false };
+const me = { id: 'u-mom', gomId: 'mom', displayName: 'Mẹ', isOwner: false };
 const C1 = '11111111-1111-4111-8111-111111111111';
 const C2 = '22222222-2222-4222-8222-222222222222';
 const NOW = new Date(Date.UTC(2026, 11, 10, 12, 30));
 const at = (hh: number, mm = 0) => new Date(Date.UTC(2026, 11, 10, hh, mm)).toISOString();
 
 const msg = (seq: number, from: 'mom' | 'minh', body = `m${seq}`, when = at(10, seq), conv = C1): ChatMessage => ({
-  id: `id${seq}`, seq, conversationId: conv, clientId: `cl${seq}`, sender: from === 'mom' ? { gomId: 'mom', displayName: 'Mẹ' } : { gomId: 'minh', displayName: 'Minh' }, body, createdAt: when,
+  id: `id${seq}`, seq, conversationId: conv, clientId: `cl${seq}`, sender: from === 'mom' ? { id: 'u-mom', displayName: 'Mẹ' } : { id: 'u-minh', displayName: 'Minh' }, body, createdAt: when,
 });
 const created = (m: ChatMessage): ChatEvent => ({ seq: m.seq, kind: 'created', message: m });
 

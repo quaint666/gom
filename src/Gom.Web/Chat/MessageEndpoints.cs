@@ -13,7 +13,8 @@ public static class MessageEndpoints
 {
     public sealed record SendRequest(string? ClientId, string? Body);
     public sealed record ReadRequest(long? Seq);
-    public sealed record PersonDto(string GomId, string DisplayName);
+    /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
+    public sealed record PersonDto(Guid Id, string DisplayName);
     public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
@@ -65,7 +66,7 @@ public static class MessageEndpoints
         if (kind is null) return Results.NotFound();
 
         if (!Guid.TryParse(request.ClientId, out var clientId) || clientId == Guid.Empty) return Error(StatusCodes.Status400BadRequest, "invalid_client_id");
-        var sender = new PersonDto(http.User.FindFirst(GomClaims.GomId)!.Value, http.User.FindFirst(GomClaims.DisplayName)!.Value);
+        var sender = new PersonDto(me, http.User.FindFirst(GomClaims.DisplayName)!.Value);
 
         // A retry of something already stored gets the stored message back, whatever else has changed since.
         var existing = await FindExisting(db, me, clientId, ct);
@@ -146,11 +147,11 @@ public static class MessageEndpoints
             where m.ConversationId == id && (before == null || m.Seq < before)
             orderby m.Seq descending
             join u in db.Users on m.SenderId equals u.Id
-            select new { Message = m, u.GomId, u.DisplayName }).Take(take + 1).ToListAsync(ct);
+            select new { Message = m, u.Id, u.DisplayName }).Take(take + 1).ToListAsync(ct);
 
         return Results.Ok(new
         {
-            messages = rows.Take(take).Select(r => ToDto(r.Message, new PersonDto(r.GomId, r.DisplayName))),
+            messages = rows.Take(take).Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName))),
             hasMore = rows.Count > take,
         });
     }

@@ -15,7 +15,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
 export type Result<T> = { ok: true; data: T } | Failure;
 
-export interface User { gomId: string; displayName: string; isOwner: boolean }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean }
 export interface SessionInfo { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }
 export interface Invite { id: string; createdAt: string; expiresAt: string; usedBy: string | null; status: 'pending' | 'used' | 'revoked' | 'expired' }
 export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; createdAt: string }
@@ -25,10 +25,12 @@ export interface JoinBody { gomId: string; password: string; displayName: string
 export interface Person { gomId: string; displayName: string }
 export interface FriendRequest extends Person { createdAt: string }
 export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; outgoing: FriendRequest[] }
-export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Person; body: string; createdAt: string }
+/** Who wrote a message: a name and an opaque id. The Gom ID is shown to friends only, so it is not here. */
+export interface Sender { id: string; displayName: string }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created'; message: ChatMessage }
-export interface LastMessage { seq: number; body: string; createdAt: string; sender: Person }
+export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null;

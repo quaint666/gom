@@ -71,7 +71,8 @@ public class MessageTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal("xin chào", json.GetProperty("body").GetString());
         Assert.Equal(client, json.GetProperty("clientId").GetGuid());
         Assert.Equal(p.Chat, json.GetProperty("conversationId").GetGuid());
-        Assert.Equal(p.A.GomId, json.GetProperty("sender").GetProperty("gomId").GetString());
+        Assert.Equal(p.A.Id, json.GetProperty("sender").GetProperty("id").GetGuid());
+        Assert.False(json.GetProperty("sender").TryGetProperty("gomId", out _));   // a Gom ID is shown to friends only
         Assert.Equal(app.Clock.Now, json.GetProperty("createdAt").GetDateTimeOffset());
 
         await using var db = app.Db.NewContext();
@@ -472,7 +473,8 @@ public class MessageTests(AppFixture app) : IClassFixture<AppFixture>
         using var anonymous = await app.Call(Get, $"/api/conversations/{p.Chat}/messages");
 
         var message = (await AppFixture.Json(mine)).GetProperty("messages")[0];
-        Assert.Equal(p.A.GomId, message.GetProperty("sender").GetProperty("gomId").GetString());
+        Assert.Equal(p.A.Id, message.GetProperty("sender").GetProperty("id").GetGuid());
+        Assert.False(message.GetProperty("sender").TryGetProperty("gomId", out _));
         Assert.Equal("Chị Hai", message.GetProperty("sender").GetProperty("displayName").GetString());
         Assert.Equal("hello", message.GetProperty("body").GetString());
         Assert.Equal(HttpStatusCode.NotFound, theirs.StatusCode);
@@ -499,7 +501,8 @@ public class MessageTests(AppFixture app) : IClassFixture<AppFixture>
         var forA = await ListEntry(p.CookieA, p.Chat);
 
         Assert.Equal("latest", forB.GetProperty("lastMessage").GetProperty("body").GetString());
-        Assert.Equal(p.A.GomId, forB.GetProperty("lastMessage").GetProperty("sender").GetProperty("gomId").GetString());
+        Assert.Equal(p.A.Id, forB.GetProperty("lastMessage").GetProperty("sender").GetProperty("id").GetGuid());
+        Assert.False(forB.GetProperty("lastMessage").GetProperty("sender").TryGetProperty("gomId", out _));
         Assert.Equal(3, forB.GetProperty("lastMessage").GetProperty("seq").GetInt64());
         Assert.Equal(1, forB.GetProperty("unread").GetInt32());    // B read up to their own reply (seq 2); only "latest" is new
         Assert.Equal(0, forA.GetProperty("unread").GetInt32());    // A sent the last one, and read the reply by sending after it

@@ -170,7 +170,7 @@ public static class LinkEndpoints
         await tx.CommitAsync(ct);
 
         SessionCookie.Set(http.Response, started.Token, started.Expires);
-        return Results.Ok(new { gomId = user.GomId, displayName = user.DisplayName, isOwner = false });
+        return Results.Ok(new { id = user.Id, gomId = user.GomId, displayName = user.DisplayName, isOwner = false });
     }
 
     // ---- password reset
@@ -216,6 +216,6 @@ public static class LinkEndpoints
         throttle.Succeeded(found.GomId);
         SessionCookie.Set(http.Response, started.Token, started.Expires);
         var isOwner = await db.Users.Where(u => u.Id == found.UserId).Select(u => u.IsOwner).SingleAsync(ct);
-        return Results.Ok(new { gomId = found.GomId, displayName = found.DisplayName, isOwner });
+        return Results.Ok(new { id = found.UserId, gomId = found.GomId, displayName = found.DisplayName, isOwner });
     }
 }

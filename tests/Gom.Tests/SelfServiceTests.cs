@@ -83,6 +83,20 @@ public class SelfServiceTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(user.GomId, await NameOf(cookie));
     }
 
+    [Fact]
+    public async Task Who_am_I_includes_my_opaque_id_everywhere_a_person_is_returned()
+    {
+        var user = await app.AddUser();
+        var cookie = await app.SignIn(user.GomId);
+
+        using var me = await app.Call(HttpMethod.Get, "/api/me", cookie: cookie);
+        using var rename = await app.Call(HttpMethod.Patch, "/api/me", new { displayName = "Chị Hai" }, cookie);
+        using var signIn = await app.Call(HttpMethod.Post, "/api/session", new { gomId = user.GomId, password = AppFixture.Password });
+
+        foreach (var r in new[] { me, rename, signIn })
+            Assert.Equal(user.Id, (await r.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid());
+    }
+
     // ---- own password
 
     [Fact]

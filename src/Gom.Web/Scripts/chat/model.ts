@@ -68,7 +68,7 @@ export function buildThread(
   const add = (m: Shown, key: string): void => {
     const when = new Date(m.createdAt);
     const day = dayKey(when);
-    const mine = m.sender.gomId === me;
+    const mine = m.sender.id === me;
     if (previous === null || previous.day !== day) {
       items.push({ kind: 'day', key: `d:${day}`, label: dayLabel(m.createdAt, now) });
       previous = null;
@@ -78,9 +78,9 @@ export function buildThread(
       dividerPlaced = true;
       previous = null;
     }
-    const continues = previous !== null && previous.sender === m.sender.gomId && when.getTime() - previous.at <= RUN_GAP_MS;
+    const continues = previous !== null && previous.sender === m.sender.id && when.getTime() - previous.at <= RUN_GAP_MS;
     items.push({ kind: 'msg', key, msg: m, mine, first: !continues, last: true });
-    previous = { sender: m.sender.gomId, at: when.getTime(), day };
+    previous = { sender: m.sender.id, at: when.getTime(), day };
   };
 
   for (const m of messages) add(m, `m:${m.id}`);
