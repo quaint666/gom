@@ -194,7 +194,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${hasMenu ? html`<button class="ib small menu-btn" type="button" data-menu aria-label="Tùy chọn tin nhắn" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
           @click=${() => { menu = menu?.id === m.id ? null : { id: m.id, confirming: false }; update(); }}>${icons.more()}</button>` : nothing}
         ${others ? (item.last ? html`<div class="av sm a1" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
-        <div class="bub">${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
+        <div class="bub" @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
+          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}<span class="txt">${m.body}</span>`}
           <span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${m.state === 'sending' || m.state === 'queued' ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}</span></div>
       </div>
       ${chips(m)}
@@ -521,6 +522,39 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (result.ok) return;
     c.muted = !wanted;
     handleFailure(result);
+  }
+
+  // ---- opening the menu without the button
+
+  /** Right-click (or the context-menu key) on a message that has a menu opens it there, instead of the browser's own. */
+  function onContext(e: MouseEvent, m: Shown, hasMenu: boolean): void {
+    if (!hasMenu) return;
+    e.preventDefault();
+    menu = { id: m.id, confirming: false };
+    update();
+  }
+
+  /** A finger held on a message for this long opens its menu. */
+  const LONG_PRESS_MS = 450;
+  /** The finger may drift this far (in pixels) and still count as holding still; further is a scroll. */
+  const PRESS_SLOP_PX = 10;
+  let press: { timer: number; x: number; y: number } | null = null;
+
+  function pressStart(e: PointerEvent, m: Shown, hasMenu: boolean): void {
+    pressEnd();
+    if (!hasMenu || e.pointerType !== 'touch') return;
+    const timer = deps.timer.set(() => { press = null; menu = { id: m.id, confirming: false }; update(); }, LONG_PRESS_MS);
+    press = { timer, x: e.clientX, y: e.clientY };
+  }
+
+  function pressMove(e: PointerEvent): void {
+    if (press !== null && Math.hypot(e.clientX - press.x, e.clientY - press.y) > PRESS_SLOP_PX) pressEnd();
+  }
+
+  function pressEnd(): void {
+    if (press === null) return;
+    deps.timer.clear(press.timer);
+    press = null;
   }
 
   // ---- editing
