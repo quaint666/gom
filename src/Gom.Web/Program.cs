@@ -23,7 +23,10 @@ builder.Services.AddSingleton<HashLimiter>(sp =>
     return new HashLimiter(slots, TimeSpan.FromSeconds(o.HashWaitSeconds));
 });
 builder.Services.AddAuthentication(GomClaims.Scheme).AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(GomClaims.Scheme, null);
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(o => o.AddPolicy("Owner", p => p.RequireAuthenticatedUser().RequireClaim(GomClaims.IsOwner, "true")));
+builder.Services.AddSingleton(sp => builder.Configuration.GetSection("Owner").Get<OwnerOptions>() ?? new OwnerOptions());
+builder.Services.AddSingleton<OwnerSeeder>();
+builder.Services.AddHostedService<OwnerSeedingService>();
 
 var app = builder.Build();
 
@@ -31,6 +34,7 @@ app.UseMiddleware<OriginCheck>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuth();
+app.MapLinks();
 
 // 200 only when the database answers; a monitor or a proxy can poll this.
 app.MapGet("/healthz", async (GomDbContext db, CancellationToken ct) =>

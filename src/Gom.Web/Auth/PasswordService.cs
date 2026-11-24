@@ -24,6 +24,12 @@ public sealed class AuthOptions
 
     /// <summary>How long a sign-in waits for a free hashing slot before answering 503.</summary>
     public int HashWaitSeconds { get; set; } = 2;
+
+    /// <summary>How long an invite link works.</summary>
+    public int InviteDays { get; set; } = 7;
+
+    /// <summary>How long a password-reset link works.</summary>
+    public int ResetHours { get; set; } = 24;
 }
 
 /// <summary>Hashes and checks passwords with ASP.NET's PBKDF2 hasher, using the iteration count from configuration.</summary>
