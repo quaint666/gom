@@ -299,9 +299,22 @@ describe('contacts: tabs, a handful of rows, and search', () => {
     expect([...root.querySelectorAll('[data-friend]')].map((r) => r.getAttribute('data-friend'))).toEqual(['f0']);
     type('bạn 7'); await flush();
     expect([...root.querySelectorAll('[data-friend]')].map((r) => r.getAttribute('data-friend'))).toEqual(['f7']);
+    type('bạn'); await flush();   // seven match: all of them show, not a handful
+    expect(rows()).toBe(7);
+    expect(root.querySelector('[data-more-rows]')).toBeNull();
     type('không có ai'); await flush();
     expect(rows()).toBe(0);
     expect(text(root.querySelector('[data-empty]')!)).toContain('Không tìm thấy');
+  });
+
+  it('starts again from a handful after leaving a tab and coming back', async () => {
+    mount();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-more-rows]')!.click(); await flush();
+    expect(rows()).toBe(8);
+    root.querySelector<HTMLButtonElement>('[data-tab="groups"]')!.click(); await flush();
+    root.querySelector<HTMLButtonElement>('[data-tab="friends"]')!.click(); await flush();
+    expect(rows()).toBe(5);
   });
 
   it('has a Groups tab with only the groups, and a way to make a new one', async () => {

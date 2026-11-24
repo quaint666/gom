@@ -2598,6 +2598,14 @@ describe('chat: the list of conversations', () => {
     expect(h.nav.push).toHaveBeenLastCalledWith('/');
   });
 
+  it('does not add a history entry when the Gom button is pressed at the start already', async () => {
+    const h = start({ chats: several });
+    await flush();
+    root.querySelector<HTMLAnchorElement>('a.brand')!.click();
+    await flush();
+    expect(h.nav.push).not.toHaveBeenCalled();
+  });
+
   it('shows a welcome in the empty right side instead of nothing', async () => {
     start({ chats: several });
     await flush();
