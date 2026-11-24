@@ -1,3 +1,4 @@
+using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -157,12 +158,19 @@ public static class LinkEndpoints
         // Someone else may have used this invite since we looked: then nothing of ours is kept.
         if (await Consume(db, link.Id, user.Id, now, ct) == 0) return InvalidLink();
 
+        // Whoever invited you is your first friend.
+        var (low, high) = Friendship.Order(link.CreatedBy, user.Id);
+        db.Friendships.Add(new Friendship
+        {
+            UserLow = low, UserHigh = high, RequestedBy = link.CreatedBy, Status = FriendStatus.Accepted, CreatedAt = now, AcceptedAt = now,
+        });
+
         var started = AuthEndpoints.StartSession(http, db, user.Id, now, options.Value);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
         SessionCookie.Set(http.Response, started.Token, started.Expires);
-        return Results.Ok(new { gomId = user.GomId, displayName = user.DisplayName, isOwner = false });
+        return Results.Ok(new { id = user.Id, gomId = user.GomId, displayName = user.DisplayName, isOwner = false });
     }
 
     // ---- password reset
@@ -180,7 +188,7 @@ public static class LinkEndpoints
     }
 
     private static async Task<IResult> Reset(string token, ResetRequest request, HttpContext http, GomDbContext db, PasswordService passwords,
-        HashLimiter limiter, SignInThrottle throttle, TimeProvider clock, IOptions<AuthOptions> options, CancellationToken ct)
+        HashLimiter limiter, SignInThrottle throttle, ConnectionRegistry sockets, TimeProvider clock, IOptions<AuthOptions> options, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
         var found = await FindReset(db, token, now).SingleOrDefaultAsync(ct);
@@ -204,9 +212,10 @@ public static class LinkEndpoints
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
+        sockets.CloseUser(found.UserId);
         throttle.Succeeded(found.GomId);
         SessionCookie.Set(http.Response, started.Token, started.Expires);
         var isOwner = await db.Users.Where(u => u.Id == found.UserId).Select(u => u.IsOwner).SingleAsync(ct);
-        return Results.Ok(new { gomId = found.GomId, displayName = found.DisplayName, isOwner });
+        return Results.Ok(new { id = found.UserId, gomId = found.GomId, displayName = found.DisplayName, isOwner });
     }
 }

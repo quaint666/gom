@@ -2,7 +2,7 @@
 
 A small, invite-only web chat for family and friends, with message history kept on the server so it is there on every device. Web only. The UI is in Vietnamese; code and docs are in English.
 
-Status: scaffolding (M0). Nothing to use yet.
+Status: usable end to end, not yet deployed. Accounts and invites, friends, one-to-one and group chat with live delivery, offline sending, taking a message back, and read receipts are built. Not yet: images, files, push notifications, the shop's alert rooms, backups, and the load test.
 
 ## Run it locally
 

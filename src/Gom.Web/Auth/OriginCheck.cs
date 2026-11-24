@@ -9,7 +9,9 @@ public sealed class OriginCheck(RequestDelegate next, IOptions<AuthOptions> opti
 
     public Task Invoke(HttpContext context)
     {
-        if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method) || HttpMethods.IsOptions(context.Request.Method))
+        // A WebSocket upgrade is a GET, but it opens a long-lived channel with the person's cookie: it must name our origin too.
+        var upgrade = context.Request.Headers.Upgrade.ToString().Contains("websocket", StringComparison.OrdinalIgnoreCase);
+        if (!upgrade && (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method) || HttpMethods.IsOptions(context.Request.Method)))
             return next(context);
 
         var origin = context.Request.Headers.Origin.ToString();

@@ -8,8 +8,8 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
 {
     public static TheoryData<string, string> Pages => new()
     {
-        { "/", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/reset/some-token", "reset" },
-        { "/settings", "settings" }, { "/owner", "owner" },
+        { "/", "home" }, { "/c/6f1d0b5e-0000-4000-8000-000000000000", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/reset/some-token", "reset" },
+        { "/settings", "settings" }, { "/friends", "friends" }, { "/groups/new", "newgroup" }, { "/groups/6f1d0b5e-0000-4000-8000-000000000000", "group" }, { "/add/some_id", "add" }, { "/owner", "owner" },
     };
 
     [Theory]

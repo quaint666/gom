@@ -1,22 +1,46 @@
 export type ErrorCode =
   | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
   | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
-  | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
+  | 'wrong_password' | 'cannot_disable_owner' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
+  | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
+  | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
+  | 'group_full' | 'not_a_group' | 'not_your_message' | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
-  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin',
+  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner',
+  'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
+  'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
+  'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
 export type Result<T> = { ok: true; data: T } | Failure;
 
-export interface User { gomId: string; displayName: string; isOwner: boolean }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean }
 export interface SessionInfo { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }
 export interface Invite { id: string; createdAt: string; expiresAt: string; usedBy: string | null; status: 'pending' | 'used' | 'revoked' | 'expired' }
 export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; createdAt: string }
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
 export interface JoinBody { gomId: string; password: string; displayName: string }
+
+export interface Person { gomId: string; displayName: string }
+export interface FriendRequest extends Person { createdAt: string }
+export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; outgoing: FriendRequest[] }
+/** Who wrote a message: a name and an opaque id. The Gom ID is shown to friends only, so it is not here. */
+export interface Sender { id: string; displayName: string }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean }
+/** One step of a conversation's stream, as the server sends it (live or in a sync page). */
+export interface ChatEvent { seq: number; kind: 'created' | 'deleted'; message: ChatMessage }
+export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean }
+export interface Conversation {
+  id: string; kind: 'direct' | 'group'; title: string | null; peer: Person | null; lastSeq: number; lastReadSeq: number;
+  unread: number; lastMessage: LastMessage | null; memberCount?: number;
+}
+/** A member of a group. The Gom ID is there only for you and your friends. */
+export interface GroupMember {
+  id: string; displayName: string; isMe: boolean; isFriend: boolean; gomId: string | null; request: 'none' | 'sent' | 'received';
+}
 
 export interface Api {
   me(): Promise<Result<User>>;
@@ -33,6 +57,33 @@ export interface Api {
   revokeInvite(id: string): Promise<Result<void>>;
   members(): Promise<Result<Member[]>>;
   resetLink(gomId: string): Promise<Result<Issued>>;
+  setNickname(displayName: string): Promise<Result<User>>;
+  changePassword(current: string, password: string): Promise<Result<void>>;
+  disableMember(gomId: string): Promise<Result<void>>;
+  enableMember(gomId: string): Promise<Result<void>>;
+  friends(): Promise<Result<FriendLists>>;
+  askFriend(gomId: string): Promise<Result<{ status: 'pending' | 'friends' }>>;
+  acceptFriend(gomId: string): Promise<Result<void>>;
+  /** Declines a request sent to you, or cancels one you sent. */
+  withdrawFriend(gomId: string): Promise<Result<void>>;
+  unfriend(gomId: string): Promise<Result<void>>;
+  blocks(): Promise<Result<Person[]>>;
+  block(gomId: string): Promise<Result<void>>;
+  unblock(gomId: string): Promise<Result<void>>;
+  conversations(): Promise<Result<Conversation[]>>;
+  openDirect(gomId: string): Promise<Result<{ id: string }>>;
+  history(conversation: string, before?: number): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean; lastSeq: number }>>;
+  recall(conversation: string, message: string): Promise<Result<void>>;
+  /** How far the other members have read. Empty, with `enabled: false`, when you have hidden yours. */
+  reads(conversation: string): Promise<Result<{ enabled: boolean; reads: { userId: string; seq: number }[] }>>;
+  setReceipts(enabled: boolean): Promise<Result<void>>;
+  send(conversation: string, clientId: string, body: string): Promise<Result<ChatMessage>>;
+  markRead(conversation: string, seq: number): Promise<Result<void>>;
+  createGroup(title: string, members: string[]): Promise<Result<{ id: string }>>;
+  groupMembers(conversation: string): Promise<Result<GroupMember[]>>;
+  addMember(conversation: string, gomId: string): Promise<Result<void>>;
+  leaveGroup(conversation: string): Promise<Result<void>>;
+  askMember(conversation: string, userId: string): Promise<Result<{ status: 'pending' | 'friends' }>>;
 }
 
 /** The browser sends the Origin header itself on same-origin POST and DELETE; the server checks it. */
@@ -71,6 +122,31 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     revokeInvite: (id) => call('DELETE', `/api/invites/${enc(id)}`),
     members: () => call('GET', '/api/users'),
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
+    setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
+    changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
+    disableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/disable`),
+    enableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/enable`),
+    friends: () => call('GET', '/api/friends'),
+    askFriend: (gomId) => call('POST', '/api/friends/requests', { gomId }),
+    acceptFriend: (gomId) => call('POST', `/api/friends/requests/${enc(gomId)}/accept`),
+    withdrawFriend: (gomId) => call('DELETE', `/api/friends/requests/${enc(gomId)}`),
+    unfriend: (gomId) => call('DELETE', `/api/friends/${enc(gomId)}`),
+    blocks: () => call('GET', '/api/blocks'),
+    block: (gomId) => call('POST', `/api/blocks/${enc(gomId)}`),
+    unblock: (gomId) => call('DELETE', `/api/blocks/${enc(gomId)}`),
+    conversations: () => call('GET', '/api/conversations'),
+    openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
+    history: (conversation, before) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}`),
+    send: (conversation, clientId, body) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body }),
+    createGroup: (title, members) => call('POST', '/api/conversations/group', { title, members }),
+    groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
+    addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
+    leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
+    askMember: (conversation, userId) => call('POST', `/api/conversations/${enc(conversation)}/members/${enc(userId)}/friend-request`),
+    reads: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/reads`),
+    setReceipts: (enabled) => call('PATCH', '/api/me/receipts', { enabled }),
+    recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
+    markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };
 }
 

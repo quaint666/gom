@@ -11,6 +11,8 @@ public class User
     public bool IsOwner { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DisabledAt { get; set; }
+    /// <summary>Whether others may see how far this person has read, and whether this person may see theirs. One switch, both ways.</summary>
+    public bool ShareReadReceipts { get; set; } = true;
 }
 
 public class Session

@@ -1,3 +1,4 @@
+using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,9 +14,11 @@ public static class AuthEndpoints
         app.MapDelete("/api/session", SignOut).RequireAuthorization();
         app.MapGet("/api/me", (HttpContext c) => Results.Ok(new
         {
+            id = GomClaims.User(c.User),
             gomId = c.User.FindFirst(GomClaims.GomId)!.Value,
             displayName = c.User.FindFirst(GomClaims.DisplayName)!.Value,
             isOwner = c.User.FindFirst(GomClaims.IsOwner)!.Value == "true",
+            readReceipts = c.User.FindFirst(GomClaims.ReadReceipts)!.Value == "true",
         })).RequireAuthorization();
         app.MapGet("/api/sessions", ListSessions).RequireAuthorization();
         app.MapDelete("/api/sessions/{id:guid}", EndSession).RequireAuthorization();
@@ -69,7 +72,7 @@ public static class AuthEndpoints
         await db.SaveChangesAsync(ct);
 
         SessionCookie.Set(http.Response, started.Token, started.Expires);
-        return Results.Ok(new { gomId = user.GomId, displayName = user.DisplayName, isOwner = user.IsOwner });
+        return Results.Ok(new { id = user.Id, gomId = user.GomId, displayName = user.DisplayName, isOwner = user.IsOwner });
     }
 
     /// <summary>Adds a new session for the user to the context; the caller saves it, then sets the cookie.</summary>
@@ -86,11 +89,12 @@ public static class AuthEndpoints
         return (issued.Token, expires);
     }
 
-    private static async Task<IResult> SignOut(HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> SignOut(HttpContext http, GomDbContext db, TimeProvider clock, ConnectionRegistry sockets, CancellationToken ct)
     {
         var sid = GomClaims.Session(http.User);
         var now = clock.GetUtcNow();
         await db.Sessions.Where(s => s.Id == sid).ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), ct);
+        sockets.CloseSession(sid);
         SessionCookie.Clear(http.Response);
         return Results.NoContent();
     }
@@ -108,13 +112,14 @@ public static class AuthEndpoints
         return Results.Ok(rows);
     }
 
-    private static async Task<IResult> EndSession(Guid id, HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> EndSession(Guid id, HttpContext http, GomDbContext db, TimeProvider clock, ConnectionRegistry sockets, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var now = clock.GetUtcNow();
         var ended = await db.Sessions.Where(s => s.Id == id && s.UserId == me && s.RevokedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), ct);
         if (ended == 0) return Results.NotFound();
+        sockets.CloseSession(id);
         if (id == GomClaims.Session(http.User)) SessionCookie.Clear(http.Response);
         return Results.NoContent();
     }

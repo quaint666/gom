@@ -12,6 +12,13 @@ export function fakeApi(overrides: Partial<{ [K in keyof Api]: ReturnType<typeof
     me: nope(), signIn: nope(), signOut: vi.fn(async () => ok(undefined)), peekInvite: nope(), join: nope(), peekReset: nope(),
     reset: nope(), sessions: nope(), endSession: vi.fn(async () => ok(undefined)), createInvite: nope(), invites: nope(),
     revokeInvite: vi.fn(async () => ok(undefined)), members: nope(), resetLink: nope(),
+    setNickname: nope(), changePassword: vi.fn(async () => ok(undefined)), disableMember: vi.fn(async () => ok(undefined)),
+    enableMember: vi.fn(async () => ok(undefined)),
+    friends: nope(), askFriend: nope(), acceptFriend: vi.fn(async () => ok(undefined)), withdrawFriend: vi.fn(async () => ok(undefined)),
+    unfriend: vi.fn(async () => ok(undefined)), blocks: nope(), block: vi.fn(async () => ok(undefined)), unblock: vi.fn(async () => ok(undefined)),
+    conversations: nope(), openDirect: nope(), history: nope(), send: nope(), markRead: vi.fn(async () => ok(undefined)),
+    createGroup: nope(), groupMembers: nope(), addMember: vi.fn(async () => ok(undefined)), leaveGroup: vi.fn(async () => ok(undefined)), askMember: nope(), recall: vi.fn(async () => ok(undefined)),
+    reads: vi.fn(async () => ok({ enabled: true, reads: [] })), setReceipts: vi.fn(async () => ok(undefined)),
   };
   return { ...base, ...overrides } as never;
 }

@@ -1,28 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { mountHome } from '../Scripts/pages/home.js';
 import { mountSettings } from '../Scripts/pages/settings.js';
 import { fail, fakeApi, flush, ok, text } from './helpers.js';
 
 let root: HTMLElement;
 beforeEach(() => { root = document.createElement('div'); document.body.replaceChildren(root); });
 const me = { gomId: 'mom', displayName: 'Mẹ', isOwner: false };
-
-describe('home page', () => {
-  it('sends a signed-out visitor to sign in', async () => {
-    const go = vi.fn();
-    mountHome(root, fakeApi({ me: vi.fn(async () => fail('unauthorized', 401)) }), go);
-    await flush();
-    expect(go).toHaveBeenCalledWith('/sign-in');
-  });
-
-  it('shows the name, the empty state and a link to settings', async () => {
-    mountHome(root, fakeApi({ me: vi.fn(async () => ok(me)) }), vi.fn());
-    await flush();
-    expect(text(root)).toContain('Mẹ');
-    expect(text(root)).toContain('Chưa có cuộc trò chuyện nào');
-    expect(root.querySelector('a[href="/settings"]')).not.toBeNull();
-  });
-});
 
 describe('settings page', () => {
   const sessions = [

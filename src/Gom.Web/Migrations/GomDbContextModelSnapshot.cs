@@ -22,6 +22,270 @@ namespace Gom.Web.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Gom.Web.Data.Block", b =>
+                {
+                    b.Property<Guid>("BlockerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("blocker_id");
+
+                    b.Property<Guid>("BlockedId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("blocked_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("BlockerId", "BlockedId")
+                        .HasName("pk_blocks");
+
+                    b.HasIndex("BlockedId")
+                        .HasDatabaseName("ix_blocks_blocked_id");
+
+                    b.ToTable("blocks", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_blocks_not_self", "blocker_id <> blocked_id");
+                        });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.Conversation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("DirectKey")
+                        .HasMaxLength(73)
+                        .HasColumnType("character varying(73)")
+                        .HasColumnName("direct_key");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset?>("LastMessageAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_message_at");
+
+                    b.Property<long>("LastSeq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_seq");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_conversations");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_conversations_created_by");
+
+                    b.HasIndex("DirectKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_conversations_direct_key");
+
+                    b.ToTable("conversations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_conversations_direct_key", "(kind = 'direct') = (direct_key IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_conversations_kind", "kind IN ('direct', 'group')");
+
+                            t.HasCheckConstraint("ck_conversations_last_seq", "last_seq >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.ConversationMember", b =>
+                {
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<long>("JoinedSeq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("joined_seq");
+
+                    b.Property<long>("LastReadSeq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_read_seq");
+
+                    b.HasKey("ConversationId", "UserId")
+                        .HasName("pk_conversation_members");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_conversation_members_user_id");
+
+                    b.ToTable("conversation_members", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_conversation_members_joined", "joined_seq >= 0");
+
+                            t.HasCheckConstraint("ck_conversation_members_read", "last_read_seq >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.Friendship", b =>
+                {
+                    b.Property<Guid>("UserLow")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_low");
+
+                    b.Property<Guid>("UserHigh")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_high");
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("status");
+
+                    b.HasKey("UserLow", "UserHigh")
+                        .HasName("pk_friendships");
+
+                    b.HasIndex("RequestedBy")
+                        .HasDatabaseName("ix_friendships_requested_by");
+
+                    b.HasIndex("UserHigh")
+                        .HasDatabaseName("ix_friendships_user_high");
+
+                    b.ToTable("friendships", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_friendships_accepted", "(status = 'accepted') = (accepted_at IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_friendships_order", "user_low < user_high");
+
+                            t.HasCheckConstraint("ck_friendships_requester", "requested_by IN (user_low, user_high)");
+
+                            t.HasCheckConstraint("ck_friendships_status", "status IN ('pending', 'accepted')");
+                        });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.Message", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)")
+                        .HasColumnName("body");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sender_id");
+
+                    b.Property<long>("Seq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("seq");
+
+                    b.HasKey("Id")
+                        .HasName("pk_messages");
+
+                    b.HasIndex("ConversationId", "Seq")
+                        .IsUnique()
+                        .HasDatabaseName("ix_messages_conversation_id_seq");
+
+                    b.HasIndex("SenderId", "ClientId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_messages_sender_id_client_id");
+
+                    b.ToTable("messages", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_messages_body", "deleted_at IS NOT NULL OR length(body) > 0");
+
+                            t.HasCheckConstraint("ck_messages_seq", "seq > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.MessageEvent", b =>
+                {
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<long>("Seq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("seq");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.HasKey("ConversationId", "Seq")
+                        .HasName("pk_message_events");
+
+                    b.HasIndex("MessageId")
+                        .HasDatabaseName("ix_message_events_message_id");
+
+                    b.ToTable("message_events", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_message_events_kind", "kind IN ('created', 'deleted')");
+
+                            t.HasCheckConstraint("ck_message_events_seq", "seq > 0");
+                        });
+                });
+
             modelBuilder.Entity("Gom.Web.Data.OneTimeLink", b =>
                 {
                     b.Property<Guid>("Id")
@@ -178,6 +442,12 @@ namespace Gom.Web.Migrations
                         .HasColumnType("text")
                         .HasColumnName("password_hash");
 
+                    b.Property<bool>("ShareReadReceipts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("share_read_receipts");
+
                     b.HasKey("Id")
                         .HasName("pk_users");
 
@@ -194,6 +464,108 @@ namespace Gom.Web.Migrations
                         {
                             t.HasCheckConstraint("ck_users_gom_id", "gom_id ~ '^[a-z0-9_]{3,20}$'");
                         });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.Block", b =>
+                {
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("BlockedId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_blocks_blocked_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("BlockerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_blocks_blocker_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.Conversation", b =>
+                {
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_conversations_created_by");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.ConversationMember", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_conversation_members_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_conversation_members_user_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.Friendship", b =>
+                {
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_friendships_requested_by");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserHigh")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_friendships_user_high");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserLow")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_friendships_user_low");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.Message", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_messages_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("SenderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_messages_sender_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.MessageEvent", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_message_events_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.Message", null)
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_message_events_message_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.OneTimeLink", b =>

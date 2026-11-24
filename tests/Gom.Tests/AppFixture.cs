@@ -38,6 +38,7 @@ public sealed class AppFixture : IAsyncLifetime
             b.UseSetting("ConnectionStrings:Default", Db.ConnectionString);
             b.UseSetting("Auth:PasswordIterations", "1000");
             b.UseSetting("Auth:AllowedOrigins:0", Origin);
+            b.UseSetting("Chat:MaxGroupMembers", "5");   // small, so a test can fill a group
             b.ConfigureServices(s =>
             {
                 s.RemoveAll<TimeProvider>();
@@ -135,6 +136,33 @@ public sealed class AppFixture : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("token").GetString()!;
     }
+
+    /// <summary>A new member, signed in.</summary>
+    public async Task<(User User, string Cookie)> Member(string? gomId = null)
+    {
+        var user = await AddUser(gomId);
+        return (user, await SignIn(user.GomId));
+    }
+
+    /// <summary>Makes two people friends directly in the database (the friend endpoints have their own tests).</summary>
+    public async Task Befriend(User a, User b)
+    {
+        var (low, high) = Friendship.Order(a.Id, b.Id);
+        await using var db = Db.NewContext();
+        db.Friendships.Add(new Friendship { UserLow = low, UserHigh = high, RequestedBy = a.Id, Status = FriendStatus.Accepted, CreatedAt = Clock.Now, AcceptedAt = Clock.Now });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Opens the one-to-one conversation between the signed-in person and a friend; returns its id.</summary>
+    public async Task<Guid> OpenChat(string cookie, string friendGomId)
+    {
+        using var r = await Call(HttpMethod.Post, "/api/conversations/direct", new { gomId = friendGomId }, cookie);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        return (await Json(r)).GetProperty("id").GetGuid();
+    }
+
+    public static async Task<System.Text.Json.JsonElement> Json(HttpResponseMessage response) =>
+        await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
 
     public Task<List<Session>> SessionsOf(Guid userId) => ReadSessions(userId);
 

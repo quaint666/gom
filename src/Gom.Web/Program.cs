@@ -1,5 +1,8 @@
 using Gom.Web.Auth;
+using Gom.Web.Chat;
+using Gom.Web.Chat.Live;
 using Gom.Web.Data;
+using Gom.Web.Social;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -14,6 +17,14 @@ builder.Services.AddDbContext<GomDbContext>(options => options.UseNpgsql(connect
 
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<ChatOptions>(builder.Configuration.GetSection("Chat"));
+builder.Services.AddSingleton<ConnectionRegistry>();
+builder.Services.AddSingleton<LiveDelivery>();
+builder.Services.AddSingleton<SendLimiter>(sp =>
+{
+    var o = sp.GetRequiredService<IOptions<ChatOptions>>().Value;
+    return new SendLimiter(sp.GetRequiredService<TimeProvider>(), o.SendBurst, o.SendPerSecond);
+});
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<SignInThrottle>(sp => new SignInThrottle(sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddSingleton<HashLimiter>(sp =>
@@ -32,20 +43,33 @@ var app = builder.Build();
 
 app.UseMiddleware<SecurityHeaders>();
 app.UseStaticFiles();
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(25) });
 app.UseMiddleware<OriginCheck>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuth();
 app.MapLinks();
+app.MapAccount();
+app.MapFriends();
+app.MapConversations();
+app.MapGroups();
+app.MapMessages();
+app.MapReceipts();
+app.MapSocket();
 
 // One small HTML file per page; the script in /js/main.js picks the page from data-page.
 void MapPage(string route, string file) => app.MapGet(route, (IWebHostEnvironment env) =>
     Results.File(env.WebRootFileProvider.GetFileInfo($"pages/{file}").CreateReadStream(), "text/html; charset=utf-8"));
 MapPage("/", "home.html");
+MapPage("/c/{id}", "home.html");
 MapPage("/sign-in", "sign-in.html");
 MapPage("/join/{token}", "join.html");
 MapPage("/reset/{token}", "reset.html");
 MapPage("/settings", "settings.html");
+MapPage("/friends", "friends.html");
+MapPage("/groups/new", "newgroup.html");
+MapPage("/groups/{id}", "group.html");
+MapPage("/add/{gomId}", "add.html");
 MapPage("/owner", "owner.html");
 
 // 200 only when the database answers; a monitor or a proxy can poll this.
