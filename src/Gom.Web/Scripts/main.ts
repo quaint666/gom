@@ -55,3 +55,6 @@ if (root) {
     case 'owner': mountOwner(root, api, go, location.origin); break;
   }
 }
+
+// The app can be added to a home screen, and shows a "no connection" page instead of the browser's own. Browsers only allow this on https and on localhost.
+if ('serviceWorker' in navigator) void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
