@@ -84,6 +84,7 @@ export interface Api {
   setReceipts(enabled: boolean): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string, replyTo?: string): Promise<Result<ChatMessage>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
+  hideMessage(conversation: string, message: string): Promise<Result<void>>;
   createGroup(title: string, members: string[]): Promise<Result<{ id: string }>>;
   groupMembers(conversation: string): Promise<Result<GroupMember[]>>;
   addMember(conversation: string, gomId: string): Promise<Result<void>>;
@@ -163,6 +164,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     reads: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/reads`),
     setReceipts: (enabled) => call('PATCH', '/api/me/receipts', { enabled }),
     recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
+    hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
     markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };
 }

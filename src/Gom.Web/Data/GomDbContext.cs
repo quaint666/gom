@@ -14,6 +14,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<ConversationMember> Members => Set<ConversationMember>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<MessageEvent> Events => Set<MessageEvent>();
+    public DbSet<MessageHide> Hides => Set<MessageHide>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -138,6 +139,16 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.Property(x => x.Kind).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<EventKind>(v, true)).HasMaxLength(10);
             e.HasIndex(x => x.MessageId);
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<MessageHide>(e =>
+        {
+            e.ToTable("message_hides");
+            e.HasKey(x => new { x.UserId, x.MessageId });
+            // Ending a group looks hides up by message.
+            e.HasIndex(x => x.MessageId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
         });
 

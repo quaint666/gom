@@ -31,7 +31,7 @@ const deps = (random = 1): LiveDeps => ({
 });
 
 function handlers(): LiveHandlers & { [K in keyof LiveHandlers]: ReturnType<typeof vi.fn> } {
-  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), read: vi.fn(), ended: vi.fn(), replaced: vi.fn() } as never;
+  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), read: vi.fn(), hidden: vi.fn(), ended: vi.fn(), replaced: vi.fn() } as never;
 }
 const last = () => FakeSocket.all[FakeSocket.all.length - 1]!;
 const fireTimer = () => { const t = timers.shift()!; t.fn(); };
@@ -74,6 +74,17 @@ describe('live socket', () => {
     last().say({ t: 'read', c: 'c1', u: 'u-lan', seq: 'x' });
     expect(h.read).toHaveBeenCalledOnce();
     expect(h.read).toHaveBeenCalledWith('c1', 'u-lan', 7);
+  });
+
+  it('tells the page which message you deleted for yourself on another device', () => {
+    const h = handlers();
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept(); last().say({ t: 'ready' });
+    last().say({ t: 'hidden', c: 'c1', m: 'msg-9' });
+    last().say({ t: 'hidden', c: 'c1', m: 7 });          // not well formed: ignored
+    last().say({ t: 'hidden', m: 'msg-9' });
+    expect(h.hidden).toHaveBeenCalledOnce();
+    expect(h.hidden).toHaveBeenCalledWith('c1', 'msg-9');
   });
 
   it('tells the page when its list of conversations changed', () => {

@@ -37,6 +37,13 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
         }
     }
 
+    /// <summary>Tells one person's devices that they deleted a message for themself.</summary>
+    public void MessageHidden(Guid person, Guid conversation, Guid message)
+    {
+        var frame = Frames.Hidden(conversation, message);
+        foreach (var connection in registry.For(person)) connection.TryEnqueue(frame);
+    }
+
     /// <summary>Sends one step of the stream (a message created or recalled) to every member's devices.</summary>
     /// <param name="eventSeq">The step's own number; for a recall it is later than the message's.</param>
     /// <param name="parentSeq">For an answer, the number of the message it quotes: members who joined after it are not shown its words or its writer.</param>

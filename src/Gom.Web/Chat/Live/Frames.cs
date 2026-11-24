@@ -18,6 +18,8 @@ public static class Frames
     public static byte[] ConversationsChanged() => Json(new { t = "conversations" });
     /// <summary>"This person has now read up to here": for the thread's "seen" line.</summary>
     public static byte[] Read(Guid conversation, Guid reader, long seq) => Json(new { t = "read", c = conversation, u = reader, seq });
+    /// <summary>"This person deleted this message for themself": their other devices drop it.</summary>
+    public static byte[] Hidden(Guid conversation, Guid message) => Json(new { t = "hidden", c = conversation, m = message });
     public static byte[] Ready() => Json(new { t = "ready" });
     public static byte[] Live(Guid conversation, EventDto e) => Json(new { t = "event", c = conversation, @event = e });
     public static byte[] Events(Guid conversation, IReadOnlyList<EventDto> events, bool hasMore) => Json(new { t = "events", c = conversation, events, hasMore });

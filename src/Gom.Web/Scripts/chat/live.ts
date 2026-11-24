@@ -19,6 +19,8 @@ export interface LiveHandlers {
   conversations(): void;
   /** Someone has now read up to this number (only sent if you and they both share your reading). */
   read(conversation: string, userId: string, seq: number): void;
+  /** You deleted this message for yourself, on another device: drop it here too. */
+  hidden(conversation: string, message: string): void;
   /** The session ended: stop trying and go to sign-in. */
   ended(): void;
   /** Another window took this one's place: stop trying (or two windows would take turns forever). */
@@ -60,13 +62,14 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
     socket = s;
     ready = false;
     s.onmessage = (e) => {
-      let frame: { t?: unknown; c?: unknown; u?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown };
+      let frame: { t?: unknown; c?: unknown; u?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown; m?: unknown };
       try { frame = JSON.parse(e.data) as typeof frame; } catch { return; }
       if (typeof frame !== 'object' || frame === null) return;
       if (frame.t === 'ready') { ready = true; attempt = 0; handlers.state(true); }
       else if (frame.t === 'event' && typeof frame.c === 'string') handlers.event(frame.c, frame.event as ChatEvent);
       else if (frame.t === 'conversations') handlers.conversations();
       else if (frame.t === 'read' && typeof frame.c === 'string' && typeof frame.u === 'string' && typeof frame.seq === 'number') handlers.read(frame.c, frame.u, frame.seq);
+      else if (frame.t === 'hidden' && typeof frame.c === 'string' && typeof frame.m === 'string') handlers.hidden(frame.c, frame.m);
       else if (frame.t === 'events' && typeof frame.c === 'string' && Array.isArray(frame.events)) handlers.events(frame.c, frame.events as ChatEvent[], frame.hasMore === true);
     };
     s.onclose = (e) => {

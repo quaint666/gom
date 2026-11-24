@@ -105,12 +105,12 @@ public static class SocketEndpoint
             where e.ConversationId == conversation && e.Seq > floor
             orderby e.Seq
             join m in db.Messages on e.MessageId equals m.Id
-            where m.Seq > access.JoinedSeq
+            where m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
             join u in db.Users on m.SenderId equals u.Id
             select new { e.Seq, e.Kind, Message = m, u.Id, u.DisplayName }).Take(SyncPage + 1).ToListAsync(ct);
 
         var page = rows.Take(SyncPage).ToList();
-        var replies = await Replies.For(db, page.Select(r => r.Message), access.JoinedSeq, ct);
+        var replies = await Replies.For(db, page.Select(r => r.Message), me, access.JoinedSeq, ct);
         var events = page.Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),
             MessageEndpoints.ToDto(r.Message, new MessageEndpoints.PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id)))).ToList();
         return (Frames.Events(conversation, events, rows.Count > SyncPage), false);
