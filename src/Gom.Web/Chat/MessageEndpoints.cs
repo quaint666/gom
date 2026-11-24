@@ -2,6 +2,7 @@ using System.Globalization;
 using Gom.Web.Auth;
 using Gom.Web.Chat.Live;
 using Gom.Web.Data;
+using Gom.Web.Uploads;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -11,13 +12,13 @@ namespace Gom.Web.Chat;
 /// <summary>Sending, history and read position. The database is the truth; nothing here depends on a live connection.</summary>
 public static class MessageEndpoints
 {
-    public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null);
+    public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null, List<Guid>? Attachments = null);
     public sealed record ReactRequest(string? Emoji);
     public sealed record EditRequest(string? Body);
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -41,8 +42,8 @@ public static class MessageEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null) =>
-        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt);
+    internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? attachments = null) =>
+        new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Body, m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt, m.DeletedAt != null ? null : attachments);
 
     // ---- what a message may contain
 
@@ -64,7 +65,7 @@ public static class MessageEndpoints
     // ---- sending
 
     private static async Task<IResult> Send(Guid id, SendRequest request, HttpContext http, GomDbContext db, TimeProvider clock,
-        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
+        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, IOptions<UploadOptions> uploads, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -78,8 +79,15 @@ public static class MessageEndpoints
         var existing = await FindExisting(db, me, clientId, ct);
         if (existing is not null) return await Same(db, existing, id, sender, access.JoinedSeq, ct);
 
-        var (body, problem) = Clean(request.Body, options.Value.MaxChars);
+        // A message may be only pictures and files; then its words may be empty. Otherwise it needs words.
+        var attached = request.Attachments?.Distinct().ToList() ?? [];
+        if (request.Attachments is not null && attached.Count != request.Attachments.Count) return Error(StatusCodes.Status400BadRequest, "invalid_attachment");
+        if (attached.Count > Math.Max(1, uploads.Value.MaxPerMessage)) return Error(StatusCodes.Status400BadRequest, "too_many_attachments");
+        var (body, problem) = attached.Count > 0 && string.IsNullOrWhiteSpace(request.Body) ? ("", null) : Clean(request.Body, options.Value.MaxChars);
         if (body is null) return Error(StatusCodes.Status400BadRequest, problem!);
+        // Only your own uploads to this conversation that no message has taken yet.
+        if (attached.Count > 0 && await db.Attachments.CountAsync(a => attached.Contains(a.Id) && a.ConversationId == id && a.UploaderId == me && a.MessageId == null, ct) != attached.Count)
+            return Error(StatusCodes.Status400BadRequest, "invalid_attachment");
 
         // An answer must point at a message of this conversation that this person can see and that is still there.
         long? parentSeq = null;
@@ -124,6 +132,15 @@ public static class MessageEndpoints
                 return winner is null ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable) : await Same(db, winner, id, sender, access.JoinedSeq, ct);
             }
 
+            // The uploads join the message in the order chosen. Of two messages that name the same upload, one takes it and the other is refused.
+            for (var i = 0; i < attached.Count; i++)
+            {
+                var (attachmentId, position) = (attached[i], i);
+                var taken = await db.Attachments.Where(a => a.Id == attachmentId && a.ConversationId == id && a.UploaderId == me && a.MessageId == null)
+                    .ExecuteUpdateAsync(s => s.SetProperty(a => a.MessageId, message.Id).SetProperty(a => a.Position, position), ct);
+                if (taken == 0) { await tx.RollbackAsync(ct); return Error(StatusCodes.Status400BadRequest, "invalid_attachment"); }
+            }
+
             await db.Members.Where(m => m.ConversationId == id && m.UserId == me && m.LastReadSeq < seq)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.LastReadSeq, seq), ct);
             await tx.CommitAsync(ct);
@@ -131,7 +148,7 @@ public static class MessageEndpoints
 
         // Only now is it sent: the live delivery and the answer both follow the commit.
         var reply = (await Replies.For(db, [message], me, access.JoinedSeq, ct)).GetValueOrDefault(message.Id);
-        var dto = ToDto(message, sender, reply);
+        var dto = ToDto(message, sender, reply, null, (await MessageAttachments.For(db, [message.Id], ct)).GetValueOrDefault(message.Id));
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
         return Results.Ok(dto);
@@ -142,7 +159,8 @@ public static class MessageEndpoints
 
     private static async Task<IResult> Same(GomDbContext db, Message existing, Guid conversation, PersonDto sender, long joinedSeq, CancellationToken ct) =>
         existing.ConversationId == conversation
-            ? Results.Ok(ToDto(existing, sender, (await Replies.For(db, [existing], sender.Id, joinedSeq, ct)).GetValueOrDefault(existing.Id)))
+            ? Results.Ok(ToDto(existing, sender, (await Replies.For(db, [existing], sender.Id, joinedSeq, ct)).GetValueOrDefault(existing.Id), null,
+                (await MessageAttachments.For(db, [existing.Id], ct)).GetValueOrDefault(existing.Id)))
             : Error(StatusCodes.Status409Conflict, "client_id_reused");
 
     /// <summary>In a one-to-one conversation, both must still be friends (an unfriend or a block ends sending, not reading).</summary>
@@ -159,7 +177,7 @@ public static class MessageEndpoints
     /// Takes back one of your own messages: its words are erased, and a "deleted" event takes the next number so every device,
     /// even one that was away, learns of it from the stream. Taking back twice changes nothing.
     /// </summary>
-    private static async Task<IResult> Recall(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, CancellationToken ct)
+    private static async Task<IResult> Recall(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -172,6 +190,7 @@ public static class MessageEndpoints
         var now = clock.GetUtcNow();
         long seq;
         var pinsGone = false;
+        List<Guid> files;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
             // Erase first, and only if it is still there: of several recalls at once exactly one gets 1 here.
@@ -180,6 +199,9 @@ public static class MessageEndpoints
             if (erased == 0) return Results.NoContent();
             // A message taken back is no longer there to stay at the top.
             pinsGone = await db.Pins.Where(p => p.MessageId == messageId).ExecuteDeleteAsync(ct) > 0;
+            // Its pictures and files go with it.
+            files = await db.Attachments.Where(a => a.MessageId == messageId).Select(a => a.Id).ToListAsync(ct);
+            await db.Attachments.Where(a => a.MessageId == messageId).ExecuteDeleteAsync(ct);
 
             seq = (await db.Database.SqlQuery<long>(
                 $"UPDATE conversations SET last_seq = last_seq + 1 WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
@@ -188,6 +210,7 @@ public static class MessageEndpoints
             await tx.CommitAsync(ct);
         }
 
+        AttachmentFiles.Forget(blobs, files);
         if (pinsGone) await live.PinsChangedAsync(db, id);
         var sender = new PersonDto(me, http.User.FindFirst(GomClaims.DisplayName)!.Value);
         await live.PublishAsync(db, seq, "deleted", ToDto(new Message { Id = messageId, ConversationId = id, Seq = found.Seq, SenderId = me, ClientId = found.ClientId, Body = "", CreatedAt = found.CreatedAt, DeletedAt = now }, sender));
@@ -224,7 +247,8 @@ public static class MessageEndpoints
             join u in db.Users on m.SenderId equals u.Id
             select new { Message = m, u.Id, u.DisplayName }).Take(SearchLimit).ToListAsync(ct);
 
-        return Results.Ok(new { results = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName))) });
+        var withFiles = await MessageAttachments.For(db, rows.Select(r => r.Message.Id), ct);
+        return Results.Ok(new { results = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), null, null, withFiles.GetValueOrDefault(r.Message.Id))) });
     }
 
     // ---- pins
@@ -243,7 +267,8 @@ public static class MessageEndpoints
             join u in db.Users on m.SenderId equals u.Id
             orderby p.CreatedAt descending
             select new { Message = m, u.Id, u.DisplayName }).ToListAsync(ct);
-        return Results.Ok(new { pins = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName))) });
+        var withFiles = await MessageAttachments.For(db, rows.Select(r => r.Message.Id), ct);
+        return Results.Ok(new { pins = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), null, null, withFiles.GetValueOrDefault(r.Message.Id))) });
     }
 
     /// <summary>Pins a message for everyone in the conversation (any member may). A few at most; pinning again changes nothing.</summary>
@@ -407,7 +432,8 @@ public static class MessageEndpoints
             var joined = await db.Members.Where(m => m.ConversationId == current.ConversationId && m.UserId == actor).Select(m => m.JoinedSeq).SingleOrDefaultAsync(ct);
             reply = (await Replies.For(db, [current], actor, joined, ct)).GetValueOrDefault(current.Id);
         }
-        await live.PublishAsync(db, seq, "updated", ToDto(current, author, reply, reactions.GetValueOrDefault(current.Id)), parentSeq);
+        var files = await MessageAttachments.For(db, [current.Id], ct);
+        await live.PublishAsync(db, seq, "updated", ToDto(current, author, reply, reactions.GetValueOrDefault(current.Id), files.GetValueOrDefault(current.Id)), parentSeq);
     }
 
     // ---- delete for me
@@ -450,9 +476,10 @@ public static class MessageEndpoints
         var page = rows.Take(take).ToList();
         var replies = await Replies.For(db, page.Select(r => r.Message), me, access.JoinedSeq, ct);
         var reactions = await Reactions.For(db, id, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
+        var withFiles = await MessageAttachments.For(db, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         return Results.Ok(new
         {
-            messages = page.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id), reactions.GetValueOrDefault(r.Message.Id))),
+            messages = page.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id), reactions.GetValueOrDefault(r.Message.Id), withFiles.GetValueOrDefault(r.Message.Id))),
             hasMore = rows.Count > take,
             // Where the stream stands, so a device can ask for "everything after this" from here on.
             lastSeq = await db.Conversations.Where(c => c.Id == id).Select(c => c.LastSeq).SingleAsync(ct),

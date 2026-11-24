@@ -12,6 +12,8 @@ public class Attachment
     public Guid ConversationId { get; set; }
     public Guid UploaderId { get; set; }
     public Guid? MessageId { get; set; }
+    /// <summary>Its place among the attachments of one message (0 first), in the order the sender chose.</summary>
+    public int Position { get; set; }
     public AttachmentKind Kind { get; set; }
     /// <summary>The name to show and to save under: the uploaded one, cleaned.</summary>
     public string Name { get; set; } = "";

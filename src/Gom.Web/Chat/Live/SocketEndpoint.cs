@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text.Json;
 using Gom.Web.Auth;
+using Gom.Web.Chat;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -138,8 +139,9 @@ public static class SocketEndpoint
         var page = rows.Take(SyncPage).ToList();
         var replies = await Replies.For(db, page.Select(r => r.Message), me, access.JoinedSeq, ct);
         var reactions = await Reactions.For(db, conversation, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
+        var withFiles = await MessageAttachments.For(db, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         var events = page.Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),
-            MessageEndpoints.ToDto(r.Message, new MessageEndpoints.PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id), reactions.GetValueOrDefault(r.Message.Id)))).ToList();
+            MessageEndpoints.ToDto(r.Message, new MessageEndpoints.PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id), reactions.GetValueOrDefault(r.Message.Id), withFiles.GetValueOrDefault(r.Message.Id)))).ToList();
         return (Frames.Events(conversation, events, rows.Count > SyncPage), false);
     }
 }

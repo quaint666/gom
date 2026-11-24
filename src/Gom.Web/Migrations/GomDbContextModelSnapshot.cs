@@ -62,6 +62,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("character varying(120)")
                         .HasColumnName("name");
 
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
                     b.Property<long>("Size")
                         .HasColumnType("bigint")
                         .HasColumnName("size");
@@ -411,8 +415,6 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_body", "deleted_at IS NOT NULL OR length(body) > 0");
-
                             t.HasCheckConstraint("ck_messages_seq", "seq > 0");
                         });
                 });

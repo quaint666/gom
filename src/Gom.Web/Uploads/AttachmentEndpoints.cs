@@ -128,7 +128,12 @@ public static class AttachmentEndpoints
         var me = GomClaims.User(http.User);
         var a = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
         // "Not yours to see" and "not there" look the same. Before it is in a message, only the uploader sees it.
-        if (a is null || await Access.Of(db, a.ConversationId, me, ct) is null || a.MessageId is null && a.UploaderId != me) return Results.NotFound();
+        if (a is null) return Results.NotFound();
+        var access = await Access.Of(db, a.ConversationId, me, ct);
+        if (access is null || a.MessageId is null && a.UploaderId != me) return Results.NotFound();
+        // In a message: only what was said after you joined, and not what you hid.
+        if (a.MessageId is { } messageId && !await db.Messages.AnyAsync(m => m.Id == messageId && m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct))
+            return Results.NotFound();
         if (thumb && a.Kind != AttachmentKind.Image) return Results.NotFound();
 
         var stream = services.GetRequiredService<IBlobStore>().OpenRead(thumb ? id + ".t" : id.ToString());

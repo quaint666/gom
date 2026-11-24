@@ -343,6 +343,24 @@ describe('chat: live updates', () => {
     } finally { vi.useRealTimers(); }
   });
 
+  it('says "Đã gửi một hình ảnh" in the list when the last message is only a picture, and for a file too', async () => {
+    const sender = { id: 'u-minh', displayName: 'Minh' };
+    const pic = chat(C1, 'Minh', { lastSeq: 1, lastMessage: { seq: 1, body: '', createdAt: at(10), sender, attachment: 'image' } });
+    const doc = chat(C2, 'Lan', { lastSeq: 1, lastMessage: { seq: 1, body: '', createdAt: at(10), sender: { id: 'u-lan', displayName: 'Lan' }, attachment: 'file' } });
+    start({ chats: [pic, doc] });
+    await flush();
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Đã gửi một hình ảnh');
+    expect(text(rows()[1]!.querySelector('.pv')!)).toBe('Đã gửi một tệp');
+  });
+
+  it('takes the kind of the attachment for the list preview from a live message', async () => {
+    const h = start({ chats: [chat(C2, 'Lan')], history: {} });
+    await flush();
+    h.handlers().event(C2, created({ ...msg(1, 'minh', '', at(12, 5), C2), attachments: [{ id: 'a1', kind: 'image', name: 'x.webp', size: 10, width: 4, height: 3 }] }));
+    await flush();
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Đã gửi một hình ảnh');
+  });
+
   it('counts a message in a conversation that is not open, and moves it to the top', async () => {
     const h = start({ chats, history: {} });
     await flush();

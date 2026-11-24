@@ -126,7 +126,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (last === null) return 'Chưa có tin nhắn';
     if (last.deleted) return recalledText(last.sender.id === me?.id, c.kind === 'group' ? last.sender.displayName : null);
     const who = last.sender.id === me?.id ? 'Bạn: ' : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
-    return who + last.body;
+    return who + (last.body !== '' ? last.body : last.attachment === 'image' ? 'Đã gửi một hình ảnh' : last.attachment === 'file' ? 'Đã gửi một tệp' : '');
   }
 
   const row = (c: Conversation) => html`
@@ -624,7 +624,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       } else {
         c.lastMessage = {
           seq: message.seq, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body,
-          createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true,
+          createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true, attachment: message.attachments?.[0]?.kind ?? null,
         };
         if (message.sender.id !== me?.id && message.deleted !== true && !(conversation === openId && deps.visible())) c.unread++;
         chats = [c, ...(chats ?? []).filter((x) => x !== c)];
