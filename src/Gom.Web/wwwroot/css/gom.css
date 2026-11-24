@@ -483,3 +483,9 @@ a.ext:hover { text-decoration-thickness: 2px; }
 .lc-main:hover { background: var(--hover); }
 .lc-x { position: absolute; inset-block-start: 4px; inset-inline-end: 4px; inline-size: 28px; block-size: 28px; background: rgb(0 0 0 / .55); color: #fff; }
 .lc-x .i { inline-size: 14px; block-size: 14px; }
+
+/* the owner's form for a new invite */
+.invite-form { display: grid; gap: 12px; }
+select { inline-size: 100%; min-block-size: 44px; padding-inline: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: 16px; }
+select:focus-visible { outline-offset: 0; }
+.invite small { display: block; color: var(--muted); }

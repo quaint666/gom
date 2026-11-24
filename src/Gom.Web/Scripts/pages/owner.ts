@@ -7,7 +7,11 @@ import { appBar, errorBox, formatTime } from '../ui.js';
 /** How many rows of a long list show before "Xem thêm". */
 const HANDFUL = 5;
 
-const STATUS: Record<Invite['status'], string> = { pending: 'Đang chờ', used: 'Đã dùng', revoked: 'Đã thu hồi', expired: 'Hết hạn' };
+const STATUS: Record<Invite['status'], string> = { active: 'Đang hoạt động', full: 'Đã đủ người', revoked: 'Đã thu hồi', expired: 'Hết hạn' };
+
+/** What the owner may choose for a new link: how long it works, and how many people it lets in (0 is any number). */
+const DAYS = [1, 7, 30] as const;
+const USES = [1, 10, 0] as const;
 
 /** The owner's page: make invites, see who joined, make a reset link for a member. */
 export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => void, origin: string): void {
@@ -17,16 +21,19 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let copied = '';
   let error: Failure | null = null;
   let query = '';
+  let days: number = 7;
+  let uses: number = 10;
   let moreInvites = false;
   let moreMembers = false;
 
   const inviteRow = (i: Invite) => html`
-    <li class="li" data-invite=${i.id}>
+    <li class="li invite" data-invite=${i.id} data-status=${i.status}>
       <div class="t">
-        <b>${i.status === 'used' && i.usedBy ? `Đã dùng bởi @${i.usedBy}` : STATUS[i.status]}</b>
-        <small>Tạo ${formatTime(i.createdAt)}</small>
+        <b>${STATUS[i.status]}</b>
+        <small>${i.uses} / ${i.maxUses ?? '∞'} người · tạo ${formatTime(i.createdAt)} · ${i.status === 'expired' ? 'đã hết hạn' : `hết hạn ${formatTime(i.expiresAt)}`}</small>
+        ${i.members.length === 0 ? nothing : html`<small data-joined>Đã vào: ${i.members.map((m) => `${m.displayName} (@${m.gomId})`).join(', ')}</small>`}
       </div>
-      ${i.status === 'pending' ? html`<button class="btn secondary small" type="button" @click=${() => revoke(i.id)}>Thu hồi</button>` : nothing}
+      ${i.status === 'active' ? html`<button class="btn secondary small" type="button" data-revoke @click=${() => revoke(i.id)}>Thu hồi</button>` : nothing}
     </li>`;
 
   const memberRow = (m: Member) => html`
@@ -57,7 +64,15 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
     ${appBar({ title: 'Lời mời và thành viên', back: '/settings' })}
     <div class="page">
       ${errorBox(error)}
-      <button class="btn" type="button" data-create-invite @click=${makeInvite}>Tạo lời mời mới</button>
+      <div class="card invite-form">
+        <div class="field"><label for="invite-days">Có hiệu lực</label>
+          <select id="invite-days" name="days" @change=${(e: Event) => { days = Number((e.target as HTMLSelectElement).value); }}>
+            ${DAYS.map((d) => html`<option value=${d} ?selected=${d === days}>${d} ngày</option>`)}</select></div>
+        <div class="field"><label for="invite-uses">Cho vào tối đa</label>
+          <select id="invite-uses" name="uses" @change=${(e: Event) => { uses = Number((e.target as HTMLSelectElement).value); }}>
+            ${USES.map((u) => html`<option value=${u} ?selected=${u === uses}>${u === 0 ? 'Không giới hạn' : `${u} người`}</option>`)}</select></div>
+        <button class="btn" type="button" data-create-invite @click=${makeInvite}>Tạo lời mời mới</button>
+      </div>
       ${linkBox()}
       <h2 class="section">Lời mời</h2>
       <ul class="list">${(moreInvites || invites.length <= HANDFUL ? invites : invites.slice(0, HANDFUL)).map(inviteRow)}</ul>
@@ -82,9 +97,9 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   }
 
   async function makeInvite(): Promise<void> {
-    const result = await api.createInvite();
+    const result = await api.createInvite({ days, uses });
     if (!result.ok) { error = result; update(); return; }
-    show(result.data, 'Lời mời có hiệu lực 7 ngày và chỉ dùng được một lần.');
+    show(result.data, `Lời mời có hiệu lực ${days} ngày và cho ${uses === 0 ? 'bất kỳ ai' : uses === 1 ? 'một người' : `tối đa ${uses} người`} vào. Hãy sao chép ngay: liên kết chỉ hiện một lần. Nếu mất, hãy thu hồi và tạo lời mời mới.`);
     await reload();
   }
 

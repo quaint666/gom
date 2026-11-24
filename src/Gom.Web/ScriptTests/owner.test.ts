@@ -7,8 +7,8 @@ beforeEach(() => { root = document.createElement('div'); document.body.replaceCh
 
 const owner = { gomId: 'boss', displayName: 'Boss', isOwner: true };
 const invites = [
-  { id: 'i1', createdAt: '2026-12-01T09:00:00Z', expiresAt: '2026-12-08T09:00:00Z', usedBy: null, status: 'pending' },
-  { id: 'i2', createdAt: '2026-11-25T09:00:00Z', expiresAt: '2026-12-02T09:00:00Z', usedBy: 'minh', status: 'used' },
+  { id: 'i1', createdAt: '2026-12-01T09:00:00Z', expiresAt: '2026-12-08T09:00:00Z', uses: 1, maxUses: 10, status: 'active', members: [{ gomId: 'lan', displayName: 'Lan', usedAt: '2026-12-02T09:00:00Z' }] },
+  { id: 'i2', createdAt: '2026-11-25T09:00:00Z', expiresAt: '2026-12-02T09:00:00Z', uses: 1, maxUses: 1, status: 'full', members: [{ gomId: 'minh', displayName: 'Minh', usedAt: '2026-11-26T09:00:00Z' }] },
 ];
 const members = [
   { gomId: 'boss', displayName: 'Boss', isOwner: true, disabled: false, createdAt: '2026-11-01T00:00:00Z' },
@@ -32,8 +32,11 @@ describe('owner page', () => {
     await flush();
     const pending = root.querySelector('[data-invite="i1"]')!;
     const used = root.querySelector('[data-invite="i2"]')!;
-    expect(text(pending)).toContain('Đang chờ');
+    expect(text(pending)).toContain('Đang hoạt động');
+    expect(text(pending)).toContain('1 / 10 người');
+    expect(text(pending.querySelector('[data-joined]')!)).toContain('Lan (@lan)');
     expect(pending.querySelector('button')).not.toBeNull();
+    expect(text(used)).toContain('Đã đủ người');
     expect(text(used)).toContain('minh');
     expect(used.querySelector('button')).toBeNull();
   });
@@ -57,6 +60,36 @@ describe('owner page', () => {
     const field = root.querySelector<HTMLInputElement>('input[data-link]')!;
     expect(field.value).toBe('https://gom.test/join/TOK');
     expect(field.readOnly).toBe(true);
+    expect(a.createInvite).toHaveBeenCalledWith({ days: 7, uses: 10 });   // the defaults
+  });
+
+  it('creates the invite with the days and the number of people that were chosen, and says so', async () => {
+    const a = api({ createInvite: vi.fn(async () => ok({ id: 'i3', token: 'TOK', path: '/join/TOK', expiresAt: '2026-12-31T09:00:00Z' })) });
+    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    await flush();
+    const choose = (name: string, value: string) => { const sel = root.querySelector<HTMLSelectElement>(`select[name="${name}"]`)!; sel.value = value; sel.dispatchEvent(new Event('change', { bubbles: true })); };
+    choose('days', '30'); choose('uses', '0');
+    root.querySelector<HTMLButtonElement>('button[data-create-invite]')!.click();
+    await flush();
+    expect(a.createInvite).toHaveBeenCalledWith({ days: 30, uses: 0 });
+    expect(text(root.querySelector('.card .hint')!)).toContain('30 ngày');
+    expect(text(root.querySelector('.card .hint')!)).toContain('bất kỳ ai');
+    choose('uses', '1');
+    root.querySelector<HTMLButtonElement>('button[data-create-invite]')!.click();
+    await flush();
+    expect(a.createInvite).toHaveBeenLastCalledWith({ days: 30, uses: 1 });
+    expect(text(root.querySelector('.card .hint')!)).toContain('một người');
+  });
+
+  it('offers 1, 7 and 30 days and 1, 10 or any number of people, with 7 days and 10 people chosen', async () => {
+    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    await flush();
+    const days = root.querySelector<HTMLSelectElement>('select[name="days"]')!;
+    const uses = root.querySelector<HTMLSelectElement>('select[name="uses"]')!;
+    expect([...days.options].map((o) => o.value)).toEqual(['1', '7', '30']);
+    expect([...uses.options].map((o) => o.value)).toEqual(['1', '10', '0']);
+    expect(days.value).toBe('7');
+    expect(uses.value).toBe('10');
   });
 
   it('copies the link and says so, or says it failed', async () => {
@@ -132,7 +165,7 @@ describe('owner page', () => {
   });
 
   it('shows a handful of invites too', async () => {
-    const many = Array.from({ length: 8 }, (_, n) => ({ id: `x${n}`, createdAt: '2026-12-01T09:00:00Z', expiresAt: '2026-12-08T09:00:00Z', usedBy: null, status: 'pending' }));
+    const many = Array.from({ length: 8 }, (_, n) => ({ id: `x${n}`, createdAt: '2026-12-01T09:00:00Z', expiresAt: '2026-12-08T09:00:00Z', uses: 0, maxUses: 10, status: 'active', members: [] }));
     mountOwner(root, api({ invites: vi.fn(async () => ok(many)) }), vi.fn(), 'https://gom.test');
     await flush();
     expect(root.querySelectorAll('[data-invite]').length).toBe(5);

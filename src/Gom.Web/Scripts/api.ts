@@ -6,7 +6,7 @@ export type ErrorCode =
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit' | 'invalid_reaction' | 'banned' | 'already_requested' | 'invalid_setting'
-  | 'too_large' | 'image_dimensions' | 'invalid_image' | 'busy' | 'too_many_uploads' | 'uploads_disabled' | 'empty_upload' | 'invalid_attachment' | 'too_many_attachments'
+  | 'invalid_invite' | 'too_large' | 'image_dimensions' | 'invalid_image' | 'busy' | 'too_many_uploads' | 'uploads_disabled' | 'empty_upload' | 'invalid_attachment' | 'too_many_attachments'
   | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
@@ -17,7 +17,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
-  'too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
+  'invalid_invite', 'too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
 ]);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
@@ -25,7 +25,11 @@ export type Result<T> = { ok: true; data: T } | Failure;
 
 export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean }
 export interface SessionInfo { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }
-export interface Invite { id: string; createdAt: string; expiresAt: string; usedBy: string | null; status: 'pending' | 'used' | 'revoked' | 'expired' }
+/** A link the owner gives out. It works for `maxUses` people (any number when null) until it expires or is revoked. */
+export interface Invite {
+  id: string; createdAt: string; expiresAt: string; uses: number; maxUses: number | null;
+  status: 'active' | 'full' | 'revoked' | 'expired'; members: { gomId: string; displayName: string; usedAt: string }[];
+}
 export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; createdAt: string }
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
 export interface JoinBody { gomId: string; password: string; displayName: string }
@@ -72,7 +76,8 @@ export interface Api {
   reset(token: string, password: string): Promise<Result<User>>;
   sessions(): Promise<Result<SessionInfo[]>>;
   endSession(id: string): Promise<Result<void>>;
-  createInvite(): Promise<Result<Issued>>;
+  /** `days` 1 to 30 and `uses` 1 to 100 (0 for any number); without them the server's defaults. */
+  createInvite(options?: { days: number; uses: number }): Promise<Result<Issued>>;
   invites(): Promise<Result<Invite[]>>;
   revokeInvite(id: string): Promise<Result<void>>;
   members(): Promise<Result<Member[]>>;
@@ -186,7 +191,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     reset: (token, password) => call('POST', `/api/reset/${enc(token)}`, { password }),
     sessions: () => call('GET', '/api/sessions'),
     endSession: (id) => call('DELETE', `/api/sessions/${enc(id)}`),
-    createInvite: () => call('POST', '/api/invites'),
+    createInvite: (options) => call('POST', '/api/invites', options),
     invites: () => call('GET', '/api/invites'),
     revokeInvite: (id) => call('DELETE', `/api/invites/${enc(id)}`),
     members: () => call('GET', '/api/users'),

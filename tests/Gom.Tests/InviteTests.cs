@@ -124,8 +124,10 @@ public class InviteTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(id, user.DisplayName);
         Assert.Equal(PasswordCheck.Ok, app.Passwords.Verify(user.PasswordHash, StrongPassword));
         var link = await LinkFor(token);
-        Assert.Equal(user.Id, link.ConsumedBy);
-        Assert.Equal(app.Clock.Now, link.ConsumedAt);
+        Assert.Equal(1, link.Uses);
+        var use = await db.InviteUses.SingleAsync(u => u.LinkId == link.Id);
+        Assert.Equal(user.Id, use.UserId);
+        Assert.Equal(app.Clock.Now, use.UsedAt);
         using var me = await app.Call(HttpMethod.Get, "/api/me", cookie: cookie);
         Assert.Equal(HttpStatusCode.OK, me.StatusCode);
     }
@@ -235,8 +237,8 @@ public class InviteTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.DoesNotContain(pending, text);
         Assert.DoesNotContain("tokenHash", text);
         var list = JsonDocument.Parse(text).RootElement.EnumerateArray().ToList();
-        Assert.Contains(list, i => i.GetProperty("id").GetGuid() == LinkFor(pending).Result.Id && i.GetProperty("status").GetString() == "pending");
-        Assert.Contains(list, i => i.GetProperty("status").GetString() == "used" && i.GetProperty("usedBy").GetString() == usedId);
+        Assert.Contains(list, i => i.GetProperty("id").GetGuid() == LinkFor(pending).Result.Id && i.GetProperty("status").GetString() == "active");
+        Assert.Contains(list, i => i.GetProperty("status").GetString() == "full" && i.GetProperty("members")[0].GetProperty("gomId").GetString() == usedId);
     }
 
     [Fact]
