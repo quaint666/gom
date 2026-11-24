@@ -54,7 +54,7 @@ describe('linkify', () => {
 
   it('puts the message back exactly, whatever was or was not a link', () => {
     for (const body of ['a https://example.com/x). b', 'dòng 1\nhttps://example.com\ndòng 3', 'https://example.com/ ', '  www.example.com  ']) {
-      expect(joined(body)).toBe(body.replace(/^$/u, ''));
+      expect(joined(body)).toBe(body);
     }
   });
 
