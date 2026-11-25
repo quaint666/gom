@@ -19,7 +19,9 @@ public sealed class PushOptions
     /// The push services a browser may name. The server sends to whatever address a device registers, so any other host is refused: a
     /// made-up address would otherwise aim the server's requests inside its own network. "*." allows any name under it.
     /// </summary>
-    public List<string> Hosts { get; set; } = ["fcm.googleapis.com", "*.push.services.mozilla.com", "*.push.apple.com", "*.notify.windows.com"];
+    /// "jmt17.google.com" is Google's staging service: every browser that does not say it is a stable release gets it, which is any
+    /// Chromium build (Fedora's, for one) and Chrome Beta, Dev and Canary (components/push_messaging/push_messaging_utils.cc).
+    public List<string> Hosts { get; set; } = ["fcm.googleapis.com", "jmt17.google.com", "*.push.services.mozilla.com", "*.push.apple.com", "*.notify.windows.com"];
 
     /// <summary>Pushes waiting to be sent; when full, a new one is dropped (the message itself is safe in the database).</summary>
     public int QueueSize { get; set; } = 512;

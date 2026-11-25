@@ -8,6 +8,7 @@ export type ErrorCode =
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit' | 'invalid_reaction' | 'banned' | 'already_requested' | 'invalid_setting'
   | 'invalid_invite' | 'too_large' | 'image_dimensions' | 'invalid_image' | 'busy' | 'too_many_uploads' | 'uploads_disabled' | 'empty_upload' | 'invalid_attachment' | 'too_many_attachments'
+  | 'invalid_endpoint' | 'invalid_keys'
   | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([

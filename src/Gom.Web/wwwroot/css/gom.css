@@ -573,5 +573,5 @@ button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(-
 
 /* choosing a profile picture: the preview is cut round and from the middle, as it will be kept */
 .avatar-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-.avatar-row .btn { display: inline-flex; align-items: center; justify-content: center; }
+.avatar-row .btn { display: inline-flex; align-items: center; justify-content: center; margin: 0; }   /* "Đổi ảnh" is a label: no gap under it, as .card label has */
 .avatar-preview { inline-size: 72px; block-size: 72px; border-radius: 50%; object-fit: cover; object-position: center; flex: none; }
