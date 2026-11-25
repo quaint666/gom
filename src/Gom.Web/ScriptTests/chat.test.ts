@@ -1717,6 +1717,85 @@ describe('chat: passing a message on', () => {
     expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'Tối nay ăn gì?' });
   });
 
+  describe('with pictures and files', () => {
+    const att = (id: string, kind: 'image' | 'file' = 'image', name = 'a.webp'): Attachment => ({ id, kind, name, size: 2048, width: 40, height: 30 });
+    const withFiles = (body: string): ChatMessage => ({ ...msg(1, 'minh', body), attachments: [att('p1'), att('f1', 'file', 'bảng.xlsx')] });
+    const copyOf = () => vi.fn(async (_c: string, from: string) => ok(att(`copy-${from}`, from.startsWith('f') ? 'file' : 'image')));
+    const choose = async () => { root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click(); await flush(); };
+
+    it('copies each picture and file into the other conversation, then sends the words with the copies', async () => {
+      const send = echo.mockClear();
+      const copyAttachment = copyOf();
+      open({ send, copyAttachment }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(copyAttachment.mock.calls).toEqual([[C2, 'p1'], [C2, 'f1']]);
+      expect(send).toHaveBeenCalledWith(C2, expect.any(String), 'xem này', undefined, ['copy-p1', 'copy-f1']);
+      expect(text(root)).toContain('Đã chuyển tiếp đến Lan');
+    });
+
+    it('passes on a message of only pictures', async () => {
+      const send = echo.mockClear();
+      open({ send, copyAttachment: copyOf() }, [withFiles('')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(send).toHaveBeenCalledWith(C2, expect.any(String), '', undefined, ['copy-p1', 'copy-f1']);
+    });
+
+    it('never asks for a copy when the message has no picture or file', async () => {
+      const copyAttachment = copyOf();
+      open({ send: echo.mockClear(), copyAttachment });
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(copyAttachment).not.toHaveBeenCalled();
+    });
+
+    it('queues nothing and says a connection is needed when the copy cannot be made for lack of one', async () => {
+      const send = echo.mockClear();
+      const h = open({ send, copyAttachment: vi.fn(async () => fail('network', 0)) }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(text(root.querySelector('.note')!)).toContain('Cần có mạng để chuyển ảnh và tệp');
+      expect(send).not.toHaveBeenCalled();
+      expect(h.outbox.items).toHaveLength(0);
+    });
+
+    it('sends nothing when one of the copies is refused, and says why', async () => {
+      const send = echo.mockClear();
+      const copyAttachment = vi.fn(async (_c: string, from: string) => from === 'p1' ? ok(att('copy-p1')) : fail('not_friends', 403));
+      const h = open({ send, copyAttachment }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(text(root.querySelector('.note')!)).toContain('bạn bè');
+      expect(send).not.toHaveBeenCalled();
+      expect(h.outbox.items).toHaveLength(0);
+    });
+
+    it('goes to the sign-in page when the session has ended', async () => {
+      const send = echo.mockClear();
+      const h = open({ send, copyAttachment: vi.fn(async () => fail('unauthorized', 401)) }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(h.go).toHaveBeenCalledWith('/sign-in');
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('writes the message down with the copies before the send finishes', async () => {
+      const h = open({ send: vi.fn(() => new Promise(() => undefined)), copyAttachment: copyOf() }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'xem này' });
+      expect(h.outbox.items[0]!.attachments!.map((a) => a.id)).toEqual(['copy-p1', 'copy-f1']);
+    });
+  });
+
   it('offers no forwarding on a message taken back', async () => {
     open({}, [{ ...msg(1, 'minh', ''), deleted: true }]);
     await flush();
