@@ -34,7 +34,7 @@ public static class SocketEndpoint
         app.MapGet("/ws", Handle).RequireAuthorization();
 
     private static async Task<IResult> Handle(HttpContext http, ConnectionRegistry registry, IServiceScopeFactory scopes,
-        IOptions<ChatOptions> options, ILoggerFactory loggers)
+        IOptions<ChatOptions> options, TimeProvider clock, ILoggerFactory loggers)
     {
         if (!http.WebSockets.IsWebSocketRequest) return Results.BadRequest(new { error = "websocket_required" });
 
@@ -51,7 +51,7 @@ public static class SocketEndpoint
         try
         {
             connection.TryEnqueue(Frames.Ready());
-            await ReceiveLoop(socket, connection, scopes, o.MaxBadFrames, http.RequestAborted);
+            await ReceiveLoop(socket, connection, scopes, o, new SyncBucket(clock, o.SyncBurst, o.SyncPerSecond), http.RequestAborted);
         }
         catch (WebSocketException) { lost = "line lost, no close frame"; }
         catch (IOException) { lost = "line lost, no close frame"; }
@@ -85,10 +85,11 @@ public static class SocketEndpoint
         catch (OperationCanceledException) { }
     }
 
-    private static async Task ReceiveLoop(WebSocket socket, Connection connection, IServiceScopeFactory scopes, int maxBadFrames, CancellationToken ct)
+    private static async Task ReceiveLoop(WebSocket socket, Connection connection, IServiceScopeFactory scopes, ChatOptions o, SyncBucket bucket, CancellationToken ct)
     {
         var buffer = new byte[MaxFrameBytes];
         var bad = 0;
+        var slow = 0;
         while (socket.State == WebSocketState.Open)
         {
             var result = await socket.ReceiveAsync(buffer, ct);
@@ -96,14 +97,31 @@ public static class SocketEndpoint
             if (result.MessageType == WebSocketMessageType.Binary) { connection.Close(1003, "text only"); return; }
             if (!result.EndOfMessage) { connection.Close(1009, "frame too big"); return; }
 
-            var (reply, wasBad) = await Answer(buffer.AsMemory(0, result.Count), connection.UserId, scopes, ct);
-            connection.TryEnqueue(reply);
-            // A client that keeps sending what we cannot read is broken or hostile: it is let go.
-            if (wasBad && ++bad >= maxBadFrames) { connection.Close(1008, "too many bad frames"); return; }
+            var (asked, problem) = Parse(buffer.AsMemory(0, result.Count));
+            if (asked is null)
+            {
+                connection.TryEnqueue(problem!);
+                // A client that keeps sending what we cannot read is broken or hostile: it is let go.
+                if (++bad >= o.MaxBadFrames) { connection.Close(1008, "too many bad frames"); return; }
+                continue;
+            }
+            // Each ask costs a few queries, so a socket may only make so many. The page waits a moment and asks again; one that
+            // does not wait, and keeps asking, is let go (1013: try again later, so the page reconnects by itself, slowly).
+            if (!bucket.TryTake())
+            {
+                connection.TryEnqueue(Frames.Error("slow_down", asked.Conversation));
+                if (++slow >= o.MaxSlowSyncs) { connection.Close(1013, "too many requests"); return; }
+                continue;
+            }
+            slow = 0;
+            connection.TryEnqueue(await Answer(asked, connection.UserId, scopes, ct));
         }
     }
 
-    private static async Task<(byte[] Frame, bool Bad)> Answer(ReadOnlyMemory<byte> frame, Guid me, IServiceScopeFactory scopes, CancellationToken ct)
+    private sealed record Asked(Guid Conversation, long After);
+
+    /// <summary>What a "sync" frame asks for, or the error frame to send back when it cannot be read.</summary>
+    private static (Asked? Asked, byte[]? Problem) Parse(ReadOnlyMemory<byte> frame)
     {
         Guid conversation;
         long after;
@@ -112,19 +130,25 @@ public static class SocketEndpoint
             using var doc = JsonDocument.Parse(frame);
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("t", out var t) || t.ValueKind != JsonValueKind.String || t.GetString() != "sync")
-                return (Frames.Error("bad_request"), true);
+                return (null, Frames.Error("bad_request"));
             if (!root.TryGetProperty("c", out var c) || c.ValueKind != JsonValueKind.String || !Guid.TryParse(c.GetString(), out conversation))
-                return (Frames.Error("bad_request"), true);
+                return (null, Frames.Error("bad_request"));
             if (!root.TryGetProperty("after", out var a) || a.ValueKind != JsonValueKind.Number || !a.TryGetInt64(out after) || after < 0)
-                return (Frames.Error("bad_request", conversation), true);
+                return (null, Frames.Error("bad_request", conversation));
         }
-        catch (JsonException) { return (Frames.Error("bad_request"), true); }
+        catch (JsonException) { return (null, Frames.Error("bad_request")); }
+        return (new Asked(conversation, after), null);
+    }
+
+    private static async Task<byte[]> Answer(Asked asked, Guid me, IServiceScopeFactory scopes, CancellationToken ct)
+    {
+        var (conversation, after) = asked;
 
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<GomDbContext>();
         // Membership on every ask: "not a member" and "no such conversation" look the same.
         var access = await Access.Of(db, conversation, me, ct);
-        if (access is null) return (Frames.Error("not_found", conversation), false);
+        if (access is null) return Frames.Error("not_found", conversation);
         var floor = Math.Max(after, access.JoinedSeq);   // never what was said before they joined
 
         var rows = await (
@@ -142,6 +166,6 @@ public static class SocketEndpoint
         var withFiles = await MessageAttachments.For(db, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         var events = page.Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),
             MessageEndpoints.ToDto(r.Message, new MessageEndpoints.PersonDto(r.Id, r.DisplayName), replies.GetValueOrDefault(r.Message.Id), reactions.GetValueOrDefault(r.Message.Id), withFiles.GetValueOrDefault(r.Message.Id)))).ToList();
-        return (Frames.Events(conversation, events, rows.Count > SyncPage), false);
+        return Frames.Events(conversation, events, rows.Count > SyncPage);
     }
 }

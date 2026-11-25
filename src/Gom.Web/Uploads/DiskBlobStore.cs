@@ -38,6 +38,29 @@ public sealed partial class DiskBlobStore : IBlobStore
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
 
+    public async Task<bool> CopyAsync(string from, string to, CancellationToken ct)
+    {
+        var source = PathOf(from);
+        var path = PathOf(to);
+        if (!File.Exists(source)) return false;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        // Copied beside it and then moved into place, like a write: a reader never sees half a file.
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            try
+            {
+                await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 81_920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                await using var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81_920, FileOptions.Asynchronous);
+                await input.CopyToAsync(output, ct);
+            }
+            catch (FileNotFoundException) { return false; }   // taken back while it was being copied
+            File.Move(temp, path, overwrite: true);
+            return true;
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+
     public Stream? OpenRead(string name)
     {
         var path = PathOf(name);

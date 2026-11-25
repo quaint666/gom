@@ -163,6 +163,18 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task A_script_answers_a_HEAD_with_an_etag_that_stays_the_same_until_the_file_changes()
+    {
+        // The page tells a new version is out by asking this about its own script.
+        using var first = await app.Call(HttpMethod.Head, "/js/main.js");
+        using var second = await app.Call(HttpMethod.Head, "/js/main.js");
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.False(string.IsNullOrEmpty(first.Headers.ETag?.Tag));
+        Assert.Equal(first.Headers.ETag?.Tag, second.Headers.ETag?.Tag);
+        Assert.Empty(await first.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
     public async Task A_font_may_be_kept_for_a_week()
     {
         using var font = await app.Call(HttpMethod.Get, "/fonts/BeVietnamPro-Regular.woff2");

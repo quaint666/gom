@@ -1,4 +1,4 @@
-import type { ChatMessage, Failure } from '../api.js';
+import type { ChatMessage, Failure, MediaItem } from '../api.js';
 
 /** A message as the thread shows it: stored, or still on its way (no sequence number yet). */
 export type Shown = ChatMessage & { state?: 'sending' | 'queued' | 'failed'; error?: Failure };
@@ -62,6 +62,14 @@ export function mergeMessages(have: readonly ChatMessage[], incoming: readonly C
   for (const m of have) bySeq.set(m.seq, m);
   for (const m of incoming) bySeq.set(m.seq, m);
   return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+}
+
+/** The side panel's list with these added: newest message first, each picture or file once (a later copy wins). Neither input is changed. */
+export function mergeMedia(have: readonly MediaItem[], incoming: readonly MediaItem[]): MediaItem[] {
+  const byId = new Map<string, MediaItem>();
+  for (const i of have) byId.set(i.attachment.id, i);
+  for (const i of incoming) byId.set(i.attachment.id, i);
+  return [...byId.values()].sort((a, b) => b.seq - a.seq);   // a stable sort: inside one message the sender's order stays
 }
 
 /**

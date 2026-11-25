@@ -2,9 +2,9 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, Reply, User } from '../api.js';
+import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, Reply, User } from '../api.js';
 import { linkify } from '../linkify.js';
-import { avatarTone, buildThread, clock, initials, listTime, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
+import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { errorBox } from '../ui.js';
@@ -29,6 +29,8 @@ export interface OutboxItem { conversation: string; clientId: string; body: stri
 
 /** How many pictures and files one message may carry (the server's limit is the same by default). */
 const MAX_ATTACHMENTS = 10;
+/** How long to wait before asking again after the server said "slow down". */
+const SLOW_RETRY_MS = 1000;
 /** How many uploads go up at the same time. */
 const UPLOADS_AT_ONCE = 2;
 
@@ -113,6 +115,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const people = new Map<string, GroupMember[]>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
   let found: string | null = null;
+  /** Conversations whose catch-up the server turned away and that are waiting to ask again. */
+  const slowWaiting = new Set<string>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
   /** The message being passed on, while the person picks where to. */
@@ -121,6 +125,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function idFromPath(): string | null { return CONVERSATION_PATH.exec(deps.nav.path())?.[1]?.toLowerCase() ?? null; }
   const chatOf = (id: string | null): Conversation | undefined => (id === null ? undefined : chats?.find((c) => c.id === id));
   const newestSeq = (t: Thread): number => t.messages[t.messages.length - 1]?.seq ?? 0;
+
+  /** What the side panel lists for a conversation, asked of the server a page at a time (not only what the thread has loaded). */
+  interface MediaList { items: MediaItem[]; hasMore: boolean; loading: boolean; loaded: boolean }
+  const mediaLists = new Map<string, Record<'image' | 'file', MediaList>>();
+  function mediaOf(id: string): Record<'image' | 'file', MediaList> {
+    let m = mediaLists.get(id);
+    if (m === undefined) { m = { image: { items: [], hasMore: false, loading: false, loaded: false }, file: { items: [], hasMore: false, loading: false, loaded: false } }; mediaLists.set(id, m); }
+    return m;
+  }
 
   function threadOf(id: string): Thread {
     let t = threads.get(id);
@@ -404,7 +417,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function toggleInfo(): void {
     infoOpen = !infoOpen;
     try { localStorage.setItem('gom-info', infoOpen ? '1' : '0'); } catch { /* it is just not remembered */ }
-    if (infoOpen && openId !== null) void loadPeople(openId);
+    if (infoOpen && openId !== null) { void loadPeople(openId); void loadMedia(openId, 'image'); void loadMedia(openId, 'file'); }
     update();
   }
 
@@ -416,17 +429,35 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
-  /** The pictures and files seen so far in this thread (what has been loaded, newest first), in the side panel. */
-  const media = (t: Thread) => {
-    const loaded = [...t.messages].reverse().filter((m) => m.deleted !== true);
-    const pictures = loaded.flatMap((m) => (m.attachments ?? []).filter((a) => a.kind === 'image').map((a) => ({ m, a }))).slice(0, 8);
-    const files = loaded.flatMap((m) => (m.attachments ?? []).filter((a) => a.kind === 'file').map((a) => ({ m, a }))).slice(0, 5);
+  /** Asks the server for a page of the side panel's list: the first (once), or the next one after what is shown. A failure leaves the list as it is. */
+  async function loadMedia(id: string, kind: 'image' | 'file', more = false): Promise<void> {
+    const list = mediaOf(id)[kind];
+    if (list.loading || (more ? !list.hasMore : list.loaded)) return;
+    list.loading = true;
+    update();
+    const result = await api.media(id, kind, more ? list.items[list.items.length - 1]?.seq : undefined);
+    list.loading = false;
+    if (result.ok) {
+      list.items = mergeMedia(list.items, result.data.items);
+      list.hasMore = result.data.hasMore;
+      list.loaded = true;
+    }
+    update();
+  }
+
+  /** The pictures and files of the open conversation, in the side panel. A new page comes with "Xem thêm". */
+  const media = (id: string) => {
+    const { image, file } = mediaOf(id);
+    const more = (kind: 'image' | 'file', list: MediaList) => !list.hasMore ? nothing
+      : html`<button class="btn secondary small" type="button" data-info-more=${kind} ?disabled=${list.loading} @click=${() => void loadMedia(id, kind, true)}>Xem thêm</button>`;
     return html`
-      ${pictures.length === 0 ? nothing : html`<h3>Ảnh</h3>
-        <div class="info-media" data-info-media>${pictures.map(({ m, a }) => html`
-          <button class="pic" type="button" data-info-pic=${a.id} aria-label=${a.name} @click=${() => void reveal(m)}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy"></button>`)}</div>`}
-      ${files.length === 0 ? nothing : html`<h3>Tệp</h3>
-        <ul class="info-list" data-info-files>${files.map(({ a }) => html`<li><a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name}>${icons.file()}<span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span></a></li>`)}</ul>`}`;
+      ${image.items.length === 0 ? nothing : html`<h3>Ảnh</h3>
+        <div class="info-media" data-info-media>${image.items.map(({ attachment: a, messageId }) => html`
+          <button class="pic" type="button" data-info-pic=${a.id} aria-label=${a.name} @click=${() => void reveal({ id: messageId, conversationId: id })}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy"></button>`)}</div>
+        ${more('image', image)}`}
+      ${file.items.length === 0 ? nothing : html`<h3>Tệp</h3>
+        <ul class="info-list" data-info-files>${file.items.map(({ attachment: a }) => html`<li><a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name}>${icons.file()}<span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span></a></li>`)}</ul>
+        ${more('file', file)}`}`;
   };
 
   /** The panel beside a thread: who it is, ways to find things in it, what is pinned, and who is in a group. */
@@ -446,7 +477,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
           <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
           <span>${[...p.body].length > 100 ? [...p.body].slice(0, 100).join('') + '…' : p.body}</span></button></li>`)}</ul>`}
-      ${media(t)}
+      ${media(c.id)}
       ${c.kind !== 'group' ? nothing : html`
         <h3>Thành viên</h3>
         <ul class="info-list">${(people.get(c.id) ?? []).map((m) => html`<li class="info-person" data-info-member=${m.id}>
@@ -488,6 +519,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         </div>
         ${menuOverlay(t)}
         ${viewerView()}
+        ${t.stick ? nothing : html`<button class="toend" type="button" data-to-end aria-label="Xuống tin mới nhất" @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}</button>`}
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${t.editing === null ? nothing : html`
@@ -576,8 +608,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function onScroll(id: string, box: HTMLElement): void {
     const t = threadOf(id);
+    const wasStuck = t.stick;
+    const hadNew = t.below;
     t.stick = box.scrollHeight - box.scrollTop - box.clientHeight < GAP_NEAR_BOTTOM_PX;
-    if (t.stick && t.below > 0) { t.below = 0; update(); }
+    if (t.stick) t.below = 0;
+    // The arrow to the end shows while you are away from it: the page is drawn again when that changes, not on every scroll.
+    if (wasStuck !== t.stick || hadNew !== t.below) update();
   }
 
   function onDraft(e: Event): void {
@@ -611,7 +647,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
     if (!t.loaded) void loadHistory(id);
     else markRead(id);
-    if (infoOpen) void loadPeople(id);
+    if (infoOpen) { void loadPeople(id); void loadMedia(id, 'image'); void loadMedia(id, 'file'); }
   }
 
   // ---- loading
@@ -681,6 +717,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const message = event.message;
     const c = chatOf(conversation);
     if (c === undefined) { if (chats !== null) void refreshList(); return; }
+
+    // The side panel's list follows: a new message's pictures and files join it, a message taken back leaves it.
+    const lists = mediaLists.get(conversation);
+    if (lists !== undefined) {
+      if (event.kind === 'deleted') for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.filter((i) => i.messageId !== message.id);
+      else if (event.kind === 'created') for (const a of message.attachments ?? []) lists[a.kind].items = mergeMedia(lists[a.kind].items, [{ attachment: a, messageId: message.id, seq: message.seq, createdAt: message.createdAt }]);
+    }
 
     const t = threads.get(conversation);
     if (t !== undefined) {
@@ -878,19 +921,34 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /**
-   * Sends the words of a message to another conversation as a new message from you. It uses the same queue as writing, so a
-   * lost connection does not lose it; a refusal for good (no longer friends, say) is told here, not left in a thread you are not in.
+   * Sends the words, pictures and files of a message to another conversation as a new message from you. The pictures and files are
+   * copied by the server first (so that needs a connection: with none, nothing is queued and you are told); the message then uses
+   * the same queue as writing, so a lost connection does not lose it. A refusal for good (no longer friends, say) is told here, not
+   * left in a thread you are not in.
    */
   async function forward(m: Shown, target: string): Promise<void> {
     forwarding = null;
     if (me === null) return;
     const name = chatOf(target)?.title ?? '';
     const t = threadOf(target);
+    const copies: Attachment[] = [];
+    if ((m.attachments ?? []).length > 0) {
+      notice = `Đang chuyển tiếp đến ${name}…`;
+      update();
+      for (const a of m.attachments ?? []) {
+        const copy = await api.copyAttachment(target, a.id);
+        if (copy.ok) { copies.push(copy.data); continue; }
+        if (copy.error === 'unauthorized') { go('/sign-in'); return; }
+        notice = copy.error === 'network' ? `Chưa chuyển tiếp được đến ${name}. Cần có mạng để chuyển ảnh và tệp.` : errorText(copy);
+        update();
+        return;
+      }
+    }
     const clientId = deps.newId();
     const waiting = t.pending.some((x) => x.state === 'queued');
     t.pending.push({
       id: clientId, clientId, seq: 0, conversationId: target, sender: { id: me.id, displayName: me.displayName }, body: m.body,
-      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending',
+      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(copies.length > 0 ? { attachments: copies } : {}),
     });
     persist();
     update();
@@ -924,7 +982,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /** Goes to a message found by the search: older pages are loaded until it is there, then it is brought into view and marked for a moment. */
-  async function reveal(m: ChatMessage): Promise<void> {
+  async function reveal(m: { id: string; conversationId: string }): Promise<void> {
     const id = m.conversationId;
     const t = threadOf(id);
     searching = null;
@@ -942,6 +1000,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Takes a message out of this device's view: it goes from the thread, and the list is asked again (the preview may have changed). */
   function drop(conversation: string, messageId: string): void {
+    const lists = mediaLists.get(conversation);
+    if (lists !== undefined) for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.filter((i) => i.messageId !== messageId);
     const t = threads.get(conversation);
     if (t !== undefined) {
       t.messages = t.messages.filter((x) => x.id !== messageId);
@@ -1191,6 +1251,16 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       for (const e of events) apply(conversation, e);
       const last = events[events.length - 1];
       if (hasMore && last !== undefined) live?.sync(conversation, last.seq);
+    },
+    slow(conversation) {
+      // Too many catch-up requests too fast: wait a moment and ask again from where this device really is (one wait per conversation).
+      if (slowWaiting.has(conversation)) return;
+      slowWaiting.add(conversation);
+      deps.timer.set(() => {
+        slowWaiting.delete(conversation);
+        const t = threads.get(conversation);
+        if (t?.loaded) live?.sync(conversation, t.cursor);
+      }, SLOW_RETRY_MS);
     },
     ended: () => go('/sign-in'),
     replaced() { notice = 'Gom đang mở ở nơi khác nên kết nối ở đây đã ngắt. Hãy tải lại trang để kết nối lại.'; update(); },

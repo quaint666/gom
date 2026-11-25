@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { avatarTone } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
@@ -326,6 +326,46 @@ describe('chat: live updates', () => {
     expect(rows()[0]!.querySelector('.badge')).toBeNull();
     expect(text(rows()[0]!)).toContain('tin mới');
     expect(h.api.markRead).toHaveBeenLastCalledWith(C1, 2);
+  });
+
+  describe('when the server says to slow down', () => {
+    const waits = (h: Harness) => h.timers.filter((t) => t.live);
+
+    it('asks again about that conversation after a moment, from where this device is', async () => {
+      const h = start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh'), msg(2, 'minh')] } });
+      await flush();
+      h.live.sync.mockClear();
+      h.handlers().slow(C1);
+      expect(h.live.sync).not.toHaveBeenCalled();     // not at once
+      expect(waits(h).at(-1)!.ms).toBe(1000);
+      waits(h).at(-1)!.fn();
+      expect(h.live.sync).toHaveBeenCalledTimes(1);
+      expect(h.live.sync).toHaveBeenCalledWith(C1, 2);
+    });
+
+    it('waits once however many times it is told, and can be told again after asking', async () => {
+      const h = start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh')] } });
+      await flush();
+      h.live.sync.mockClear();
+      const before = waits(h).length;
+      h.handlers().slow(C1); h.handlers().slow(C1); h.handlers().slow(C1);
+      expect(waits(h).length).toBe(before + 1);
+      waits(h).at(-1)!.fn();
+      expect(h.live.sync).toHaveBeenCalledTimes(1);
+      h.handlers().slow(C1);
+      expect(waits(h).length).toBe(before + 1);        // the first wait is spent; this is a new one
+      waits(h).at(-1)!.fn();
+      expect(h.live.sync).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not ask for a conversation this device has not opened', async () => {
+      const h = start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh')] } });
+      await flush();
+      h.live.sync.mockClear();
+      h.handlers().slow(C2);
+      waits(h).at(-1)!.fn();
+      expect(h.live.sync).not.toHaveBeenCalled();
+    });
   });
 
   it('lets a message from someone else rise in once, and not the ones already there', async () => {
@@ -1717,6 +1757,85 @@ describe('chat: passing a message on', () => {
     expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'Tối nay ăn gì?' });
   });
 
+  describe('with pictures and files', () => {
+    const att = (id: string, kind: 'image' | 'file' = 'image', name = 'a.webp'): Attachment => ({ id, kind, name, size: 2048, width: 40, height: 30 });
+    const withFiles = (body: string): ChatMessage => ({ ...msg(1, 'minh', body), attachments: [att('p1'), att('f1', 'file', 'bảng.xlsx')] });
+    const copyOf = () => vi.fn(async (_c: string, from: string) => ok(att(`copy-${from}`, from.startsWith('f') ? 'file' : 'image')));
+    const choose = async () => { root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click(); await flush(); };
+
+    it('copies each picture and file into the other conversation, then sends the words with the copies', async () => {
+      const send = echo.mockClear();
+      const copyAttachment = copyOf();
+      open({ send, copyAttachment }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(copyAttachment.mock.calls).toEqual([[C2, 'p1'], [C2, 'f1']]);
+      expect(send).toHaveBeenCalledWith(C2, expect.any(String), 'xem này', undefined, ['copy-p1', 'copy-f1']);
+      expect(text(root)).toContain('Đã chuyển tiếp đến Lan');
+    });
+
+    it('passes on a message of only pictures', async () => {
+      const send = echo.mockClear();
+      open({ send, copyAttachment: copyOf() }, [withFiles('')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(send).toHaveBeenCalledWith(C2, expect.any(String), '', undefined, ['copy-p1', 'copy-f1']);
+    });
+
+    it('never asks for a copy when the message has no picture or file', async () => {
+      const copyAttachment = copyOf();
+      open({ send: echo.mockClear(), copyAttachment });
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(copyAttachment).not.toHaveBeenCalled();
+    });
+
+    it('queues nothing and says a connection is needed when the copy cannot be made for lack of one', async () => {
+      const send = echo.mockClear();
+      const h = open({ send, copyAttachment: vi.fn(async () => fail('network', 0)) }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(text(root.querySelector('.note')!)).toContain('Cần có mạng để chuyển ảnh và tệp');
+      expect(send).not.toHaveBeenCalled();
+      expect(h.outbox.items).toHaveLength(0);
+    });
+
+    it('sends nothing when one of the copies is refused, and says why', async () => {
+      const send = echo.mockClear();
+      const copyAttachment = vi.fn(async (_c: string, from: string) => from === 'p1' ? ok(att('copy-p1')) : fail('not_friends', 403));
+      const h = open({ send, copyAttachment }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(text(root.querySelector('.note')!)).toContain('bạn bè');
+      expect(send).not.toHaveBeenCalled();
+      expect(h.outbox.items).toHaveLength(0);
+    });
+
+    it('goes to the sign-in page when the session has ended', async () => {
+      const send = echo.mockClear();
+      const h = open({ send, copyAttachment: vi.fn(async () => fail('unauthorized', 401)) }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(h.go).toHaveBeenCalledWith('/sign-in');
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('writes the message down with the copies before the send finishes', async () => {
+      const h = open({ send: vi.fn(() => new Promise(() => undefined)), copyAttachment: copyOf() }, [withFiles('xem này')]);
+      await flush();
+      await pick('id1');
+      await choose();
+      expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'xem này' });
+      expect(h.outbox.items[0]!.attachments!.map((a) => a.id)).toEqual(['copy-p1', 'copy-f1']);
+    });
+  });
+
   it('offers no forwarding on a message taken back', async () => {
     open({}, [{ ...msg(1, 'minh', ''), deleted: true }]);
     await flush();
@@ -1801,6 +1920,21 @@ describe('chat: deleting a message for yourself', () => {
     expect(text(root.querySelector('.menu')!)).toContain('Người khác vẫn thấy');
     expect(h.api.hideMessage).not.toHaveBeenCalled();
     expect(row('id1')).not.toBeNull();
+  });
+
+  it('takes its pictures out of the side panel too', async () => {
+    localStorage.setItem('gom-info', '1');
+    const picture = { attachment: { id: 'px', kind: 'image' as const, name: 'a.webp', size: 1, width: 4, height: 3 }, messageId: 'id1', seq: 1, createdAt: at(10) };
+    open({ media: vi.fn(async (_c: string, kind: string) => ok({ items: kind === 'image' ? [picture] : [], hasMore: false })) });
+    await flush();
+    expect(root.querySelector('[data-info-pic="px"]')).not.toBeNull();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-hide]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-confirm-hide]')!.click();
+    await flush();
+    expect(root.querySelector('[data-info-pic="px"]')).toBeNull();
+    localStorage.removeItem('gom-info');
   });
 
   it('removes it from view after yes, and asks the server and the list again', async () => {
@@ -1943,6 +2077,65 @@ describe('chat: where reading starts', () => {
     h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
     await flush();
     expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+  });
+
+  describe('the arrow in the corner to the end of the conversation', () => {
+    const read = [withLast(msg(3, 'minh'), { lastReadSeq: 3, unread: 0 })];
+    const arrow = () => root.querySelector<HTMLButtonElement>('[data-to-end]');
+    /** jsdom has no layout: say how long the thread is, how much shows, and where it is scrolled to, and let the page see it scroll. */
+    const scrollTo = async (top: number) => {
+      const box = root.querySelector<HTMLElement>('.msgs')!;
+      Object.defineProperty(box, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(box, 'clientHeight', { value: 300, configurable: true });
+      Object.defineProperty(box, 'scrollTop', { value: top, configurable: true, writable: true });
+      box.dispatchEvent(new Event('scroll'));
+      await flush();
+      return box;
+    };
+
+    it('is not there while you are at the end', async () => {
+      start({ path: `/c/${C1}`, chats: read, history });
+      await flush();
+      expect(arrow()).toBeNull();
+      await scrollTo(650);   // 50 px from the end: still "at the end"
+      expect(arrow()).toBeNull();
+    });
+
+    it('appears when you read further up, with nothing new, and goes when you are back near the end', async () => {
+      start({ path: `/c/${C1}`, chats: read, history });
+      await flush();
+      await scrollTo(100);
+      expect(arrow()).not.toBeNull();
+      expect(arrow()!.getAttribute('aria-label')).toBe('Xuống tin mới nhất');
+      expect(root.querySelector('[data-jump-bottom]')).toBeNull();   // no count: nothing arrived
+      await scrollTo(650);
+      expect(arrow()).toBeNull();
+    });
+
+    it('takes you to the end when pressed, and goes', async () => {
+      start({ path: `/c/${C1}`, chats: read, history });
+      await flush();
+      const box = await scrollTo(100);
+      arrow()!.click();
+      await flush();
+      expect(box.scrollTop).toBe(1000);
+      expect(arrow()).toBeNull();
+    });
+
+    it('stays beside the count of new messages, and pressing it clears the count too', async () => {
+      const h = start({ path: `/c/${C1}`, chats: read, history });
+      await flush();
+      await scrollTo(100);
+      h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
+      await flush();
+      expect(arrow()).not.toBeNull();
+      expect(root.querySelector('[data-jump-bottom]')).not.toBeNull();
+      arrow()!.click();
+      await flush();
+      expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+      expect(arrow()).toBeNull();
+    });
+
   });
 });
 
@@ -2958,13 +3151,76 @@ describe('chat: pictures and files', () => {
     expect(send).toHaveBeenCalledWith(C1, 'old-1', '', undefined, ['p9']);
   });
 
-  it('lists the pictures and files seen so far in the side panel', async () => {
-    localStorage.setItem('gom-info', '1');
-    open({}, [{ ...msg(1, 'minh', '', at(10)), attachments: [att('p1'), att('f1', 'file', 'bảng.xlsx')] }]);
-    await flush();
-    expect(root.querySelector('[data-info-media] [data-info-pic="p1"]')).not.toBeNull();
-    expect(text(root.querySelector('[data-info-files]')!)).toContain('bảng.xlsx');
-    localStorage.removeItem('gom-info');
+  describe('the side panel list, from the server', () => {
+    const item = (id: string, seq: number, kind: 'image' | 'file' = 'image', name = 'a.webp') => ({ attachment: att(id, kind, name), messageId: `m${seq}`, seq, createdAt: at(10) });
+    const served = (images: ReturnType<typeof item>[], files: ReturnType<typeof item>[], hasMoreImages = false) =>
+      vi.fn(async (_c: string, kind: 'image' | 'file', before?: number) =>
+        ok({ items: (kind === 'image' ? images : files).filter((i) => before === undefined || i.seq < before), hasMore: kind === 'image' && before === undefined && hasMoreImages }));
+    const panel = () => { localStorage.setItem('gom-info', '1'); };
+    afterEach(() => localStorage.removeItem('gom-info'));
+
+    it('lists the pictures and files the server names, not only what the thread has loaded', async () => {
+      panel();
+      const media = served([item('p1', 9)], [item('f1', 8, 'file', 'bảng.xlsx')]);
+      open({ media }, [msg(1, 'minh', 'xin chào')]);   // the thread itself has no attachment at all
+      await flush();
+      expect(media).toHaveBeenCalledWith(C1, 'image', undefined);
+      expect(media).toHaveBeenCalledWith(C1, 'file', undefined);
+      expect(root.querySelector('[data-info-media] [data-info-pic="p1"]')).not.toBeNull();
+      expect(text(root.querySelector('[data-info-files]')!)).toContain('bảng.xlsx');
+      expect(root.querySelector('[data-info-more]')).toBeNull();
+    });
+
+    it('asks for the next page after the last item shown, and adds it', async () => {
+      panel();
+      const media = vi.fn(async (_c: string, kind: 'image' | 'file', before?: number) =>
+        ok(kind === 'file' ? { items: [], hasMore: false }
+          : before === undefined ? { items: [item('p9', 9), item('p8', 8)], hasMore: true } : { items: [item('p7', 7)], hasMore: false }));
+      open({ media });
+      await flush();
+      expect(root.querySelectorAll('[data-info-pic]')).toHaveLength(2);
+      root.querySelector<HTMLButtonElement>('[data-info-more="image"]')!.click();
+      await flush();
+      expect(media).toHaveBeenLastCalledWith(C1, 'image', 8);
+      expect([...root.querySelectorAll('[data-info-pic]')].map((e) => e.getAttribute('data-info-pic'))).toEqual(['p9', 'p8', 'p7']);
+      expect(root.querySelector('[data-info-more]')).toBeNull();
+    });
+
+    it('asks only when the panel is open, and again nothing on a second look', async () => {
+      const media = served([item('p1', 9)], []);
+      open({ media });
+      await flush();
+      expect(media).not.toHaveBeenCalled();
+      root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+      await flush();
+      expect(media).toHaveBeenCalledTimes(2);
+      root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+      root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+      await flush();
+      expect(media).toHaveBeenCalledTimes(2);
+    });
+
+    it('adds the pictures of a new message and drops those of a message taken back, as they happen', async () => {
+      panel();
+      const h = open({ media: served([item('p1', 1)], []) }, [msg(1, 'minh', 'a')]);
+      await flush();
+      h.handlers().event(C1, { seq: 2, kind: 'created', message: { ...msg(2, 'minh', ''), attachments: [att('p2')] } });
+      await flush();
+      expect([...root.querySelectorAll('[data-info-pic]')].map((e) => e.getAttribute('data-info-pic'))).toEqual(['p2', 'p1']);
+      h.handlers().event(C1, { seq: 3, kind: 'deleted', message: { ...msg(2, 'minh', ''), deleted: true } });
+      await flush();
+      expect([...root.querySelectorAll('[data-info-pic]')].map((e) => e.getAttribute('data-info-pic'))).toEqual(['p1']);
+    });
+
+    it('shows nothing, and no error, when the list cannot be fetched', async () => {
+      panel();
+      open({ media: vi.fn(async () => fail('server', 500)) });
+      await flush();
+      expect(root.querySelector('[data-info-panel]')).not.toBeNull();
+      expect(root.querySelector('[data-info-media]')).toBeNull();
+      expect(root.querySelector('[data-info-files]')).toBeNull();
+      expect(root.querySelector('.error')).toBeNull();
+    });
   });
 });
 
