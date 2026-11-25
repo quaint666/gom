@@ -178,7 +178,8 @@ public static class ImageProcessor
         using var canvas = new SKCanvas(target);
         canvas.Clear(SKColors.Transparent);
         canvas.SetMatrix(m);
-        canvas.DrawBitmap(source, 0, 0);
+        // Nearest: the pixels only move (a turn or a mirror), so none is blended with its neighbour.
+        canvas.DrawBitmap(source, 0, 0, new SKSamplingOptions(SKFilterMode.Nearest), null);
         return target;
     }
 }
