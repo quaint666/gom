@@ -19,7 +19,7 @@ import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '..
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
   live(handlers: LiveHandlers): LiveControl;
-  nav: { path(): string; push(path: string): void; onPop(callback: () => void): void };
+  nav: { path(): string; push(path: string): void; replace(path: string): void; back(): void; onPop(callback: () => void): void };
   now(): Date;
   newId(): string;
   /** A phone or tablet: Enter makes a new line there, because the send button is for sending. */
@@ -136,6 +136,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** The banner that offers notifications: the server's key and the level to register with, while it is offered. */
   let pushOffer: { key: string; level: PushLevel; busy: boolean; failed: boolean; noService?: boolean } | null = null;
   let infoOpen = ((): boolean => { try { return localStorage.getItem('gom-info') === '1'; } catch { return false; } })();
+  /** A phone: the conversation's information shown as its own page (never remembered), and its "clear" question. */
+  let infoPage = false;
+  let infoClearing = false;
   const people = new Map<string, GroupMember[]>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
   let found: string | null = null;
@@ -642,6 +645,26 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (result.ok || result.error === 'unauthorized') go('/sign-in'); else { gearOpen = false; handleFailure(result); }
   }
 
+  /** A phone: opens the information page as a step in the history, so the back gesture closes it. */
+  function openInfoPage(): void {
+    if (openId === null) return;
+    infoPage = true; infoClearing = false; leaving = false;
+    deps.nav.push(`/c/${openId}#info`);
+    void loadPeople(openId); void loadMedia(openId, 'image'); void loadMedia(openId, 'file');
+    update();
+  }
+
+  /** The page's own back button: a step back in the history, as the back gesture is (the step back closes it). */
+  function backFromInfoPage(): void { deps.nav.back(); }
+
+  /** Closed by something done on it: its step in the history becomes the conversation again, so back does not reopen it. */
+  function closeInfoPage(): void {
+    if (!infoPage) return;
+    infoPage = false; infoClearing = false;
+    if (openId !== null) deps.nav.replace(`/c/${openId}`);
+    update();
+  }
+
   function toggleInfo(): void {
     infoOpen = !infoOpen;
     try { localStorage.setItem('gom-info', infoOpen ? '1' : '0'); } catch { /* it is just not remembered */ }
@@ -690,8 +713,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${more('file', file)}`}`;
   };
 
-  /** The panel beside a thread: who it is, ways to find things in it, what is pinned, and who is in a group. */
-  const infoPanel = (c: Conversation, t: Thread) => html`
+  /**
+   * The panel beside a thread: who it is, ways to find things in it, what is pinned, and who is in a group. As a phone's page
+   * (`page`) it also ends with what the list's menu offers for the conversation.
+   */
+  const infoPanel = (c: Conversation, t: Thread, page = false) => html`
     <aside class="info" aria-label=${say.chat.info} data-info-panel>
       <div class="info-top">
         ${avatar(c.title ?? '?', c.peer?.avatar, 'xl')}
@@ -699,7 +725,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <small>${c.kind === 'group' ? say.common.members(c.memberCount ?? 0) : c.peer ? peerLine(c) : ''}</small>
       </div>
       <div class="info-actions">
-        <button class="btn secondary small" type="button" data-info-search @click=${() => { searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} ${say.chat.searchMessages}</button>
+        <button class="btn secondary small" type="button" data-info-search @click=${() => { if (page) closeInfoPage(); searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} ${say.chat.searchMessages}</button>
         <button class="btn secondary small" type="button" data-info-mute @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()} ${isMuted(c) ? say.common.unmute : say.common.mute}</button>
       </div>
       ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}
@@ -722,7 +748,30 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <a class="btn secondary small" href="/groups/${c.id}">${say.chat.manageGroup}</a>
           ${leaveView(c)}
         </div>`}
+      ${page ? infoFoot(c) : nothing}
     </aside>`;
+
+  /** A phone: the information as a page over the thread, with a way back. */
+  const infoSheet = (c: Conversation, t: Thread) => html`
+    <div class="info-sheet" data-info-page>
+      <header class="th-head"><button class="ib back" type="button" aria-label=${say.common.back} data-info-page-close @click=${backFromInfoPage}>${icons.back()}</button>
+        <b>${say.chat.infoTitle}</b></header>
+      ${infoPanel(c, t, true)}
+    </div>`;
+
+  /** At the foot of the phone's page: hide, block (one to one) and clear, as the list's menu has them. */
+  const infoFoot = (c: Conversation) => html`
+    <div class="info-foot">
+      ${c.hidden ? nothing : html`<button class="btn secondary" type="button" data-info-hide @click=${() => { closeInfoPage(); void hideConversation(c); }}>${icons.eyeOff()} ${say.chat.hide}</button>`}
+      ${c.kind === 'group' || c.peer === null || c.peer.deleted ? nothing
+        : html`<button class="btn secondary" type="button" data-info-block @click=${() => { openCard(c.peer!.id); card!.asking = 'block'; update(); }}>${icons.block()} ${say.common.block}</button>`}
+      ${infoClearing ? html`
+        <div class="ask" role="group" aria-labelledby="clear-q" data-info-clear-ask>
+          <p id="clear-q">${say.chat.clearQ}</p>
+          <button class="btn small" type="button" data-info-clear-yes @click=${() => { closeInfoPage(); void clearConversation(c); }}>${say.chat.deleteForMe}</button>
+          <button class="btn secondary small" type="button" data-info-clear-no @click=${() => { infoClearing = false; update(); }}>${say.common.cancel}</button>
+        </div>` : html`<button class="btn secondary danger-text" type="button" data-info-clear @click=${() => { infoClearing = true; update(); }}>${icons.trash()} ${say.chat.clear}</button>`}
+    </div>`;
 
   /** Under a 1:1 conversation's name: their Gom ID, and how many groups you share once their card has been fetched. */
   function peerLine(c: Conversation): string {
@@ -814,12 +863,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
             : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : nothing}</div>`}
-          ${c === undefined ? nothing : html`<button class="ib" type="button" data-search aria-label=${say.chat.searchIn} aria-expanded=${searching ? 'true' : 'false'}
+          ${c === undefined ? nothing : html`<button class="ib wide" type="button" data-search aria-label=${say.chat.searchIn} aria-expanded=${searching ? 'true' : 'false'}
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
-          <button class="ib" type="button" data-mute aria-pressed=${isMuted(c) ? 'true' : 'false'}
+          <button class="ib wide" type="button" data-mute aria-pressed=${isMuted(c) ? 'true' : 'false'}
             aria-label=${isMuted(c) ? say.chat.unmuteAgain : say.common.mute} @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()}</button>`}
-          ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label=${say.chat.groupInfo}>${icons.users()}</a>` : nothing}
-          ${c === undefined ? nothing : html`<button class="ib info-btn" type="button" data-info aria-label=${say.chat.info} aria-pressed=${infoOpen ? 'true' : 'false'} @click=${toggleInfo}>${icons.info()}</button>`}
+          ${c?.kind === 'group' ? html`<a class="ib wide" href="/groups/${c.id}" aria-label=${say.chat.groupInfo}>${icons.users()}</a>` : nothing}
+          ${c === undefined ? nothing : html`<button class="ib info-btn" type="button" data-info aria-label=${say.chat.info} aria-pressed=${infoOpen ? 'true' : 'false'} @click=${toggleInfo}>${icons.info()}</button>
+            <button class="ib info-page-btn" type="button" data-info-page-open aria-label=${say.chat.info} @click=${openInfoPage}>${icons.info()}</button>`}
         </header>
         ${banner()}
         ${searching === null ? nothing : searchPanel(searching)}
@@ -976,6 +1026,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </section>
       ${threadPane()}
       ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
+      ${openId !== null && infoPage && chatOf(openId) !== undefined ? infoSheet(chatOf(openId)!, threadOf(openId)) : nothing}
       ${rowMenuView()}
       ${muteView()}
       ${undoView()}
@@ -2081,7 +2132,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     replaced() { notice = say.chat.replaced; update(); },
   };
 
-  deps.nav.onPop(() => { const id = idFromPath(); if (id === null) { openId = null; update(); } else show(id); });
+  // Back from the information page (its own step in the history) only closes it.
+  deps.nav.onPop(() => { infoPage = false; const id = idFromPath(); if (id === null) { openId = null; update(); } else show(id); });
   document.addEventListener('visibilitychange', () => {
     if (!deps.visible()) return;
     live?.retryNow();

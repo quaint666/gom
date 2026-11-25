@@ -32,7 +32,7 @@ const chatDeps = (): ChatDeps => ({
   clearNotifications: (conversation) => pusher.clear(conversation),
   pusher,
   live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, handlers),
-  nav: { path: () => location.pathname, push: (path) => history.pushState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) },
+  nav: { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), back: () => history.back(), onPop: (callback) => addEventListener('popstate', callback) },
   now: () => new Date(),
   newId: () => crypto.randomUUID(),
   coarsePointer: () => matchMedia('(pointer: coarse)').matches,
