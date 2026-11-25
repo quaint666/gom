@@ -1,3 +1,5 @@
+import { say } from './say.js';
+
 /**
  * The browser's side of notifications: whether this device can get them, asking for permission, and the subscription the browser's
  * push service hands out. Settings and the chat page use it through this small interface, so a test can put a fake in its place.
@@ -39,7 +41,7 @@ const asDevice = (s: PushSubscription | null): DeviceSubscription | null => {
 };
 
 /** Said when the browser has no push service of its own: nothing Gom can change, so it says which browsers can. */
-export const NO_PUSH_SERVICE = 'Trình duyệt này không có dịch vụ thông báo đẩy, nên Gom không gửi thông báo đến đây được. Một số trình duyệt dựa trên Chromium (như Helium) đã bỏ dịch vụ này; Chrome, Edge và Firefox đều nhận được.';
+export const NO_PUSH_SERVICE = say.app.noPushService;
 
 /** How long a browser's push service gets to hand out a subscription. One with none never answers at all. */
 export const SUBSCRIBE_WAIT_MS = 20_000;

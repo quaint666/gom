@@ -4,11 +4,12 @@ import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, errorBox, formatTime } from '../ui.js';
 import { limits } from '../limits.js';
+import { say } from '../say.js';
 
 /** How many rows of a long list show before "Xem thêm". */
 const HANDFUL = 5;
 
-const STATUS: Record<Invite['status'], string> = { active: 'Đang hoạt động', full: 'Đã đủ người', revoked: 'Đã thu hồi', expired: 'Hết hạn' };
+const STATUS: Record<Invite['status'], string> = { active: say.owner.active, full: say.owner.full, revoked: say.owner.revoked, expired: say.owner.expired };
 
 /** What the owner may choose for a new link: how long it works, and how many people it lets in (0 is any number). */
 const DAYS = [1, 7, 30] as const;
@@ -31,26 +32,26 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
     <li class="li invite" data-invite=${i.id} data-status=${i.status}>
       <div class="t">
         <b>${STATUS[i.status]}</b>
-        <small>${i.uses} / ${i.maxUses ?? '∞'} người · tạo ${formatTime(i.createdAt)} · ${i.status === 'expired' ? 'đã hết hạn' : `hết hạn ${formatTime(i.expiresAt)}`}</small>
-        ${i.members.length === 0 ? nothing : html`<small data-joined>Đã vào: ${i.members.map((m) => `${m.displayName} (@${m.gomId})`).join(', ')}</small>`}
+        <small>${say.owner.inviteLine(i.uses, String(i.maxUses ?? '∞'), formatTime(i.createdAt), i.status === 'expired' ? say.owner.hasExpired : say.owner.expires(formatTime(i.expiresAt)))}</small>
+        ${i.members.length === 0 ? nothing : html`<small data-joined>${say.owner.joined(i.members.map((m) => `${m.displayName} (@${m.gomId})`).join(', '))}</small>`}
       </div>
-      ${i.status === 'active' ? html`<button class="btn secondary small" type="button" data-revoke @click=${() => revoke(i.id)}>Thu hồi</button>` : nothing}
+      ${i.status === 'active' ? html`<button class="btn secondary small" type="button" data-revoke @click=${() => revoke(i.id)}>${say.owner.revoke}</button>` : nothing}
     </li>`;
 
   const memberRow = (m: Member) => html`
     <li class="li" data-member=${m.gomId}>
-      <div class="t"><b>${m.displayName}${m.isOwner ? html`<span class="tag">Chủ</span>` : nothing}${m.deleted ? html`<span class="tag">Đã xóa</span>` : m.disabled ? html`<span class="tag">Đã khóa</span>` : nothing}</b><small>@${m.gomId}</small></div>
-      ${m.isOwner || m.disabled ? nothing : html`<button class="btn secondary small" type="button" @click=${() => makeReset(m.gomId)}>Tạo liên kết đặt lại mật khẩu</button>`}
+      <div class="t"><b>${m.displayName}${m.isOwner ? html`<span class="tag">${say.owner.ownerTag}</span>` : nothing}${m.deleted ? html`<span class="tag">${say.owner.deletedTag}</span>` : m.disabled ? html`<span class="tag">${say.owner.disabledTag}</span>` : nothing}</b><small>@${m.gomId}</small></div>
+      ${m.isOwner || m.disabled ? nothing : html`<button class="btn secondary small" type="button" @click=${() => makeReset(m.gomId)}>${say.owner.makeReset}</button>`}
       ${m.isOwner || m.deleted ? nothing : m.disabled
-        ? html`<button class="btn secondary small" type="button" data-enable @click=${() => setDisabled(m.gomId, false)}>Mở khóa</button>`
-        : html`<button class="btn secondary small" type="button" data-disable @click=${() => setDisabled(m.gomId, true)}>Khóa tài khoản</button>`}
+        ? html`<button class="btn secondary small" type="button" data-enable @click=${() => setDisabled(m.gomId, false)}>${say.owner.enable}</button>`
+        : html`<button class="btn secondary small" type="button" data-disable @click=${() => setDisabled(m.gomId, true)}>${say.owner.disable}</button>`}
     </li>`;
 
   const linkBox = () => link === null ? nothing : html`
     <div class="card">
-      <label for="link">Liên kết (chỉ hiện một lần)</label>
+      <label for="link">${say.owner.linkOnce}</label>
       <div class="input"><input id="link" data-link readonly type="text" .value=${link.url}>
-        <button class="ib" type="button" data-copy aria-label="Sao chép liên kết" @click=${copyLink}>${icons.copy()}</button></div>
+        <button class="ib" type="button" data-copy aria-label=${say.friends.copyLink} @click=${copyLink}>${icons.copy()}</button></div>
       <p class="hint">${link.note}</p>
       <p class="hint" role="status">${copied}</p>
     </div>`;
@@ -62,29 +63,29 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   };
 
   const view = () => html`
-    ${appBar({ title: 'Lời mời và thành viên', back: '/settings' })}
+    ${appBar({ title: say.owner.title, back: '/settings' })}
     <div class="page">
       ${errorBox(error)}
       <div class="card invite-form">
-        <div class="field"><label for="invite-days">Có hiệu lực</label>
+        <div class="field"><label for="invite-days">${say.owner.validFor}</label>
           <select id="invite-days" name="days" @change=${(e: Event) => { days = Number((e.target as HTMLSelectElement).value); }}>
-            ${DAYS.map((d) => html`<option value=${d} ?selected=${d === days}>${d} ngày</option>`)}</select></div>
-        <div class="field"><label for="invite-uses">Cho vào tối đa</label>
+            ${DAYS.map((d) => html`<option value=${d} ?selected=${d === days}>${say.owner.days(d)}</option>`)}</select></div>
+        <div class="field"><label for="invite-uses">${say.owner.letsIn}</label>
           <select id="invite-uses" name="uses" @change=${(e: Event) => { uses = Number((e.target as HTMLSelectElement).value); }}>
-            ${USES.map((u) => html`<option value=${u} ?selected=${u === uses}>${u === 0 ? 'Không giới hạn' : `${u} người`}</option>`)}</select></div>
-        <button class="btn" type="button" data-create-invite @click=${makeInvite}>Tạo lời mời mới</button>
+            ${USES.map((u) => html`<option value=${u} ?selected=${u === uses}>${u === 0 ? say.owner.anyNumber : say.owner.people(u)}</option>`)}</select></div>
+        <button class="btn" type="button" data-create-invite @click=${makeInvite}>${say.owner.makeInvite}</button>
       </div>
       ${linkBox()}
-      <h2 class="section">Lời mời</h2>
+      <h2 class="section">${say.owner.invites}</h2>
       <ul class="list">${(moreInvites || invites.length <= HANDFUL ? invites : invites.slice(0, HANDFUL)).map(inviteRow)}</ul>
-      ${moreInvites || invites.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-invites @click=${() => { moreInvites = true; update(); }}>Xem thêm (${invites.length - HANDFUL})</button>`}
-      <h2 class="section">Thành viên</h2>
+      ${moreInvites || invites.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-invites @click=${() => { moreInvites = true; update(); }}>${say.friends.seeMoreCount(invites.length - HANDFUL)}</button>`}
+      <h2 class="section">${say.owner.members}</h2>
       ${members.length <= HANDFUL ? nothing : html`
         <div class="searchfield input">${icons.search()}
-          <input type="search" name="member-search" aria-label="Tìm thành viên" placeholder="Tìm thành viên" autocomplete="off" maxlength=${limits().nameChars}
+          <input type="search" name="member-search" aria-label=${say.owner.findMembers} placeholder=${say.owner.findMembers} autocomplete="off" maxlength=${limits().nameChars}
             .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>`}
-      ${shownMembers().length === 0 ? html`<p class="hint" data-no-member>Không tìm thấy thành viên nào.</p>` : html`<ul class="list">${shownMembers().map(memberRow)}</ul>`}
-      ${query.trim() !== '' || moreMembers || members.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-members @click=${() => { moreMembers = true; update(); }}>Xem thêm (${members.length - HANDFUL})</button>`}
+      ${shownMembers().length === 0 ? html`<p class="hint" data-no-member>${say.owner.noMember}</p>` : html`<ul class="list">${shownMembers().map(memberRow)}</ul>`}
+      ${query.trim() !== '' || moreMembers || members.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-members @click=${() => { moreMembers = true; update(); }}>${say.friends.seeMoreCount(members.length - HANDFUL)}</button>`}
     </div>`;
   const update = () => render(view(), root);
 
@@ -100,14 +101,14 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   async function makeInvite(): Promise<void> {
     const result = await api.createInvite({ days, uses });
     if (!result.ok) { error = result; update(); return; }
-    show(result.data, `Lời mời có hiệu lực ${days} ngày và cho ${uses === 0 ? 'bất kỳ ai' : uses === 1 ? 'một người' : `tối đa ${uses} người`} vào. Hãy sao chép ngay: liên kết chỉ hiện một lần. Nếu mất, hãy thu hồi và tạo lời mời mới.`);
+    show(result.data, say.owner.inviteMade(days, uses === 0 ? say.owner.anyone : uses === 1 ? say.owner.onePerson : say.owner.upTo(uses)));
     await reload();
   }
 
   async function makeReset(gomId: string): Promise<void> {
     const result = await api.resetLink(gomId);
     if (!result.ok) { error = result; update(); return; }
-    show(result.data, 'Liên kết có hiệu lực 24 giờ và chỉ dùng được một lần. Hãy gửi cho đúng người đó.');
+    show(result.data, say.owner.resetMade);
     update();
   }
 
@@ -126,7 +127,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
 
   async function copyLink(): Promise<void> {
     if (link === null) return;
-    try { await navigator.clipboard.writeText(link.url); copied = 'Đã sao chép'; } catch { copied = 'Không sao chép được. Hãy chọn và chép liên kết bằng tay.'; }
+    try { await navigator.clipboard.writeText(link.url); copied = say.friends.copied; } catch { copied = say.friends.copyFailed; }
     update();
   }
 

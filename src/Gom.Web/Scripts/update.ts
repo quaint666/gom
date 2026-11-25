@@ -1,4 +1,5 @@
 import { html, nothing, render } from 'lit-html';
+import { say } from './say.js';
 
 /** What a HEAD request for the page's own script answered: the status and its ETag (null when there is none). */
 export interface Probe { status: number; etag: string | null }
@@ -59,8 +60,8 @@ export function showUpdateBar(host: HTMLElement, reload: () => void): void {
   const close = (): void => { render(nothing, host); };
   render(html`
     <div class="updatebar" role="status" data-update>
-      <span>Có bản mới của Gom.</span>
-      <button class="btn small" type="button" data-update-reload @click=${reload}>Tải lại</button>
-      <button class="btn secondary small" type="button" data-update-later @click=${close}>Để sau</button>
+      <span>${say.app.newVersion}</span>
+      <button class="btn small" type="button" data-update-reload @click=${reload}>${say.app.reload}</button>
+      <button class="btn secondary small" type="button" data-update-later @click=${close}>${say.chat.later}</button>
     </div>`, host);
 }

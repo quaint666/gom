@@ -13,23 +13,23 @@ namespace Gom.Web;
 /// </summary>
 public static class Pages
 {
-    /// <summary>An address, the script for it and its title before " · Gom" (none: just "Gom").</summary>
-    public sealed record Page(string Route, string Name, string? Title);
+    /// <summary>An address and the script for it; its title comes from <see cref="ServerText.PageTitles"/>.</summary>
+    public sealed record Page(string Route, string Name);
 
     public static readonly IReadOnlyList<Page> All =
     [
-        new("/", "home", null),
-        new("/c/{id}", "home", null),
-        new("/sign-in", "signin", "Đăng nhập"),
-        new("/join/{token}", "join", "Lời mời"),
-        new("/reset/{token}", "reset", "Đặt lại mật khẩu"),
-        new("/settings", "settings", "Cài đặt"),
-        new("/friends", "friends", "Bạn bè"),
-        new("/groups/new", "newgroup", "Nhóm mới"),
-        new("/groups/{id}", "group", "Thành viên nhóm"),
-        new("/add/{gomId}", "add", "Kết bạn"),
-        new("/owner", "owner", "Lời mời và thành viên"),
-        new("/owner/storage", "storage", "Dung lượng"),
+        new("/", "home"),
+        new("/c/{id}", "home"),
+        new("/sign-in", "signin"),
+        new("/join/{token}", "join"),
+        new("/reset/{token}", "reset"),
+        new("/settings", "settings"),
+        new("/friends", "friends"),
+        new("/groups/new", "newgroup"),
+        new("/groups/{id}", "group"),
+        new("/add/{gomId}", "add"),
+        new("/owner", "owner"),
+        new("/owner/storage", "storage"),
     ];
 
     /// <summary>
@@ -58,8 +58,8 @@ public static class Pages
     });
 
     /// <summary>The shell made into one page, each value escaped for HTML text or a quoted attribute.</summary>
-    public static string Render(string shell, Page page, string limits) => shell
-        .Replace("{title}", Escape(page.Title is null ? "Gom" : $"{page.Title} · Gom"), StringComparison.Ordinal)
+    public static string Render(string shell, Page page, string limits, ServerText text) => shell
+        .Replace("{title}", Escape(text.PageTitles.TryGetValue(page.Name, out var title) ? $"{title} · Gom" : "Gom"), StringComparison.Ordinal)
         .Replace("{page}", Escape(page.Name), StringComparison.Ordinal)
         .Replace("{limits}", Escape(limits), StringComparison.Ordinal);
 

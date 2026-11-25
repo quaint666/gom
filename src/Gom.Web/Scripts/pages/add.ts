@@ -1,6 +1,7 @@
 import { html, nothing, render } from 'lit-html';
 import type { Api, Failure } from '../api.js';
 import { brand, errorBox } from '../ui.js';
+import { say } from '../say.js';
 
 /** Opened from someone's add-me link. Nothing is sent until the button is pressed: a link must never change anything. */
 export function mountAdd(root: HTMLElement, api: Api, go: (path: string) => void, gomId: string): void {
@@ -13,11 +14,11 @@ export function mountAdd(root: HTMLElement, api: Api, go: (path: string) => void
     <div class="page center">
       ${brand()}
       ${ready ? html`
-        <div><h1>Kết bạn với @${gomId}</h1></div>
+        <div><h1>${say.account.befriendTitle(gomId)}</h1></div>
         ${errorBox(error)}
-        ${done === '' ? html`<button class="btn" type="button" data-send ?disabled=${busy} @click=${send}>Gửi lời mời kết bạn</button>` : nothing}
+        ${done === '' ? html`<button class="btn" type="button" data-send ?disabled=${busy} @click=${send}>${say.account.sendFriendRequest}</button>` : nothing}
         ${done === '' ? nothing : html`<p class="lead" role="status">${done}</p>`}
-        <a class="btn secondary" href="${done === '' ? '/' : '/friends'}">${done === '' ? 'Về trang chính' : 'Xem bạn bè'}</a>` : nothing}
+        <a class="btn secondary" href="${done === '' ? '/' : '/friends'}">${done === '' ? say.account.toHome : say.account.seeFriends}</a>` : nothing}
     </div>`;
   const update = () => render(view(), root);
 
@@ -27,7 +28,7 @@ export function mountAdd(root: HTMLElement, api: Api, go: (path: string) => void
     const result = await api.askFriend(gomId);
     busy = false;
     if (!result.ok) { error = result; update(); return; }
-    done = result.data.status === 'friends' ? `Bạn và @${gomId} đã là bạn bè.` : `Đã gửi lời mời đến @${gomId}.`;
+    done = result.data.status === 'friends' ? say.friends.alreadyFriends(gomId) : say.friends.requestSentTo(gomId);
     update();
   }
 

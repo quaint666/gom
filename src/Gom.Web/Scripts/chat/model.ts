@@ -1,4 +1,5 @@
 import type { ChatMessage, Failure, MediaItem } from '../api.js';
+import { say } from '../say.js';
 
 /** A message as the thread shows it: stored, or still on its way (no sequence number yet). */
 export type Shown = ChatMessage & { state?: 'sending' | 'queued' | 'failed'; error?: Failure };
@@ -43,8 +44,8 @@ export function clock(iso: string): string {
 /** The label on a day pill. */
 export function dayLabel(iso: string, now: Date): string {
   const d = new Date(iso);
-  if (sameDay(d, now)) return 'Hôm nay';
-  if (sameDay(d, yesterdayOf(now))) return 'Hôm qua';
+  if (sameDay(d, now)) return say.notices.today;
+  if (sameDay(d, yesterdayOf(now))) return say.notices.yesterday;
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
@@ -52,7 +53,7 @@ export function dayLabel(iso: string, now: Date): string {
 export function listTime(iso: string, now: Date): string {
   const d = new Date(iso);
   if (sameDay(d, now)) return clock(iso);
-  if (sameDay(d, yesterdayOf(now))) return 'Hôm qua';
+  if (sameDay(d, yesterdayOf(now))) return say.notices.yesterday;
   return d.getFullYear() === now.getFullYear() ? `${d.getDate()}/${d.getMonth() + 1}` : `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 }
 
@@ -127,15 +128,15 @@ const dayFormat = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-d
 export function noticeText(m: ChatMessage, me: string): string {
   const notice = m.notice;
   if (!notice) return '';
-  const who = m.sender.id === me ? 'Bạn' : m.sender.displayName;
-  const target = notice.target ? (notice.target.id === me ? 'bạn' : notice.target.displayName) : '';
+  const who = m.sender.id === me ? say.common.you : m.sender.displayName;
+  const target = notice.target ? (notice.target.id === me ? say.notices.you : notice.target.displayName) : '';
   switch (notice.type) {
-    case 'added': return `${who} đã thêm ${target} vào nhóm`;
-    case 'removed': return `${who} đã xóa ${target} khỏi nhóm`;
-    case 'left': return `${who} đã rời nhóm`;
-    case 'renamed': return `${who} đã đổi tên nhóm thành "${notice.title ?? ''}"`;
+    case 'added': return say.notices.added(who, target);
+    case 'removed': return say.notices.removed(who, target);
+    case 'left': return say.notices.left(who);
+    case 'renamed': return say.notices.renamed(who, notice.title ?? '');
     // The owner did it, but it is not about anyone: no name.
-    case 'filesTrimmed': return `Ảnh và tệp gửi trước ${notice.before ? dayFormat.format(new Date(notice.before)) : ''} đã được dọn`;
-    case 'messagesTrimmed': return `Tin nhắn gửi trước ${notice.before ? dayFormat.format(new Date(notice.before)) : ''} đã được dọn`;
+    case 'filesTrimmed': return say.notices.filesTrimmed(notice.before ? dayFormat.format(new Date(notice.before)) : '');
+    case 'messagesTrimmed': return say.notices.messagesTrimmed(notice.before ? dayFormat.format(new Date(notice.before)) : '');
   }
 }

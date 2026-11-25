@@ -2,9 +2,10 @@ import { html, nothing, render } from 'lit-html';
 import type { Api, Failure, GroupUse, MessageTrimResult, PersonUse, Storage, TrimResult, TrimRule } from '../api.js';
 import { formatSize } from '../text.js';
 import { appBar, errorBox } from '../ui.js';
+import { say } from '../say.js';
 
 /** "3 ảnh và tệp · 1,2 MB" */
-const sent = (files: number, bytes: number): string => `${files} ảnh và tệp · ${formatSize(bytes)}`;
+const sent = (files: number, bytes: number): string => say.storage.sent(files, formatSize(bytes));
 
 /** The word the owner types to trim; the server checks the same. */
 const CONFIRM = 'Delete';
@@ -13,7 +14,7 @@ const CONFIRM = 'Delete';
 const isoDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /** "3 ảnh (1,2 MB) và 1 tệp (12 MB)" */
-const counted = (r: TrimResult): string => `${r.pictures.count} ảnh (${formatSize(r.pictures.bytes)}) và ${r.files.count} tệp (${formatSize(r.files.bytes)})`;
+const counted = (r: TrimResult): string => say.storage.counted(r.pictures.count, formatSize(r.pictures.bytes), r.files.count, formatSize(r.files.bytes));
 
 /**
  * The owner's storage page: the disk, the database, pictures and files by group, one-to-one chats only together, and by person.
@@ -35,36 +36,36 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
   const groupRow = (g: GroupUse) => html`
     <li class="li" data-group=${g.id}>
       <div class="t">
-        <b>${g.title ?? 'Nhóm'}${g.members === 0 ? html`<span class="tag">Không còn ai</span>` : nothing}</b>
-        <small>${g.members} thành viên · ${g.messages} tin nhắn · ${sent(g.files, g.bytes)}</small>
+        <b>${g.title ?? say.storage.group}${g.members === 0 ? html`<span class="tag">${say.storage.nobodyLeft}</span>` : nothing}</b>
+        <small>${say.storage.groupLine(g.members, g.messages, sent(g.files, g.bytes))}</small>
       </div>
       ${g.members !== 0 ? nothing : confirming === g.id
-        ? html`<button class="btn danger small" type="button" data-confirm-delete ?disabled=${busy} @click=${() => remove(g.id)}>Xóa hẳn</button>
-               <button class="btn secondary small" type="button" data-cancel-delete @click=${() => { confirming = null; update(); }}>Hủy</button>`
-        : html`<button class="btn secondary small" type="button" data-delete-group @click=${() => { confirming = g.id; update(); }}>Xóa nhóm</button>`}
+        ? html`<button class="btn danger small" type="button" data-confirm-delete ?disabled=${busy} @click=${() => remove(g.id)}>${say.storage.deleteForGood}</button>
+               <button class="btn secondary small" type="button" data-cancel-delete @click=${() => { confirming = null; update(); }}>${say.common.cancel}</button>`
+        : html`<button class="btn secondary small" type="button" data-delete-group @click=${() => { confirming = g.id; update(); }}>${say.storage.deleteGroup}</button>`}
     </li>`;
 
   const personRow = (p: PersonUse) => html`
     <li class="li" data-person=${p.gomId}>
-      <div class="t"><b>${p.displayName}${p.deleted ? html`<span class="tag">Đã xóa</span>` : nothing}</b><small>@${p.gomId} · ${sent(p.files, p.bytes)}</small></div>
+      <div class="t"><b>${p.displayName}${p.deleted ? html`<span class="tag">${say.storage.deleted}</span>` : nothing}</b><small>@${p.gomId} · ${sent(p.files, p.bytes)}</small></div>
     </li>`;
 
   const body = (s: Storage) => html`
     <ul class="list">
-      ${s.disk === null ? nothing : line('Ổ đĩa', `Còn trống ${formatSize(s.disk.free)} / ${formatSize(s.disk.total)}`, 'disk')}
-      ${s.uploadsFolder === null ? nothing : line('Thư mục ảnh và tệp', formatSize(s.uploadsFolder), 'folder')}
-      ${line('Cơ sở dữ liệu', formatSize(s.database), 'database')}
-      ${line('Ảnh đã gửi', `${s.pictures.count} · ${formatSize(s.pictures.bytes)}`, 'pictures')}
-      ${line('Tệp đã gửi', `${s.files.count} · ${formatSize(s.files.bytes)}`, 'files')}
+      ${s.disk === null ? nothing : line(say.storage.disk, say.storage.diskFree(formatSize(s.disk.free), formatSize(s.disk.total)), 'disk')}
+      ${s.uploadsFolder === null ? nothing : line(say.storage.folder, formatSize(s.uploadsFolder), 'folder')}
+      ${line(say.storage.database, formatSize(s.database), 'database')}
+      ${line(say.storage.picturesSent, `${s.pictures.count} · ${formatSize(s.pictures.bytes)}`, 'pictures')}
+      ${line(say.storage.filesSent, `${s.files.count} · ${formatSize(s.files.bytes)}`, 'files')}
     </ul>
-    <p class="hint">Thư mục còn chứa ảnh thu nhỏ và ảnh đại diện, nên lớn hơn tổng ảnh và tệp đã gửi.</p>
-    <h2 class="section">Nhóm</h2>
-    ${s.groups.length === 0 ? html`<p class="hint" data-no-group>Chưa có nhóm nào.</p>` : html`<ul class="list">${s.groups.map(groupRow)}</ul>`}
-    <h2 class="section">Trò chuyện 1-1</h2>
-    <ul class="list">${line(`${s.direct.conversations} cuộc trò chuyện`, `${s.direct.messages} tin nhắn · ${sent(s.direct.files, s.direct.bytes)}`, 'direct')}</ul>
-    <p class="hint">Tính gộp, không ghi ai trò chuyện với ai.</p>
-    <h2 class="section">Theo người gửi</h2>
-    ${s.people.length === 0 ? html`<p class="hint" data-no-person>Chưa ai gửi ảnh hay tệp.</p>` : html`<ul class="list">${s.people.map(personRow)}</ul>`}
+    <p class="hint">${say.storage.folderNote}</p>
+    <h2 class="section">${say.storage.groups}</h2>
+    ${s.groups.length === 0 ? html`<p class="hint" data-no-group>${say.storage.noGroup}</p>` : html`<ul class="list">${s.groups.map(groupRow)}</ul>`}
+    <h2 class="section">${say.storage.direct}</h2>
+    <ul class="list">${line(say.storage.directChats(s.direct.conversations), say.storage.directLine(s.direct.messages, sent(s.direct.files, s.direct.bytes)), 'direct')}</ul>
+    <p class="hint">${say.storage.directNote}</p>
+    <h2 class="section">${say.storage.bySender}</h2>
+    ${s.people.length === 0 ? html`<p class="hint" data-no-person>${say.storage.noSender}</p>` : html`<ul class="list">${s.people.map(personRow)}</ul>`}
     ${trimCard(s)}
     ${messageTrimCard(s)}`;
 
@@ -77,66 +78,66 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
 
   /** Where a trim may reach: everywhere, every one-to-one chat together (never one alone), or one group. */
   const places = (s: Storage, current: string) => html`
-    <option value="all" ?selected=${current === 'all'}>Mọi cuộc trò chuyện</option>
-    <option value="direct" ?selected=${current === 'direct'}>Mọi trò chuyện 1-1</option>
-    ${s.groups.map((g) => html`<option value=${g.id} ?selected=${current === g.id}>Nhóm: ${g.title ?? 'Nhóm'}</option>`)}`;
+    <option value="all" ?selected=${current === 'all'}>${say.storage.everywhere}</option>
+    <option value="direct" ?selected=${current === 'direct'}>${say.storage.allDirect}</option>
+    ${s.groups.map((g) => html`<option value=${g.id} ?selected=${current === g.id}>${say.storage.inGroup(g.title ?? say.storage.group)}</option>`)}`;
 
   const mrule = () => ({ before: new Date(`${mtrim.day}T00:00`).toISOString(), where: mtrim.where });
   const mchoose = (change: Partial<typeof mtrim>) => { mtrim = { ...mtrim, ...change, preview: null, typed: '', done: '' }; update(); };
   /** "347 tin nhắn, kèm 120 ảnh (400 MB) và 3 tệp (10 MB)" */
-  const mcounted = (r: MessageTrimResult) => `${r.messages} tin nhắn, kèm ${counted(r)}`;
+  const mcounted = (r: MessageTrimResult) => say.storage.messagesWith(r.messages, counted(r));
 
   const messageTrimCard = (s: Storage) => html`
-    <h2 class="section">Dọn tin nhắn</h2>
+    <h2 class="section">${say.storage.trimMessages}</h2>
     <div class="card" data-mtrim>
-      <div class="field"><label for="mtrim-day">Gửi trước ngày</label>
+      <div class="field"><label for="mtrim-day">${say.storage.sentBefore}</label>
         <input id="mtrim-day" name="mtrim-day" type="date" max=${isoDay(new Date())} .value=${mtrim.day} @change=${(e: Event) => mchoose({ day: (e.target as HTMLInputElement).value })}></div>
-      <div class="field"><label for="mtrim-where">Ở đâu</label>
+      <div class="field"><label for="mtrim-where">${say.storage.where}</label>
         <select id="mtrim-where" name="mtrim-where" @change=${(e: Event) => mchoose({ where: (e.target as HTMLSelectElement).value })}>${places(s, mtrim.where)}</select></div>
-      <button class="btn secondary" type="button" data-mtrim-preview ?disabled=${mtrim.day === '' || mtrim.busy} @click=${() => void mpreview()}>Xem trước</button>
+      <button class="btn secondary" type="button" data-mtrim-preview ?disabled=${mtrim.day === '' || mtrim.busy} @click=${() => void mpreview()}>${say.storage.preview}</button>
       ${mtrim.preview === null ? nothing : mtrim.preview.messages === 0 && total(mtrim.preview) === 0
-        ? html`<p class="hint" data-mtrim-none>Không có tin nhắn nào khớp.</p>`
+        ? html`<p class="hint" data-mtrim-none>${say.storage.noMessageMatches}</p>`
         : html`
-          <p data-mtrim-summary>Sẽ xóa vĩnh viễn ${mcounted(mtrim.preview)}, trong ${mtrim.preview.conversations} cuộc trò chuyện.</p>
-          <p class="hint">Không thể hoàn tác, kể cả trong bản sao lưu. Câu trả lời mới hơn vẫn còn, kèm dòng "Tin nhắn không còn hiển thị"; mỗi cuộc trò chuyện có một dòng thông báo.</p>
-          <div class="field"><label for="mtrim-confirm">Gõ ${CONFIRM} để xác nhận</label>
+          <p data-mtrim-summary>${say.storage.willDeleteMessages(mcounted(mtrim.preview), mtrim.preview.conversations)}</p>
+          <p class="hint">${say.storage.messagesNote}</p>
+          <div class="field"><label for="mtrim-confirm">${say.storage.typeToConfirm(CONFIRM)}</label>
             <input id="mtrim-confirm" name="mtrim-confirm" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" .value=${mtrim.typed}
               @input=${(e: Event) => { mtrim.typed = (e.target as HTMLInputElement).value; update(); }}></div>
-          <button class="btn danger" type="button" data-mtrim-confirm ?disabled=${mtrim.typed !== CONFIRM || mtrim.busy} @click=${() => void runMessageTrim()}>Xóa vĩnh viễn</button>`}
+          <button class="btn danger" type="button" data-mtrim-confirm ?disabled=${mtrim.typed !== CONFIRM || mtrim.busy} @click=${() => void runMessageTrim()}>${say.storage.deleteForever}</button>`}
       ${mtrim.done === '' ? nothing : html`<p class="hint" role="status" data-mtrim-done>${mtrim.done}</p>`}
     </div>`;
 
   const trimCard = (s: Storage) => html`
-    <h2 class="section">Dọn ảnh và tệp</h2>
+    <h2 class="section">${say.storage.trimFiles}</h2>
     <div class="card" data-trim>
-      <div class="field"><label for="trim-day">Gửi trước ngày</label>
+      <div class="field"><label for="trim-day">${say.storage.sentBefore}</label>
         <input id="trim-day" name="trim-day" type="date" max=${isoDay(new Date())} .value=${trim.day} @change=${(e: Event) => choose({ day: (e.target as HTMLInputElement).value })}></div>
-      <div class="field"><label for="trim-kind">Loại</label>
+      <div class="field"><label for="trim-kind">${say.storage.kind}</label>
         <select id="trim-kind" name="trim-kind" @change=${(e: Event) => choose({ kind: (e.target as HTMLSelectElement).value as TrimRule['kind'] })}>
-          <option value="all" ?selected=${trim.kind === 'all'}>Ảnh và tệp</option>
-          <option value="image" ?selected=${trim.kind === 'image'}>Chỉ ảnh</option>
-          <option value="file" ?selected=${trim.kind === 'file'}>Chỉ tệp</option></select></div>
-      <div class="field"><label for="trim-where">Ở đâu</label>
+          <option value="all" ?selected=${trim.kind === 'all'}>${say.storage.picturesAndFiles}</option>
+          <option value="image" ?selected=${trim.kind === 'image'}>${say.storage.picturesOnly}</option>
+          <option value="file" ?selected=${trim.kind === 'file'}>${say.storage.filesOnly}</option></select></div>
+      <div class="field"><label for="trim-where">${say.storage.where}</label>
         <select id="trim-where" name="trim-where" @change=${(e: Event) => choose({ where: (e.target as HTMLSelectElement).value })}>
           ${places(s, trim.where)}</select></div>
-      <div class="field"><label for="trim-min">Chỉ khi lớn hơn (MB)</label>
-        <input id="trim-min" name="trim-min" type="number" min="0" step="0.1" inputmode="decimal" placeholder="Mọi kích thước" .value=${trim.minMb}
+      <div class="field"><label for="trim-min">${say.storage.largerThan}</label>
+        <input id="trim-min" name="trim-min" type="number" min="0" step="0.1" inputmode="decimal" placeholder=${say.storage.anySize} .value=${trim.minMb}
           @change=${(e: Event) => choose({ minMb: (e.target as HTMLInputElement).value })}></div>
-      <button class="btn secondary" type="button" data-trim-preview ?disabled=${trim.day === '' || trim.busy} @click=${() => void preview()}>Xem trước</button>
+      <button class="btn secondary" type="button" data-trim-preview ?disabled=${trim.day === '' || trim.busy} @click=${() => void preview()}>${say.storage.preview}</button>
       ${trim.preview === null ? nothing : total(trim.preview) === 0
-        ? html`<p class="hint" data-trim-none>Không có ảnh hay tệp nào khớp.</p>`
+        ? html`<p class="hint" data-trim-none>${say.storage.noFileMatches}</p>`
         : html`
-          <p data-trim-summary>Sẽ xóa vĩnh viễn ${counted(trim.preview)} trong ${trim.preview.conversations} cuộc trò chuyện.</p>
-          <p class="hint">Không thể hoàn tác, kể cả trong bản sao lưu. Tin nhắn vẫn còn, kèm dòng "không còn khả dụng"; mỗi cuộc trò chuyện có một dòng thông báo.</p>
-          <div class="field"><label for="trim-confirm">Gõ ${CONFIRM} để xác nhận</label>
+          <p data-trim-summary>${say.storage.willDeleteFiles(counted(trim.preview), trim.preview.conversations)}</p>
+          <p class="hint">${say.storage.filesNote}</p>
+          <div class="field"><label for="trim-confirm">${say.storage.typeToConfirm(CONFIRM)}</label>
             <input id="trim-confirm" name="trim-confirm" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" .value=${trim.typed}
               @input=${(e: Event) => { trim.typed = (e.target as HTMLInputElement).value; update(); }}></div>
-          <button class="btn danger" type="button" data-trim-confirm ?disabled=${trim.typed !== CONFIRM || trim.busy} @click=${() => void runTrim()}>Xóa vĩnh viễn</button>`}
+          <button class="btn danger" type="button" data-trim-confirm ?disabled=${trim.typed !== CONFIRM || trim.busy} @click=${() => void runTrim()}>${say.storage.deleteForever}</button>`}
       ${trim.done === '' ? nothing : html`<p class="hint" role="status" data-trim-done>${trim.done}</p>`}
     </div>`;
 
   const view = () => html`
-    ${appBar({ title: 'Dung lượng', back: '/settings' })}
+    ${appBar({ title: say.storage.title, back: '/settings' })}
     <div class="page">
       ${errorBox(error)}
       ${storage === null ? nothing : body(storage)}
@@ -162,7 +163,7 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
     const result = await api.trimFiles(rule(), trim.typed);
     trim.busy = false;
     if (!result.ok) { error = result; update(); return; }
-    trim = { ...trim, preview: null, typed: '', done: `Đã xóa ${counted(result.data)} trong ${result.data.conversations} cuộc trò chuyện.` };
+    trim = { ...trim, preview: null, typed: '', done: say.storage.deletedFiles(counted(result.data), result.data.conversations) };
     error = null;
     await load();
   }
@@ -180,7 +181,7 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
     const result = await api.trimMessages(mrule(), mtrim.typed);
     mtrim.busy = false;
     if (!result.ok) { error = result; update(); return; }
-    mtrim = { ...mtrim, preview: null, typed: '', done: `Đã xóa ${mcounted(result.data)}, trong ${result.data.conversations} cuộc trò chuyện.` };
+    mtrim = { ...mtrim, preview: null, typed: '', done: say.storage.deletedMessages(mcounted(result.data), result.data.conversations) };
     error = null;
     await load();
   }

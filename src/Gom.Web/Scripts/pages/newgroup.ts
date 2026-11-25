@@ -5,6 +5,7 @@ import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, avatar, errorBox } from '../ui.js';
 import { limits } from '../limits.js';
+import { say } from '../say.js';
 
 /** Make a group: a name, and some of your friends. `withFriend` (a Gom ID, from "make a group with this friend") starts ticked. */
 export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) => void, withFriend: string | null = null): void {
@@ -16,30 +17,30 @@ export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) =>
   let error: Failure | null = null;
 
   const view = () => html`
-    ${appBar({ title: 'Nhóm mới', back: '/' })}
+    ${appBar({ title: say.newGroup.title, back: '/' })}
     <div class="page">
       ${errorBox(error)}
       ${friends === null ? nothing : friends.length === 0 ? html`
-        <p class="lead">Bạn chưa có bạn bè nào để lập nhóm. Hãy kết bạn trước.</p>
-        <a class="btn" href="/friends">Thêm bạn bè</a>` : html`
+        <p class="lead">${say.newGroup.noFriends}</p>
+        <a class="btn" href="/friends">${say.common.addFriends}</a>` : html`
         <form @submit=${onSubmit}>
           <div class="field">
-            <label for="group-title">Tên nhóm</label>
+            <label for="group-title">${say.group.name}</label>
             <div class="input"><input id="group-title" name="title" type="text" maxlength=${limits().nameChars} autocomplete="off" enterkeyhint="done"
               .value=${live(title)} @input=${(e: Event) => { title = (e.target as HTMLInputElement).value; }}></div>
           </div>
           <fieldset class="picks">
-            <legend class="section">Chọn thành viên${picked.size > 0 ? html` · <span data-picked>${picked.size}</span>` : nothing}</legend>
+            <legend class="section">${say.newGroup.pickMembers}${picked.size > 0 ? html` · <span data-picked>${picked.size}</span>` : nothing}</legend>
             <div class="searchfield input">${icons.search()}
-              <input type="search" name="find" aria-label="Tìm bạn bè" placeholder="Tìm bạn bè" autocomplete="off" maxlength=${limits().nameChars}
+              <input type="search" name="find" aria-label=${say.friends.findFriends} placeholder=${say.friends.findFriends} autocomplete="off" maxlength=${limits().nameChars}
                 .value=${live(query)} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>
             ${friends.map((f, i) => !matches(`${f.displayName} ${f.gomId}`, query) ? nothing : html`
               <div class="pick"><input type="checkbox" id="pick-${i}" value=${f.gomId} .checked=${live(picked.has(f.gomId))}
                 @change=${(e: Event) => { toggle(f.gomId, (e.target as HTMLInputElement).checked); update(); }}>
                 <label for="pick-${i}">${avatar(f.displayName, true, false, f.avatar)}<span><b>${f.displayName}</b> <small>@${f.gomId}</small></span></label></div>`)}
-            ${friends.every((f) => !matches(`${f.displayName} ${f.gomId}`, query)) ? html`<p class="hint" data-no-match>Không tìm thấy ai khớp với từ khóa.</p>` : nothing}
+            ${friends.every((f) => !matches(`${f.displayName} ${f.gomId}`, query)) ? html`<p class="hint" data-no-match>${say.friends.noMatch}</p>` : nothing}
           </fieldset>
-          <button class="btn" type="submit" ?disabled=${busy}>Tạo nhóm</button>
+          <button class="btn" type="submit" ?disabled=${busy}>${say.newGroup.create}</button>
         </form>`}
     </div>`;
   const update = () => render(view(), root);

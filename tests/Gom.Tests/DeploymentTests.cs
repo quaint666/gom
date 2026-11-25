@@ -139,6 +139,17 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Empty(missing);
     }
 
+    /// <summary>The same for the C# files beside Program.cs, which that stage names one by one (Pages.cs once broke the image this way).</summary>
+    [Fact]
+    public void Every_csharp_file_beside_Program_is_copied_into_the_migration_bundle_stage_of_the_image()
+    {
+        var root = RepoRoot();
+        var line = File.ReadAllLines(Path.Combine(root, "Dockerfile")).Single(l => l.StartsWith("COPY src/Gom.Web/Program.cs ", StringComparison.Ordinal));
+        var files = Directory.EnumerateFiles(Path.Combine(root, "src", "Gom.Web"), "*.cs").Select(Path.GetFileName).ToList();
+        Assert.Contains("Program.cs", files);
+        Assert.Empty(files.Where(f => !line.Contains($"src/Gom.Web/{f} ", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public async Task A_method_an_address_does_not_take_is_a_405()
     {

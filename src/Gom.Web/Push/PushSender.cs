@@ -75,7 +75,7 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         foreach (var d in devices)
         {
             var payload = d.Level == PushLevel.Nothing
-                ? new { c = job.ConversationId, title = "Gom", body = "Tin nhắn mới" }
+                ? new { c = job.ConversationId, title = "Gom", body = ServerText.Vi.NewMessage }
                 : new { c = job.ConversationId, title, body };
             try
             {
@@ -106,13 +106,13 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
     /// </summary>
     public static (string Title, string Body) Words(PushJob job, ConversationKind kind, string? groupTitle)
     {
-        var what = job.Sticker ? "Đã gửi 1 nhãn dán" : (job.Images, job.Files) switch
+        var what = job.Sticker ? ServerText.Vi.SentSticker : (job.Images, job.Files) switch
         {
-            ( > 0, > 0) => $"Đã gửi {job.Images} ảnh và {job.Files} file",
-            ( > 0, _) => $"Đã gửi {job.Images} ảnh",
-            (_, > 0) => $"Đã gửi {job.Files} file",
-            _ => "Tin nhắn mới",
+            ( > 0, > 0) => ServerText.Vi.SentPicturesAndFiles(job.Images, job.Files),
+            ( > 0, _) => ServerText.Vi.SentPictures(job.Images),
+            (_, > 0) => ServerText.Vi.SentFiles(job.Files),
+            _ => ServerText.Vi.NewMessage,
         };
-        return kind == ConversationKind.Group ? (groupTitle ?? "Nhóm", $"{job.SenderName}: {what}") : (job.SenderName, what);
+        return kind == ConversationKind.Group ? (groupTitle ?? ServerText.Vi.Group, $"{job.SenderName}: {what}") : (job.SenderName, what);
     }
 }

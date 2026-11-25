@@ -1,6 +1,7 @@
 import { html, render } from 'lit-html';
 import type { Api, Failure } from '../api.js';
 import { brand, errorBox, idField, passwordField } from '../ui.js';
+import { say } from '../say.js';
 
 /** Where to go after signing in: a path on this site, never another address. */
 export function safeNext(next: string | null): string {
@@ -17,15 +18,15 @@ export function mountSignIn(root: HTMLElement, api: Api, go: (path: string) => v
   const view = () => html`
     <div class="page">
       ${brand()}
-      <h1 class="center">Đăng nhập</h1>
+      <h1 class="center">${say.account.signIn}</h1>
       <form @submit=${onSubmit}>
         ${errorBox(error)}
         ${idField({ value: gomId, enterkeyhint: 'next', onInput: (v) => { gomId = v; } })}
-        ${passwordField({ label: 'Mật khẩu', autocomplete: 'current-password', value: password, shown,
+        ${passwordField({ label: say.account.password, autocomplete: 'current-password', value: password, shown,
           onInput: (v) => { password = v; }, onToggle: () => { shown = !shown; update(); } })}
-        <button class="btn" type="submit" ?disabled=${busy}>Đăng nhập</button>
+        <button class="btn" type="submit" ?disabled=${busy}>${say.account.signIn}</button>
       </form>
-      <p class="foot">Chưa có tài khoản? Gom chỉ dành cho người được mời.</p>
+      <p class="foot">${say.account.invitedOnly}</p>
     </div>`;
   const update = () => render(view(), root);
 
