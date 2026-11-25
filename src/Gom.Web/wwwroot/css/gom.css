@@ -146,6 +146,23 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .item.unread .pv { color: var(--text); font-weight: 600; }
 .item.unread .tm { color: var(--link); font-weight: 600; }
 .badge { min-inline-size: 22px; block-size: 22px; border-radius: 11px; background: var(--badge); color: #fff; font-size: 12px; font-weight: 600; display: grid; place-items: center; padding-inline: 7px; flex: none; }
+/* Marked unread by hand: a dot, no number. */
+.badge.dot { min-inline-size: 12px; block-size: 12px; padding: 0; }
+
+/* The "..." button of a row. A mouse sees it over the row (in the time's place); a finger always has it, at the end of the row. */
+.row { position: relative; }
+.row-more { position: absolute; inset-inline-end: 6px; inset-block-start: 4px; inline-size: 36px; block-size: 36px; }
+.pin-mark { display: grid; place-items: center; color: var(--muted); flex: none; }
+.pin-mark svg { inline-size: 14px; block-size: 14px; }
+@media (hover: hover) and (pointer: fine) {
+  .row-more { opacity: 0; background: var(--surface); }
+  .row:hover .row-more, .row-more:focus-visible, .row-more[aria-expanded="true"] { opacity: 1; }
+  .row:hover .tm, .row:has(.row-more:focus-visible) .tm, .row:has(.row-more[aria-expanded="true"]) .tm { visibility: hidden; }
+}
+@media not ((hover: hover) and (pointer: fine)) {
+  .row .item { padding-inline-end: 50px; }
+  .row-more { inset-block-start: 50%; translate: 0 -50%; inline-size: 44px; block-size: 44px; }
+}
 
 .thread-pane { background: var(--bg); }
 .thread-pane.none { place-content: center; }
@@ -363,6 +380,7 @@ button.th-title:hover b { text-decoration: underline; }
 .items-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .mi { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; min-block-size: 64px; padding: 8px 2px; border: 0; border-radius: 10px; background: none; color: var(--text); font: inherit; font-size: 12px; text-align: center; cursor: pointer; }
 .mi:hover { background: var(--hover); }
+a.mi { text-decoration: none; }
 .mi .i { color: var(--link); }
 .mi.danger, .mi.danger .i { color: var(--err-text); }
 @media (hover: hover) and (pointer: fine) and (min-width: 600px) {
@@ -472,7 +490,7 @@ button.th-title:hover b { text-decoration: underline; }
   .rail-i.gear { margin-block-start: auto; }
   .list-pane > .bar { display: none; }
   .gearmenu { display: flex; flex-direction: column; position: fixed; z-index: 21; inset-inline-start: 72px; inset-block-end: 12px; inline-size: 240px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgb(0 0 0 / .4); }
-  .gearmenu .mi { flex-direction: row; justify-content: flex-start; gap: 12px; min-block-size: 40px; padding: 6px 10px; font-size: 14px; text-align: start; text-decoration: none; inline-size: 100%; }
+  .gearmenu .mi { flex-direction: row; justify-content: flex-start; gap: 12px; min-block-size: 40px; padding: 6px 10px; font-size: 14px; text-align: start; inline-size: 100%; }
   .gearmenu .mi .i { inline-size: 18px; block-size: 18px; }
   .scrim[data-gear-scrim] { background: transparent; }
 }

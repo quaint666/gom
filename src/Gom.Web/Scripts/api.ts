@@ -91,6 +91,8 @@ export interface Conversation {
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
   /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
   muted?: boolean; mutedUntil?: string | null;
+  /** Your own handling of it in your list: pinned to the top, and marked unread to come back to (your read position does not move). */
+  pinned?: boolean; markedUnread?: boolean;
 }
 /**
  * Someone's card, as you may see it: their Gom ID only if you are friends, where a friend request between you stands, and the groups
@@ -193,6 +195,13 @@ export interface Api {
   leaveGroup(conversation: string): Promise<Result<void>>;
   /** Without `until`, muting lasts until it is turned back on. */
   setMute(conversation: string, muted: boolean, until?: string): Promise<Result<void>>;
+  /** The "..." menu of a conversation in the list: each is yours alone. */
+  setPinned(conversation: string, on: boolean): Promise<Result<void>>;
+  setMarkedUnread(conversation: string, on: boolean): Promise<Result<void>>;
+  /** Out of your list until something new is said in it. */
+  setHidden(conversation: string, on: boolean): Promise<Result<void>>;
+  /** Deletes the conversation for you: what was said so far is gone for you alone. */
+  clearConversation(conversation: string): Promise<Result<void>>;
   renameGroup(conversation: string, title: string): Promise<Result<void>>;
   removeMember(conversation: string, userId: string, ban?: boolean): Promise<Result<void>>;
   setJoinApproval(conversation: string, on: boolean): Promise<Result<void>>;
@@ -301,6 +310,10 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     person: (userId) => call('GET', `/api/people/${enc(userId)}`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
     setMute: (conversation, muted, until) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, until === undefined ? { muted } : { muted, until }),
+    setPinned: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/pinned`, { on }),
+    setMarkedUnread: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/unread`, { on }),
+    setHidden: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/hidden`, { on }),
+    clearConversation: (conversation) => call('POST', `/api/conversations/${enc(conversation)}/clear`),
     renameGroup: (conversation, title) => call('PATCH', `/api/conversations/${enc(conversation)}`, { title }),
     leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
     removeMember: (conversation, userId, ban) => call('DELETE', `/api/conversations/${enc(conversation)}/members/${enc(userId)}${ban ? '?ban=true' : ''}`),

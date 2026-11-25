@@ -3,7 +3,7 @@ import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
 import type { Pusher } from '../push.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, User } from '../api.js';
+import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, Result, User } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
@@ -117,6 +117,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let scrollAnchor: number | null = null;
   /** `at` is where it was asked for (the pointer or the button), so a mouse gets it there; a finger always gets the sheet at the bottom. */
   let menu: { id: string; confirming: boolean; hide?: boolean; at?: { x: number; y: number } } | null = null;
+  /** The "..." menu of one conversation in the list; `confirming` while it asks before deleting the conversation for you. */
+  let rowMenu: { id: string; confirming: boolean; at?: { x: number; y: number } } | null = null;
   /** The search bar of the open conversation: what was asked, and what came back (null while waiting for the first answer). */
   /** Messages that just arrived from someone else in the open chat: they rise in once, and are forgotten a moment later. */
   const fresh = new Set<string>();
@@ -198,15 +200,19 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   const row = (c: Conversation) => html`
-    <li><a class="item ${c.unread > 0 ? 'unread' : ''} ${c.id === openId ? 'active' : ''}" href="/c/${c.id}" data-chat=${c.id}
-      aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}>
+    <li class="row"><a class="item ${c.unread > 0 || c.markedUnread ? 'unread' : ''} ${c.id === openId ? 'active' : ''}" href="/c/${c.id}" data-chat=${c.id}
+      aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}
+      @contextmenu=${(e: MouseEvent) => { e.preventDefault(); openRowMenu(c.id, { x: e.clientX, y: e.clientY }); }}>
       ${avatar(c.title ?? '?', c.peer?.avatar)}
       <div class="im">
-        <div class="l1"><span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
+        <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label="Đã ghim">${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv">${preview(c)}</span>
           ${isMuted(c) ? html`<span class="mute-mark" role="img" aria-label="Đã tắt thông báo">${icons.bellOff()}</span>` : nothing}
-          ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>` : nothing}</div>
-      </div></a></li>`;
+          ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>`
+            : c.markedUnread ? html`<span class="badge dot ${isMuted(c) ? 'muted' : ''}" data-marked-unread role="img" aria-label="Đánh dấu chưa đọc"></span>` : nothing}</div>
+      </div></a>
+      <button class="ib row-more" type="button" data-row-menu=${c.id} aria-label=${`Tùy chọn cho ${c.title ?? 'cuộc trò chuyện'}`} aria-haspopup="menu"
+        aria-expanded=${rowMenu?.id === c.id ? 'true' : 'false'} @click=${(e: MouseEvent) => openRowMenu(c.id, rowMenuPoint(e))}>${icons.more()}</button></li>`;
 
   /** The conversations whose name matches what is typed above the list (all of them when nothing is typed). */
   const visibleChats = (): Conversation[] => (chats ?? []).filter((c) => matches(c.title ?? '', filter));
@@ -812,7 +818,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${cardView()}
-        ${muteView()}
         ${c?.peer?.deleted ? html`
           <p class="closed-note" role="status" data-peer-deleted>Tài khoản này đã bị xóa. Bạn vẫn đọc được tin nhắn cũ nhưng không gửi thêm được.</p>` : html`
           ${t.editing === null ? nothing : html`
@@ -930,6 +935,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </section>
       ${threadPane()}
       ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
+      ${rowMenuView()}
+      ${muteView()}
     </div>`;
 
   /** Once per device: turn notifications on from here (the browser asks in the tap itself), or not now. */
@@ -1139,11 +1146,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const t = threads.get(id);
     if (c === undefined || t === undefined || !t.loaded || !deps.visible()) return;
     const newest = newestSeq(t);
-    if (newest <= c.lastReadSeq && c.unread === 0) return;
+    // A conversation marked unread is read by opening it, even with nothing new in it.
+    if (newest <= c.lastReadSeq && c.unread === 0 && !c.markedUnread) return;
     c.lastReadSeq = Math.max(c.lastReadSeq, newest);
     c.unread = 0;
+    c.markedUnread = false;
     update();
-    if (newest > 0) void api.markRead(id, newest);
+    void api.markRead(id, newest);
   }
 
   /** Takes a created event into the thread and the list. Safe to apply twice: the second time changes nothing. */
@@ -1279,6 +1288,87 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     handleFailure(result);
   }
 
+  // ---- the "..." menu of a conversation in the list: pin, mark unread, mute, make a group, hide, delete for me (all yours alone)
+
+  /** Under the button, its right edge on the button's; from the keyboard too. */
+  function rowMenuPoint(e: MouseEvent): { x: number; y: number } {
+    const r = (e.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    return r === undefined ? { x: e.clientX, y: e.clientY } : { x: r.right - 236, y: r.bottom };
+  }
+
+  function openRowMenu(id: string, at: { x: number; y: number }): void {
+    menu = null;
+    rowMenu = { id, confirming: false, at: deps.coarsePointer() ? undefined : at };
+    update();
+    root.querySelector<HTMLElement>('[data-conversation-menu] [role="menuitem"]')?.focus();
+  }
+
+  function closeRowMenu(): void {
+    const id = rowMenu?.id;
+    rowMenu = null;
+    update();
+    if (id !== undefined) root.querySelector<HTMLElement>(`[data-row-menu="${id}"]`)?.focus();
+  }
+
+  const rowMenuView = () => {
+    const c = rowMenu === null ? undefined : chatOf(rowMenu.id);
+    if (c === undefined) return nothing;
+    const unread = c.unread > 0 || c.markedUnread === true;
+    const friend = c.kind === 'direct' && c.peer !== null && !c.peer.deleted && c.peer.gomId ? c.peer.gomId : null;
+    return html`
+      <div class="scrim" data-scrim @click=${closeRowMenu}></div>
+      <div class="menu" role="menu" aria-label=${`Tùy chọn cho ${c.title ?? 'cuộc trò chuyện'}`} data-conversation-menu
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') closeRowMenu(); }}>
+      ${rowMenu!.confirming ? html`
+        <p>Xóa toàn bộ tin nhắn của cuộc trò chuyện này ở phía bạn? Người khác vẫn thấy chúng.</p>
+        <div class="ask"><button class="btn small" type="button" data-confirm-clear @click=${() => void clearConversation(c)}>Xóa với tôi</button>
+        <button class="btn secondary small" type="button" data-cancel-clear @click=${closeRowMenu}>Hủy</button></div>` : html`
+        <div class="items-grid">
+        ${c.pinned ? menuItem('unpin-chat', icons.pin(), 'Bỏ ghim hội thoại', () => void setPinned(c, false)) : menuItem('pin-chat', icons.pin(), 'Ghim hội thoại', () => void setPinned(c, true))}
+        ${unread ? menuItem('mark-read', icons.checks(), 'Đánh dấu đã đọc', () => void markAllRead(c)) : menuItem('mark-unread', icons.unread(), 'Đánh dấu chưa đọc', () => void setMarkedUnread(c))}
+        ${isMuted(c) ? menuItem('unmute-chat', icons.bell(), 'Bật thông báo', () => { rowMenu = null; onBell(c); })
+          : menuItem('mute-chat', icons.bellOff(), 'Tắt thông báo', () => { rowMenu = null; onBell(c); })}
+        ${friend === null ? nothing : html`<a class="mi" role="menuitem" href=${`/groups/new?with=${encodeURIComponent(friend)}`} data-group-with>${icons.users()}<span>Tạo nhóm với ${c.title}</span></a>`}
+        ${menuItem('hide-chat', icons.eyeOff(), 'Ẩn trò chuyện', () => void hideConversation(c))}
+        ${menuItem('clear-chat', icons.trash(), 'Xóa hội thoại', () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}
+        </div>
+        <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${closeRowMenu}>Đóng</button>`}
+      </div>`;
+  };
+
+  /** Each action: the server first, then the list as it now is (the other devices are told by the server). */
+  async function rowAction(result: Promise<Result<void>>, after?: () => void): Promise<void> {
+    rowMenu = null;
+    update();
+    const done = await result;
+    if (!done.ok) {
+      if (done.error === 'pin_limit') { notice = 'Bạn đã ghim tối đa số cuộc trò chuyện. Hãy bỏ ghim một cuộc trước.'; update(); }
+      else handleFailure(done);
+      return;
+    }
+    after?.();
+    await refreshList();
+  }
+
+  const setPinned = (c: Conversation, on: boolean) => rowAction(api.setPinned(c.id, on));
+  const setMarkedUnread = (c: Conversation) => rowAction(api.setMarkedUnread(c.id, true));
+
+  /** "Mark as read": the read position moves to the end, which also clears a mark. */
+  const markAllRead = (c: Conversation) => rowAction(api.markRead(c.id, Math.max(c.lastSeq, c.lastReadSeq)));
+
+  /** Leaves the list (and closes it, if it is open) until something new is said. */
+  const hideConversation = (c: Conversation) => rowAction(api.setHidden(c.id, true), () => forget(c.id, false));
+
+  const clearConversation = (c: Conversation) => rowAction(api.clearConversation(c.id), () => forget(c.id, true));
+
+  /** Takes a conversation out of the list; with `thread`, what this page holds of its messages goes too. */
+  function forget(id: string, thread: boolean): void {
+    chats = (chats ?? []).filter((x) => x.id !== id);
+    if (thread) { const t = threads.get(id); if (t !== undefined) { t.messages = []; t.pins = []; t.hasMore = false; t.loaded = false; } mediaLists.delete(id); }
+    if (openId === id) { deps.nav.push('/'); openId = null; }
+    update();
+  }
+
   // ---- opening the menu without the button
 
   /**
@@ -1286,8 +1376,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    * refuses a style attribute (also the one a template would write on the first draw), but allows this.
    */
   function placeMenu(): void {
-    const at = menu?.at;
-    const pop = root.querySelector<HTMLElement>('.menu');
+    const at = rowMenu !== null ? rowMenu.at : menu?.at;
+    const pop = root.querySelector<HTMLElement>(rowMenu !== null ? '.menu[data-conversation-menu]' : '.menu');
     if (at === undefined || pop === null) return;
     pop.style.setProperty('--x', `${Math.round(at.x)}px`);
     pop.style.setProperty('--y', `${Math.round(at.y)}px`);
@@ -1853,6 +1943,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (openId !== null) void fetchReads(openId);   // a switch may have been flipped by someone
     },
     hidden: (conversation, messageId) => drop(conversation, messageId),
+    // Deleted for you on another device: what this page holds goes, and an open thread asks again (it is empty now, for you).
+    cleared: (conversation) => afterTrim(conversation),
     pins: (conversation) => { if (threads.get(conversation)?.loaded) void refreshPins(conversation); },
     read(conversation, userId, seq) {
       const t = threads.get(conversation);

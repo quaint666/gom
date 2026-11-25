@@ -4384,3 +4384,188 @@ describe('chat: someone who deleted their account', () => {
     expect(root.querySelector('[data-peer-deleted]')).toBeNull();
   });
 });
+
+describe('the menu of a conversation in the list', () => {
+  const C3 = '33333333-3333-4333-8333-333333333333';
+  const openMenu = async (id: string) => { root.querySelector<HTMLButtonElement>(`[data-row-menu="${id}"]`)!.click(); await flush(); };
+  const menuEl = () => root.querySelector<HTMLElement>('[data-conversation-menu]');
+  const item = (attr: string) => menuEl()!.querySelector<HTMLElement>(`[data-${attr}]`);
+
+  it('every row has a button that opens a menu named after the conversation, focused on its first item, and Escape closes it back to the button', async () => {
+    start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan')] });
+    await flush();
+    expect(root.querySelectorAll('[data-row-menu]')).toHaveLength(2);
+    await openMenu(C2);
+    expect(menuEl()!.getAttribute('aria-label')).toBe('Tùy chọn cho Lan');
+    expect(root.querySelector(`[data-row-menu="${C2}"]`)!.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(menuEl()!.querySelector('[role="menuitem"]'));
+    menuEl()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(menuEl()).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector(`[data-row-menu="${C2}"]`));
+  });
+
+  it('right-click on a row opens the same menu instead of the browser\'s', async () => {
+    start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 50, clientY: 60 });
+    rows()[0]!.dispatchEvent(e);
+    await flush();
+    expect(e.defaultPrevented).toBe(true);
+    expect(menuEl()).not.toBeNull();
+  });
+
+  it('pins and unpins, then shows the list as the server now has it, with a pin mark', async () => {
+    const h = start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan')] });
+    await flush();
+    h.api.conversations.mockImplementation(async () => ok([chat(C2, 'Lan', { pinned: true }), chat(C1, 'Minh')]));
+    await openMenu(C2);
+    item('pin-chat')!.click();
+    await flush();
+    expect(h.api.setPinned).toHaveBeenCalledWith(C2, true);
+    expect(menuEl()).toBeNull();
+    expect(rows()[0]!.getAttribute('data-chat')).toBe(C2);
+    expect(rows()[0]!.querySelector('.pin-mark')!.getAttribute('aria-label')).toBe('Đã ghim');
+    await openMenu(C2);
+    item('unpin-chat')!.click();
+    await flush();
+    expect(h.api.setPinned).toHaveBeenLastCalledWith(C2, false);
+  });
+
+  it('says so in words when no more can be pinned', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')], api: { setPinned: vi.fn(async () => fail('pin_limit', 409)) } });
+    await flush();
+    await openMenu(C1);
+    item('pin-chat')!.click();
+    await flush();
+    expect(h.api.setPinned).toHaveBeenCalled();
+    expect(text(root)).toContain('Bạn đã ghim tối đa số cuộc trò chuyện.');
+  });
+
+  it('marks a read conversation unread with a dot and no number, and opening it reads it even with nothing new', async () => {
+    const m = msg(3, 'minh');
+    const h = start({ chats: [withLast(m, { lastReadSeq: 3 })], history: { [C1]: [m] } });
+    await flush();
+    await openMenu(C1);
+    expect(item('mark-read')).toBeNull();
+    h.api.conversations.mockImplementation(async () => ok([withLast(m, { lastReadSeq: 3, markedUnread: true })]));
+    item('mark-unread')!.click();
+    await flush();
+    expect(h.api.setMarkedUnread).toHaveBeenCalledWith(C1, true);
+    const dot = rows()[0]!.querySelector('[data-marked-unread]')!;
+    expect(dot.getAttribute('aria-label')).toBe('Đánh dấu chưa đọc');
+    expect(dot.textContent).toBe('');
+    expect(rows()[0]!.classList.contains('unread')).toBe(true);
+
+    rows()[0]!.click();
+    await flush(); await flush();
+    expect(h.api.markRead).toHaveBeenCalledWith(C1, 3);
+    expect(rows()[0]!.querySelector('[data-marked-unread]')).toBeNull();
+  });
+
+  it('reads a conversation marked unread when it is opened, even one with nothing in it yet', async () => {
+    const h = start({ chats: [chat(C1, 'Minh', { markedUnread: true })], history: { [C1]: [] } });
+    await flush();
+    rows()[0]!.click();
+    await flush(); await flush();
+    expect(h.api.markRead).toHaveBeenCalledWith(C1, 0);
+  });
+
+  it('offers "mark as read" for a conversation with unread messages or a mark, which reads up to its end', async () => {
+    const h = start({ chats: [chat(C1, 'Minh', { lastSeq: 7, lastReadSeq: 2, unread: 5 }), chat(C2, 'Lan', { lastSeq: 4, lastReadSeq: 4, markedUnread: true })] });
+    await flush();
+    await openMenu(C1);
+    expect(item('mark-unread')).toBeNull();
+    item('mark-read')!.click();
+    await flush();
+    expect(h.api.markRead).toHaveBeenCalledWith(C1, 7);
+    await openMenu(C2);
+    item('mark-read')!.click();
+    await flush();
+    expect(h.api.markRead).toHaveBeenLastCalledWith(C2, 4);
+  });
+
+  it('mutes through the same choices as the bell, and unmutes at once', async () => {
+    const h = start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { muted: true })] });
+    await flush();
+    await openMenu(C1);
+    item('mute-chat')!.click();
+    await flush();
+    expect(menuEl()).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-mute-panel] [data-mute-for="always"]')!.click();
+    await flush();
+    expect(h.api.setMute).toHaveBeenCalledWith(C1, true, undefined);
+    await openMenu(C2);
+    item('unmute-chat')!.click();
+    await flush();
+    expect(h.api.setMute).toHaveBeenLastCalledWith(C2, false, undefined);
+  });
+
+  it('offers a group with a friend from a one-to-one chat only, with that friend ticked on the new-group page', async () => {
+    const group: Conversation = { ...chat(C2, 'Nhà'), kind: 'group', peer: null };
+    const gone = chat(C3, 'Cũ', { peer: { id: 'u-old', gomId: 'old', displayName: 'Cũ', deleted: true } });
+    start({ chats: [chat(C1, 'Minh'), group, gone] });
+    await flush();
+    await openMenu(C1);
+    expect(item('group-with')!.getAttribute('href')).toBe('/groups/new?with=minh');
+    expect(item('group-with')!.textContent).toContain('Tạo nhóm với Minh');
+    await openMenu(C2);
+    expect(item('group-with')).toBeNull();
+    await openMenu(C3);
+    expect(item('group-with')).toBeNull();
+  });
+
+  it('hides a conversation: it leaves the list, and an open one closes', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh'), chat(C2, 'Lan')], history: { [C1]: [msg(1, 'minh')] } });
+    await flush();
+    await openMenu(C1);
+    item('hide-chat')!.click();
+    await flush();
+    expect(h.api.setHidden).toHaveBeenCalledWith(C1, true);
+    expect(h.nav.push).toHaveBeenCalledWith('/');
+    expect(root.querySelector('form.composer')).toBeNull();
+  });
+
+  it('asks before deleting a conversation for you, and a no changes nothing', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    await openMenu(C1);
+    item('clear-chat')!.click();
+    await flush();
+    expect(text(menuEl()!)).toContain('Xóa toàn bộ tin nhắn của cuộc trò chuyện này ở phía bạn? Người khác vẫn thấy chúng.');
+    expect(document.activeElement).toBe(menuEl()!.querySelector('[data-confirm-clear]'));
+    menuEl()!.querySelector<HTMLButtonElement>('[data-cancel-clear]')!.click();
+    await flush();
+    expect(h.api.clearConversation).not.toHaveBeenCalled();
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('deletes the conversation for you: its messages are gone from this page, and opening it again asks the server', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh', 'bí mật')] } });
+    await flush();
+    expect(text(root)).toContain('bí mật');
+    await openMenu(C1);
+    item('clear-chat')!.click();
+    await flush();
+    menuEl()!.querySelector<HTMLButtonElement>('[data-confirm-clear]')!.click();
+    await flush();
+    expect(h.api.clearConversation).toHaveBeenCalledWith(C1);
+    expect(h.nav.push).toHaveBeenCalledWith('/');
+    expect(text(root)).not.toContain('bí mật');
+    const asked = h.api.history.mock.calls.length;
+    h.handlers().conversations();
+    await flush();
+    h.nav.path = `/c/${C1}`; h.nav.pop();
+    await flush();
+    expect(h.api.history.mock.calls.length).toBe(asked + 1);
+  });
+
+  it('a "cleared" frame from another device drops what this page holds and asks again for an open thread', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh', 'bí mật')] } });
+    await flush();
+    h.api.history.mockImplementation(async () => ok({ messages: [], hasMore: false, lastSeq: 1 }));
+    h.handlers().cleared(C1, 1);
+    await flush();
+    expect(text(root)).not.toContain('bí mật');
+  });
+});

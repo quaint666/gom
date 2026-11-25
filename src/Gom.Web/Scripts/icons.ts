@@ -4,6 +4,9 @@ const icon = (...paths: string[]): TemplateResult =>
   html`<svg class="i" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths.map((d) => svg`<path d=${d}></path>`)}</svg>`;
 
 export const logo = () => icon('M4 5h16v11H11l-4 4v-4H4z', 'M8 10h8');
+export const eyeOff = () => icon('M2 12s3.6-6.5 10-6.5c1.6 0 3 .4 4.2 1M22 12s-3.6 6.5-10 6.5c-1.6 0-3-.4-4.2-1', 'M9.9 9.9a3 3 0 004.2 4.2', 'M3 3l18 18');
+/** A filled-looking dot in a ring: "unread". */
+export const unread = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z');
 export const eye = () => icon('M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z', 'M12 9a3 3 0 100 6 3 3 0 000-6z');
 export const alert = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 7.5v5.5M12 16.5h.01');
 export const clock = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 7v5l3 2');

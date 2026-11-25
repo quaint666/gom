@@ -5,8 +5,8 @@ import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, avatar, errorBox } from '../ui.js';
 
-/** Make a group: a name, and some of your friends. */
-export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) => void): void {
+/** Make a group: a name, and some of your friends. `withFriend` (a Gom ID, from "make a group with this friend") starts ticked. */
+export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) => void, withFriend: string | null = null): void {
   let friends: Person[] | null = null;
   const picked = new Set<string>();
   let title = '';
@@ -62,7 +62,10 @@ export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) =>
   void api.me().then(async (me) => {
     if (!me.ok) { if (me.error === 'unauthorized') go('/sign-in'); else { error = me; update(); } return; }
     const result = await api.friends();
-    if (result.ok) friends = result.data.friends; else error = result;
+    if (result.ok) {
+      friends = result.data.friends;
+      if (withFriend !== null && friends.some((f) => f.gomId === withFriend)) picked.add(withFriend);
+    } else error = result;
     update();
   });
 }
