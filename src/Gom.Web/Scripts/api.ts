@@ -88,6 +88,8 @@ export interface Conversation {
   muted?: boolean; mutedUntil?: string | null;
   /** Your own handling of it in your list: pinned to the top, and marked unread to come back to (your read position does not move). */
   pinned?: boolean; markedUnread?: boolean;
+  /** Hidden by you until something new is said: listed so a search can find it, and left out of view. */
+  hidden?: boolean;
 }
 /**
  * Someone's card, as you may see it: their Gom ID only if you are friends, where a friend request between you stands, and the groups

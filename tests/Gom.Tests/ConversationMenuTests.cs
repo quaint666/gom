@@ -53,6 +53,9 @@ public class ConversationMenuTests(AppFixture app) : IClassFixture<AppFixture>
     private async Task<JsonElement?> Listed(string cookie, Guid chat) =>
         (await List(cookie)).Cast<JsonElement?>().SingleOrDefault(c => c!.Value.GetProperty("id").GetGuid() == chat);
 
+    /// <summary>Whether it is out of view in this person's list. It is always listed: a search finds hidden ones.</summary>
+    private async Task<bool> Hidden(string cookie, Guid chat) => (await Listed(cookie, chat))!.Value.GetProperty("hidden").GetBoolean();
+
     private async Task<string[]> Bodies(string cookie, Guid chat)
     {
         using var r = await app.Call(Get, $"/api/conversations/{chat}/messages", cookie: cookie);
@@ -146,20 +149,20 @@ public class ConversationMenuTests(AppFixture app) : IClassFixture<AppFixture>
     // ---- hide until something new
 
     [Fact]
-    public async Task A_hidden_conversation_leaves_your_list_until_someone_says_something_and_a_notice_does_not_bring_it_back()
+    public async Task A_hidden_conversation_is_out_of_view_until_someone_says_something_and_a_notice_does_not_bring_it_back()
     {
         var t = await NewTeam();
         await Say(t.Chat, t.CB, "một");
         Assert.Equal(HttpStatusCode.NoContent, await Switch(t.CA, t.Chat, "hidden", new { on = true }));
-        Assert.Null(await Listed(t.CA, t.Chat));
-        Assert.NotNull(await Listed(t.CB, t.Chat));
+        Assert.True(await Hidden(t.CA, t.Chat));
+        Assert.False(await Hidden(t.CB, t.Chat));
         Assert.Equal(["một"], await Bodies(t.CA, t.Chat));   // only the list: the thread is all there
 
         using (await app.Call(Put, $"/api/conversations/{t.Chat}", new { title = "Nhà mới" }, t.CA)) { }   // a rename notice
-        Assert.Null(await Listed(t.CA, t.Chat));
+        Assert.True(await Hidden(t.CA, t.Chat));
 
         await Say(t.Chat, t.CC, "hai");
-        Assert.NotNull(await Listed(t.CA, t.Chat));
+        Assert.False(await Hidden(t.CA, t.Chat));
     }
 
     [Fact]
@@ -168,7 +171,7 @@ public class ConversationMenuTests(AppFixture app) : IClassFixture<AppFixture>
         var t = await NewTeam();
         await Switch(t.CA, t.Chat, "hidden", new { on = true });
         Assert.Equal(HttpStatusCode.NoContent, await Switch(t.CA, t.Chat, "hidden", new { on = false }));
-        Assert.NotNull(await Listed(t.CA, t.Chat));
+        Assert.False(await Hidden(t.CA, t.Chat));
     }
 
     // ---- delete for me
@@ -184,7 +187,7 @@ public class ConversationMenuTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(HttpStatusCode.NoContent, await Clear(t.CA, t.Chat));
         Assert.Empty(await Bodies(t.CA, t.Chat));
         Assert.Equal(["cũ"], await Bodies(t.CB, t.Chat));
-        Assert.Null(await Listed(t.CA, t.Chat));
+        Assert.True(await Hidden(t.CA, t.Chat));
         // Shown again by hand, it has no last message: the old one is not theirs any more.
         await Switch(t.CA, t.Chat, "hidden", new { on = false });
         Assert.Equal(JsonValueKind.Null, (await Listed(t.CA, t.Chat))!.Value.GetProperty("lastMessage").ValueKind);
@@ -192,6 +195,7 @@ public class ConversationMenuTests(AppFixture app) : IClassFixture<AppFixture>
         // Still a member: what is said next is theirs, unread, and a quote of the old message shows nothing.
         await Say(t.Chat, t.CB, "mới", replyTo: old);
         var mine = (await Listed(t.CA, t.Chat))!.Value;
+        Assert.False(mine.GetProperty("hidden").GetBoolean());
         Assert.Equal(1, mine.GetProperty("unread").GetInt32());
         Assert.False(mine.GetProperty("pinned").GetBoolean());
         Assert.False(mine.GetProperty("markedUnread").GetBoolean());

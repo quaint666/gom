@@ -217,8 +217,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <button class="ib row-more" type="button" data-row-menu=${c.id} aria-label=${`Tùy chọn cho ${c.title ?? 'cuộc trò chuyện'}`} aria-haspopup="menu"
         aria-expanded=${rowMenu?.id === c.id ? 'true' : 'false'} @click=${(e: MouseEvent) => openRowMenu(c.id, rowMenuPoint(e))}>${icons.more()}</button></li>`;
 
+  /** The conversations in view: hidden ones are listed by the server (for a search) and left out here. */
+  const shownChats = (): Conversation[] => (chats ?? []).filter((c) => c.hidden !== true);
   /** The conversations whose name matches what is typed above the list (all of them when nothing is typed). */
-  const visibleChats = (): Conversation[] => (chats ?? []).filter((c) => matches(c.title ?? '', filter));
+  const visibleChats = (): Conversation[] => shownChats().filter((c) => matches(c.title ?? '', filter));
 
   const banner = () => offline ? html`<div class="warn" role="status">${icons.wifiOff()}<span>Mất kết nối. Đang kết nối lại…</span></div>` : nothing;
 
@@ -570,7 +572,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    * and a note that is sent after it. It goes as a new message from you, with nothing saying who wrote it first.
    */
   const forwardPanel = (f: NonNullable<typeof forwarding>) => {
-    const shown = (chats ?? []).filter((c) => matches(c.title ?? '', f.q));
+    const shown = shownChats().filter((c) => matches(c.title ?? '', f.q));
     const full = f.picked.length >= FORWARD_MAX;
     const pictures = f.attachments.filter((a) => a.kind === 'image').length;
     const files = f.attachments.length - pictures;
@@ -948,7 +950,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${pushBanner()}
         ${errorBox(error)}
         ${notice === '' ? nothing : html`<p class="note" role="status">${notice}</p>`}
-        ${me === null || chats === null ? nothing : chats.length === 0 ? empty() : visibleChats().length === 0 ? html`<p class="hint nomatch" data-no-match>Không tìm thấy cuộc trò chuyện nào.</p>` : html`<ul class="items">${repeat(visibleChats(), (c) => c.id, row)}</ul>`}
+        ${me === null || chats === null ? nothing : shownChats().length === 0 && filter === '' ? empty() : visibleChats().length === 0 ? html`<p class="hint nomatch" data-no-match>Không tìm thấy cuộc trò chuyện nào.</p>` : html`<ul class="items">${repeat(visibleChats(), (c) => c.id, row)}</ul>`}
       </section>
       ${threadPane()}
       ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
@@ -1232,6 +1234,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true, attachment: message.attachments?.[0]?.kind ?? null,
         };
         if (message.sender.id !== me?.id && message.deleted !== true && !(conversation === openId && deps.visible())) c.unread++;
+        c.hidden = false;   // something new was said: a hidden conversation is back, as the server has it
         chats = [c, ...(chats ?? []).filter((x) => x !== c)];
       }
     }

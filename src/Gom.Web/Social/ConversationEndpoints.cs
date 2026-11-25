@@ -185,10 +185,9 @@ public static class ConversationEndpoints
                 Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)),
             }).ToListAsync(ct);
 
-        // Hidden until something is said after it was hidden (a notice does not bring it back); pinned ones first, the latest pin on top.
-        var shown = rows.Where(r => r.HiddenSeq is not { } h || (r.Last is not null && r.Last.Seq > h))
-            .OrderByDescending(r => r.PinnedAt.HasValue).ThenByDescending(r => r.PinnedAt).ToList();
-        return Results.Ok(shown.Select(r => new
+        // Pinned ones first, the latest pin on top. Hidden ones are listed too, marked, so a search can find them; the page leaves them out of view.
+        var ordered = rows.OrderByDescending(r => r.PinnedAt.HasValue).ThenByDescending(r => r.PinnedAt).ToList();
+        return Results.Ok(ordered.Select(r => new
         {
             id = r.Id,
             kind = r.Kind.ToString().ToLowerInvariant(),
@@ -204,6 +203,8 @@ public static class ConversationEndpoints
             joinApproval = r.Kind == ConversationKind.Group && r.JoinApproval,
             pinned = r.PinnedAt is not null,
             markedUnread = r.MarkedUnread,
+            // Hidden until something is said after it was hidden (a notice does not bring it back).
+            hidden = r.HiddenSeq is { } h && (r.Last is null || r.Last.Seq <= h),
             lastMessage = r.Last is null ? null : new
             {
                 seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt, deleted = r.Last.Deleted,
