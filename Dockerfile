@@ -48,6 +48,7 @@ COPY src/Gom.Web/Auth ./src/Gom.Web/Auth
 COPY src/Gom.Web/Chat ./src/Gom.Web/Chat
 COPY src/Gom.Web/Data ./src/Gom.Web/Data
 COPY src/Gom.Web/Migrations ./src/Gom.Web/Migrations
+COPY src/Gom.Web/Push ./src/Gom.Web/Push
 COPY src/Gom.Web/Social ./src/Gom.Web/Social
 COPY src/Gom.Web/Uploads ./src/Gom.Web/Uploads
 # The app stops at start without a connection string, so finding the DbContext here needs a placeholder; the real one is

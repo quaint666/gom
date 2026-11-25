@@ -1,0 +1,83 @@
+using System.Buffers.Text;
+using Gom.Web.Auth;
+using Gom.Web.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Npgsql;
+
+namespace Gom.Web.Push;
+
+/// <summary>Turning notifications on and off for the device you are on (its sign-in session). All 404 while push is off.</summary>
+public static class PushEndpoints
+{
+    public sealed record KeysDto(string? P256dh, string? Auth);
+    public sealed record SubscribeRequest(string? Endpoint, KeysDto? Keys, string? Level);
+
+    public static void MapPush(this IEndpointRouteBuilder app)
+    {
+        var api = app.MapGroup("/api/push").RequireAuthorization();
+        api.MapGet("", Get);
+        api.MapPut("", Subscribe);
+        api.MapDelete("", Unsubscribe);
+    }
+
+    /// <summary>The server's public key (a browser needs it to subscribe), and whether this device is on, at which level.</summary>
+    private static async Task<IResult> Get(HttpContext http, GomDbContext db, IOptions<PushOptions> options, CancellationToken ct)
+    {
+        if (!options.Value.Enabled) return Results.NotFound();
+        var session = GomClaims.Session(http.User);
+        var mine = await db.PushSubscriptions.AsNoTracking().Where(p => p.SessionId == session).Select(p => (PushLevel?)p.Level).SingleOrDefaultAsync(ct);
+        return Results.Ok(new { key = options.Value.PublicKey, subscribed = mine is not null, level = Level(mine ?? PushLevel.Name) });
+    }
+
+    /// <summary>
+    /// Registers this device, replacing what it had. The same browser address under another session (signed in again) moves here, so one
+    /// browser never gets a notification twice.
+    /// </summary>
+    private static async Task<IResult> Subscribe(SubscribeRequest request, HttpContext http, GomDbContext db, IOptions<PushOptions> options, TimeProvider clock, CancellationToken ct)
+    {
+        var o = options.Value;
+        if (!o.Enabled) return Results.NotFound();
+        if (request.Endpoint is not { Length: > 0 and <= 1024 } endpoint || !o.Allows(endpoint)) return Error("invalid_endpoint");
+        if (Decode(request.Keys?.P256dh) is not { } p256dh || !WebPushCrypto.IsPublicKey(p256dh)
+            || Decode(request.Keys?.Auth) is not { Length: 16 } auth) return Error("invalid_keys");
+        PushLevel level;
+        switch (request.Level)
+        {
+            case null or "name": level = PushLevel.Name; break;
+            case "nothing": level = PushLevel.Nothing; break;
+            default: return Error("invalid_level");
+        }
+
+        var session = GomClaims.Session(http.User);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.PushSubscriptions.Where(p => p.SessionId == session || p.Endpoint == endpoint).ExecuteDeleteAsync(ct);
+        db.PushSubscriptions.Add(new PushSubscription { Id = Guid.NewGuid(), SessionId = session, Endpoint = endpoint, P256dh = p256dh, Auth = auth, Level = level, CreatedAt = clock.GetUtcNow() });
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // Two registrations of the same device at the same moment: the other one is kept.
+            return Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status409Conflict);
+        }
+        await tx.CommitAsync(ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> Unsubscribe(HttpContext http, GomDbContext db, IOptions<PushOptions> options, CancellationToken ct)
+    {
+        if (!options.Value.Enabled) return Results.NotFound();
+        var session = GomClaims.Session(http.User);
+        await db.PushSubscriptions.Where(p => p.SessionId == session).ExecuteDeleteAsync(ct);
+        return Results.NoContent();
+    }
+
+    private static string Level(PushLevel l) => l == PushLevel.Nothing ? "nothing" : "name";
+
+    private static byte[]? Decode(string? s)
+    {
+        if (string.IsNullOrEmpty(s) || s.Length > 200) return null;
+        try { return Base64Url.DecodeFromChars(s.TrimEnd('=')); } catch (FormatException) { return null; }
+    }
+
+    private static IResult Error(string code) => Results.Json(new { error = code }, statusCode: StatusCodes.Status400BadRequest);
+}

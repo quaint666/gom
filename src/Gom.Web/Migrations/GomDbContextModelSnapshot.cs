@@ -661,6 +661,60 @@ namespace Gom.Web.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.PushSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("Auth")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("auth");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("endpoint");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("level");
+
+                    b.Property<byte[]>("P256dh")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("p256dh");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_push_subscriptions");
+
+                    b.HasIndex("Endpoint")
+                        .IsUnique()
+                        .HasDatabaseName("ix_push_subscriptions_endpoint");
+
+                    b.HasIndex("SessionId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_push_subscriptions_session_id");
+
+                    b.ToTable("push_subscriptions", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_push_level", "level IN ('name', 'nothing')");
+                        });
+                });
+
             modelBuilder.Entity("Gom.Web.Data.Session", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1059,6 +1113,16 @@ namespace Gom.Web.Migrations
                         .HasForeignKey("TargetUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_one_time_links_target_user_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.PushSubscription", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Session", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_push_subscriptions_session_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.Session", b =>

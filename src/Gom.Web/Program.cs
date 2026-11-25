@@ -3,12 +3,22 @@ using Gom.Web.Auth;
 using Gom.Web.Chat;
 using Gom.Web.Chat.Live;
 using Gom.Web.Data;
+using Gom.Web.Push;
 using Gom.Web.Social;
 using Gom.Web.Uploads;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+
+// "--vapid-keys" prints a new key pair for notifications (Push:PublicKey and Push:PrivateKey) and stops; nothing else starts.
+if (args.Contains("--vapid-keys"))
+{
+    var (publicKey, privateKey) = WebPushCrypto.NewVapidKeys();
+    Console.WriteLine($"Push__PublicKey={publicKey}");
+    Console.WriteLine($"Push__PrivateKey={privateKey}");
+    return;
+}
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
@@ -67,6 +77,13 @@ builder.Services.AddSingleton<ImageLimiter>(sp =>
     return new ImageLimiter(o.ImageSlots > 0 ? o.ImageSlots : Math.Max(1, Environment.ProcessorCount / 2), TimeSpan.FromSeconds(o.ImageWaitSeconds));
 });
 builder.Services.AddHostedService<AttachmentJanitor>();
+builder.Services.Configure<PushOptions>(builder.Configuration.GetSection("Push"));
+builder.Services.AddSingleton<PushQueue>();
+builder.Services.AddHttpClient(HttpPushTransport.Client)
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddSingleton<IPushTransport, HttpPushTransport>();
+builder.Services.AddSingleton<PushSender>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PushSender>());
 builder.Services.AddSingleton<PasswordService>();
 builder.Services.AddSingleton<SignInThrottle>(sp => new SignInThrottle(sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddSingleton<HashLimiter>(sp =>
@@ -108,6 +125,7 @@ app.MapMessages();
 app.MapAttachments();
 app.MapAvatars();
 app.MapReceipts();
+app.MapPush();
 app.MapSocket();
 
 // One small HTML file per page; the script in /js/main.js picks the page from data-page. The files a page loads are named by their

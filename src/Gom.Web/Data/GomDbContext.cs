@@ -21,6 +21,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<JoinRequest> JoinRequests => Set<JoinRequest>();
     public DbSet<GroupBan> Bans => Set<GroupBan>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -47,6 +48,17 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => x.UserId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.DeviceLabel).HasMaxLength(80);
+        });
+
+        b.Entity<PushSubscription>(e =>
+        {
+            e.ToTable("push_subscriptions", t => t.HasCheckConstraint("ck_push_level", "level IN ('name', 'nothing')"));
+            e.HasIndex(x => x.SessionId).IsUnique();
+            e.HasIndex(x => x.Endpoint).IsUnique();
+            // A session is ended by marking it, not deleting it; were it ever deleted, its notifications go with it.
+            e.HasOne<Session>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Endpoint).HasMaxLength(1024);
+            e.Property(x => x.Level).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<PushLevel>(v, true)).HasMaxLength(10);
         });
 
         b.Entity<OneTimeLink>(e =>
