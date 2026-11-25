@@ -80,6 +80,66 @@ public class MuteTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task A_mute_for_a_while_ends_by_itself()
+    {
+        var p = await Pair();
+        var until = app.Clock.Now.AddHours(4);
+        using var on = await Mute(p.CA, p.Chat, new { muted = true, until });
+        Assert.Equal(HttpStatusCode.NoContent, on.StatusCode);
+        var mine = await Mine(p.CA, p.Chat);
+        Assert.True(mine.GetProperty("muted").GetBoolean());
+        Assert.Equal(until, mine.GetProperty("mutedUntil").GetDateTimeOffset());
+
+        app.Clock.Advance(TimeSpan.FromHours(4));
+        mine = await Mine(p.CA, p.Chat);
+        Assert.False(mine.GetProperty("muted").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, mine.GetProperty("mutedUntil").ValueKind);
+    }
+
+    [Fact]
+    public async Task Muting_until_turned_back_on_replaces_a_mute_for_a_while_and_has_no_end()
+    {
+        var p = await Pair();
+        (await Mute(p.CA, p.Chat, new { muted = true, until = app.Clock.Now.AddHours(1) })).Dispose();
+        (await Mute(p.CA, p.Chat, new { muted = true })).Dispose();
+        app.Clock.Advance(TimeSpan.FromDays(8));   // past the longest mute for a while, within a sign-in
+        var mine = await Mine(p.CA, p.Chat);
+        Assert.True(mine.GetProperty("muted").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, mine.GetProperty("mutedUntil").ValueKind);
+    }
+
+    [Fact]
+    public async Task Unmuting_ends_a_mute_for_a_while_early()
+    {
+        var p = await Pair();
+        (await Mute(p.CA, p.Chat, new { muted = true, until = app.Clock.Now.AddHours(8) })).Dispose();
+        (await Mute(p.CA, p.Chat, new { muted = false })).Dispose();
+        var mine = await Mine(p.CA, p.Chat);
+        Assert.False(mine.GetProperty("muted").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, mine.GetProperty("mutedUntil").ValueKind);
+    }
+
+    [Fact]
+    public async Task The_end_of_a_mute_must_be_ahead_within_a_week_and_only_with_muting()
+    {
+        var p = await Pair();
+        var now = app.Clock.Now;
+        foreach (var body in new object[]
+        {
+            new { muted = true, until = now },
+            new { muted = true, until = now.AddDays(-1) },
+            new { muted = true, until = now.AddDays(7).AddSeconds(1) },
+            new { muted = false, until = now.AddHours(1) },
+        })
+        {
+            using var r = await Mute(p.CA, p.Chat, body);
+            Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+        }
+        using var longest = await Mute(p.CA, p.Chat, new { muted = true, until = now.AddDays(7) });
+        Assert.Equal(HttpStatusCode.NoContent, longest.StatusCode);
+    }
+
+    [Fact]
     public async Task Muting_tells_your_own_devices_to_reload_the_list_and_nobody_else()
     {
         var p = await Pair();

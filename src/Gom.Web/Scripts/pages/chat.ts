@@ -137,6 +137,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const cards = new Map<string, PersonCard>();
   /** The question before leaving a group from the side panel. */
   let leaving = false;
+  /** The conversation whose "for how long" choices are open, when its bell was tapped to mute it. */
+  let muting: string | null = null;
   /** What is being passed on, while the person picks where to (at most FORWARD_MAX), with the search over the list and a note to send after it. */
   let forwarding: { body: string; attachments: Attachment[]; picked: string[]; q: string; note: string; busy: boolean } | null = null;
 
@@ -186,8 +188,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <div class="im">
         <div class="l1"><span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv">${preview(c)}</span>
-          ${c.muted ? html`<span class="mute-mark" role="img" aria-label="Đã tắt thông báo">${icons.bellOff()}</span>` : nothing}
-          ${c.unread > 0 ? html`<span class="badge ${c.muted ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>` : nothing}</div>
+          ${isMuted(c) ? html`<span class="mute-mark" role="img" aria-label="Đã tắt thông báo">${icons.bellOff()}</span>` : nothing}
+          ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>` : nothing}</div>
       </div></a></li>`;
 
   /** The conversations whose name matches what is typed above the list (all of them when nothing is typed). */
@@ -651,8 +653,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </div>
       <div class="info-actions">
         <button class="btn secondary small" type="button" data-info-search @click=${() => { searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} Tìm tin nhắn</button>
-        <button class="btn secondary small" type="button" data-info-mute @click=${() => void toggleMute(c)}>${c.muted ? icons.bellOff() : icons.bell()} ${c.muted ? 'Bật thông báo' : 'Tắt thông báo'}</button>
+        <button class="btn secondary small" type="button" data-info-mute @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()} ${isMuted(c) ? 'Bật thông báo' : 'Tắt thông báo'}</button>
       </div>
+      ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>Đã tắt thông báo đến ${clock(c.mutedUntil)}</p>` : nothing}
       ${t.pins.length === 0 ? nothing : html`
         <h3>Tin đã ghim</h3>
         <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
@@ -765,8 +768,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>`}
           ${c === undefined ? nothing : html`<button class="ib" type="button" data-search aria-label="Tìm trong cuộc trò chuyện" aria-expanded=${searching ? 'true' : 'false'}
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
-          <button class="ib" type="button" data-mute aria-pressed=${c.muted ? 'true' : 'false'}
-            aria-label=${c.muted ? 'Bật lại thông báo' : 'Tắt thông báo'} @click=${() => void toggleMute(c)}>${c.muted ? icons.bellOff() : icons.bell()}</button>`}
+          <button class="ib" type="button" data-mute aria-pressed=${isMuted(c) ? 'true' : 'false'}
+            aria-label=${isMuted(c) ? 'Bật lại thông báo' : 'Tắt thông báo'} @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()}</button>`}
           ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label="Thông tin nhóm">${icons.users()}</a>` : nothing}
           ${c === undefined ? nothing : html`<button class="ib info-btn" type="button" data-info aria-label="Thông tin cuộc trò chuyện" aria-pressed=${infoOpen ? 'true' : 'false'} @click=${toggleInfo}>${icons.info()}</button>`}
         </header>
@@ -783,6 +786,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${cardView()}
+        ${muteView()}
         ${t.editing === null ? nothing : html`
           <div class="replybar" data-editbar>
             <div class="rb-text"><b>Đang chỉnh sửa tin nhắn</b></div>
@@ -1069,14 +1073,47 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- muting
 
+  /** Muted now: until turned back on, or for a while that has not ended yet (it ends by itself, also while the page is open). */
+  function isMuted(c: Conversation): boolean {
+    return c.muted === true && (c.mutedUntil == null || Date.parse(c.mutedUntil) > deps.now().getTime());
+  }
+
+  /** The bell: one tap turns a muted conversation back on; otherwise it asks for how long. */
+  function onBell(c: Conversation): void {
+    if (isMuted(c)) void setMuted(c, false, null);
+    else { muting = c.id; update(); }
+  }
+
+  /** Zalo's choices, which the family knows. The phone works out the end, so "8 in the morning" is its own morning. */
+  const MUTE_CHOICES: ReadonlyArray<readonly [string, string, (now: Date) => Date | null]> = [
+    ['1h', 'Trong 1 giờ', (now) => new Date(now.getTime() + 3_600_000)],
+    ['4h', 'Trong 4 giờ', (now) => new Date(now.getTime() + 4 * 3_600_000)],
+    ['8am', 'Cho đến 8:00 sáng', (now) => { const d = new Date(now); d.setHours(8, 0, 0, 0); if (d <= now) d.setDate(d.getDate() + 1); return d; }],
+    ['always', 'Cho đến khi được mở lại', () => null],
+  ];
+
+  const muteView = () => {
+    const c = muting === null ? undefined : chats?.find((x) => x.id === muting);
+    if (c === undefined) return nothing;
+    const close = () => { muting = null; update(); };
+    return html`
+      <dialog class="pcard mutes" aria-labelledby="mute-title" data-mute-panel data-modal @close=${close}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
+        <div class="pcard-head"><h2 id="mute-title">Tắt thông báo</h2><button class="ib" type="button" aria-label="Đóng" @click=${close}>${icons.close()}</button></div>
+        <ul class="info-list">${MUTE_CHOICES.map(([key, label, end]) => html`
+          <li><button class="info-person" type="button" data-mute-for=${key} @click=${() => { muting = null; void setMuted(c, true, end(deps.now())); }}>${label}</button></li>`)}</ul>
+      </dialog>`;
+  };
+
   /** Shows the new state at once, and puts it back with the reason if the server says no. */
-  async function toggleMute(c: Conversation): Promise<void> {
-    const wanted = c.muted !== true;
-    c.muted = wanted;
+  async function setMuted(c: Conversation, muted: boolean, until: Date | null): Promise<void> {
+    const before = { muted: c.muted, mutedUntil: c.mutedUntil };
+    c.muted = muted;
+    c.mutedUntil = until?.toISOString() ?? null;
     update();
-    const result = await api.setMute(c.id, wanted);
+    const result = await api.setMute(c.id, muted, until?.toISOString());
     if (result.ok) return;
-    c.muted = !wanted;
+    Object.assign(c, before);
     handleFailure(result);
   }
 

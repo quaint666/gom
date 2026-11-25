@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { avatarTone } from '../Scripts/chat/model.js';
+import { avatarTone, clock } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
 import { mountChat, type ChatDeps, type OutboxItem } from '../Scripts/pages/chat.js';
@@ -1968,30 +1968,94 @@ describe('chat: muting', () => {
     expect(bell().getAttribute('aria-label')).toBe('Bật lại thông báo');
   });
 
-  it('mutes at once and asks the server', async () => {
+  const choose = async (key: string) => {
+    bell().click();
+    await flush();
+    root.querySelector<HTMLButtonElement>(`[data-mute-panel] [data-mute-for="${key}"]`)!.click();
+  };
+  const until = (h: { api: { setMute: ReturnType<typeof vi.fn> } }) => new Date(h.api.setMute.mock.calls[0]![2] as string);
+
+  it('asks for how long before muting, and mutes nothing until a choice is made', async () => {
     const h = open();
     await flush();
-    expect(bell().getAttribute('aria-pressed')).toBe('false');
     bell().click();
-    expect(bell().getAttribute('aria-pressed')).toBe('true');
     await flush();
-    expect(h.api.setMute).toHaveBeenCalledWith(C2, true);
+    const panel = root.querySelector('[data-mute-panel]')!;
+    expect([...panel.querySelectorAll('[data-mute-for]')].map((b) => b.textContent!.trim()))
+      .toEqual(['Trong 1 giờ', 'Trong 4 giờ', 'Cho đến 8:00 sáng', 'Cho đến khi được mở lại']);
+    expect(bell().getAttribute('aria-pressed')).toBe('false');
+    expect(h.api.setMute).not.toHaveBeenCalled();
+    panel.dispatchEvent(new Event('close'));
+    await flush();
+    expect(root.querySelector('[data-mute-panel]')).toBeNull();
+    expect(h.api.setMute).not.toHaveBeenCalled();
+  });
+
+  it('mutes until turned back on at once, and asks the server with no end', async () => {
+    const h = open();
+    await flush();
+    await choose('always');
+    expect(bell().getAttribute('aria-pressed')).toBe('true');
+    expect(root.querySelector('[data-mute-panel]')).toBeNull();
+    await flush();
+    expect(h.api.setMute).toHaveBeenCalledWith(C2, true, undefined);
     expect(root.querySelector(`[data-chat="${C2}"] .mute-mark`)).not.toBeNull();
   });
 
-  it('unmutes the same way', async () => {
+  it('mutes for one hour or four from now', async () => {
+    for (const [key, hours] of [['1h', 1], ['4h', 4]] as const) {
+      const h = open();
+      await flush();
+      await choose(key);
+      await flush();
+      expect(until(h).getTime() - NOW.getTime()).toBe(hours * 3_600_000);
+      expect(bell().getAttribute('aria-pressed')).toBe('true');
+    }
+  });
+
+  it('mutes until the next 8 in the morning by the phone\'s own clock', async () => {
+    const h = open();
+    await flush();
+    await choose('8am');
+    await flush();
+    const end = until(h);
+    expect([end.getHours(), end.getMinutes(), end.getSeconds()]).toEqual([8, 0, 0]);
+    expect(end.getTime()).toBeGreaterThan(NOW.getTime());
+    expect(end.getTime() - NOW.getTime()).toBeLessThanOrEqual(24 * 3_600_000);
+  });
+
+  it('says until when a mute for a while lasts, in the side panel', async () => {
+    open();
+    await flush();
+    await choose('1h');
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-info]')!.click();
+    await flush();
+    expect(root.querySelector('[data-muted-until]')!.textContent).toContain(clock(new Date(NOW.getTime() + 3_600_000).toISOString()));
+  });
+
+  it('treats a mute for a while that has ended as not muted', async () => {
+    start({ path: '/', chats: [chat(C1, 'Minh', { lastSeq: 3, unread: 2, muted: true, mutedUntil: new Date(NOW.getTime() - 1000).toISOString() })], history: {}, api: {} });
+    await flush();
+    const row = root.querySelector(`[data-chat="${C1}"]`)!;
+    expect(row.querySelector('.mute-mark')).toBeNull();
+    expect(row.querySelector('.badge')!.classList.contains('muted')).toBe(false);
+  });
+
+  it('unmutes with one tap, without asking how long', async () => {
     const h = open({}, `/c/${C1}`);
     await flush();
     bell().click();
     await flush();
-    expect(h.api.setMute).toHaveBeenCalledWith(C1, false);
+    expect(root.querySelector('[data-mute-panel]')).toBeNull();
+    expect(h.api.setMute).toHaveBeenCalledWith(C1, false, undefined);
     expect(bell().getAttribute('aria-pressed')).toBe('false');
   });
 
   it('puts the switch back and says why when the server refuses', async () => {
     open({ setMute: vi.fn(async () => fail('server', 500)) });
     await flush();
-    bell().click();
+    await choose('4h');
     await flush();
     expect(bell().getAttribute('aria-pressed')).toBe('false');
     expect(root.querySelector('[role="alert"]')).not.toBeNull();

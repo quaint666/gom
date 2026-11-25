@@ -218,6 +218,10 @@ namespace Gom.Web.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("muted");
 
+                    b.Property<DateTimeOffset?>("MutedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("muted_until");
+
                     b.Property<int>("Role")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
