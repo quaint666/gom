@@ -483,13 +483,13 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 
 /* the big picture: a modal dialog over everything, with a strip of pictures that the browser scrolls and snaps one at a time */
 .viewer { position: fixed; inset: 0; inline-size: 100vw; block-size: 100dvh; max-inline-size: none; max-block-size: none; margin: 0; padding: 0; border: 0;
-  background: rgb(0 0 0 / .94); color: #fff; outline: 0; overflow: hidden; overscroll-behavior: contain; }
+  background: #000; color: #fff; outline: 0; overflow: hidden; overscroll-behavior: contain; }
 .viewer::backdrop { background: transparent; overflow: hidden; overscroll-behavior: contain; }
 .vtrack { display: flex; inline-size: 100%; block-size: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
   scrollbar-width: none; touch-action: pan-x pinch-zoom; outline: 0; }
 .vtrack::-webkit-scrollbar { display: none; }
 .vslide { flex: 0 0 100%; scroll-snap-align: center; scroll-snap-stop: always; display: grid; place-items: center; padding-block: 56px 96px; }
-.viewer .vimg { max-inline-size: 100%; max-block-size: 100%; inline-size: auto; block-size: auto; object-fit: contain; }
+.viewer .vimg { max-inline-size: 100%; max-block-size: calc(100dvh - 152px); inline-size: auto; block-size: auto; object-fit: contain; }
 .viewer-bar { position: absolute; inset-block-start: 0; inset-inline: 0; display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 8px 12px; z-index: 1;
   background: linear-gradient(rgb(0 0 0 / .55), transparent); }
 .viewer-bar span { margin-inline-end: auto; font-size: 14px; }
