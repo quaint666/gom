@@ -45,6 +45,8 @@ const SLOW_RETRY_MS = 1000;
 const UPLOADS_AT_ONCE = 2;
 /** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
 const FORWARD_MAX = 5;
+/** How long "Hoàn tác" stays after a conversation is hidden. */
+const UNDO_HIDE_MS = 5000;
 /** The browser says when a scroll has come to rest; where it does not, a pause in scrolling stands in for it. */
 const SCROLL_END = typeof window !== 'undefined' && 'onscrollend' in window;
 
@@ -157,6 +159,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let forwarding: { body: string; attachments: Attachment[]; sticker: string | null; picked: string[]; q: string; note: string; busy: boolean } | null = null;
   /** The panel under the composer, open on its emoji or its sticker tab; the tab last used is remembered on this device. */
   let picker: 'emoji' | 'stickers' | null = null;
+  /** The conversation just hidden, while "Hoàn tác" is offered (UNDO_HIDE_MS), and the timer that takes the offer away. */
+  let undoHide: { id: string; timer: number } | null = null;
   /** The pack of stickers shown: -1 is "Gần đây" (the ones this device sent lately). */
   let stickerPack = -1;
   /** The group of emoji shown: -1 is "Gần đây". */
@@ -975,6 +979,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
       ${rowMenuView()}
       ${muteView()}
+      ${undoView()}
     </div>`;
 
   /** Once per device: turn notifications on from here (the browser asks in the tap itself), or not now. */
@@ -1443,7 +1448,25 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /** Leaves the list (and closes it, if it is open) until something new is said. */
-  const hideConversation = (c: Conversation) => rowAction(api.setHidden(c.id, true), () => forget(c.id, false));
+  const hideConversation = (c: Conversation) => rowAction(api.setHidden(c.id, true), () => { forget(c.id, false); offerUndoHide(c.id); });
+
+  /** For a moment after hiding: "Hoàn tác", for the tap that was a mistake. */
+  function offerUndoHide(id: string): void {
+    if (undoHide !== null) deps.timer.clear(undoHide.timer);
+    undoHide = { id, timer: deps.timer.set(() => { undoHide = null; update(); }, UNDO_HIDE_MS) };
+  }
+
+  function undoHiding(): void {
+    if (undoHide === null) return;
+    deps.timer.clear(undoHide.timer);
+    const { id } = undoHide;
+    undoHide = null;
+    void rowAction(api.setHidden(id, false));
+  }
+
+  const undoView = () => undoHide === null ? nothing : html`
+    <div class="toast" role="status" data-undo-hide><span>Đã ẩn cuộc trò chuyện</span>
+      <button class="btn secondary small" type="button" data-undo @click=${undoHiding}>Hoàn tác</button></div>`;
 
   const clearConversation = (c: Conversation) => rowAction(api.clearConversation(c.id), () => forget(c.id, true));
 
