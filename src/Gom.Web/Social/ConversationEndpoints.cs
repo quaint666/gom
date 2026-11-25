@@ -13,7 +13,7 @@ public static class ConversationEndpoints
     public sealed record SwitchRequest(bool? On);
 
     /// <summary>The list carries only the start of the last message; history has the whole of it.</summary>
-    private const int PreviewChars = 200;
+    public const int PreviewChars = 200;
 
     /// <summary>The longest a mute for a while may last; longer is "until turned back on". The choices offered end within a day.</summary>
     private static readonly TimeSpan LongestMute = TimeSpan.FromDays(7);

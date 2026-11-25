@@ -3,6 +3,7 @@ import type { Api, Failure, Invite, Issued, Member } from '../api.js';
 import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, errorBox, formatTime } from '../ui.js';
+import { limits } from '../limits.js';
 
 /** How many rows of a long list show before "Xem thêm". */
 const HANDFUL = 5;
@@ -21,8 +22,8 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let copied = '';
   let error: Failure | null = null;
   let query = '';
-  let days: number = 7;
-  let uses: number = 10;
+  let days: number = limits().inviteDefaultDays;
+  let uses: number = limits().inviteDefaultUses;
   let moreInvites = false;
   let moreMembers = false;
 
@@ -80,7 +81,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       <h2 class="section">Thành viên</h2>
       ${members.length <= HANDFUL ? nothing : html`
         <div class="searchfield input">${icons.search()}
-          <input type="search" name="member-search" aria-label="Tìm thành viên" placeholder="Tìm thành viên" autocomplete="off" maxlength="60"
+          <input type="search" name="member-search" aria-label="Tìm thành viên" placeholder="Tìm thành viên" autocomplete="off" maxlength=${limits().nameChars}
             .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>`}
       ${shownMembers().length === 0 ? html`<p class="hint" data-no-member>Không tìm thấy thành viên nào.</p>` : html`<ul class="list">${shownMembers().map(memberRow)}</ul>`}
       ${query.trim() !== '' || moreMembers || members.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-members @click=${() => { moreMembers = true; update(); }}>Xem thêm (${members.length - HANDFUL})</button>`}

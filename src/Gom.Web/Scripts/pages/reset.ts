@@ -1,6 +1,7 @@
 import { html, render } from 'lit-html';
 import type { Api, Failure } from '../api.js';
 import { brand, deadLink, errorBox, passwordField } from '../ui.js';
+import { passwordHint } from '../text.js';
 
 type State = { kind: 'loading' } | { kind: 'dead' } | { kind: 'form'; gomId: string };
 
@@ -21,7 +22,7 @@ export function mountReset(root: HTMLElement, api: Api, go: (path: string) => vo
         <form @submit=${onSubmit}>
           ${errorBox(error)}
           <input class="sr-only" name="username" type="text" autocomplete="username" readonly tabindex="-1" aria-hidden="true" .value=${state.gomId}>
-          ${passwordField({ label: 'Mật khẩu mới', autocomplete: 'new-password', value: password, shown, hint: 'Ít nhất 10 ký tự.',
+          ${passwordField({ label: 'Mật khẩu mới', autocomplete: 'new-password', value: password, shown, hint: passwordHint(),
             onInput: (v) => { password = v; }, onToggle: () => { shown = !shown; update(); } })}
           <button class="btn" type="submit" ?disabled=${busy}>Lưu mật khẩu</button>
         </form>

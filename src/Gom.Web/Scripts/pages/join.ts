@@ -2,6 +2,8 @@ import { html, render } from 'lit-html';
 import type { Api, Failure } from '../api.js';
 import { brand, deadLink, errorBox, idField, passwordField } from '../ui.js';
 import * as icons from '../icons.js';
+import { limits } from '../limits.js';
+import { passwordHint } from '../text.js';
 
 type State = { kind: 'loading' } | { kind: 'dead' } | { kind: 'form'; invitedBy: string };
 
@@ -31,8 +33,8 @@ export function mountJoin(root: HTMLElement, api: Api, go: (path: string) => voi
             <p class="hint">Có thể để trống: Gom sẽ dùng Gom ID của bạn.</p>
           </div>
           ${idField({ value: gomId, enterkeyhint: 'next', onInput: (v) => { gomId = v; },
-            hint: 'Chữ thường, số và dấu gạch dưới, 3 đến 20 ký tự.' })}
-          ${passwordField({ label: 'Mật khẩu', autocomplete: 'new-password', value: password, shown, hint: 'Ít nhất 10 ký tự.',
+            hint: `Chữ thường, số và dấu gạch dưới, ${limits().gomIdMin} đến ${limits().gomIdMax} ký tự.` })}
+          ${passwordField({ label: 'Mật khẩu', autocomplete: 'new-password', value: password, shown, hint: passwordHint(),
             onInput: (v) => { password = v; }, onToggle: () => { shown = !shown; update(); } })}
           <button class="btn" type="submit" ?disabled=${busy}>Tạo tài khoản</button>
         </form>

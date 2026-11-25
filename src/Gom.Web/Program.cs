@@ -129,26 +129,19 @@ app.MapReceipts();
 app.MapPush();
 app.MapSocket();
 
-// One small HTML file per page; the script in /js/main.js picks the page from data-page. The files a page loads are named by their
-// fingerprinted copies (see Assets), so a browser may keep them.
+// Every page is one shell with its title, script and limits filled in (see Pages), made once at start-up.
 var fingerprints = Assets.Load(app.Environment.WebRootFileProvider, app.Logger);
-void MapPage(string route, string file) => app.MapMethods(route, ["GET", "HEAD"], (IWebHostEnvironment env) =>
+string shell;
+using (var reader = new StreamReader(app.Environment.WebRootFileProvider.GetFileInfo("pages/shell.html").CreateReadStream())) shell = reader.ReadToEnd();
+var limits = Pages.Limits(
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Chat.ChatOptions>>().Value,
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions>>().Value,
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Auth.AuthOptions>>().Value);
+foreach (var page in Pages.All)
 {
-    using var reader = new StreamReader(env.WebRootFileProvider.GetFileInfo($"pages/{file}").CreateReadStream());
-    return Results.Content(Assets.Apply(reader.ReadToEnd(), fingerprints), "text/html; charset=utf-8");
-});
-MapPage("/", "home.html");
-MapPage("/c/{id}", "home.html");
-MapPage("/sign-in", "sign-in.html");
-MapPage("/join/{token}", "join.html");
-MapPage("/reset/{token}", "reset.html");
-MapPage("/settings", "settings.html");
-MapPage("/friends", "friends.html");
-MapPage("/groups/new", "newgroup.html");
-MapPage("/groups/{id}", "group.html");
-MapPage("/add/{gomId}", "add.html");
-MapPage("/owner", "owner.html");
-MapPage("/owner/storage", "storage.html");
+    var html = Assets.Apply(Pages.Render(shell, page, limits), fingerprints);
+    app.MapMethods(page.Route, ["GET", "HEAD"], () => Results.Content(html, "text/html; charset=utf-8"));
+}
 
 // 200 only when the database answers; a monitor or a proxy can poll this.
 app.MapMethods("/healthz", ["GET", "HEAD"], async (GomDbContext db, CancellationToken ct) =>

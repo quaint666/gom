@@ -10,7 +10,8 @@ import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
-import { errorText, formatSize } from '../text.js';
+import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
+import { limits } from '../limits.js';
 import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 
@@ -37,14 +38,14 @@ const PUSH_LATER = 'gom-push-later';
 
 export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply; attachments?: Attachment[]; sticker?: string }
 
-/** How many pictures and files one message may carry (the server's limit is the same by default). */
-const MAX_ATTACHMENTS = 10;
 /** How long to wait before asking again after the server said "slow down". */
 const SLOW_RETRY_MS = 1000;
 /** How many uploads go up at the same time. */
 const UPLOADS_AT_ONCE = 2;
 /** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
 const FORWARD_MAX = 5;
+/** How much of a message a one-line preview shows: the pinned bar and panel, a search result or the pin list, what is being forwarded. */
+const CLIP = { pin: 100, result: 160, forward: 120 } as const;
 /** How long "Hoàn tác" stays after a conversation is hidden. */
 const UNDO_HIDE_MS = 5000;
 /** The browser says when a scroll has come to rest; where it does not, a pause in scrolling stands in for it. */
@@ -94,11 +95,8 @@ interface Thread {
   attempts: Map<string, number>;
 }
 
-const PREVIEW_CHARS = 200;
 /** The reactions the server accepts, in the order they are offered. */
 const EMOJI = ['👍', '❤️', '😆', '😮', '😢', '😡'] as const;
-/** How much of the answered message the bar above the composer shows (the server keeps the same number for the quote). */
-const QUOTE_CHARS = 100;
 const CONVERSATION_PATH = /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const GAP_NEAR_BOTTOM_PX = 80;
 /** A busy or failing server is tried this many times before the message is called failed. A bad network is waited out for ever. */
@@ -548,7 +546,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     <div class="searchbar" role="search">
       <form data-search-form @submit=${(e: Event) => { e.preventDefault(); void runSearch(); }}>
         <div class="searchfield input">${icons.search()}
-          <input type="search" name="q" aria-label="Từ cần tìm" placeholder="Tìm tin nhắn" autocomplete="off" maxlength="100" enterkeyhint="search"
+          <input type="search" name="q" aria-label="Từ cần tìm" placeholder="Tìm tin nhắn" autocomplete="off" maxlength=${limits().searchChars} enterkeyhint="search"
             .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; }}
             @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { searching = null; update(); } }}>
           <button class="clear" type="button" data-close-search aria-label="Đóng tìm kiếm" @click=${() => { searching = null; update(); }}>${icons.close()}</button>
@@ -559,20 +557,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         : html`<ul class="results">${s.results.map((r) => html`
           <li><button type="button" class="result" data-result=${r.id} @click=${() => void reveal(r)}>
             <b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><small>${listTime(r.createdAt, deps.now())}</small>
-            <span>${[...r.body].length > 160 ? [...r.body].slice(0, 160).join('') + '…' : r.body}</span></button></li>`)}</ul>`}
+            <span>${clip(r.body, CLIP.result)}</span></button></li>`)}</ul>`}
     </div>`;
   /** The pinned messages: the newest one stays under the header, and a button opens them all. */
   const pinBar = (t: Thread) => t.pins.length === 0 ? nothing : html`
     <div class="pinbar" data-pinbar>
       <button class="pin-top" type="button" data-pin-top @click=${() => void reveal(t.pins[0]!)}>
-        ${icons.pin()}<span class="pin-text"><b>Tin đã ghim</b><span>${t.pins[0]!.sticker ? 'Nhãn dán' : [...t.pins[0]!.body].length > 100 ? [...t.pins[0]!.body].slice(0, 100).join('') + '…' : t.pins[0]!.body}</span></span></button>
+        ${icons.pin()}<span class="pin-text"><b>Tin đã ghim</b><span>${t.pins[0]!.sticker ? 'Nhãn dán' : clip(t.pins[0]!.body, CLIP.pin)}</span></span></button>
       ${t.pins.length > 1 ? html`<button class="btn secondary small" type="button" data-pin-all aria-expanded=${t.pinsOpen ? 'true' : 'false'}
         @click=${() => { t.pinsOpen = !t.pinsOpen; update(); }}>${t.pins.length} tin</button>` : nothing}
     </div>
     ${t.pinsOpen ? html`<ul class="pinlist" data-pinlist>${t.pins.map((p) => html`
       <li><button type="button" class="result" data-pin-item=${p.id} @click=${() => void reveal(p)}>
         <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
-        <span>${p.sticker ? 'Nhãn dán' : [...p.body].length > 160 ? [...p.body].slice(0, 160).join('') + '…' : p.body}</span></button></li>`)}</ul>` : nothing}`;
+        <span>${p.sticker ? 'Nhãn dán' : clip(p.body, CLIP.result)}</span></button></li>`)}</ul>` : nothing}`;
 
   /**
    * Where to pass a message on: a dialog with your conversations (newest first, narrowed by what is typed), up to FORWARD_MAX ticked,
@@ -601,18 +599,18 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="ib" type="button" data-close-forward aria-label="Đóng" @click=${cancel}>${icons.close()}</button></header>
         <div class="fwd-what">
           ${f.sticker === null ? nothing : html`<img class="fw-stk" src=${stickerUrl(f.sticker)} alt=${`Nhãn dán ${stickerName(f.sticker)}`} width="64" height="64">`}
-          ${f.body === '' ? nothing : html`<p class="fw-text">${[...f.body].length > 120 ? [...f.body].slice(0, 120).join('') + '…' : f.body}</p>`}
+          ${f.body === '' ? nothing : html`<p class="fw-text">${clip(f.body, CLIP.forward)}</p>`}
           ${what === '' ? nothing : html`<p class="hint">${what}</p>`}
         </div>
         <div class="searchfield input">${icons.search()}
-          <input type="search" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength="60" data-forward-search
+          <input type="search" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength=${limits().nameChars} data-forward-search
             .value=${liveValue(f.q)} @input=${(e: Event) => { f.q = (e.target as HTMLInputElement).value; update(); }}></div>
         ${shown.length === 0 && found.length === 0 ? html`<p class="hint" data-forward-none>Không tìm thấy cuộc trò chuyện nào.</p>` : html`
           <div class="fwd-list">
           ${shown.length === 0 ? nothing : html`<ul class="rows">${repeat(shown, (c) => c.id, pickRow)}</ul>`}
           ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, pickRow)}</ul>`}</div>`}
         ${full ? html`<p class="hint" data-forward-full>Chọn tối đa ${FORWARD_MAX} cuộc trò chuyện mỗi lần.</p>` : nothing}
-        <textarea class="fwd-note" rows="2" aria-label="Lời nhắn kèm theo" placeholder="Nhập lời nhắn (không bắt buộc)" maxlength="4000" data-forward-note
+        <textarea class="fwd-note" rows="2" aria-label="Lời nhắn kèm theo" placeholder="Nhập lời nhắn (không bắt buộc)" maxlength=${limits().messageChars} data-forward-note
           .value=${liveValue(f.note)} @input=${(e: Event) => { f.note = (e.target as HTMLTextAreaElement).value; }}></textarea>
         <footer class="fwd-foot">
           <button class="btn secondary" type="button" data-cancel-forward ?disabled=${f.busy} @click=${cancel}>Hủy</button>
@@ -708,7 +706,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <h3>Tin đã ghim</h3>
         <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
           <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
-          <span>${[...p.body].length > 100 ? [...p.body].slice(0, 100).join('') + '…' : p.body}</span></button></li>`)}</ul>`}
+          <span>${clip(p.body, CLIP.pin)}</span></button></li>`)}</ul>`}
       ${media(c.id)}
       ${c.kind !== 'group' ? nothing : html`
         <h3>Thành viên</h3>
@@ -966,7 +964,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         </header>
         ${chats === null || chats.length === 0 ? nothing : html`
           <div class="searchfield input list-search">${icons.search()}
-            <input type="search" name="filter" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength="60"
+            <input type="search" name="filter" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength=${limits().nameChars}
               .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); }}
               @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; update(); } }}></div>`}
         ${banner()}
@@ -1252,10 +1250,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         if (message.seq > c.lastReadSeq && message.sender.id !== me?.id && c.unread > 0) c.unread--;
       } else if (event.kind === 'updated') {
         // The same message changed (its reactions, its words): the preview follows its words, nothing else about the list moves.
-        if (c.lastMessage?.seq === message.seq) c.lastMessage = { ...c.lastMessage, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body };
+        if (c.lastMessage?.seq === message.seq) c.lastMessage = { ...c.lastMessage, body: message.body.slice(0, limits().listPreviewChars) };
       } else if (!message.notice) {   // a notice says what happened; it is not what was last said, and nothing to read
         c.lastMessage = {
-          seq: message.seq, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body,
+          seq: message.seq, body: message.body.slice(0, limits().listPreviewChars),
           createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true, attachment: message.attachments?.[0]?.kind ?? null, sticker: message.sticker ?? null,
         };
         if (message.sender.id !== me?.id && message.deleted !== true && !(conversation === openId && deps.visible())) c.unread++;
@@ -1596,7 +1594,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     menu = null;
     const t = threadOf(m.conversationId);
     const body = [...m.body];
-    t.replying = { id: m.id, sender: m.sender, snippet: body.length > QUOTE_CHARS ? body.slice(0, QUOTE_CHARS).join('') : m.body, ...(m.sticker ? { sticker: m.sticker } : {}) };
+    const most = limits().quoteChars;
+    t.replying = { id: m.id, sender: m.sender, snippet: body.length > most ? body.slice(0, most).join('') : m.body, ...(m.sticker ? { sticker: m.sticker } : {}) };
     update();
     root.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus();
   }
@@ -1844,9 +1843,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function addFiles(id: string, files: File[]): void {
     const t = threadOf(id);
     if (t.editing !== null || files.length === 0 || !uploadsOn()) return;
-    const room = MAX_ATTACHMENTS - t.tray.length;
+    const most = limits().attachments;
+    const room = most - t.tray.length;
     for (const file of files.slice(0, Math.max(0, room))) t.tray.push({ key: ++trayKey, name: file.name || 'tệp', file, state: 'waiting', progress: 0 });
-    if (files.length > room) { notice = `Mỗi tin nhắn có tối đa ${MAX_ATTACHMENTS} tệp.`; }
+    if (files.length > room) { notice = tooManyAttachments(most); }
     update();
     pumpTray(id);
   }

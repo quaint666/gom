@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -23,6 +24,66 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains($"data-page=\"{page}\"", html);
         Assert.Contains("<html lang=\"vi\">", html);
+    }
+
+    [Theory]
+    [InlineData("/", "Gom")]
+    [InlineData("/sign-in", "Đăng nhập · Gom")]
+    [InlineData("/owner", "Lời mời và thành viên · Gom")]
+    [InlineData("/owner/storage", "Dung lượng · Gom")]
+    public async Task Each_page_has_its_own_title(string path, string title)
+    {
+        var html = await (await factory.CreateClient().GetAsync(path)).Content.ReadAsStringAsync();
+        Assert.Contains($"<title>{title}</title>", html);
+    }
+
+    private static async Task<JsonElement> LimitsOf(HttpClient client, string path)
+    {
+        var html = await (await client.GetAsync(path)).Content.ReadAsStringAsync();
+        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\">");
+        Assert.True(attribute.Success);
+        return JsonDocument.Parse(WebUtility.HtmlDecode(attribute.Groups[1].Value)).RootElement.Clone();
+    }
+
+    /// <summary>The numbers are written out here, not read from the code, so a changed limit fails a test (see the page tests' setup too).</summary>
+    [Theory]
+    [MemberData(nameof(Pages))]
+    public async Task Each_page_carries_the_server_s_limits_before_anyone_signs_in(string path, string page)
+    {
+        _ = page;
+        var l = await LimitsOf(factory.CreateClient(), path);
+        Assert.Equal(4000, l.GetProperty("messageChars").GetInt32());
+        Assert.Equal(10, l.GetProperty("attachments").GetInt32());
+        Assert.Equal(10 * 1024 * 1024, l.GetProperty("imageBytes").GetInt64());
+        Assert.Equal(25 * 1024 * 1024, l.GetProperty("fileBytes").GetInt64());
+        Assert.Equal(3, l.GetProperty("pins").GetInt32());
+        Assert.Equal(60, l.GetProperty("nameChars").GetInt32());
+        Assert.Equal(10, l.GetProperty("passwordMin").GetInt32());
+        Assert.Equal(128, l.GetProperty("passwordMax").GetInt32());
+        Assert.Equal(3, l.GetProperty("gomIdMin").GetInt32());
+        Assert.Equal(20, l.GetProperty("gomIdMax").GetInt32());
+        Assert.Equal(100, l.GetProperty("searchChars").GetInt32());
+        Assert.Equal(100, l.GetProperty("quoteChars").GetInt32());
+        Assert.Equal(200, l.GetProperty("listPreviewChars").GetInt32());
+        Assert.Equal(30, l.GetProperty("inviteDays").GetInt32());
+        Assert.Equal(100, l.GetProperty("inviteUses").GetInt32());
+        Assert.Equal(7, l.GetProperty("inviteDefaultDays").GetInt32());
+        Assert.Equal(10, l.GetProperty("inviteDefaultUses").GetInt32());
+    }
+
+    [Fact]
+    public async Task A_limit_changed_in_the_configuration_reaches_the_pages()
+    {
+        using var changed = factory.WithWebHostBuilder(b =>
+        {
+            b.UseSetting("Chat:MaxChars", "1234");
+            b.UseSetting("Uploads:MaxPerMessage", "4");
+            b.UseSetting("Auth:InviteDays", "3");
+        });
+        var l = await LimitsOf(changed.CreateClient(), "/sign-in");
+        Assert.Equal(1234, l.GetProperty("messageChars").GetInt32());
+        Assert.Equal(4, l.GetProperty("attachments").GetInt32());
+        Assert.Equal(3, l.GetProperty("inviteDefaultDays").GetInt32());
     }
 
     [Theory]

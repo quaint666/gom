@@ -2,6 +2,7 @@ import { html, nothing, render } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import type { Api, BanRow, Failure, GroupMember, JoinRequestRow, Person } from '../api.js';
 import { appBar, avatar, errorBox } from '../ui.js';
+import { limits } from '../limits.js';
 
 /** Who is in a group and who leads it, asking another member to be friends, adding friends, leaving, and what a leader or deputy may do. */
 export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => void, conversation: string): void {
@@ -96,7 +97,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     : html`
       <form class="card" data-rename @submit=${onRename}>
         <label for="group-name">Tên nhóm</label>
-        <input id="group-name" name="title" type="text" maxlength="60" autocomplete="off" .value=${liveValue(draftTitle)}
+        <input id="group-name" name="title" type="text" maxlength=${limits().nameChars} autocomplete="off" .value=${liveValue(draftTitle)}
           @input=${(e: Event) => { draftTitle = (e.target as HTMLInputElement).value; update(); }}>
         <button class="btn" type="submit" ?disabled=${renaming || draftTitle.trim() === '' || draftTitle.trim() === title}>Lưu tên</button>
       </form>`;
