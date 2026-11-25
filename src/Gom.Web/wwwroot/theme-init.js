@@ -5,6 +5,8 @@ try {
   if (stored === "light" || stored === "dark") {
     document.querySelector('meta[name="color-scheme"]').content = stored;
   }
+  // Pure black when dark (Scripts/theme.ts), for this device.
+  if (localStorage.getItem("gom-black") === "1") document.documentElement.setAttribute("data-black", "");
   // The person's colour (Scripts/theme.ts): a code without its block in gom.css simply draws the default.
   var palette = localStorage.getItem("gom-palette");
   if (palette && palette !== "sage" && /^[a-z]{2,16}$/.test(palette)) document.documentElement.setAttribute("data-palette", palette);

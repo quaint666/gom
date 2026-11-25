@@ -141,6 +141,8 @@ export const vi = {
   settings: {
     title: 'Cài đặt',
     language: 'Ngôn ngữ',
+    black: 'Nền đen tuyệt đối',
+    blackNote: 'Khi giao diện tối. Tiết kiệm pin trên màn hình OLED. Chỉ trên thiết bị này.',
     palette: 'Màu chủ đạo',
     paletteNote: 'Chỉ mình bạn thấy màu này, trên mọi thiết bị của bạn.',
     pattern: 'Hình nền cuộc trò chuyện',

@@ -139,6 +139,8 @@ export const en: Strings = {
   settings: {
     title: 'Settings',
     language: 'Language',
+    black: 'Pure black',
+    blackNote: 'When the look is dark. Saves battery on OLED screens. On this device only.',
     palette: 'Colour',
     paletteNote: 'Only you see this colour, on every device you use.',
     pattern: 'Chat background',

@@ -1,7 +1,7 @@
 import { html, nothing, render } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
 import type { Api, Failure, PushLevel, PushState, SessionInfo, User } from '../api.js';
-import { PALETTES, PATTERNS, applyPalette, chosenScheme, chooseScheme, rememberPattern, storedPalette, storedPattern, type Choice, type Palette, type Pattern } from '../theme.js';
+import { PALETTES, PATTERNS, applyBlack, applyPalette, chosenScheme, chooseScheme, rememberPattern, storedBlack, storedPalette, storedPattern, type Choice, type Palette, type Pattern } from '../theme.js';
 import type { Installer } from '../install.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
@@ -28,6 +28,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let scheme: Choice = chosenScheme();
   let palette: Palette = storedPalette();
   let pattern: Pattern = storedPattern();
+  let black = storedBlack();
   let installStatus = '';
   /** A picture chosen for the profile, not saved yet: the file, and what the preview shows (read as a data: address, which the page's rules allow). */
   let picked: { file: File; preview: string } | null = null;
@@ -142,6 +143,10 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
               @change=${() => { scheme = value; chooseScheme(value); update(); }}>
               <label for=${`scheme-${value}`}>${label}</label></div>`)}
         </fieldset>
+        <div class="pick"><input type="checkbox" id="black" data-black-switch aria-describedby="black-note" .checked=${live(black)}
+          @change=${(e: Event) => { black = (e.target as HTMLInputElement).checked; applyBlack(black); update(); }}>
+          <label for="black">${say.settings.black}</label></div>
+        <p class="hint" id="black-note">${say.settings.blackNote}</p>
         <fieldset class="swatches" data-palette-choice aria-describedby="palette-note">
           <legend class="hint">${say.settings.palette}</legend>
           ${PALETTES.map((value) => html`

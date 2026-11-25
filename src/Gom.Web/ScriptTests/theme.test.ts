@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PALETTES, applyPalette, applyScheme, chooseScheme, chosenScheme, isPalette, storedPalette, syncThemeColor } from '../Scripts/theme.js';
+import { PALETTES, applyBlack, applyPalette, applyScheme, chooseScheme, chosenScheme, isPalette, storedBlack, storedPalette, syncThemeColor } from '../Scripts/theme.js';
 
 describe('applyScheme', () => {
   beforeEach(() => {
@@ -83,5 +83,19 @@ describe('the person\'s colour', () => {
     expect(storedPalette()).toBe('sage');
     expect(isPalette('neon')).toBe(false);
     expect(PALETTES).toHaveLength(12);
+  });
+});
+
+describe('pure black', () => {
+  beforeEach(() => { localStorage.clear(); delete document.documentElement.dataset['black']; });
+
+  it('is off until turned on, marks the page while on, and is remembered on this device only', () => {
+    expect(storedBlack()).toBe(false);
+    applyBlack(true);
+    expect(document.documentElement.hasAttribute('data-black')).toBe(true);
+    expect(storedBlack()).toBe(true);
+    applyBlack(false);
+    expect(document.documentElement.hasAttribute('data-black')).toBe(false);
+    expect(localStorage.getItem('gom-black')).toBeNull();
   });
 });

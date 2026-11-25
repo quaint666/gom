@@ -9,21 +9,25 @@
   &:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }
   &:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
 
-  --bg: light-dark(#F7F5EF, #121513);
-  --surface: light-dark(#FFFFFF, #1B201C);
-  --text: light-dark(#1F2A24, #EEF0EA);
-  --muted: light-dark(#4A5650, #AEB5AC);
-  --border: light-dark(#DAD6C9, #343B36);
+  --bg: light-dark(#F7F5EF, var(--black-bg, #121513));
+  --surface: light-dark(#FFFFFF, var(--black-surface, #1B201C));
+  --text: light-dark(#1F2A24, var(--black-text, #EEF0EA));
+  --muted: light-dark(#4A5650, var(--black-muted, #AEB5AC));
+  --border: light-dark(#DAD6C9, var(--black-border, #343B36));
   --on-btn: #FFFFFF;
   --err-bg: light-dark(#FBE4E0, #3A1F1B);
   --err-text: light-dark(#7A1F14, #F4B8AF);
   --err-border: light-dark(#A32A1E, #F4B8AF);
-  --hover: light-dark(#ECE9DF, #2A3036);
-  --press: light-dark(#E2DED1, #343B42);
+  --hover: light-dark(#ECE9DF, var(--black-hover, #2A3036));
+  --press: light-dark(#E2DED1, var(--black-press, #343B42));
   --warn-bg: light-dark(#FFF1CC, #3A3118);
   --warn-text: light-dark(#7A4F00, #EBD3A6);
   --warn-border: light-dark(#E3C77A, #6B5A2A);
 }
+
+/* Pure black (Settings, per device): when the page is dark, the neutrals' dark half above gives way to these, so an OLED screen
+   leaves the background unlit. Light mode is untouched. theme-init.js sets the attribute before the first paint. */
+:root[data-black] { --black-bg: #000000; --black-surface: #121212; --black-text: #EDEDED; --black-muted: #A3A3A3; --black-border: #262626; --black-hover: #1C1C1C; --black-press: #262626; }
 
 /* Sage, the default accent (and its dot in Settings). */
 :root, [data-swatch="sage"] {

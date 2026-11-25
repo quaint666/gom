@@ -15,7 +15,7 @@ import { createPusher } from './push.js';
 import { mountSignIn } from './pages/signin.js';
 import { mountSignUp } from './pages/signup.js';
 import { language, pageTitle, rememberLanguage } from './say.js';
-import { PALETTE_STORAGE_KEY, applyPalette, applyScheme, isPalette, isPattern, rememberPattern, storedPalette, storedScheme, syncThemeColor } from './theme.js';
+import { BLACK_STORAGE_KEY, PALETTE_STORAGE_KEY, applyBlack, applyPalette, applyScheme, isPalette, isPattern, rememberPattern, storedBlack, storedPalette, storedScheme, syncThemeColor } from './theme.js';
 import { showUpdateBar, watchForUpdate } from './update.js';
 
 const root = document.getElementById('app');
@@ -42,6 +42,7 @@ const token = decodeURIComponent(location.pathname.split('/')[2] ?? '');
 addEventListener('storage', (e) => {
   if (e.key === 'color-scheme') applyScheme(storedScheme());
   if (e.key === PALETTE_STORAGE_KEY) applyPalette(storedPalette());
+  if (e.key === BLACK_STORAGE_KEY) applyBlack(storedBlack());
 });
 
 const pusher = createPusher();

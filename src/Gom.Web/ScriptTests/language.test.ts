@@ -98,6 +98,26 @@ describe('settings: colour', () => {
   });
 });
 
+describe('settings: pure black', () => {
+  it('turns it on for this device without asking the server, and off again', async () => {
+    localStorage.clear();
+    delete document.documentElement.dataset['black'];
+    const a = fakeApi({ me: vi.fn(async () => ok({ id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false })), sessions: vi.fn(async () => ok([])), pushState: vi.fn(async () => fail('unknown', 404)) });
+    mountSettings(root, a, vi.fn());
+    await flush();
+    const box = root.querySelector<HTMLInputElement>('[data-black-switch]')!;
+    expect(box.checked).toBe(false);
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    expect(document.documentElement.hasAttribute('data-black')).toBe(true);
+    expect(localStorage.getItem('gom-black')).toBe('1');
+    box.checked = false;
+    box.dispatchEvent(new Event('change'));
+    expect(document.documentElement.hasAttribute('data-black')).toBe(false);
+    expect(localStorage.getItem('gom-black')).toBeNull();
+  });
+});
+
 describe('settings: background', () => {
   const me = { id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false, language: 'vi' as const };
   const tile = (code: string) => root.querySelector<HTMLInputElement>(`[data-pattern-choice] input[value="${code}"]`)!;

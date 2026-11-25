@@ -70,3 +70,18 @@ export function storedPattern(): Pattern {
 export function rememberPattern(pattern: Pattern): void {
   try { localStorage.setItem(PATTERN_KEY, pattern); } catch { /* remembered for this page only */ }
 }
+
+const BLACK_KEY = 'gom-black';
+
+/** Whether this device draws dark pages on pure black (for OLED screens). Per device, like light and dark: it is about the screen. */
+export function storedBlack(): boolean {
+  try { return localStorage.getItem(BLACK_KEY) === '1'; } catch { return false; }
+}
+
+/** Turns pure black on or off for this device's pages, now and from the first paint of the next (theme-init.js reads it). */
+export function applyBlack(on: boolean, root: HTMLElement = document.documentElement): void {
+  if (on) root.dataset['black'] = ''; else delete root.dataset['black'];
+  try { if (on) localStorage.setItem(BLACK_KEY, '1'); else localStorage.removeItem(BLACK_KEY); } catch { /* this page only */ }
+}
+
+export const BLACK_STORAGE_KEY = BLACK_KEY;

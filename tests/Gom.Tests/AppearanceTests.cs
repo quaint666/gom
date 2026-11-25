@@ -119,7 +119,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
     /// out from the stylesheet itself.
     /// </summary>
     [Fact]
-    public void Every_colour_is_readable_in_light_and_in_dark()
+    public void Every_colour_is_readable_in_light_in_dark_and_on_pure_black()
     {
         var css = Source("wwwroot", "css", "gom.css");
         var neutrals = Tokens(css[css.IndexOf(":root {", StringComparison.Ordinal)..css.IndexOf("\n}\n", StringComparison.Ordinal)]);
@@ -131,15 +131,23 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
         foreach (Match m in CssBlock().Matches(css)) palettes[m.Groups[1].Value] = Tokens(css[m.Index..css.IndexOf('}', m.Index)]);
         Assert.Equal(Appearance.Palettes.Count, palettes.Count);
 
+        // Pure black replaces the dark half of the neutrals (--black-bg for --bg, and so on); the accents keep their dark values.
+        var blackAt = css.IndexOf(":root[data-black] {", StringComparison.Ordinal);
+        Assert.True(blackAt >= 0, "no pure black block");
+        var black = Tokens(css[blackAt..css.IndexOf('}', blackAt)]).ToDictionary(k => "--" + k.Key["--black-".Length..], k => k.Value.Dark);
+        Assert.Equal(["--bg", "--border", "--hover", "--muted", "--press", "--surface", "--text"], black.Keys.Order());
+
         var low = new List<string>();
         foreach (var (code, t) in palettes)
-            foreach (var dark in new[] { false, true })
+            foreach (var mode in new[] { "light", "dark", "black" })
             {
-                string V(Dictionary<string, (string Light, string Dark)> from, string name) => dark ? from[name].Dark : from[name].Light;
+                string V(Dictionary<string, (string Light, string Dark)> from, string name) =>
+                    mode == "light" ? from[name].Light : mode == "black" && from == neutrals && black.TryGetValue(name, out var b) ? b : from[name].Dark;
                 var pairs = new (string What, string Fore, string Back)[]
                 {
                     ("white on the button", V(neutrals, "--on-btn"), V(t, "--btn")),
                     ("link on the page", V(t, "--link"), V(neutrals, "--bg")),
+                    ("grey text on a card", V(neutrals, "--muted"), V(neutrals, "--surface")),
                     ("tint text on the tint", V(t, "--tint-text"), V(t, "--tint")),
                     ("words on your bubble", V(neutrals, "--text"), V(t, "--out")),
                     ("times on your bubble", V(neutrals, "--muted"), V(t, "--out")),
@@ -148,7 +156,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
                 foreach (var (what, fore, back) in pairs)
                 {
                     var ratio = Contrast(fore, back);
-                    if (ratio < 4.5) low.Add($"{code} {(dark ? "dark" : "light")}: {what} {ratio:0.00}");
+                    if (ratio < 4.5) low.Add($"{code} {mode}: {what} {ratio:0.00}");
                 }
             }
         Assert.Empty(low);
@@ -199,6 +207,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
     private static partial Regex NameKey();
     [GeneratedRegex(@"(--[a-z-]+):\s*([^;]+);")]
     private static partial Regex Token();
-    [GeneratedRegex(@"light-dark\((#[0-9A-Fa-f]{6}),\s*(#[0-9A-Fa-f]{6})\)")]
+    // The dark half may be a var() with the default dark value as its fallback (pure black overrides it).
+    [GeneratedRegex(@"light-dark\((#[0-9A-Fa-f]{6}),\s*(?:var\(--[a-z-]+,\s*)?(#[0-9A-Fa-f]{6})\)?\)")]
     private static partial Regex LightDark();
 }
