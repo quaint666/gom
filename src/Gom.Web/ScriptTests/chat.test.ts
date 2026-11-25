@@ -1668,6 +1668,14 @@ describe('chat: passing a message on', () => {
     root.querySelector<HTMLButtonElement>('button[data-forward]')!.click(); await flush();
   };
   const echo = vi.fn(async (conversation: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(11), conversation), id: `fw-${clientId}`, clientId }));
+  const tick = (id: string) => { const box = root.querySelector<HTMLInputElement>(`[data-forward-pick="${id}"]`)!; box.checked = !box.checked; box.dispatchEvent(new Event('change', { bubbles: true })); };
+  /** Ticks these conversations and presses "Chuyển tiếp". */
+  const sendTo = async (...ids: string[]) => {
+    for (const id of ids) tick(id);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-forward-send]')!.click();
+    await flush(); await flush();
+  };
 
   it('lists your conversations to choose from, and shows the start of the message', async () => {
     open();
@@ -1675,7 +1683,9 @@ describe('chat: passing a message on', () => {
     await pick('id1');
     const panel = root.querySelector('[data-forward-panel]')!;
     expect(text(panel)).toContain('Tối nay ăn gì?');
-    expect([...panel.querySelectorAll('[data-forward-to]')].map((b) => b.getAttribute('data-forward-to'))).toEqual([C1, C2]);
+    expect([...panel.querySelectorAll('[data-forward-pick]')].map((b) => b.getAttribute('data-forward-pick'))).toEqual([C1, C2]);
+    expect(panel.tagName).toBe('DIALOG');
+    expect(root.querySelector<HTMLButtonElement>('[data-forward-send]')!.disabled).toBe(true);   // nothing ticked yet
     expect(root.querySelector('.menu')).toBeNull();
   });
 
@@ -1684,8 +1694,7 @@ describe('chat: passing a message on', () => {
     open({ send });
     await flush();
     await pick('id1');
-    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
-    await flush();
+    await sendTo(C2);
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(C2, expect.any(String), 'Tối nay ăn gì?', undefined);
     expect(text(root)).toContain('Đã chuyển tiếp đến Lan');
@@ -1698,8 +1707,7 @@ describe('chat: passing a message on', () => {
     open({ send }, [answered]);
     await flush();
     await pick('id1');
-    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
-    await flush();
+    await sendTo(C2);
     expect(send).toHaveBeenCalledWith(C2, expect.any(String), 'đáp', undefined);
   });
 
@@ -1718,8 +1726,7 @@ describe('chat: passing a message on', () => {
     const h = open({ send: vi.fn(async () => fail('not_friends', 403)) });
     await flush();
     await pick('id1');
-    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
-    await flush();
+    await sendTo(C2);
     expect(text(root.querySelector('.note')!)).toContain('bạn bè');
     expect(h.outbox.items).toHaveLength(0);
   });
@@ -1728,8 +1735,7 @@ describe('chat: passing a message on', () => {
     open({ send: vi.fn(async () => fail('not_friends', 403)) });
     await flush();
     await pick('id1');
-    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
-    await flush();
+    await sendTo(C2);
     root.querySelector<HTMLAnchorElement>(`a[data-chat="${C2}"]`)!.click();
     await flush();
     expect(root.querySelector('[data-state="failed"]')).toBeNull();
@@ -1740,8 +1746,7 @@ describe('chat: passing a message on', () => {
     const h = open({ send: vi.fn(() => new Promise(() => undefined)) });
     await flush();
     await pick('id1');
-    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
-    await flush();
+    await sendTo(C2);
     expect(h.outbox.items).toHaveLength(1);
     expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'Tối nay ăn gì?' });
   });
@@ -1750,8 +1755,7 @@ describe('chat: passing a message on', () => {
     const h = open({ send: vi.fn(async () => fail('network', 0)) });
     await flush();
     await pick('id1');
-    root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click();
-    await flush();
+    await sendTo(C2);
     expect(text(root.querySelector('.note')!)).toContain('Sẽ gửi khi có mạng');
     expect(h.outbox.items).toHaveLength(1);
     expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'Tối nay ăn gì?' });
@@ -1761,7 +1765,7 @@ describe('chat: passing a message on', () => {
     const att = (id: string, kind: 'image' | 'file' = 'image', name = 'a.webp'): Attachment => ({ id, kind, name, size: 2048, width: 40, height: 30 });
     const withFiles = (body: string): ChatMessage => ({ ...msg(1, 'minh', body), attachments: [att('p1'), att('f1', 'file', 'bảng.xlsx')] });
     const copyOf = () => vi.fn(async (_c: string, from: string) => ok(att(`copy-${from}`, from.startsWith('f') ? 'file' : 'image')));
-    const choose = async () => { root.querySelector<HTMLButtonElement>(`[data-forward-to="${C2}"]`)!.click(); await flush(); };
+    const choose = () => sendTo(C2);
 
     it('copies each picture and file into the other conversation, then sends the words with the copies', async () => {
       const send = echo.mockClear();
@@ -1833,6 +1837,104 @@ describe('chat: passing a message on', () => {
       await choose();
       expect(h.outbox.items[0]).toMatchObject({ conversation: C2, body: 'xem này' });
       expect(h.outbox.items[0]!.attachments!.map((a) => a.id)).toEqual(['copy-p1', 'copy-f1']);
+    });
+  });
+
+  describe('to several conversations', () => {
+    const C3 = '33333333-3333-4333-8333-333333333333';
+    const many = [chat(C1, 'Minh', { lastSeq: 2 }), chat(C2, 'Lan'), chat(C3, 'Hà'),
+      ...[4, 5, 6, 7].map((n) => chat(`${n}${n}${n}${n}${n}${n}${n}${n}-${n}${n}${n}${n}-4${n}${n}${n}-8${n}${n}${n}-${String(n).repeat(12)}`, `Nhóm ${n}`))];
+    const openMany = (extra: Record<string, unknown> = {}) =>
+      start({ path: `/c/${C1}`, chats: many, history: { [C1]: [msg(1, 'minh', 'Tối nay ăn gì?')] }, api: extra });
+
+    it('sends to each ticked conversation, then the note after it, and names them all', async () => {
+      const send = echo.mockClear();
+      openMany({ send });
+      await flush();
+      await pick('id1');
+      root.querySelector<HTMLTextAreaElement>('[data-forward-note]')!.value = 'xem nhé';
+      root.querySelector<HTMLTextAreaElement>('[data-forward-note]')!.dispatchEvent(new Event('input', { bubbles: true }));
+      await sendTo(C2, C3);
+      expect(send.mock.calls.map((c) => [c[0], c[2]])).toEqual([[C2, 'Tối nay ăn gì?'], [C2, 'xem nhé'], [C3, 'Tối nay ăn gì?'], [C3, 'xem nhé']]);
+      expect(text(root.querySelector('.note')!)).toBe('Đã chuyển tiếp đến Lan, Hà.');
+      expect(root.querySelector('[data-forward-panel]')).toBeNull();
+    });
+
+    it('says the button is for the ticked count', async () => {
+      openMany();
+      await flush();
+      await pick('id1');
+      tick(C2); tick(C3);
+      await flush();
+      expect(text(root.querySelector('[data-forward-send]')!)).toBe('Chuyển tiếp (2)');
+    });
+
+    it('narrows the list by name, and keeps what was ticked while it is hidden', async () => {
+      openMany();
+      await flush();
+      await pick('id1');
+      tick(C3);
+      await flush();
+      fill(root, '[data-forward-search]', 'lan');
+      await flush();
+      expect([...root.querySelectorAll('[data-forward-pick]')].map((b) => b.getAttribute('data-forward-pick'))).toEqual([C2]);
+      fill(root, '[data-forward-search]', 'zzz');
+      await flush();
+      expect(root.querySelector('[data-forward-none]')).not.toBeNull();
+      fill(root, '[data-forward-search]', '');
+      await flush();
+      expect(root.querySelector<HTMLInputElement>(`[data-forward-pick="${C3}"]`)!.checked).toBe(true);
+    });
+
+    it('lets at most five be ticked: the others wait, and it says why', async () => {
+      openMany();
+      await flush();
+      await pick('id1');
+      const ids = [...root.querySelectorAll('[data-forward-pick]')].map((b) => b.getAttribute('data-forward-pick')!);
+      for (const id of ids.slice(0, 5)) tick(id);
+      await flush();
+      expect(root.querySelector('[data-forward-full]')).not.toBeNull();
+      expect(root.querySelector<HTMLInputElement>(`[data-forward-pick="${ids[5]}"]`)!.disabled).toBe(true);
+      expect(root.querySelector<HTMLInputElement>(`[data-forward-pick="${ids[0]}"]`)!.disabled).toBe(false);   // a ticked one can be unticked
+      tick(ids[0]!);
+      await flush();
+      expect(root.querySelector('[data-forward-full]')).toBeNull();
+      expect(root.querySelector<HTMLInputElement>(`[data-forward-pick="${ids[5]}"]`)!.disabled).toBe(false);
+    });
+
+    it('says which ones were refused and why, and which went', async () => {
+      const send = vi.fn(async (conversation: string, clientId: string, body: string) =>
+        conversation === C3 ? fail('not_friends', 403) : ok({ ...msg(1, 'mom', body, at(11), conversation), id: `fw-${clientId}`, clientId }));
+      openMany({ send });
+      await flush();
+      await pick('id1');
+      await sendTo(C2, C3);
+      const said = text(root.querySelector('.note')!);
+      expect(said).toContain('Đã chuyển tiếp đến Lan.');
+      expect(said).toContain('Hà: ');
+      expect(said).toContain('bạn bè');
+    });
+
+    it('sends no note where the message itself was refused', async () => {
+      const send = vi.fn(async () => fail('not_friends', 403));
+      openMany({ send });
+      await flush();
+      await pick('id1');
+      fill(root, '[data-forward-note]', 'xem nhé');
+      await sendTo(C2);
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes when the browser closes the dialog, sending nothing', async () => {
+      const send = echo.mockClear();
+      openMany({ send });
+      await flush();
+      await pick('id1');
+      tick(C2);
+      root.querySelector('[data-forward-panel]')!.dispatchEvent(new Event('close'));
+      await flush();
+      expect(root.querySelector('[data-forward-panel]')).toBeNull();
+      expect(send).not.toHaveBeenCalled();
     });
   });
 
@@ -3096,38 +3198,198 @@ describe('chat: pictures and files', () => {
     expect(bubble.querySelector('.txt')).toBeNull();
   });
 
-  it('opens a picture large, moves between the pictures of the message, and closes with Escape', async () => {
-    const m: ChatMessage = { ...msg(1, 'minh', 'ảnh', at(10)), attachments: [att('p1'), att('p2'), att('p3')] };
-    open({}, [m]);
-    await flush();
-    root.querySelector<HTMLButtonElement>('[data-pic="p2"]')!.click();
-    await flush();
-    const viewer = () => root.querySelector('[data-viewer]');
-    expect(viewer()!.querySelector('.vimg')!.getAttribute('src')).toBe('/api/attachments/p2');
-    expect(text(viewer()!.querySelector('.viewer-bar span')!)).toBe('2 / 3');
-    root.querySelector<HTMLButtonElement>('[data-viewer-next]')!.click();
-    await flush();
-    expect(viewer()!.querySelector('.vimg')!.getAttribute('src')).toBe('/api/attachments/p3');
-    root.querySelector<HTMLButtonElement>('[data-viewer-next]')!.click();
-    await flush();
-    expect(viewer()!.querySelector('.vimg')!.getAttribute('src')).toBe('/api/attachments/p1');   // round again
-    viewer()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-    await flush();
-    expect(viewer()!.querySelector('.vimg')!.getAttribute('src')).toBe('/api/attachments/p3');
-    viewer()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await flush();
-    expect(viewer()).toBeNull();
+  describe('the picture viewer', () => {
+    const viewer = () => root.querySelector<HTMLElement>('[data-viewer]');
+    const count = () => text(viewer()!.querySelector('[data-viewer-count]')!);
+    const current = () => viewer()!.querySelector('[data-viewer-download]')!.getAttribute('href');
+    const press = (key: string) => viewer()!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    const click = async (selector: string) => { root.querySelector<HTMLButtonElement>(selector)!.click(); await flush(); await flush(); };
+    const minh = { id: 'u-minh', displayName: 'Minh' };
+    const listed = (id: string, seq: number, body = `m${seq}`) => ({ attachment: att(id), messageId: `id${seq}`, seq, createdAt: at(10, seq), sender: minh, body });
+
+    it('is a dialog that steps through the pictures of a message it cannot find in the list, without going round, and closes with Escape', async () => {
+      open({}, [{ ...msg(1, 'minh', 'ảnh', at(10)), attachments: [att('p1'), att('p2'), att('p3')] }]);
+      await flush();
+      await click('[data-pic="p2"]');
+      expect(viewer()!.tagName).toBe('DIALOG');
+      expect(viewer()!.querySelectorAll('[data-viewer-slide]')).toHaveLength(3);
+      expect(current()).toBe('/api/attachments/p2');
+      expect(count()).toBe('2 / 3');
+      await click('[data-viewer-next]');
+      expect(current()).toBe('/api/attachments/p3');
+      expect(root.querySelector('[data-viewer-next]')).toBeNull();   // the newest picture: nothing further
+      press('ArrowRight'); await flush(); await flush();
+      expect(current()).toBe('/api/attachments/p3');   // and the arrow key does not go round to the first
+      press('ArrowLeft'); await flush(); await flush();
+      expect(current()).toBe('/api/attachments/p2');
+      press('Escape'); await flush();
+      expect(viewer()).toBeNull();
+    });
+
+    it('goes on to the pictures of other messages, oldest on the left, with who sent each, when, and its words', async () => {
+      const media = vi.fn(async () => ok({ items: [listed('p3', 2, 'cả nhà'), listed('p2', 2, 'cả nhà'), listed('p1', 1, 'hôm qua')], hasMore: false }));
+      open({ media }, [{ ...msg(1, 'minh', 'hôm qua'), attachments: [att('p1')] }, { ...msg(2, 'minh', 'cả nhà'), attachments: [att('p3'), att('p2')] }]);
+      await flush();
+      await click('[data-pic="p3"]');
+      expect(media).toHaveBeenCalledWith(C1, 'image', undefined);
+      expect([...viewer()!.querySelectorAll('[data-viewer-slide]')].map((e) => e.getAttribute('data-viewer-slide'))).toEqual(['p1', 'p3', 'p2']);
+      expect(count()).toBe('2 / 3');
+      expect(text(viewer()!.querySelector('[data-viewer-foot]')!)).toContain('Minh');
+      expect(text(viewer()!.querySelector('[data-viewer-caption]')!)).toBe('cả nhà');
+      await click('[data-viewer-prev]');
+      expect(current()).toBe('/api/attachments/p1');
+      expect(text(viewer()!.querySelector('[data-viewer-caption]')!)).toBe('hôm qua');
+      expect(root.querySelector('[data-viewer-prev]')).toBeNull();
+    });
+
+    it('asks for older pictures at the oldest one it has, and steps back into them', async () => {
+      const media = vi.fn(async (_c: string, _k: string, before?: number) => ok(before === undefined ? { items: [listed('p5', 5)], hasMore: true } : { items: [listed('p4', 4)], hasMore: false }));
+      open({ media }, [{ ...msg(5, 'minh'), attachments: [att('p5')] }]);
+      await flush();
+      await click('[data-pic="p5"]');
+      expect(count()).toBe('1 / 1+');
+      await click('[data-viewer-prev]');
+      expect(media).toHaveBeenLastCalledWith(C1, 'image', 5);
+      expect(current()).toBe('/api/attachments/p4');
+      expect(count()).toBe('1 / 2');
+    });
+
+    it('opens from a picture in the side panel instead of jumping to its message', async () => {
+      localStorage.setItem('gom-info', '1');
+      try {
+        open({ media: vi.fn(async (_c: string, kind: string) => ok({ items: kind === 'image' ? [listed('p9', 9)] : [], hasMore: false })) }, [msg(1, 'minh')]);
+        await flush();
+        await click('[data-info-pic="p9"]');
+        expect(current()).toBe('/api/attachments/p9');
+        expect(text(viewer()!.querySelector('[data-viewer-foot]')!)).toContain('Minh');
+      } finally { localStorage.removeItem('gom-info'); }
+    });
+
+    it('follows a swipe: the picture the strip comes to rest on is the current one', async () => {
+      const h = open({ media: vi.fn(async () => ok({ items: [listed('p2', 2), listed('p1', 1)], hasMore: false })) }, [{ ...msg(1, 'minh'), attachments: [att('p1')] }, { ...msg(2, 'minh'), attachments: [att('p2')] }]);
+      await flush();
+      await click('[data-pic="p2"]');
+      const track = viewer()!.querySelector<HTMLElement>('[data-viewer-track]')!;
+      Object.defineProperty(track, 'clientWidth', { value: 400, configurable: true });
+      track.scrollLeft = 0;
+      track.dispatchEvent(new Event('scrollend'));
+      track.dispatchEvent(new Event('scroll'));
+      h.timers.filter((t) => t.ms === 150).at(-1)?.fn();
+      await flush();
+      expect(current()).toBe('/api/attachments/p1');
+    });
+
+    it('closes when the browser closes the dialog (Escape or the Back gesture on a phone), and the conversation stays open', async () => {
+      const h = open({}, [{ ...msg(1, 'minh'), attachments: [att('p1')] }]);
+      await flush();
+      await click('[data-pic="p1"]');
+      viewer()!.dispatchEvent(new Event('close'));
+      await flush();
+      expect(viewer()).toBeNull();
+      expect(root.querySelector('[data-msg="id1"]')).not.toBeNull();
+      expect(h.nav.push).not.toHaveBeenCalled();
+    });
+
+    it('closes with the button, and has no arrows for a single picture', async () => {
+      open({}, [{ ...msg(1, 'minh', '', at(10)), attachments: [att('p1')] }]);
+      await flush();
+      await click('[data-pic="p1"]');
+      expect(root.querySelector('[data-viewer-next]')).toBeNull();
+      expect(root.querySelector('[data-viewer-prev]')).toBeNull();
+      expect(viewer()!.querySelector('[data-viewer-caption]')).toBeNull();   // no words, no caption
+      await click('[data-viewer-close]');
+      expect(viewer()).toBeNull();
+    });
+
+    it('passes on just the picture shown, without the words', async () => {
+      const copyAttachment = vi.fn(async (_c: string, from: string) => ok(att(`copy-${from}`)));
+      const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(9, 'mom', body, at(11), c), clientId }));
+      start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh'), chat(C2, 'Lan')], history: { [C1]: [{ ...msg(1, 'minh', 'hai ảnh'), attachments: [att('p1'), att('p2')] }] }, api: { copyAttachment, send } });
+      await flush();
+      await click('[data-pic="p2"]');
+      await click('[data-viewer-forward]');
+      expect(viewer()).toBeNull();
+      const box = root.querySelector<HTMLInputElement>(`[data-forward-pick="${C2}"]`)!;
+      box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      await click('[data-forward-send]');
+      expect(copyAttachment.mock.calls).toEqual([[C2, 'p2']]);
+      expect(send).toHaveBeenCalledWith(C2, expect.any(String), '', undefined, ['copy-p2']);
+    });
+
+    it('goes to the message of the picture', async () => {
+      open({}, [{ ...msg(1, 'minh'), attachments: [att('p1')] }, msg(2, 'mom')]);
+      await flush();
+      await click('[data-pic="p1"]');
+      await click('[data-viewer-goto]');
+      expect(viewer()).toBeNull();
+      expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
+    });
+
+    it('stays inside a message still being sent, with no way to pass it on yet, and does not look for it on the server', async () => {
+      const h = open({ upload: vi.fn(async () => ok(att('p1'))), send: vi.fn(() => new Promise(() => undefined)) });
+      await flush();
+      await choose([photo()]);
+      submitForm();
+      await flush();
+      await click('[data-msg="new-1"] [data-pic="p1"]');
+      expect(current()).toBe('/api/attachments/p1');
+      expect(root.querySelector('[data-viewer-forward]')).toBeNull();
+      expect(root.querySelector('[data-viewer-goto]')).toBeNull();
+      expect(h.api.media).not.toHaveBeenCalled();
+    });
+
+    it('closes when the message of the picture shown is taken back', async () => {
+      const h = open({}, [{ ...msg(1, 'minh'), attachments: [att('p1')] }]);
+      await flush();
+      await click('[data-pic="p1"]');
+      h.handlers().event(C1, { seq: 2, kind: 'deleted', message: { ...msg(1, 'minh', ''), deleted: true } });
+      await flush();
+      expect(viewer()).toBeNull();
+    });
+    it('closes when you delete the message of the picture shown for yourself', async () => {
+      open({}, [{ ...msg(1, 'minh'), attachments: [att('p1')] }]);
+      await flush();
+      root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!.click(); await flush();
+      root.querySelector<HTMLButtonElement>('button[data-hide]')!.click(); await flush();
+      await click('[data-pic="p1"]');
+      root.querySelector<HTMLButtonElement>('[data-confirm-hide]')!.click();
+      await flush(); await flush();
+      expect(viewer()).toBeNull();
+    });
+
+    it('shows the new words when the message of the picture is changed', async () => {
+      const h = open({ media: vi.fn(async () => ok({ items: [listed('p1', 1, 'cũ')], hasMore: false })) }, [{ ...msg(1, 'minh', 'cũ'), attachments: [att('p1')] }]);
+      await flush();
+      await click('[data-pic="p1"]');
+      h.handlers().event(C1, { seq: 2, kind: 'updated', message: { ...msg(1, 'minh', 'mới'), attachments: [att('p1')], editedAt: at(11) } });
+      await flush();
+      expect(text(viewer()!.querySelector('[data-viewer-caption]')!)).toBe('mới');
+    });
   });
 
-  it('has no arrows for a single picture and closes with the button', async () => {
-    open({}, [{ ...msg(1, 'minh', '', at(10)), attachments: [att('p1')] }]);
-    await flush();
-    root.querySelector<HTMLButtonElement>('[data-pic="p1"]')!.click();
-    await flush();
-    expect(root.querySelector('[data-viewer-next]')).toBeNull();
-    root.querySelector<HTMLButtonElement>('[data-viewer-close]')!.click();
-    await flush();
-    expect(root.querySelector('[data-viewer]')).toBeNull();
+  describe('"Lưu về máy" in the menu', () => {
+    const menuOf = async (id: string) => { root.querySelector<HTMLButtonElement>(`[data-msg="${id}"] button[data-menu]`)!.click(); await flush(); };
+
+    it('downloads the one picture or file of a message', async () => {
+      open({}, [{ ...msg(1, 'minh'), attachments: [att('f1', 'file', 'bảng.xlsx')] }]);
+      await flush();
+      await menuOf('id1');
+      const save = root.querySelector<HTMLAnchorElement>('[data-save]')!;
+      expect(save.getAttribute('href')).toBe('/api/attachments/f1');
+      expect(save.getAttribute('download')).toBe('bảng.xlsx');
+    });
+
+    it('is not offered for a message with several, or none', async () => {
+      open({}, [{ ...msg(1, 'minh'), attachments: [att('p1'), att('p2')] }, msg(2, 'minh')]);
+      await flush();
+      await menuOf('id1');
+      expect(root.querySelector('[data-save]')).toBeNull();
+      root.querySelector<HTMLButtonElement>('.close-menu')!.click();
+      await flush();
+      await menuOf('id2');
+      expect(root.querySelector('[data-save]')).toBeNull();
+    });
   });
 
   it('shows the pictures it has sent while the message is still going, and keeps them in the outbox across a reload', async () => {
@@ -3152,7 +3414,7 @@ describe('chat: pictures and files', () => {
   });
 
   describe('the side panel list, from the server', () => {
-    const item = (id: string, seq: number, kind: 'image' | 'file' = 'image', name = 'a.webp') => ({ attachment: att(id, kind, name), messageId: `m${seq}`, seq, createdAt: at(10) });
+    const item = (id: string, seq: number, kind: 'image' | 'file' = 'image', name = 'a.webp') => ({ attachment: att(id, kind, name), messageId: `m${seq}`, seq, createdAt: at(10), sender: { id: 'u-minh', displayName: 'Minh' }, body: '' });
     const served = (images: ReturnType<typeof item>[], files: ReturnType<typeof item>[], hasMoreImages = false) =>
       vi.fn(async (_c: string, kind: 'image' | 'file', before?: number) =>
         ok({ items: (kind === 'image' ? images : files).filter((i) => before === undefined || i.seq < before), hasMore: kind === 'image' && before === undefined && hasMoreImages }));

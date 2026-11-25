@@ -60,6 +60,11 @@ public class MediaListTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(newMessage, pictures.GetProperty("items")[0].GetProperty("messageId").GetGuid());
         Assert.Equal(oldMessage, pictures.GetProperty("items")[2].GetProperty("messageId").GetGuid());
         Assert.Equal("image", pictures.GetProperty("items")[0].GetProperty("attachment").GetProperty("kind").GetString());
+        // The viewer shows who sent each picture and the words that came with it.
+        Assert.Equal(t.B.Id, pictures.GetProperty("items")[0].GetProperty("sender").GetProperty("id").GetGuid());
+        Assert.Equal(t.B.DisplayName, pictures.GetProperty("items")[0].GetProperty("sender").GetProperty("displayName").GetString());
+        Assert.Equal(t.A.Id, pictures.GetProperty("items")[2].GetProperty("sender").GetProperty("id").GetGuid());
+        Assert.Equal("x", pictures.GetProperty("items")[0].GetProperty("body").GetString());
 
         var files = await Media(t, t.CA, "file");
         Assert.Equal([doc], Ids(files));
