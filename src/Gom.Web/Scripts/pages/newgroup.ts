@@ -4,6 +4,7 @@ import type { Api, Failure, Person } from '../api.js';
 import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, avatar, errorBox } from '../ui.js';
+import { limits } from '../limits.js';
 
 /** Make a group: a name, and some of your friends. `withFriend` (a Gom ID, from "make a group with this friend") starts ticked. */
 export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) => void, withFriend: string | null = null): void {
@@ -24,13 +25,13 @@ export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) =>
         <form @submit=${onSubmit}>
           <div class="field">
             <label for="group-title">Tên nhóm</label>
-            <div class="input"><input id="group-title" name="title" type="text" maxlength="60" autocomplete="off" enterkeyhint="done"
+            <div class="input"><input id="group-title" name="title" type="text" maxlength=${limits().nameChars} autocomplete="off" enterkeyhint="done"
               .value=${live(title)} @input=${(e: Event) => { title = (e.target as HTMLInputElement).value; }}></div>
           </div>
           <fieldset class="picks">
             <legend class="section">Chọn thành viên${picked.size > 0 ? html` · <span data-picked>${picked.size}</span>` : nothing}</legend>
             <div class="searchfield input">${icons.search()}
-              <input type="search" name="find" aria-label="Tìm bạn bè" placeholder="Tìm bạn bè" autocomplete="off" maxlength="60"
+              <input type="search" name="find" aria-label="Tìm bạn bè" placeholder="Tìm bạn bè" autocomplete="off" maxlength=${limits().nameChars}
                 .value=${live(query)} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>
             ${friends.map((f, i) => !matches(`${f.displayName} ${f.gomId}`, query) ? nothing : html`
               <div class="pick"><input type="checkbox" id="pick-${i}" value=${f.gomId} .checked=${live(picked.has(f.gomId))}

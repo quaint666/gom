@@ -1,7 +1,7 @@
 # Next session: where things stand and what comes next
 
-Written 2026-11-25, after the session that opened PRs #90 to #100, and brought up to date the same day after #109, when
-voice calls were put first (section 2). Claims are marked **[verified]** (seen in
+Written 2026-11-25, after the session that opened PRs #90 to #100, and brought up to date the same day after #110, when
+H put the web app's work before voice calls (section 2). Claims are marked **[verified]** (seen in
 the code or real output), **[stated]** (someone said so; who is given), or **[inferred]** (reasoned, not tried).
 
 ## 1. Where things stand
@@ -14,31 +14,37 @@ the code or real output), **[stated]** (someone said so; who is given), or **[in
 
 ## 2. Work queue (agreed order)
 
-Each is discussed first (design, decisions, what cannot be verified), then built.
+Each is discussed first (design, decisions, what cannot be verified), then built. Items 1 to 7 were agreed on
+2026-11-25 and opened as stacked pull requests; their decisions are in `docs/decisions.md`.
 
-1. **Voice calls**, everything else waits. The plan, the 42 decisions, the Cloudflare and Android facts, what H does
-   and the PR order are in **`docs/voice-calls.md`**; read it first. Next step: its PR 1 (mockups and the `/privacy`
+1. **One source per value**: one page shell, the server's limits in `data-limits`.
+2. **Every piece of text in one table** (two pull requests), words unchanged; tests keep their literal Vietnamese.
+3. **A conversation's information on phones**: the panel as a full page, the actions at its foot.
+4. **Notifications with the message's words**, the default for new devices; a message taken back replaces its own.
+5. **Request to join**: sign-up open when the owner switches it on, a waiting screen, approve or refuse.
+6. **English**: a second table, a setting per person, en-GB dates.
+7. **Voice calls**, then the Android app. The plan, its decisions, the Cloudflare and Android facts, what H does and
+   the PR order are in **`docs/voice-calls.md`**; read it first. Next step: its PR 1 (mockups and the `/privacy`
    page), shown to H before it is built.
-2. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
+8. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
    with the link or text ready, then asks which conversation. Gom-only: Peekbox and Bloomy already call
    `navigator.share` **[stated: their sessions, 2026-11-25]**. Works only where Gom is installed **[inferred]**; to check
    against current docs before designing (GET or POST, text and links only or files too).
-3. **A webhook that posts into a group.** A secret link per group posts plain text as a labelled bot. What operations
+9. **A webhook that posts into a group.** A secret link per group posts plain text as a labelled bot. What operations
    asked for: a plain-text POST, safe to send twice, a fast 2xx even when nobody is online, a rate limit per secret, and
    a secret that can be replaced without changing the group. Operations would use it only beside their own alerts (a
    digest of deploy results and a daily "all quiet" line), never instead, since Gom runs on a machine it would report
    on. Bloomy would send a new paid order, a delivery cut-off coming up, and a review to approve, beside its email
    **[stated: those sessions]**.
-4. **Link cards.** Only for https addresses on a list in configuration (the shops' own sites), with a timeout, a size
+10. **Link cards.** Only for https addresses on a list in configuration (the shops' own sites), with a timeout, a size
    limit and a stored copy; title, picture and description, no price (a campaign price would go stale). Operations'
    check of what the container can reach on the host's own network comes first **[stated: operations]**.
    Link previews for any address were built once and removed in #61; their worker is in the git history.
-5. **Two-step sign-in for the owner (TOTP).** Bloomy's design is the reference: `totp.ts` (the maths, the secret
+11. **Two-step sign-in for the owner (TOTP).** Bloomy's design is the reference: `totp.ts` (the maths, the secret
    encrypted at rest) and `routes/admin-auth.ts` (a code used once per step, recovery codes, an attempt lock)
    **[stated: the Bloomy session]**.
 
-Not being built [H, 2026-11-25]: "request to join" (open sign-up approved by the owner), and a cache for reads or
-message search (measure first if anything ever feels slow; a trigram index is the first step for search).
+Not being built [H, 2026-11-25]: a cache for reads or message search (measure first if anything ever feels slow; a trigram index is the first step for search).
 
 Later: a load test at the 256 MB limit with several people uploading; the next whole-repository review (`docs/repo-review.md`) at the end of the queue.
 

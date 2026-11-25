@@ -230,7 +230,7 @@ public static class MessageEndpoints
 
     /// <summary>Most results one search returns; the newest come first.</summary>
     private const int SearchLimit = 30;
-    private const int SearchMaxChars = 100;
+    public const int SearchMaxChars = 100;
 
     /// <summary>
     /// Finds messages of one conversation that contain the words, ignoring capitals and accents ("pho" finds "Phở"). Only what this

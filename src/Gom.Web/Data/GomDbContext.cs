@@ -40,7 +40,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => x.GomId).IsUnique();
             // At most one row with is_owner = true.
             e.HasIndex(x => x.IsOwner).IsUnique().HasFilter("is_owner");
-            e.Property(x => x.DisplayName).HasMaxLength(60);
+            e.Property(x => x.DisplayName).HasMaxLength(Auth.DisplayName.MaxLength);
             // On for everyone who was here before the switch existed, too: the database says so, not only the C# default.
             e.Property(x => x.ShareReadReceipts).HasDefaultValue(true);
             // A picture is fetched by its own id: each belongs to one person.
@@ -126,7 +126,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             });
             e.Property(x => x.Kind).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<ConversationKind>(v, true)).HasMaxLength(10);
             e.Property(x => x.DirectKey).HasMaxLength(73);
-            e.Property(x => x.Title).HasMaxLength(60);
+            e.Property(x => x.Title).HasMaxLength(Auth.DisplayName.MaxLength);
             e.HasIndex(x => x.DirectKey).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.JoinApproval).HasDefaultValue(false);

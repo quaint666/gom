@@ -5,7 +5,8 @@ import { chosenScheme, chooseScheme, type Choice } from '../theme.js';
 import type { Installer } from '../install.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
-import { errorText } from '../text.js';
+import { errorText, passwordHint } from '../text.js';
+import { limits } from '../limits.js';
 
 /** The choices for the colour scheme, in the order shown. */
 const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', 'Theo hệ thống'], ['light', 'Sáng'], ['dark', 'Tối']];
@@ -118,7 +119,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
         ${user.uploads ? pictureCard(user) : nothing}
         <form class="card" data-nickname @submit=${saveNickname}>
           <label for="display-name">Tên mọi người nhìn thấy</label>
-          <div class="input"><input id="display-name" name="displayName" type="text" autocomplete="nickname" maxlength="60" enterkeyhint="done"
+          <div class="input"><input id="display-name" name="displayName" type="text" autocomplete="nickname" maxlength=${limits().nameChars} enterkeyhint="done"
             .value=${nickname} @input=${(e: Event) => { nickname = (e.target as HTMLInputElement).value; }}></div>
           <p class="hint">Để trống để dùng Gom ID (@${user.gomId}).</p>
           <button class="btn" type="submit" ?disabled=${busy}>Lưu tên</button>
@@ -152,7 +153,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
           ${passwordField({ label: 'Mật khẩu hiện tại', name: 'current', autocomplete: 'current-password', value: current, shown,
             onInput: (v) => { current = v; }, onToggle: toggleShown })}
           ${passwordField({ label: 'Mật khẩu mới', name: 'password', autocomplete: 'new-password', value: next, shown,
-            hint: 'Ít nhất 10 ký tự. Các thiết bị khác sẽ bị đăng xuất.', onInput: (v) => { next = v; }, onToggle: toggleShown })}
+            hint: `${passwordHint()} Các thiết bị khác sẽ bị đăng xuất.`, onInput: (v) => { next = v; }, onToggle: toggleShown })}
           <button class="btn" type="submit" ?disabled=${busy}>Đổi mật khẩu</button>
           <p class="hint" role="status" data-password-status>${passwordStatus}</p>
         </form>

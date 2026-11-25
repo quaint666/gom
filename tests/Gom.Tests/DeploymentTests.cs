@@ -79,7 +79,7 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
         var rule = System.Text.RegularExpressions.Regex.Match(css, @"(?m)^html:has\(> body\[data-page=""home""\]\), body\[data-page=""home""\] \{([^}]*)\}");
         Assert.True(rule.Success);
         Assert.Contains("overflow: hidden", rule.Groups[1].Value);
-        Assert.Contains("data-page=\"home\"", File.ReadAllText(Path.Combine(RepoRoot(), "src", "Gom.Web", "wwwroot", "pages", "home.html")));
+        Assert.Contains(Gom.Web.Pages.All, p => p.Route == "/" && p.Name == "home");
     }
 
     /// <summary>On a phone the keyboard must shrink the page, not cover the composer or leave a gap.</summary>

@@ -3,6 +3,7 @@ import type { Api, Conversation, FriendLists, Failure, Person, User } from '../a
 import * as icons from '../icons.js';
 import { fold, matches } from '../search.js';
 import { appBar, avatar, errorBox, formatTime } from '../ui.js';
+import { limits } from '../limits.js';
 
 /** How many rows of a long list show before "Xem thêm". */
 const HANDFUL = 5;
@@ -144,7 +145,7 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
         ${tabs()}
         <div class="searchfield input">${icons.search()}
           <input type="search" name="find" aria-label=${tab === 'friends' ? 'Tìm bạn bè' : 'Tìm nhóm'} placeholder=${tab === 'friends' ? 'Tìm bạn bè' : 'Tìm nhóm'}
-            autocomplete="off" maxlength="60" .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; expanded = false; update(); }}></div>
+            autocomplete="off" maxlength=${limits().nameChars} .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; expanded = false; update(); }}></div>
         ${listing()}
 
         ${tab === 'friends' ? section('Đã chặn', blocked.map((p) => html`

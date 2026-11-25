@@ -140,6 +140,14 @@ video, recording, iPhone native.
 42. `Permissions-Policy` today says `microphone=()`, which blocks the microphone on every Gom page [verified:
     `SecurityHeaders.cs`]. Web calls need `microphone=(self)`, changed only then.
 
+**Messages in the app (added 2026-11-25)**
+
+43. A web view has no Web Push, so in the app new messages also come by FCM. The push carries only the conversation and
+    the message's IDs; the app fetches the words over HTTPS with its session and builds the notification itself, so
+    Google never sees them, and the device's notification level still applies.
+44. A device that registers for FCM stops its Web Push, so nothing arrives twice. The web half (the words in a
+    notification) is built first, for browsers; this half comes with the app.
+
 ## 3. Cloudflare TURN, the facts (docs updated June to November 2026 [verified: developers.cloudflare.com])
 
 - **Price:** $0.05 per GB, counting only what Cloudflare sends to the phones; the first 1,000 GB a month free, shared

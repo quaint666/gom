@@ -67,7 +67,7 @@ public static class LinkEndpoints
     public sealed record InviteRequest(int? Days = null, int? Uses = null);
 
     /// <summary>Most days and most people an invite may be made for.</summary>
-    private const int MaxInviteDays = 30, MaxInviteUses = 100;
+    public const int MaxInviteDays = 30, MaxInviteUses = 100;
 
     /// <summary>
     /// A link the owner can hand to several people. It works until it expires (1 to 30 days), is revoked, or has let in as many as chosen
