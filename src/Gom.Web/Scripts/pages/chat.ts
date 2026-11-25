@@ -1229,7 +1229,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       } else if (!message.notice) {   // a notice says what happened; it is not what was last said, and nothing to read
         c.lastMessage = {
           seq: message.seq, body: message.body.length > PREVIEW_CHARS ? message.body.slice(0, PREVIEW_CHARS) : message.body,
-          createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true, attachment: message.attachments?.[0]?.kind ?? null,
+          createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true, attachment: message.attachments?.[0]?.kind ?? null, sticker: message.sticker ?? null,
         };
         if (message.sender.id !== me?.id && message.deleted !== true && !(conversation === openId && deps.visible())) c.unread++;
         chats = [c, ...(chats ?? []).filter((x) => x !== c)];
