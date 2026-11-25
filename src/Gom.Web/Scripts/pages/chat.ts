@@ -12,6 +12,7 @@ import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
 import { limits } from '../limits.js';
+import { say } from '../say.js';
 import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 
@@ -197,10 +198,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function preview(c: Conversation): string {
     const last = c.lastMessage;
-    if (last === null) return 'Chưa có tin nhắn';
+    if (last === null) return say.chat.noMessagesYet;
     if (last.deleted) return recalledText(last.sender.id === me?.id, c.kind === 'group' ? last.sender.displayName : null);
-    const who = last.sender.id === me?.id ? 'Bạn: ' : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
-    return who + (last.body !== '' ? last.body : last.sticker ? 'Đã gửi một nhãn dán' : last.attachment === 'image' ? 'Đã gửi một hình ảnh' : last.attachment === 'file' ? 'Đã gửi một tệp' : '');
+    const who = last.sender.id === me?.id ? `${say.common.you}: ` : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
+    return who + (last.body !== '' ? last.body : last.sticker ? say.chat.sentSticker : last.attachment === 'image' ? say.chat.sentPicture : last.attachment === 'file' ? say.chat.sentFile : '');
   }
 
   const row = (c: Conversation) => html`
@@ -210,13 +211,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       @pointerdown=${(e: PointerEvent) => rowPressStart(e, c.id)} @pointermove=${rowPressMove} @pointerup=${rowPressEnd} @pointercancel=${rowPressEnd} @pointerleave=${rowPressEnd}>
       ${avatar(c.title ?? '?', c.peer?.avatar)}
       <div class="im">
-        <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label="Đã ghim">${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
+        <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label=${say.chat.pinnedMark}>${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv">${preview(c)}</span>
-          ${isMuted(c) ? html`<span class="mute-mark" role="img" aria-label="Đã tắt thông báo">${icons.bellOff()}</span>` : nothing}
-          ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>`
-            : c.markedUnread ? html`<span class="badge dot ${isMuted(c) ? 'muted' : ''}" data-marked-unread role="img" aria-label="Đánh dấu chưa đọc"></span>` : nothing}</div>
+          ${isMuted(c) ? html`<span class="mute-mark" role="img" aria-label=${say.chat.mutedMark}>${icons.bellOff()}</span>` : nothing}
+          ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label=${say.chat.unreadCount(c.unread)}>${c.unread > 99 ? '99+' : c.unread}</span>`
+            : c.markedUnread ? html`<span class="badge dot ${isMuted(c) ? 'muted' : ''}" data-marked-unread role="img" aria-label=${say.chat.markUnread}></span>` : nothing}</div>
       </div></a>
-      <button class="ib row-more" type="button" data-row-menu=${c.id} aria-label=${`Tùy chọn cho ${c.title ?? 'cuộc trò chuyện'}`} aria-haspopup="menu"
+      <button class="ib row-more" type="button" data-row-menu=${c.id} aria-label=${say.chat.optionsFor(c.title)} aria-haspopup="menu"
         aria-expanded=${rowMenu?.id === c.id ? 'true' : 'false'} @click=${(e: MouseEvent) => openRowMenu(c.id, rowMenuPoint(e))}>${icons.more()}</button></li>`;
 
   /** The conversations in view: hidden ones are listed by the server (for a search) and left out here. */
@@ -225,21 +226,21 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const visibleChats = (): Conversation[] => shownChats().filter((c) => matches(c.title ?? '', filter));
   /** Hidden conversations whose name matches what is typed: found by a search only, never listed with nothing typed. */
   const hiddenMatches = (q: string): Conversation[] => q.trim() === '' ? [] : (chats ?? []).filter((c) => c.hidden === true && matches(c.title ?? '', q));
-  const hiddenLabel = () => html`<h3 class="hidden-label" data-hidden-label>Đã ẩn</h3>`;
+  const hiddenLabel = () => html`<h3 class="hidden-label" data-hidden-label>${say.chat.hiddenLabel}</h3>`;
 
-  const banner = () => offline ? html`<div class="warn" role="status">${icons.wifiOff()}<span>Mất kết nối. Đang kết nối lại…</span></div>` : nothing;
+  const banner = () => offline ? html`<div class="warn" role="status">${icons.wifiOff()}<span>${say.chat.offline}</span></div>` : nothing;
 
   const empty = () => html`
     <div class="empty">
       <div class="big-icon">${icons.logo()}</div>
-      <h2>Chưa có cuộc trò chuyện nào</h2>
-      <p class="lead">Hãy kết bạn rồi bắt đầu trò chuyện.</p>
-      <a class="btn" href="/friends">Thêm bạn bè</a>
+      <h2>${say.chat.emptyTitle}</h2>
+      <p class="lead">${say.chat.emptyLead}</p>
+      <a class="btn" href="/friends">${say.common.addFriends}</a>
     </div>`;
 
   /** What stands where a message was: in your voice, or theirs (with their name in a group). */
   const recalledText = (mine: boolean, name: string | null): string =>
-    mine ? 'Bạn đã thu hồi một tin nhắn' : name === null ? 'Tin nhắn đã được thu hồi' : `${name} đã thu hồi một tin nhắn`;
+    mine ? say.chat.recalledByYou : name === null ? say.chat.recalled : say.chat.recalledBy(name);
 
   /** One line of the menu: an icon and a word. */
   const menuItem = (attr: string, icon: TemplateResult, label: string, run: () => void, danger = false): TemplateResult =>
@@ -260,27 +261,27 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const kept = (m.attachments ?? []).filter((a) => !a.removed);
     return html`
       <div class="scrim" data-scrim @click=${close}></div>
-      <div class="menu ${mine ? 'mine' : ''}" role="menu" aria-label="Tùy chọn tin nhắn" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') close(); }}>
+      <div class="menu ${mine ? 'mine' : ''}" role="menu" aria-label=${say.chat.messageOptions} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') close(); }}>
       ${menu.hide ? html`
-        <p>Xóa tin nhắn này chỉ ở phía bạn? Người khác vẫn thấy nó.</p>
-        <div class="ask"><button class="btn small" type="button" data-confirm-hide @click=${() => void hide(m)}>Xóa với tôi</button>
-        <button class="btn secondary small" type="button" data-cancel-hide @click=${close}>Hủy</button></div>` : menu.confirming ? html`
-        <p>Thu hồi tin nhắn này với mọi người?</p>
-        <div class="ask"><button class="btn small" type="button" data-confirm-recall @click=${() => void recall(m)}>Thu hồi</button>
-        <button class="btn secondary small" type="button" data-cancel-recall @click=${close}>Hủy</button></div>` : html`
-        <div class="emoji-row" role="group" aria-label="Thả cảm xúc">${EMOJI.map((e) => html`
-          <button class="emoji" type="button" data-react=${e} aria-label=${`Thả ${e}`} @click=${() => void setReaction(m, e)}>${e}</button>`)}</div>
+        <p>${say.chat.hideQ}</p>
+        <div class="ask"><button class="btn small" type="button" data-confirm-hide @click=${() => void hide(m)}>${say.chat.deleteForMe}</button>
+        <button class="btn secondary small" type="button" data-cancel-hide @click=${close}>${say.common.cancel}</button></div>` : menu.confirming ? html`
+        <p>${say.chat.recallQ}</p>
+        <div class="ask"><button class="btn small" type="button" data-confirm-recall @click=${() => void recall(m)}>${say.chat.recall}</button>
+        <button class="btn secondary small" type="button" data-cancel-recall @click=${close}>${say.common.cancel}</button></div>` : html`
+        <div class="emoji-row" role="group" aria-label=${say.chat.react}>${EMOJI.map((e) => html`
+          <button class="emoji" type="button" data-react=${e} aria-label=${say.chat.reactWith(e)} @click=${() => void setReaction(m, e)}>${e}</button>`)}</div>
         <div class="items-grid">
-        ${menuItem('reply', icons.reply(), 'Trả lời', () => startReply(m))}
-        ${m.sticker ? nothing : menuItem('copy', icons.copy(), 'Sao chép', () => void copyText(m))}
-        ${pinned ? menuItem('unpin', icons.pin(), 'Bỏ ghim', () => void setPin(m, false)) : menuItem('pin', icons.pin(), 'Ghim', () => void setPin(m, true))}
-        ${m.body === '' && !m.sticker && kept.length === 0 ? nothing : menuItem('forward', icons.forward(), 'Chuyển tiếp', () => { menu = null; startForward(m.body, kept, m.sticker ?? null); })}
+        ${menuItem('reply', icons.reply(), say.chat.reply, () => startReply(m))}
+        ${m.sticker ? nothing : menuItem('copy', icons.copy(), say.chat.copy, () => void copyText(m))}
+        ${pinned ? menuItem('unpin', icons.pin(), say.chat.unpin, () => void setPin(m, false)) : menuItem('pin', icons.pin(), say.chat.pin, () => void setPin(m, true))}
+        ${m.body === '' && !m.sticker && kept.length === 0 ? nothing : menuItem('forward', icons.forward(), say.chat.forward, () => { menu = null; startForward(m.body, kept, m.sticker ?? null); })}
         ${m.attachments?.length === 1 && kept.length === 1 ? saveItem(kept[0]!) : nothing}
-        ${mine && !m.sticker ? menuItem('edit', icons.pencil(), 'Chỉnh sửa', () => startEdit(m)) : nothing}
-        ${menuItem('hide', icons.trash(), 'Xóa với tôi', () => { menu = { id: m.id, confirming: false, hide: true }; update(); })}
-        ${mine ? menuItem('recall', icons.undo(), 'Thu hồi', () => { menu = { id: m.id, confirming: true }; update(); }, true) : nothing}
+        ${mine && !m.sticker ? menuItem('edit', icons.pencil(), say.chat.edit, () => startEdit(m)) : nothing}
+        ${menuItem('hide', icons.trash(), say.chat.deleteForMe, () => { menu = { id: m.id, confirming: false, hide: true }; update(); })}
+        ${mine ? menuItem('recall', icons.undo(), say.chat.recall, () => { menu = { id: m.id, confirming: true }; update(); }, true) : nothing}
         </div>
-        <button class="btn secondary small close-menu" type="button" data-cancel-recall @click=${close}>Đóng</button>`}
+        <button class="btn secondary small close-menu" type="button" data-cancel-recall @click=${close}>${say.common.close}</button>`}
       </div>`;
   };
 
@@ -291,23 +292,23 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    */
   const saveItem = (a: Attachment): TemplateResult => html`
     <a class="mi" role="menuitem" href=${`/api/attachments/${a.id}`} download=${a.name} data-save
-      @click=${() => { window.setTimeout(() => { menu = null; update(); }, 0); }}>${icons.download()}<span>Lưu về máy</span></a>`;
+      @click=${() => { window.setTimeout(() => { menu = null; update(); }, 0); }}>${icons.download()}<span>${say.chat.save}</span></a>`;
 
   /** The reactions under a message: each emoji with how many chose it; yours is marked, and tapping a chip is choosing it or taking yours back. */
   const chips = (m: Shown) => m.deleted || !m.reactions || m.reactions.length === 0 ? nothing : html`
     <div class="reacts ${m.sender.id === me?.id ? 'out' : 'in'}">${m.reactions.map((r) => {
       const mine = r.users.some((u) => u.id === me?.id);
       return html`<button class="chip ${mine ? 'mine' : ''}" type="button" data-chip=${r.emoji} aria-pressed=${mine ? 'true' : 'false'}
-        aria-label=${`${r.emoji}: ${r.users.map((u) => u.id === me?.id ? 'Bạn' : u.displayName).join(', ')}`}
+        aria-label=${`${r.emoji}: ${r.users.map((u) => u.id === me?.id ? say.common.you : u.displayName).join(', ')}`}
         @click=${() => void setReaction(m, mine ? null : r.emoji)}>${r.emoji}<span>${r.users.length}</span></button>`;
     })}</div>`;
 
   /** What stands above an answer: who wrote the message it answers and the start of it, or that it is no longer there to see. */
   const quote = (r: Reply) => html`
     <div class="quote" data-quote=${r.id}>${r.sender === null || r.snippet === null
-      ? html`<span class="gone">Tin nhắn không còn hiển thị</span>`
-      : html`<b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b>${r.sticker
-        ? html`<span class="q-stk"><img src=${stickerUrl(r.sticker)} alt="">Nhãn dán</span>` : html`<span>${r.snippet}</span>`}`}</div>`;
+      ? html`<span class="gone">${say.chat.quoteGone}</span>`
+      : html`<b>${r.sender.id === me?.id ? say.common.you : r.sender.displayName}</b>${r.sticker
+        ? html`<span class="q-stk"><img src=${stickerUrl(r.sticker)} alt="">${say.common.sticker}</span>` : html`<span>${r.snippet}</span>`}`}</div>`;
 
   /** The words of a message, with every http or https address made into a link that opens in a new tab and tells that site nothing about this one. */
   const words = (body: string) => linkify(body).map((p) => 'url' in p
@@ -322,12 +323,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       ${pictures.length === 0 ? nothing : html`<div class=${`pics n${Math.min(pictures.length, 5)}`} data-pics>${pictures.map((a, i) => a.removed
         // Trimmed by the owner: the place stays, saying so; nothing to open.
-        ? html`<div class="pic removed" data-pic-removed=${a.id}><span>Ảnh không còn khả dụng</span></div>`
+        ? html`<div class="pic removed" data-pic-removed=${a.id}><span>${say.chat.pictureGone}</span></div>`
         : html`
-        <button class="pic" type="button" data-pic=${a.id} aria-label=${`Xem ảnh ${i + 1} trên ${pictures.length}`} @click=${() => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id)}>
+        <button class="pic" type="button" data-pic=${a.id} aria-label=${say.chat.viewPicture(i + 1, pictures.length)} @click=${() => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id)}>
           <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}
       ${files.map((a) => a.removed
-        ? html`<div class="filecard removed" data-file-removed=${a.id}>${icons.file()}<span class="fi"><b>Tệp không còn khả dụng</b><small>${a.name}</small></span></div>`
+        ? html`<div class="filecard removed" data-file-removed=${a.id}>${icons.file()}<span class="fi"><b>${say.chat.fileGone}</b><small>${a.name}</small></span></div>`
         : html`
         <a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-file=${a.id}>${icons.file()}
           <span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span>${icons.download()}</a>`)}`;
@@ -435,9 +436,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (current === undefined) return nothing;   // its message was taken back or deleted for you
     const list = mediaOf(v.conversation).image;
     const older = v.local === null && list.hasMore && slides.length === list.items.length;
-    const who = current.sender.id === me?.id ? 'Bạn' : current.sender.displayName;
+    const who = current.sender.id === me?.id ? say.common.you : current.sender.displayName;
     return html`
-      <dialog class="viewer" aria-label="Xem ảnh" data-viewer data-modal
+      <dialog class="viewer" aria-label=${say.chat.viewer} data-viewer data-modal
         @close=${closeViewer}
         @keydown=${(e: KeyboardEvent) => {
           if (e.key === 'Escape') { e.preventDefault(); closeViewer(); }
@@ -446,20 +447,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         }}>
         <div class="viewer-bar">
           <span data-viewer-count aria-live="polite">${i + 1} / ${slides.length}${older ? '+' : ''}</span>
-          <a class="ib" href=${`/api/attachments/${current.attachment.id}`} download=${current.attachment.name} aria-label="Lưu về máy" data-viewer-download>${icons.download()}</a>
+          <a class="ib" href=${`/api/attachments/${current.attachment.id}`} download=${current.attachment.name} aria-label=${say.chat.save} data-viewer-download>${icons.download()}</a>
           ${current.sent ? html`
-            <button class="ib" type="button" data-viewer-forward aria-label="Chuyển tiếp ảnh" @click=${() => { closeViewer(); startForward('', [current.attachment]); }}>${icons.forward()}</button>
-            <button class="ib" type="button" data-viewer-goto aria-label="Xem tin nhắn" @click=${() => { closeViewer(); void reveal({ id: current.messageId, conversationId: v.conversation }); }}>${icons.reply()}</button>` : nothing}
-          <button class="ib" type="button" data-viewer-close aria-label="Đóng" @click=${closeViewer}>${icons.close()}</button>
+            <button class="ib" type="button" data-viewer-forward aria-label=${say.chat.forwardPicture} @click=${() => { closeViewer(); startForward('', [current.attachment]); }}>${icons.forward()}</button>
+            <button class="ib" type="button" data-viewer-goto aria-label=${say.chat.goToMessage} @click=${() => { closeViewer(); void reveal({ id: current.messageId, conversationId: v.conversation }); }}>${icons.reply()}</button>` : nothing}
+          <button class="ib" type="button" data-viewer-close aria-label=${say.common.close} @click=${closeViewer}>${icons.close()}</button>
         </div>
-        ${i > 0 || older ? html`<button class="ib vprev" type="button" data-viewer-prev aria-label="Ảnh trước" @click=${() => void stepViewer(-1)}>${icons.back()}</button>` : nothing}
-        ${i < slides.length - 1 ? html`<button class="ib vnext" type="button" data-viewer-next aria-label="Ảnh sau" @click=${() => void stepViewer(1)}>${icons.next()}</button>` : nothing}
-        <div class="vtrack" data-viewer-track tabindex="0" aria-label="Các ảnh"
+        ${i > 0 || older ? html`<button class="ib vprev" type="button" data-viewer-prev aria-label=${say.chat.previousPicture} @click=${() => void stepViewer(-1)}>${icons.back()}</button>` : nothing}
+        ${i < slides.length - 1 ? html`<button class="ib vnext" type="button" data-viewer-next aria-label=${say.chat.nextPicture} @click=${() => void stepViewer(1)}>${icons.next()}</button>` : nothing}
+        <div class="vtrack" data-viewer-track tabindex="0" aria-label=${say.chat.pictures}
           @scrollend=${SCROLL_END ? (e: Event) => onViewerSettle(e.currentTarget as HTMLElement) : nothing}
           @scroll=${SCROLL_END ? nothing : (e: Event) => onViewerScroll(e.currentTarget as HTMLElement)}
           @click=${(e: MouseEvent) => { if ((e.target as Element).classList.contains('vslide')) closeViewer(); }}>
           ${repeat(slides, (s) => s.attachment.id, (s, k) => html`
-            <div class="vslide" role="group" aria-roledescription="ảnh" aria-label=${`${k + 1} / ${slides.length}`} data-viewer-slide=${s.attachment.id}>
+            <div class="vslide" role="group" aria-roledescription=${say.chat.pictureRole} aria-label=${`${k + 1} / ${slides.length}`} data-viewer-slide=${s.attachment.id}>
               <img class="vimg" src=${`/api/attachments/${s.attachment.id}`} alt=${s.attachment.name} loading="lazy" decoding="async"
                 width=${s.attachment.width ?? nothing} height=${s.attachment.height ?? nothing}></div>`)}
         </div>
@@ -472,15 +473,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** What is chosen for the next message, above the box where it is written. */
   const trayView = (t: Thread) => t.tray.length === 0 ? nothing : html`
-    <div class="atray" role="group" aria-label="Tệp đính kèm" data-tray>
+    <div class="atray" role="group" aria-label=${say.chat.tray} data-tray>
       ${repeat(t.tray, (i) => i.key, (i) => html`
         <div class=${`tray-item ${i.state}`} data-tray-item=${i.key}>
           ${i.state === 'done' && i.attachment?.kind === 'image' ? html`<img src=${`/api/attachments/${i.attachment.id}/thumb`} alt=${i.name}>`
             : html`<div class="tray-file">${icons.file()}<span>${i.name}</span></div>`}
-          ${i.state === 'uploading' || i.state === 'waiting' ? html`<progress max="1" value=${i.state === 'waiting' ? 0 : i.progress} aria-label=${`Đang tải lên ${i.name}`}></progress>` : nothing}
-          ${i.state === 'failed' ? html`<div class="tray-err" role="alert">${i.error ? errorText(i.error) : 'Không tải lên được.'}
-            <button class="btn secondary small" type="button" data-tray-retry @click=${() => retryTray(i)}>Thử lại</button></div>` : nothing}
-          <button class="ib tray-x" type="button" data-tray-remove aria-label=${`Gỡ ${i.name}`} @click=${() => { t.tray = t.tray.filter((x) => x !== i); update(); }}>${icons.close()}</button>
+          ${i.state === 'uploading' || i.state === 'waiting' ? html`<progress max="1" value=${i.state === 'waiting' ? 0 : i.progress} aria-label=${say.chat.uploading(i.name)}></progress>` : nothing}
+          ${i.state === 'failed' ? html`<div class="tray-err" role="alert">${i.error ? errorText(i.error) : say.chat.uploadFailed}
+            <button class="btn secondary small" type="button" data-tray-retry @click=${() => retryTray(i)}>${say.common.retry}</button></div>` : nothing}
+          <button class="ib tray-x" type="button" data-tray-remove aria-label=${say.chat.removeFile(i.name)} @click=${() => { t.tray = t.tray.filter((x) => x !== i); update(); }}>${icons.close()}</button>
         </div>`)}
     </div>`;
 
@@ -491,9 +492,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
     const tools = hasMenu ? html`
-      <div class="tools" role="group" aria-label="Tùy chọn tin nhắn">
-        <button class="ib small" type="button" data-quick-reply aria-label="Trả lời" @click=${() => startReply(m)}>${icons.reply()}</button>
-        <button class="ib small menu-btn" type="button" data-menu aria-label="Tùy chọn tin nhắn" aria-haspopup="menu" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
+      <div class="tools" role="group" aria-label=${say.chat.messageOptions}>
+        <button class="ib small" type="button" data-quick-reply aria-label=${say.chat.reply} @click=${() => startReply(m)}>${icons.reply()}</button>
+        <button class="ib small menu-btn" type="button" data-menu aria-label=${say.chat.messageOptions} aria-haspopup="menu" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
           @click=${(e: MouseEvent) => { menu = menu?.id === m.id ? null : { id: m.id, confirming: false, at: pointAt(e) }; update(); }}>${icons.more()}</button>
       </div>` : nothing;
     // The time shows on the last message of a run; the others show it when held over (title) and to a screen reader.
@@ -504,22 +505,22 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm') : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
-          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${`Nhãn dán ${stickerName(m.sticker)}`} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
-          ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? 'Đã xem' : 'Đã gửi'}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
+          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
+          ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">${say.chat.edited}</span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? say.chat.sending : say.chat.waiting}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? say.chat.seen : say.chat.delivered}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${!item.mine ? tools : nothing}
       </div>
       ${chips(m)}
       ${seen === null ? nothing : html`<div class="seen">${icons.checks()}<span>${seen}</span></div>`}
-      ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? 'Sẽ gửi khi có mạng' : 'Sẽ thử gửi lại'}</div>` : nothing}
+      ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? say.chat.willSendOnline : say.chat.willRetry}</div>` : nothing}
       ${m.state === 'failed' ? html`
-        <div class="failed" role="alert">${icons.alert()}<span>${m.error ? errorText(m.error) : 'Chưa gửi được.'}</span>
-          <button class="btn secondary small" type="button" data-retry @click=${() => retry(m.conversationId, m.clientId)}>Gửi lại</button>
-          <button class="btn secondary small" type="button" data-discard @click=${() => discard(m.conversationId, m.clientId)}>Xóa</button></div>` : nothing}`;
+        <div class="failed" role="alert">${icons.alert()}<span>${m.error ? errorText(m.error) : say.chat.notSent}</span>
+          <button class="btn secondary small" type="button" data-retry @click=${() => retry(m.conversationId, m.clientId)}>${say.chat.resend}</button>
+          <button class="btn secondary small" type="button" data-discard @click=${() => discard(m.conversationId, m.clientId)}>${say.chat.discard}</button></div>` : nothing}`;
   };
 
   const threadItem = (item: ThreadItem, group: boolean, seenText: (msg: Shown) => string | null, tick: (msg: Shown) => Tick) => {
     if (item.kind === 'day') return html`<div class="day">${item.label}</div>`;
-    if (item.kind === 'new') return html`<div class="newdiv"><span>${item.count} tin nhắn mới</span></div>`;
+    if (item.kind === 'new') return html`<div class="newdiv"><span>${say.chat.newMessages(item.count)}</span></div>`;
     if (item.kind === 'notice') return html`<div class="notice-row" data-notice=${item.msg.id} role="status"><span>${noticeText(item.msg, me?.id ?? '')}</span></div>`;
     return bubble(item, group, seenText(item.msg), tick(item.msg));
   };
@@ -538,7 +539,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function seenText(t: Thread, group: boolean): (msg: Shown) => string | null {
     const lastMine = [...t.messages].reverse().find((m) => m.sender.id === me?.id && m.deleted !== true && !m.notice);
     const count = lastMine === undefined ? 0 : [...t.reads.seqs.values()].filter((seq) => seq >= lastMine.seq).length;
-    return (msg) => group && lastMine !== undefined && msg.id === lastMine.id && count > 0 ? `Đã xem bởi ${count}` : null;
+    return (msg) => group && lastMine !== undefined && msg.id === lastMine.id && count > 0 ? say.chat.seenBy(count) : null;
   }
 
   /** Looking for words in this conversation: a field, and the messages that contain them, newest first. */
@@ -546,31 +547,31 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     <div class="searchbar" role="search">
       <form data-search-form @submit=${(e: Event) => { e.preventDefault(); void runSearch(); }}>
         <div class="searchfield input">${icons.search()}
-          <input type="search" name="q" aria-label="Từ cần tìm" placeholder="Tìm tin nhắn" autocomplete="off" maxlength=${limits().searchChars} enterkeyhint="search"
+          <input type="search" name="q" aria-label=${say.chat.searchWords} placeholder=${say.chat.searchMessages} autocomplete="off" maxlength=${limits().searchChars} enterkeyhint="search"
             .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; }}
             @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { searching = null; update(); } }}>
-          <button class="clear" type="button" data-close-search aria-label="Đóng tìm kiếm" @click=${() => { searching = null; update(); }}>${icons.close()}</button>
+          <button class="clear" type="button" data-close-search aria-label=${say.chat.closeSearch} @click=${() => { searching = null; update(); }}>${icons.close()}</button>
         </div>
       </form>
       ${s.results === null ? nothing : s.results.length === 0
-        ? html`<p class="hint" data-no-results>Không tìm thấy tin nhắn nào.</p>`
+        ? html`<p class="hint" data-no-results>${say.chat.noMessagesFound}</p>`
         : html`<ul class="results">${s.results.map((r) => html`
           <li><button type="button" class="result" data-result=${r.id} @click=${() => void reveal(r)}>
-            <b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><small>${listTime(r.createdAt, deps.now())}</small>
+            <b>${r.sender.id === me?.id ? say.common.you : r.sender.displayName}</b><small>${listTime(r.createdAt, deps.now())}</small>
             <span>${clip(r.body, CLIP.result)}</span></button></li>`)}</ul>`}
     </div>`;
   /** The pinned messages: the newest one stays under the header, and a button opens them all. */
   const pinBar = (t: Thread) => t.pins.length === 0 ? nothing : html`
     <div class="pinbar" data-pinbar>
       <button class="pin-top" type="button" data-pin-top @click=${() => void reveal(t.pins[0]!)}>
-        ${icons.pin()}<span class="pin-text"><b>Tin đã ghim</b><span>${t.pins[0]!.sticker ? 'Nhãn dán' : clip(t.pins[0]!.body, CLIP.pin)}</span></span></button>
+        ${icons.pin()}<span class="pin-text"><b>${say.chat.pinned}</b><span>${t.pins[0]!.sticker ? say.common.sticker : clip(t.pins[0]!.body, CLIP.pin)}</span></span></button>
       ${t.pins.length > 1 ? html`<button class="btn secondary small" type="button" data-pin-all aria-expanded=${t.pinsOpen ? 'true' : 'false'}
         @click=${() => { t.pinsOpen = !t.pinsOpen; update(); }}>${t.pins.length} tin</button>` : nothing}
     </div>
     ${t.pinsOpen ? html`<ul class="pinlist" data-pinlist>${t.pins.map((p) => html`
       <li><button type="button" class="result" data-pin-item=${p.id} @click=${() => void reveal(p)}>
-        <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
-        <span>${p.sticker ? 'Nhãn dán' : clip(p.body, CLIP.result)}</span></button></li>`)}</ul>` : nothing}`;
+        <b>${p.sender.id === me?.id ? say.common.you : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
+        <span>${p.sticker ? say.common.sticker : clip(p.body, CLIP.result)}</span></button></li>`)}</ul>` : nothing}`;
 
   /**
    * Where to pass a message on: a dialog with your conversations (newest first, narrowed by what is typed), up to FORWARD_MAX ticked,
@@ -583,7 +584,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const full = f.picked.length >= FORWARD_MAX;
     const pictures = f.attachments.filter((a) => a.kind === 'image').length;
     const files = f.attachments.length - pictures;
-    const what = [pictures > 0 ? `${pictures} ảnh` : '', files > 0 ? `${files} tệp` : ''].filter((x) => x !== '').join(', ');
+    const what = [pictures > 0 ? say.chat.pictureCount(pictures) : '', files > 0 ? say.chat.fileCount(files) : ''].filter((x) => x !== '').join(', ');
     const cancel = () => { if (!f.busy) { forwarding = null; update(); } };
     const pickRow = (c: Conversation) => {
       const on = f.picked.includes(c.id);
@@ -595,45 +596,45 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       <dialog class="fwd" aria-labelledby="fwd-title" data-forward-panel data-modal @close=${cancel}
         @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } }}>
-        <header class="fwd-head"><h2 id="fwd-title">Chuyển tiếp</h2>
-          <button class="ib" type="button" data-close-forward aria-label="Đóng" @click=${cancel}>${icons.close()}</button></header>
+        <header class="fwd-head"><h2 id="fwd-title">${say.chat.forward}</h2>
+          <button class="ib" type="button" data-close-forward aria-label=${say.common.close} @click=${cancel}>${icons.close()}</button></header>
         <div class="fwd-what">
-          ${f.sticker === null ? nothing : html`<img class="fw-stk" src=${stickerUrl(f.sticker)} alt=${`Nhãn dán ${stickerName(f.sticker)}`} width="64" height="64">`}
+          ${f.sticker === null ? nothing : html`<img class="fw-stk" src=${stickerUrl(f.sticker)} alt=${say.common.stickerNamed(stickerName(f.sticker))} width="64" height="64">`}
           ${f.body === '' ? nothing : html`<p class="fw-text">${clip(f.body, CLIP.forward)}</p>`}
           ${what === '' ? nothing : html`<p class="hint">${what}</p>`}
         </div>
         <div class="searchfield input">${icons.search()}
-          <input type="search" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength=${limits().nameChars} data-forward-search
+          <input type="search" aria-label=${say.common.searchChats} placeholder=${say.common.search} autocomplete="off" maxlength=${limits().nameChars} data-forward-search
             .value=${liveValue(f.q)} @input=${(e: Event) => { f.q = (e.target as HTMLInputElement).value; update(); }}></div>
-        ${shown.length === 0 && found.length === 0 ? html`<p class="hint" data-forward-none>Không tìm thấy cuộc trò chuyện nào.</p>` : html`
+        ${shown.length === 0 && found.length === 0 ? html`<p class="hint" data-forward-none>${say.chat.noChatsFound}</p>` : html`
           <div class="fwd-list">
           ${shown.length === 0 ? nothing : html`<ul class="rows">${repeat(shown, (c) => c.id, pickRow)}</ul>`}
           ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, pickRow)}</ul>`}</div>`}
-        ${full ? html`<p class="hint" data-forward-full>Chọn tối đa ${FORWARD_MAX} cuộc trò chuyện mỗi lần.</p>` : nothing}
-        <textarea class="fwd-note" rows="2" aria-label="Lời nhắn kèm theo" placeholder="Nhập lời nhắn (không bắt buộc)" maxlength=${limits().messageChars} data-forward-note
+        ${full ? html`<p class="hint" data-forward-full>${say.chat.forwardMax(FORWARD_MAX)}</p>` : nothing}
+        <textarea class="fwd-note" rows="2" aria-label=${say.chat.forwardNote} placeholder=${say.chat.forwardNotePlaceholder} maxlength=${limits().messageChars} data-forward-note
           .value=${liveValue(f.note)} @input=${(e: Event) => { f.note = (e.target as HTMLTextAreaElement).value; }}></textarea>
         <footer class="fwd-foot">
-          <button class="btn secondary" type="button" data-cancel-forward ?disabled=${f.busy} @click=${cancel}>Hủy</button>
+          <button class="btn secondary" type="button" data-cancel-forward ?disabled=${f.busy} @click=${cancel}>${say.common.cancel}</button>
           <button class="btn" type="button" data-forward-send ?disabled=${f.busy || f.picked.length === 0} @click=${() => void sendForward()}>
-            Chuyển tiếp${f.picked.length > 0 ? ` (${f.picked.length})` : ''}</button>
+            ${say.chat.forward}${f.picked.length > 0 ? ` (${f.picked.length})` : ''}</button>
         </footer>
       </dialog>`;
   };
 
   /** The narrow bar on a wide screen: messages, contacts, and a gear for settings and signing out. */
   const rail = () => html`
-    <nav class="rail" aria-label="Điều hướng">
-      <a class="rail-i active" href="/" aria-label="Tin nhắn" aria-current="page" @click=${onHome}>${icons.logo()}</a>
-      <a class="rail-i" href="/friends" aria-label="Danh bạ">${icons.users()}</a>
-      <button class="rail-i gear" type="button" data-gear aria-label="Cài đặt và tài khoản" aria-haspopup="menu" aria-expanded=${gearOpen ? 'true' : 'false'}
+    <nav class="rail" aria-label=${say.chat.navigation}>
+      <a class="rail-i active" href="/" aria-label=${say.chat.messages} aria-current="page" @click=${onHome}>${icons.logo()}</a>
+      <a class="rail-i" href="/friends" aria-label=${say.common.contacts}>${icons.users()}</a>
+      <button class="rail-i gear" type="button" data-gear aria-label=${say.chat.settingsAndAccount} aria-haspopup="menu" aria-expanded=${gearOpen ? 'true' : 'false'}
         @click=${() => { gearOpen = !gearOpen; update(); }}>${icons.gear()}</button>
     </nav>
     ${gearOpen ? html`
       <div class="scrim" data-gear-scrim @click=${() => { gearOpen = false; update(); }}></div>
-      <div class="gearmenu" role="menu" aria-label="Tài khoản" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { gearOpen = false; update(); } }}>
-        <a class="mi" role="menuitem" href="/settings">${icons.gear()}<span>Cài đặt</span></a>
-        ${me?.isOwner ? html`<a class="mi" role="menuitem" href="/owner">${icons.users()}<span>Lời mời và thành viên</span></a>` : nothing}
-        <button class="mi" type="button" role="menuitem" data-signout @click=${() => void signOut()}>${icons.signOut()}<span>Đăng xuất</span></button>
+      <div class="gearmenu" role="menu" aria-label=${say.chat.account} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { gearOpen = false; update(); } }}>
+        <a class="mi" role="menuitem" href="/settings">${icons.gear()}<span>${say.common.settings}</span></a>
+        ${me?.isOwner ? html`<a class="mi" role="menuitem" href="/owner">${icons.users()}<span>${say.common.ownerPage}</span></a>` : nothing}
+        <button class="mi" type="button" role="menuitem" data-signout @click=${() => void signOut()}>${icons.signOut()}<span>${say.common.signOut}</span></button>
       </div>` : nothing}`;
 
   async function signOut(): Promise<void> {
@@ -678,47 +679,47 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const media = (id: string) => {
     const { image, file } = mediaOf(id);
     const more = (kind: 'image' | 'file', list: MediaList) => !list.hasMore ? nothing
-      : html`<button class="btn secondary small" type="button" data-info-more=${kind} ?disabled=${list.loading} @click=${() => void loadMedia(id, kind, true)}>Xem thêm</button>`;
+      : html`<button class="btn secondary small" type="button" data-info-more=${kind} ?disabled=${list.loading} @click=${() => void loadMedia(id, kind, true)}>${say.common.seeMore}</button>`;
     return html`
-      ${image.items.length === 0 ? nothing : html`<h3>Ảnh</h3>
+      ${image.items.length === 0 ? nothing : html`<h3>${say.chat.picturesHeading}</h3>
         <div class="info-media" data-info-media>${image.items.map(({ attachment: a }) => html`
           <button class="pic" type="button" data-info-pic=${a.id} aria-label=${a.name} @click=${() => openViewer(id, a.id, null)}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy"></button>`)}</div>
         ${more('image', image)}`}
-      ${file.items.length === 0 ? nothing : html`<h3>Tệp</h3>
+      ${file.items.length === 0 ? nothing : html`<h3>${say.chat.filesHeading}</h3>
         <ul class="info-list" data-info-files>${file.items.map(({ attachment: a }) => html`<li><a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name}>${icons.file()}<span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span></a></li>`)}</ul>
         ${more('file', file)}`}`;
   };
 
   /** The panel beside a thread: who it is, ways to find things in it, what is pinned, and who is in a group. */
   const infoPanel = (c: Conversation, t: Thread) => html`
-    <aside class="info" aria-label="Thông tin cuộc trò chuyện" data-info-panel>
+    <aside class="info" aria-label=${say.chat.info} data-info-panel>
       <div class="info-top">
         ${avatar(c.title ?? '?', c.peer?.avatar, 'xl')}
         <h2>${c.title ?? '…'}</h2>
-        <small>${c.kind === 'group' ? `${c.memberCount ?? 0} thành viên` : c.peer ? peerLine(c) : ''}</small>
+        <small>${c.kind === 'group' ? say.common.members(c.memberCount ?? 0) : c.peer ? peerLine(c) : ''}</small>
       </div>
       <div class="info-actions">
-        <button class="btn secondary small" type="button" data-info-search @click=${() => { searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} Tìm tin nhắn</button>
-        <button class="btn secondary small" type="button" data-info-mute @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()} ${isMuted(c) ? 'Bật thông báo' : 'Tắt thông báo'}</button>
+        <button class="btn secondary small" type="button" data-info-search @click=${() => { searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} ${say.chat.searchMessages}</button>
+        <button class="btn secondary small" type="button" data-info-mute @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()} ${isMuted(c) ? say.common.unmute : say.common.mute}</button>
       </div>
-      ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>Đã tắt thông báo đến ${clock(c.mutedUntil)}</p>` : nothing}
+      ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}
       ${t.pins.length === 0 ? nothing : html`
-        <h3>Tin đã ghim</h3>
+        <h3>${say.chat.pinned}</h3>
         <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
-          <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
+          <b>${p.sender.id === me?.id ? say.common.you : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
           <span>${clip(p.body, CLIP.pin)}</span></button></li>`)}</ul>`}
       ${media(c.id)}
       ${c.kind !== 'group' ? nothing : html`
-        <h3>Thành viên</h3>
+        <h3>${say.chat.membersHeading}</h3>
         <ul class="info-list">${(people.get(c.id) ?? []).map((m) => {
           const inside = html`${avatar(m.displayName, m.avatar, 'sm')}
-            <span>${m.displayName}${m.isMe ? ' (bạn)' : ''}</span>${m.role === 'leader' ? html`<span class="tag">Nhóm trưởng</span>` : m.role === 'deputy' ? html`<span class="tag">Phó nhóm</span>` : nothing}`;
+            <span>${m.displayName}${m.isMe ? say.chat.youSuffix : ''}</span>${m.role === 'leader' ? html`<span class="tag">${say.common.leader}</span>` : m.role === 'deputy' ? html`<span class="tag">${say.common.deputy}</span>` : nothing}`;
           return html`<li data-info-member=${m.id}>${m.isMe ? html`<div class="info-person">${inside}</div>`
             : html`<button class="info-person" type="button" data-open-card=${m.id} @click=${() => openCard(m.id)}>${inside}</button>`}</li>`;
         })}</ul>
         <div class="info-actions">
-          <a class="btn secondary small" href="/groups/${c.id}#add" data-info-add>${icons.users()} Thêm thành viên</a>
-          <a class="btn secondary small" href="/groups/${c.id}">Quản lý nhóm</a>
+          <a class="btn secondary small" href="/groups/${c.id}#add" data-info-add>${icons.users()} ${say.chat.addMembers}</a>
+          <a class="btn secondary small" href="/groups/${c.id}">${say.chat.manageGroup}</a>
           ${leaveView(c)}
         </div>`}
     </aside>`;
@@ -726,8 +727,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** Under a 1:1 conversation's name: their Gom ID, and how many groups you share once their card has been fetched. */
   function peerLine(c: Conversation): string {
     const shared = c.peer === null ? undefined : cards.get(c.peer.id)?.commonGroups.length;
-    if (c.peer?.deleted) return 'Tài khoản đã bị xóa';
-    return [c.peer?.gomId ? `@${c.peer.gomId}` : '', shared ? `${shared} nhóm chung` : ''].filter((x) => x !== '').join(' · ');
+    if (c.peer?.deleted) return say.chat.accountDeletedShort;
+    return [c.peer?.gomId ? `@${c.peer.gomId}` : '', shared ? say.chat.sharedGroups(shared) : ''].filter((x) => x !== '').join(' · ');
   }
 
   /**
@@ -738,14 +739,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const members = people.get(c.id);
     const mine = members?.find((m) => m.isMe);
     if (mine?.role === 'leader' && (members?.length ?? 0) > 1) return html`
-      <button class="btn secondary small" type="button" disabled data-info-leave>Rời nhóm</button>
-      <p class="hint" data-info-leader-note>Chuyển quyền trưởng nhóm cho người khác trước khi rời nhóm.</p>`;
-    if (!leaving) return html`<button class="btn secondary small danger-text" type="button" data-info-leave @click=${() => { leaving = true; update(); }}>Rời nhóm</button>`;
+      <button class="btn secondary small" type="button" disabled data-info-leave>${say.common.leaveGroup}</button>
+      <p class="hint" data-info-leader-note>${say.chat.leaderMustHandOver}</p>`;
+    if (!leaving) return html`<button class="btn secondary small danger-text" type="button" data-info-leave @click=${() => { leaving = true; update(); }}>${say.common.leaveGroup}</button>`;
     return html`
       <div class="ask" role="group" aria-labelledby="leave-q" data-info-leave-ask>
-        <p id="leave-q"><b>Rời nhóm này?</b>${mine?.role === 'leader' ? html`<br><span class="hint">Bạn là người cuối cùng: nhóm sẽ bị xóa.</span>` : nothing}</p>
-        <button class="btn small" type="button" data-info-leave-yes @click=${() => void leaveGroup(c.id)}>Rời nhóm</button>
-        <button class="btn secondary small" type="button" data-info-leave-no @click=${() => { leaving = false; update(); }}>Ở lại</button>
+        <p id="leave-q"><b>${say.chat.leaveQ}</b>${mine?.role === 'leader' ? html`<br><span class="hint">${say.chat.lastOneDeletes}</span>` : nothing}</p>
+        <button class="btn small" type="button" data-info-leave-yes @click=${() => void leaveGroup(c.id)}>${say.common.leaveGroup}</button>
+        <button class="btn secondary small" type="button" data-info-leave-no @click=${() => { leaving = false; update(); }}>${say.chat.stay}</button>
       </div>`;
   }
 
@@ -761,46 +762,46 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       <dialog class="pcard" aria-labelledby="pcard-name" data-person-card data-modal @close=${close}
         @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
-        <div class="pcard-head"><button class="ib" type="button" data-close-card aria-label="Đóng" @click=${close}>${icons.close()}</button></div>
-        ${p === null ? (k.error === null ? html`<p class="hint" role="status">Đang tải…</p>` : errorBox(k.error)) : html`
+        <div class="pcard-head"><button class="ib" type="button" data-close-card aria-label=${say.common.close} @click=${close}>${icons.close()}</button></div>
+        ${p === null ? (k.error === null ? html`<p class="hint" role="status">${say.common.loading}</p>` : errorBox(k.error)) : html`
           <div class="pcard-top">
             ${avatar(name, p.avatar, 'xl')}
             <h2 id="pcard-name">${name}</h2>
             ${p.gomId === null ? nothing : html`<small>@${p.gomId}</small>`}
           </div>
           ${k.error === null ? nothing : errorBox(k.error)}
-          ${p.deleted ? html`<p class="hint" data-card-deleted>Tài khoản này đã bị xóa.</p>` : k.asking !== null ? html`
+          ${p.deleted ? html`<p class="hint" data-card-deleted>${say.common.accountDeleted}</p>` : k.asking !== null ? html`
             <div class="ask" role="group" aria-labelledby="card-q" data-card-ask>
-              <p id="card-q"><b>${k.asking === 'unfriend' ? `Xóa bạn với ${name}?` : `Chặn ${name}?`}</b><br>
-                <span class="hint">${k.asking === 'unfriend' ? 'Hai người vẫn đọc được tin nhắn cũ, nhưng không nhắn thêm được cho đến khi kết bạn lại.'
-                  : `${name} sẽ không còn là bạn của bạn và không gửi được lời mời cho bạn. Bạn có thể bỏ chặn sau.`}</span></p>
-              <button class="btn small" type="button" data-card-yes ?disabled=${k.busy} @click=${() => void cardAction(k.asking === 'unfriend' ? () => api.unfriend(p.gomId!) : () => api.block(p.gomId!))}>${k.asking === 'unfriend' ? 'Xóa bạn' : 'Chặn'}</button>
-              <button class="btn secondary small" type="button" data-card-no @click=${() => { k.asking = null; update(); }}>Không</button>
+              <p id="card-q"><b>${k.asking === 'unfriend' ? say.common.unfriendQ(name) : say.common.blockQ(name)}</b><br>
+                <span class="hint">${k.asking === 'unfriend' ? say.common.unfriendNote
+                  : say.common.blockNote(name)}</span></p>
+              <button class="btn small" type="button" data-card-yes ?disabled=${k.busy} @click=${() => void cardAction(k.asking === 'unfriend' ? () => api.unfriend(p.gomId!) : () => api.block(p.gomId!))}>${k.asking === 'unfriend' ? say.common.unfriend : say.common.block}</button>
+              <button class="btn secondary small" type="button" data-card-no @click=${() => { k.asking = null; update(); }}>${say.common.no}</button>
             </div>` : html`
             <div class="pcard-actions">
-              ${p.friend === 'friends' && p.gomId !== null ? html`<button class="btn small" type="button" data-card-message ?disabled=${k.busy} @click=${() => void messageFrom(p.gomId!)}>Nhắn tin</button>` : nothing}
-              ${p.friend === 'sent' ? html`<span class="tag" data-card-sent>Đã gửi lời mời kết bạn</span>` : nothing}
+              ${p.friend === 'friends' && p.gomId !== null ? html`<button class="btn small" type="button" data-card-message ?disabled=${k.busy} @click=${() => void messageFrom(p.gomId!)}>${say.chat.message}</button>` : nothing}
+              ${p.friend === 'sent' ? html`<span class="tag" data-card-sent>${say.common.requestSent}</span>` : nothing}
               ${(p.friend === 'none' || p.friend === 'received') && via !== null ? html`<button class="btn small" type="button" data-card-befriend ?disabled=${k.busy}
-                @click=${() => void cardAction(() => api.askMember(via, p.id))}>${p.friend === 'received' ? 'Chấp nhận kết bạn' : 'Kết bạn'}</button>` : nothing}
+                @click=${() => void cardAction(() => api.askMember(via, p.id))}>${p.friend === 'received' ? say.common.acceptFriend : say.common.befriend}</button>` : nothing}
               ${p.friend === 'friends' && p.gomId !== null ? html`
-                <button class="btn secondary small" type="button" data-card-unfriend @click=${() => { k.asking = 'unfriend'; update(); }}>Xóa bạn</button>
-                <button class="btn secondary small danger-text" type="button" data-card-block @click=${() => { k.asking = 'block'; update(); }}>Chặn</button>` : nothing}
+                <button class="btn secondary small" type="button" data-card-unfriend @click=${() => { k.asking = 'unfriend'; update(); }}>${say.common.unfriend}</button>
+                <button class="btn secondary small danger-text" type="button" data-card-block @click=${() => { k.asking = 'block'; update(); }}>${say.common.block}</button>` : nothing}
             </div>`}
           ${p.commonGroups.length === 0 ? nothing : html`
-            <h3>Nhóm chung (${p.commonGroups.length})</h3>
+            <h3>${say.chat.commonGroups(p.commonGroups.length)}</h3>
             <ul class="info-list" data-card-groups>${p.commonGroups.map((g) => html`<li>
               <button class="info-person" type="button" data-card-group=${g.id} @click=${() => { card = null; open(g.id); }}>
-                ${avatar(g.title ?? '?')}<span>${g.title ?? '…'}</span><small>${g.memberCount} thành viên</small></button></li>`)}</ul>`}`}
+                ${avatar(g.title ?? '?')}<span>${g.title ?? '…'}</span><small>${say.common.members(g.memberCount)}</small></button></li>`)}</ul>`}`}
       </dialog>`;
   };
 
   function threadPane(): TemplateResult {
     const c = chatOf(openId);
-    if (openId === null) return html`<section class="thread-pane none"><div class="empty welcome"><div class="big-icon">${icons.logo()}</div><h2>Gom</h2><p class="lead">Chọn một cuộc trò chuyện</p></div></section>`;
+    if (openId === null) return html`<section class="thread-pane none"><div class="empty welcome"><div class="big-icon">${icons.logo()}</div><h2>Gom</h2><p class="lead">${say.chat.pickOne}</p></div></section>`;
     if (chats !== null && c === undefined) return html`
       <section class="thread-pane">
-        <header class="th-head"><a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a></header>
-        <div class="empty"><p class="lead">Không tìm thấy cuộc trò chuyện này.</p></div>
+        <header class="th-head"><a class="ib back" href="/" aria-label=${say.common.back} @click=${onBack}>${icons.back()}</a></header>
+        <div class="empty"><p class="lead">${say.chat.chatNotFound}</p></div>
       </section>`;
     const t = threadOf(openId);
     const items = buildThread(t.messages, me?.id ?? '', t.lastReadAtOpen, t.unreadAtOpen, deps.now(), t.pending);
@@ -808,57 +809,57 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <section class="thread-pane" @dragover=${(e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }}
         @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
-          <a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a>
+          <a class="ib back" href="/" aria-label=${say.common.back} @click=${onBack}>${icons.back()}</a>
           ${avatar(c?.title ?? '?', c?.peer?.avatar)}
-          ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${`Xem thông tin ${c.title ?? ''}`} @click=${() => openCard(c.peer!.id)}>
+          ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
-            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>`}
-          ${c === undefined ? nothing : html`<button class="ib" type="button" data-search aria-label="Tìm trong cuộc trò chuyện" aria-expanded=${searching ? 'true' : 'false'}
+            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : nothing}</div>`}
+          ${c === undefined ? nothing : html`<button class="ib" type="button" data-search aria-label=${say.chat.searchIn} aria-expanded=${searching ? 'true' : 'false'}
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
           <button class="ib" type="button" data-mute aria-pressed=${isMuted(c) ? 'true' : 'false'}
-            aria-label=${isMuted(c) ? 'Bật lại thông báo' : 'Tắt thông báo'} @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()}</button>`}
-          ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label="Thông tin nhóm">${icons.users()}</a>` : nothing}
-          ${c === undefined ? nothing : html`<button class="ib info-btn" type="button" data-info aria-label="Thông tin cuộc trò chuyện" aria-pressed=${infoOpen ? 'true' : 'false'} @click=${toggleInfo}>${icons.info()}</button>`}
+            aria-label=${isMuted(c) ? say.chat.unmuteAgain : say.common.mute} @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()}</button>`}
+          ${c?.kind === 'group' ? html`<a class="ib" href="/groups/${c.id}" aria-label=${say.chat.groupInfo}>${icons.users()}</a>` : nothing}
+          ${c === undefined ? nothing : html`<button class="ib info-btn" type="button" data-info aria-label=${say.chat.info} aria-pressed=${infoOpen ? 'true' : 'false'} @click=${toggleInfo}>${icons.info()}</button>`}
         </header>
         ${banner()}
         ${searching === null ? nothing : searchPanel(searching)}
         ${pinBar(t)}
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
-          ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>Tải tin cũ hơn</button>` : nothing}
+          ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>${say.chat.older}</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group'), tickOf(t, c)))}
         </div>
         ${menuOverlay(t)}
         ${viewerView()}
-        ${t.stick ? nothing : html`<button class="toend" type="button" data-to-end aria-label="Xuống tin mới nhất" @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}</button>`}
-        ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
+        ${t.stick ? nothing : html`<button class="toend" type="button" data-to-end aria-label=${say.chat.toLatest} @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}</button>`}
+        ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${say.chat.newBelow(t.below)}</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${cardView()}
         ${c?.peer?.deleted ? html`
-          <p class="closed-note" role="status" data-peer-deleted>Tài khoản này đã bị xóa. Bạn vẫn đọc được tin nhắn cũ nhưng không gửi thêm được.</p>` : html`
+          <p class="closed-note" role="status" data-peer-deleted>${say.chat.peerDeletedNote}</p>` : html`
           ${t.editing === null ? nothing : html`
             <div class="replybar" data-editbar>
-              <div class="rb-text"><b>Đang chỉnh sửa tin nhắn</b></div>
-              <button class="ib" type="button" data-cancel-edit aria-label="Hủy chỉnh sửa" @click=${() => { t.editing = null; t.draft = ''; update(); }}>${icons.close()}</button>
+              <div class="rb-text"><b>${say.chat.editing}</b></div>
+              <button class="ib" type="button" data-cancel-edit aria-label=${say.chat.cancelEdit} @click=${() => { t.editing = null; t.draft = ''; update(); }}>${icons.close()}</button>
             </div>`}
           ${t.replying === null ? nothing : html`
             <div class="replybar" data-replybar>
-              <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.sticker ? 'Nhãn dán' : t.replying.snippet ?? ''}</span></div>
-              <button class="ib" type="button" data-cancel-reply aria-label="Hủy trả lời" @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
+              <div class="rb-text"><b>${say.chat.replyingTo(t.replying.sender?.id === me?.id ? say.chat.yourself : t.replying.sender?.displayName ?? '')}</b><span>${t.replying.sticker ? say.common.sticker : t.replying.snippet ?? ''}</span></div>
+              <button class="ib" type="button" data-cancel-reply aria-label=${say.chat.cancelReply} @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
             </div>`}
           ${trayView(t)}
           <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
             ${t.editing === null && uploadsOn() ? html`
-              <button class="ib attach" type="button" data-attach aria-label="Đính kèm ảnh hoặc tệp" @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
+              <button class="ib attach" type="button" data-attach aria-label=${say.chat.attach} @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
               <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
                 @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
             <div class="field">
-            <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
+            <textarea name="message" rows="1" aria-label=${say.chat.typeMessage} placeholder=${say.chat.typeMessage} autocomplete="off" enterkeyhint="enter"
               .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}
               @focus=${() => { if (picker !== null) { picker = null; update(); } }}></textarea>
-            ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label="Emoji và nhãn dán" aria-expanded=${picker !== null ? 'true' : 'false'}
+            ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label=${say.chat.picker} aria-expanded=${picker !== null ? 'true' : 'false'}
               @click=${togglePicker}>${icons.smile()}</button>` : nothing}
             </div>
-            <button class="send" type="submit" aria-label="Gửi" ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
+            <button class="send" type="submit" aria-label=${say.chat.send} ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
           </form>
           ${picker !== null && t.editing === null ? pickerPanel(openId!, picker) : nothing}`}
       </section>`;
@@ -868,9 +869,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const pickerPanel = (id: string, tab: 'emoji' | 'stickers') => html`
     <div class="picker" data-picker
       @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { picker = null; update(); root.querySelector<HTMLButtonElement>('[data-picker-toggle]')?.focus(); } }}>
-      <div class="picker-tabs" role="tablist" aria-label="Emoji và nhãn dán">
+      <div class="picker-tabs" role="tablist" aria-label=${say.chat.picker}>
         <button class="ptab" type="button" role="tab" data-tab="emoji" aria-selected=${tab === 'emoji' ? 'true' : 'false'} @click=${() => showTab('emoji')}>Emoji</button>
-        <button class="ptab" type="button" role="tab" data-tab="stickers" aria-selected=${tab === 'stickers' ? 'true' : 'false'} @click=${() => showTab('stickers')}>Nhãn dán</button>
+        <button class="ptab" type="button" role="tab" data-tab="stickers" aria-selected=${tab === 'stickers' ? 'true' : 'false'} @click=${() => showTab('stickers')}>${say.common.sticker}</button>
       </div>
       ${tab === 'emoji' ? emojiPanel(id) : stickerPanel(id)}
     </div>`;
@@ -885,8 +886,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @click=${() => { emojiGroup = index; update(); }}>${face}</button>`;
     return html`
       <section class="emojis" role="tabpanel" aria-label="Emoji" data-emoji-panel>
-        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', 'Gần đây') : nothing}${EMOJI_GROUPS.map((g, i) => chooser(i, emojiOf(i)[0] ?? '', g.name))}</div>
-        <h3>${group === -1 ? 'Gần đây' : EMOJI_GROUPS[group]?.name}</h3>
+        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${EMOJI_GROUPS.map((g, i) => chooser(i, emojiOf(i)[0] ?? '', g.name))}</div>
+        <h3>${group === -1 ? say.common.recent : EMOJI_GROUPS[group]?.name}</h3>
         <div class="e-grid">${shown.map((e) => html`<button class="e-pick" type="button" data-emoji=${e} aria-label=${e} @click=${() => insertEmoji(id, e)}>${e}</button>`)}</div>
       </section>`;
   };
@@ -899,18 +900,18 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const recent = recentStickers();
     const pack = stickerPack === -1 && recent.length === 0 ? 0 : stickerPack;
     const shown = pack === -1 ? recent : STICKER_PACKS[pack]?.codes ?? [];
-    const tile = (code: string) => html`<button class="stk-pick" type="button" data-send-sticker=${code} aria-label=${`Gửi nhãn dán ${stickerName(code)}`}
+    const tile = (code: string) => html`<button class="stk-pick" type="button" data-send-sticker=${code} aria-label=${say.chat.sendSticker(stickerName(code))}
       @click=${() => void sendSticker(id, code)}><img src=${stickerUrl(code)} alt="" loading="lazy" width="56" height="56" draggable="false"></button>`;
     const chooser = (index: number, face: TemplateResult | string, name: string) => html`
       <button class="egroup" type="button" data-sticker-pack=${index} aria-label=${name} aria-pressed=${pack === index ? 'true' : 'false'}
         @click=${() => { stickerPack = index; update(); }}>${face}</button>`;
     return html`
-      <section class="stickers" role="tabpanel" aria-label="Nhãn dán" data-sticker-panel>
-        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', 'Gần đây') : nothing}${STICKER_PACKS.map((p, i) =>
+      <section class="stickers" role="tabpanel" aria-label=${say.common.sticker} data-sticker-panel>
+        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${STICKER_PACKS.map((p, i) =>
           chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, p.name))}</div>
-        <h3>${pack === -1 ? 'Gần đây' : STICKER_PACKS[pack]?.name}</h3>
+        <h3>${pack === -1 ? say.common.recent : STICKER_PACKS[pack]?.name}</h3>
         <div class="stk-grid" data-shown-stickers>${shown.map(tile)}</div>
-        <p class="credit">Nhãn dán: Noto Emoji của Google, giấy phép Apache 2.0; cờ các nước thuộc phạm vi công cộng.</p>
+        <p class="credit">${say.chat.stickerCredit}</p>
       </section>`;
   };
 
@@ -946,7 +947,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const listView = () => {
     const shown = visibleChats();
     const found = hiddenMatches(filter);
-    if (shown.length === 0 && found.length === 0) return html`<p class="hint nomatch" data-no-match>Không tìm thấy cuộc trò chuyện nào.</p>`;
+    if (shown.length === 0 && found.length === 0) return html`<p class="hint nomatch" data-no-match>${say.chat.noChatsFound}</p>`;
     // One scroller for both, so the hidden ones follow the others instead of splitting the pane.
     return html`<div class="items">
       ${shown.length === 0 ? nothing : html`<ul class="rows">${repeat(shown, (c) => c.id, row)}</ul>`}
@@ -958,13 +959,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${rail()}
       <section class="list-pane">
         <header class="bar">
-          <a class="brand" href="/" aria-label="Gom, về trang chủ" @click=${onHome}>${icons.logo()}<span>Gom</span></a>
-          <a class="ib" href="/friends" aria-label="Danh bạ">${icons.users()}</a>
-          <a class="ib" href="/settings" aria-label="Cài đặt">${icons.gear()}</a>
+          <a class="brand" href="/" aria-label=${say.chat.home} @click=${onHome}>${icons.logo()}<span>Gom</span></a>
+          <a class="ib" href="/friends" aria-label=${say.common.contacts}>${icons.users()}</a>
+          <a class="ib" href="/settings" aria-label=${say.common.settings}>${icons.gear()}</a>
         </header>
         ${chats === null || chats.length === 0 ? nothing : html`
           <div class="searchfield input list-search">${icons.search()}
-            <input type="search" name="filter" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength=${limits().nameChars}
+            <input type="search" name="filter" aria-label=${say.common.searchChats} placeholder=${say.common.search} autocomplete="off" maxlength=${limits().nameChars}
               .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); }}
               @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; update(); } }}></div>`}
         ${banner()}
@@ -984,9 +985,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const pushBanner = () => pushOffer === null ? nothing : html`
     <div class="pushbar" data-push-banner>
       ${icons.bell()}
-      <span>${pushOffer.noService ? NO_PUSH_SERVICE : pushOffer.failed ? 'Không bật được thông báo trên trình duyệt này. Bạn có thể thử lại trong Cài đặt.' : 'Bật thông báo để biết khi có tin nhắn mới.'}</span>
-      ${pushOffer.failed ? nothing : html`<button class="btn small" type="button" data-push-yes ?disabled=${pushOffer.busy} @click=${() => void acceptPush()}>Bật</button>`}
-      <button class="btn secondary small" type="button" data-push-later ?disabled=${pushOffer.busy} @click=${laterPush}>${pushOffer.failed ? 'Đóng' : 'Để sau'}</button>
+      <span>${pushOffer.noService ? NO_PUSH_SERVICE : pushOffer.failed ? say.chat.pushFailed : say.chat.pushOffer}</span>
+      ${pushOffer.failed ? nothing : html`<button class="btn small" type="button" data-push-yes ?disabled=${pushOffer.busy} @click=${() => void acceptPush()}>${say.chat.turnOn}</button>`}
+      <button class="btn secondary small" type="button" data-push-later ?disabled=${pushOffer.busy} @click=${laterPush}>${pushOffer.failed ? say.common.close : say.chat.later}</button>
     </div>`;
 
   /** Offered only where it can work: push on at the server, this device not registered, the browser able and not blocking Gom. */
@@ -1306,10 +1307,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Zalo's choices, which the family knows. The phone works out the end, so "8 in the morning" is its own morning. */
   const MUTE_CHOICES: ReadonlyArray<readonly [string, string, (now: Date) => Date | null]> = [
-    ['1h', 'Trong 1 giờ', (now) => new Date(now.getTime() + 3_600_000)],
-    ['4h', 'Trong 4 giờ', (now) => new Date(now.getTime() + 4 * 3_600_000)],
-    ['8am', 'Cho đến 8:00 sáng', (now) => { const d = new Date(now); d.setHours(8, 0, 0, 0); if (d <= now) d.setDate(d.getDate() + 1); return d; }],
-    ['always', 'Cho đến khi được mở lại', () => null],
+    ['1h', say.chat.muteFor1h, (now) => new Date(now.getTime() + 3_600_000)],
+    ['4h', say.chat.muteFor4h, (now) => new Date(now.getTime() + 4 * 3_600_000)],
+    ['8am', say.chat.muteTill8, (now) => { const d = new Date(now); d.setHours(8, 0, 0, 0); if (d <= now) d.setDate(d.getDate() + 1); return d; }],
+    ['always', say.chat.muteAlways, () => null],
   ];
 
   const muteView = () => {
@@ -1319,7 +1320,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       <dialog class="pcard mutes" aria-labelledby="mute-title" data-mute-panel data-modal @close=${close}
         @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
-        <div class="pcard-head"><h2 id="mute-title">Tắt thông báo</h2><button class="ib" type="button" aria-label="Đóng" @click=${close}>${icons.close()}</button></div>
+        <div class="pcard-head"><h2 id="mute-title">${say.common.mute}</h2><button class="ib" type="button" aria-label=${say.common.close} @click=${close}>${icons.close()}</button></div>
         <ul class="info-list">${MUTE_CHOICES.map(([key, label, end]) => html`
           <li><button class="info-person" type="button" data-mute-for=${key} @click=${() => { muting = null; void setMuted(c, true, end(deps.now())); }}>${label}</button></li>`)}</ul>
       </dialog>`;
@@ -1399,23 +1400,23 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const friend = c.kind === 'direct' && c.peer !== null && !c.peer.deleted && c.peer.gomId ? c.peer.gomId : null;
     return html`
       <div class="scrim" data-scrim @click=${closeRowMenu}></div>
-      <div class="menu" role="menu" aria-label=${`Tùy chọn cho ${c.title ?? 'cuộc trò chuyện'}`} data-conversation-menu
+      <div class="menu" role="menu" aria-label=${say.chat.optionsFor(c.title)} data-conversation-menu
         @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') closeRowMenu(); }}>
       ${rowMenu!.confirming ? html`
-        <p>Xóa toàn bộ tin nhắn của cuộc trò chuyện này ở phía bạn? Người khác vẫn thấy chúng.</p>
-        <div class="ask"><button class="btn small" type="button" data-confirm-clear @click=${() => void clearConversation(c)}>Xóa với tôi</button>
-        <button class="btn secondary small" type="button" data-cancel-clear @click=${closeRowMenu}>Hủy</button></div>` : html`
+        <p>${say.chat.clearQ}</p>
+        <div class="ask"><button class="btn small" type="button" data-confirm-clear @click=${() => void clearConversation(c)}>${say.chat.deleteForMe}</button>
+        <button class="btn secondary small" type="button" data-cancel-clear @click=${closeRowMenu}>${say.common.cancel}</button></div>` : html`
         <div class="items-grid">
-        ${c.pinned ? menuItem('unpin-chat', icons.pin(), 'Bỏ ghim hội thoại', () => void setPinned(c, false)) : menuItem('pin-chat', icons.pin(), 'Ghim hội thoại', () => void setPinned(c, true))}
-        ${unread ? menuItem('mark-read', icons.checks(), 'Đánh dấu đã đọc', () => void markAllRead(c)) : menuItem('mark-unread', icons.unread(), 'Đánh dấu chưa đọc', () => void setMarkedUnread(c))}
-        ${isMuted(c) ? menuItem('unmute-chat', icons.bell(), 'Bật thông báo', () => { rowMenu = null; onBell(c); })
-          : menuItem('mute-chat', icons.bellOff(), 'Tắt thông báo', () => { rowMenu = null; onBell(c); })}
-        ${friend === null ? nothing : html`<a class="mi" role="menuitem" href=${`/groups/new?with=${encodeURIComponent(friend)}`} data-group-with>${icons.users()}<span>Tạo nhóm với ${c.title}</span></a>`}
-        ${c.hidden ? menuItem('unhide-chat', icons.eye(), 'Bỏ ẩn trò chuyện', () => void rowAction(api.setHidden(c.id, false)))
-          : menuItem('hide-chat', icons.eyeOff(), 'Ẩn trò chuyện', () => void hideConversation(c))}
-        ${menuItem('clear-chat', icons.trash(), 'Xóa hội thoại', () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}
+        ${c.pinned ? menuItem('unpin-chat', icons.pin(), say.chat.unpinChat, () => void setPinned(c, false)) : menuItem('pin-chat', icons.pin(), say.chat.pinChat, () => void setPinned(c, true))}
+        ${unread ? menuItem('mark-read', icons.checks(), say.chat.markRead, () => void markAllRead(c)) : menuItem('mark-unread', icons.unread(), say.chat.markUnread, () => void setMarkedUnread(c))}
+        ${isMuted(c) ? menuItem('unmute-chat', icons.bell(), say.common.unmute, () => { rowMenu = null; onBell(c); })
+          : menuItem('mute-chat', icons.bellOff(), say.common.mute, () => { rowMenu = null; onBell(c); })}
+        ${friend === null ? nothing : html`<a class="mi" role="menuitem" href=${`/groups/new?with=${encodeURIComponent(friend)}`} data-group-with>${icons.users()}<span>${say.chat.groupWith(c.title)}</span></a>`}
+        ${c.hidden ? menuItem('unhide-chat', icons.eye(), say.chat.unhide, () => void rowAction(api.setHidden(c.id, false)))
+          : menuItem('hide-chat', icons.eyeOff(), say.chat.hide, () => void hideConversation(c))}
+        ${menuItem('clear-chat', icons.trash(), say.chat.clear, () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}
         </div>
-        <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${closeRowMenu}>Đóng</button>`}
+        <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${closeRowMenu}>${say.common.close}</button>`}
       </div>`;
   };
 
@@ -1425,7 +1426,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
     const done = await result;
     if (!done.ok) {
-      if (done.error === 'pin_limit') { notice = 'Bạn đã ghim tối đa số cuộc trò chuyện. Hãy bỏ ghim một cuộc trước.'; update(); }
+      if (done.error === 'pin_limit') { notice = say.chat.pinChatLimit; update(); }
       else handleFailure(done);
       return;
     }
@@ -1463,8 +1464,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   const undoView = () => undoHide === null ? nothing : html`
-    <div class="toast" role="status" data-undo-hide><span>Đã ẩn cuộc trò chuyện</span>
-      <button class="btn secondary small" type="button" data-undo @click=${undoHiding}>Hoàn tác</button></div>`;
+    <div class="toast" role="status" data-undo-hide><span>${say.chat.hiddenToast}</span>
+      <button class="btn secondary small" type="button" data-undo @click=${undoHiding}>${say.common.undo}</button></div>`;
 
   const clearConversation = (c: Conversation) => rowAction(api.clearConversation(c.id), () => forget(c.id, true));
 
@@ -1602,7 +1603,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   async function copyText(m: Shown): Promise<void> {
     menu = null;
-    try { await navigator.clipboard.writeText(m.body); notice = 'Đã sao chép tin nhắn.'; } catch { notice = 'Không sao chép được. Hãy chọn và chép bằng tay.'; }
+    try { await navigator.clipboard.writeText(m.body); notice = say.chat.copied; } catch { notice = say.chat.copyFailed; }
     update();
   }
 
@@ -1621,7 +1622,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const f = forwarding;
     if (f === null || f.busy || f.picked.length === 0 || me === null) return;
     f.busy = true;
-    notice = f.attachments.length > 0 ? 'Đang chuyển tiếp…' : '';
+    notice = f.attachments.length > 0 ? say.chat.forwarding : '';
     update();
     const sent: string[] = [], queued: string[] = [], failed: { name: string; why: string }[] = [];
     for (const target of f.picked) {
@@ -1633,8 +1634,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     forwarding = null;
     const one = f.picked.length === 1;
     notice = [
-      sent.length > 0 ? `Đã chuyển tiếp đến ${sent.join(', ')}.` : '',
-      queued.length > 0 ? `Chưa gửi được đến ${queued.join(', ')}. Sẽ gửi khi có mạng.` : '',
+      sent.length > 0 ? say.chat.forwardedTo(sent.join(', ')) : '',
+      queued.length > 0 ? say.chat.forwardQueued(queued.join(', ')) : '',
       ...failed.map((x) => one ? x.why : `${x.name}: ${x.why}`),
     ].filter((x) => x !== '').join(' ');
     update();
@@ -1653,7 +1654,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       const copy = await api.copyAttachment(target, a.id);
       if (copy.ok) { copies.push(copy.data); continue; }
       if (copy.error === 'unauthorized') { go('/sign-in'); return { kind: 'signed-out' }; }
-      return { kind: 'failed', why: copy.error === 'network' ? `Chưa chuyển tiếp được đến ${name}. Cần có mạng để chuyển ảnh và tệp.` : errorText(copy) };
+      return { kind: 'failed', why: copy.error === 'network' ? say.chat.forwardNeedsNetwork(name) : errorText(copy) };
     }
     const queue = (body: string, files: Attachment[], sticker: string | null = null): string => {
       const clientId = deps.newId();
@@ -1674,7 +1675,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (p.state !== 'failed') return { kind: 'queued' };
       t.pending = t.pending.filter((x) => x.clientId !== clientId);
       persist();
-      return { kind: 'failed', why: p.error ? errorText(p.error) : `Chưa chuyển tiếp được đến ${name}.` };
+      return { kind: 'failed', why: p.error ? errorText(p.error) : say.chat.forwardFailed(name) };
     };
     const passed = await outcome(queue(f.body, copies, f.sticker));
     // The note goes after what it is about: not at all if that was refused, and behind it in the queue if that is waiting for the network.
@@ -1845,7 +1846,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (t.editing !== null || files.length === 0 || !uploadsOn()) return;
     const most = limits().attachments;
     const room = most - t.tray.length;
-    for (const file of files.slice(0, Math.max(0, room))) t.tray.push({ key: ++trayKey, name: file.name || 'tệp', file, state: 'waiting', progress: 0 });
+    for (const file of files.slice(0, Math.max(0, room))) t.tray.push({ key: ++trayKey, name: file.name || say.chat.fileFallbackName, file, state: 'waiting', progress: 0 });
     if (files.length > room) { notice = tooManyAttachments(most); }
     update();
     pumpTray(id);
@@ -2077,7 +2078,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       }, SLOW_RETRY_MS);
     },
     ended: () => go('/sign-in'),
-    replaced() { notice = 'Gom đang mở ở nơi khác nên kết nối ở đây đã ngắt. Hãy tải lại trang để kết nối lại.'; update(); },
+    replaced() { notice = say.chat.replaced; update(); },
   };
 
   deps.nav.onPop(() => { const id = idFromPath(); if (id === null) { openId = null; update(); } else show(id); });
