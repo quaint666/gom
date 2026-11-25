@@ -26,3 +26,5 @@ src/Gom.Web/wwwroot/js/
 src/Gom.Web/wwwroot/assets.json
 src/Gom.Web/wwwroot/css/gom.*.css
 src/Gom.Web/wwwroot/theme-init.*.js
+# What the Playwright browser tool leaves behind
+.playwright-mcp/

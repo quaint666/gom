@@ -5022,6 +5022,31 @@ describe('chat: the information page on a phone', () => {
     expect(h.nav.history).toEqual([`/c/${C1}`, `/c/${C1}`]);   // the page's step became the conversation again
   });
 
+  it('going to a pinned message from the page closes it and shows the message, without leaving a step to come back to', async () => {
+    const pinned = msg(1, 'minh');
+    const h = await open(start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [pinned, msg(2, 'mom')] },
+      api: { person: vi.fn(async () => ok(minhCard)), pins: vi.fn(async () => ok({ pins: [pinned] })) } }));
+    page()!.querySelector<HTMLButtonElement>(`[data-info-pin="${pinned.id}"]`)!.click();
+    await flush();
+    expect(page()).toBeNull();
+    expect(root.querySelector(`[data-msg="${pinned.id}"]`)).not.toBeNull();
+    expect(h.nav.history).toEqual([`/c/${C1}`, `/c/${C1}`]);
+  });
+
+  it('going to the message of a picture opened from the page closes the page too', async () => {
+    const picture: Attachment = { id: 'p1', kind: 'image', name: 'a.webp', size: 2048, width: 40, height: 30 };
+    const shown = { ...msg(1, 'minh'), attachments: [picture] };
+    const listed = { attachment: picture, messageId: shown.id, seq: 1, createdAt: shown.createdAt, sender: shown.sender, body: shown.body };
+    await open(start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [shown, msg(2, 'mom')] },
+      api: { person: vi.fn(async () => ok(minhCard)), media: vi.fn(async (_c: string, kind: string) => ok({ items: kind === 'image' ? [listed] : [], hasMore: false })) } }));
+    page()!.querySelector<HTMLButtonElement>('[data-info-pic="p1"]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-viewer-goto]')!.click();
+    await flush();
+    expect(page()).toBeNull();
+    expect(root.querySelector(`[data-msg="${shown.id}"]`)!.classList.contains('found')).toBe(true);
+  });
+
   it('hides the conversation from its foot, back to the list with the undo', async () => {
     const h = await open();
     page()!.querySelector<HTMLButtonElement>('[data-info-hide]')!.click();

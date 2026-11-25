@@ -1937,8 +1937,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
-  /** Goes to a message found by the search: older pages are loaded until it is there, then it is brought into view and marked for a moment. */
+  /**
+   * Goes to a message (found by the search, pinned, or a picture's): older pages are loaded until it is there, then it is brought
+   * into view and marked for a moment. On a phone the information page covers the thread, so it is closed first.
+   */
   async function reveal(m: { id: string; conversationId: string }): Promise<void> {
+    closeInfoPage();
     const id = m.conversationId;
     const t = threadOf(id);
     searching = null;
