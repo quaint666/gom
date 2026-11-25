@@ -912,7 +912,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, p.name))}</div>
         <h3>${pack === -1 ? 'Gần đây' : STICKER_PACKS[pack]?.name}</h3>
         <div class="stk-grid" data-shown-stickers>${shown.map(tile)}</div>
-        <p class="credit">Nhãn dán: Noto Emoji của Google, giấy phép SIL Open Font License 1.1.</p>
+        <p class="credit">Nhãn dán: Noto Emoji của Google, giấy phép Apache 2.0.</p>
       </section>`;
   };
 

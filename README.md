@@ -25,7 +25,7 @@ The first start needs an owner account: set `Owner__GomId` and `Owner__Password`
 
 Decisions and their reasons are in `docs/decisions.md`; what comes next is in `docs/next-session.md`. The mockups and design notes are in `design/`.
 
-The font (Be Vietnam Pro, in `wwwroot/fonts/`) and the stickers (still images from Google's Noto Emoji, in `wwwroot/stickers/`) are under the SIL Open Font License 1.1; the licence text sits beside each.
+The font (Be Vietnam Pro, in `wwwroot/fonts/`) is under the SIL Open Font License 1.1, and the stickers (still images from Google's Noto Emoji, its `2D/svg` folder, in `wwwroot/stickers/`) under the Apache License 2.0; the licence text sits beside each.
 
 ## On a server
 
