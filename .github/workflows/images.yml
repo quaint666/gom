@@ -153,7 +153,7 @@ jobs:
             echo "$APP_DIGEST"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          # The homelab helper greps the run log for ghcr.io/quaint666/gom@sha256:<digest>: it must appear once, with one
+          # The deploy helper greps the run log for ghcr.io/quaint666/gom@sha256:<digest>: it must appear once, with one
           # digest. Do not print the image reference with a digest anywhere else.
           echo "$APP_DIGEST"
 

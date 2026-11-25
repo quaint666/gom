@@ -24,7 +24,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 
 // Behind a proxy chain the visitor's address and "https" arrive in X-Forwarded-*. ForwardedHeaders:Hops is how many
-// proxies sit in front of the app (staging: nginx, then cloudflared, so 2). It is 0 by default, so a copy on a laptop
+// proxies sit in front of the app (staging and production: two, so 2). It is 0 by default, so a copy on a laptop
 // never believes a header a visitor sends. When it is on, the app must be reachable only through the proxy: callers are
 // not checked, the number of hops is what picks the visitor's address out of the header.
 var proxyHops = builder.Configuration.GetValue<int?>("ForwardedHeaders:Hops") ?? 0;
