@@ -32,6 +32,22 @@ export const STICKER_PACKS: readonly StickerPack[] = [
     '1f389', '1f38a', '1f388', '1f382', '1f381', '1f9e7', '1f9e8', '1f3ee', '1f386', '1f525', '1f31f', '2728',
     '1f3c6', '1f340', '1f4af',
   ] },
+  { name: 'Thời tiết', codes: [
+    '2600', '1f324', '26c5', '1f325', '1f327', '26c8', '1f329', '2744', '2603', '1f308', '2614', '1f32a',
+    '1f319', '2b50', '1f30a', '1f338', '1f342', '1f321',
+  ] },
+  { name: 'Du lịch', codes: [
+    '2708', '1f697', '1f3cd', '1f6f5', '1f68c', '1f686', '1f6a2', '1f6b2', '1f3d6', '1f3d4', '1f3d5', '1f5fa',
+    '1f9f3', '1f4f8', '1f3e8', '1f5fc',
+  ] },
+  { name: 'Thể thao', codes: [
+    '26bd', '1f3c0', '1f3f8', '1f3d3', '1f3be', '1f3d0', '1f3ca', '1f6b4', '1f3c3', '1f9d8', '1f3cb', '1f947',
+    '1f3c5', '1f3ae', '1f3a3', '1f945',
+  ] },
+  { name: 'Học tập', codes: [
+    '1f4da', '270f', '1f4dd', '1f393', '1f4bb', '1f4f1', '23f0', '1f4c5', '1f4bc', '1f4a1', '2705', '274c',
+    '2753', '1f4a4', '1f4b0', '1f3e0',
+  ] },
   // Every flag the emoji list has (Noto's waved flags; Việt Nam first, then Unicode's order).
   { name: 'Cờ', codes: [
     '1f1fb_1f1f3', '1f3c1', '1f6a9', '1f38c', '1f3f4', '1f3f3', '1f3f3_200d_1f308', '1f3f3_200d_26a7',
