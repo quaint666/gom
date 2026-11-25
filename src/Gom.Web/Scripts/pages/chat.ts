@@ -13,6 +13,7 @@ import { matches } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
 import { limits } from '../limits.js';
 import { say } from '../say.js';
+import { mountWaiting } from './waiting.js';
 import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 
@@ -2155,6 +2156,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   update();
   void api.me().then(async (result) => {
     if (!result.ok) { handleFailure(result); return; }
+    // Someone who asked to join and is not yet a member sees only the waiting screen: no list, no socket.
+    if ((result.data.standing ?? 'member') !== 'member') {
+      mountWaiting(root, api, go, result.data, (check) => document.addEventListener('visibilitychange', () => { if (deps.visible()) check(); }));
+      return;
+    }
     me = result.data;
     outbox = deps.outbox(me.gomId);
     live = deps.live(handlers);

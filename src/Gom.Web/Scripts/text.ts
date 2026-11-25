@@ -65,6 +65,18 @@ export function errorText(failure: Failure): string {
     case 'empty_upload': return say.errors.emptyUpload;
     case 'invalid_attachment': return say.errors.invalidAttachment;
     case 'too_many_attachments': return tooManyAttachments(l.attachments);
+    case 'invalid_link': return say.errors.invalidLink;
+    case 'bad_origin': return say.errors.badOrigin;
+    case 'invalid_level': return say.errors.invalidLevel;
+    case 'not_editable': return say.errors.notEditable;
+    case 'invalid_sticker': return say.errors.invalidSticker;
+    case 'invalid_mute': return say.errors.invalidMute;
+    case 'invalid_kind': return say.errors.invalidKind;
+    case 'invalid_note': return say.errors.invalidNote(l.noteChars);
+    case 'sign_up_closed': return say.errors.signUpClosed;
+    case 'sign_up_full': return say.errors.signUpFull;
+    case 'pending_approval': return say.errors.pendingApproval;
+    case 'not_a_request': return say.errors.notARequest;
     case 'invalid_endpoint': return say.errors.invalidEndpoint;
     case 'invalid_keys': return say.errors.invalidKeys;
     case 'network': return say.errors.network;

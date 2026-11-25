@@ -26,6 +26,7 @@ public sealed class ServerText
         {
             ["signin"] = "Đăng nhập",
             ["join"] = "Lời mời",
+            ["signup"] = "Xin tham gia",
             ["reset"] = "Đặt lại mật khẩu",
             ["settings"] = "Cài đặt",
             ["friends"] = "Bạn bè",

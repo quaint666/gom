@@ -4936,3 +4936,13 @@ describe('chat: the information page on a phone', () => {
     expect(page()!.querySelector('[data-info-leave]')).not.toBeNull();
   });
 });
+
+describe('chat: an account still waiting to be let in', () => {
+  it('shows only the waiting screen: no list asked for and no live connection', async () => {
+    const h = start({ api: { me: vi.fn(async () => ok({ ...me, standing: 'pending' })) } });
+    await flush();
+    expect(root.querySelector('[data-waiting="pending"]')).not.toBeNull();
+    expect(h.api.conversations).not.toHaveBeenCalled();
+    expect(h.live.start).not.toHaveBeenCalled();
+  });
+});

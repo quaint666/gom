@@ -11,7 +11,7 @@ export function fakeApi(overrides: Partial<{ [K in keyof Api]: ReturnType<typeof
   const base = {
     me: nope(), signIn: nope(), signOut: vi.fn(async () => ok(undefined)), peekInvite: nope(), join: nope(), peekReset: nope(),
     reset: nope(), sessions: nope(), endSession: vi.fn(async () => ok(undefined)), createInvite: nope(), invites: nope(),
-    revokeInvite: vi.fn(async () => ok(undefined)), members: nope(), storage: nope(), deleteEmptyGroup: vi.fn(async () => ok(undefined)), trimPreview: nope(), trimFiles: nope(), trimMessagesPreview: nope(), trimMessages: nope(), resetLink: nope(),
+    revokeInvite: vi.fn(async () => ok(undefined)), members: nope(), storage: nope(), signUpOpen: vi.fn(async () => ok({ open: false })), signUp: nope(), withdrawSignUp: vi.fn(async () => ok(undefined)), signUpRequests: vi.fn(async () => ok({ open: false, requests: [] })), setSignUpOpen: vi.fn(async () => ok(undefined)), approveJoin: vi.fn(async () => ok(undefined)), refuseJoin: vi.fn(async () => ok(undefined)), deleteJoin: vi.fn(async () => ok(undefined)), deleteEmptyGroup: vi.fn(async () => ok(undefined)), trimPreview: nope(), trimFiles: nope(), trimMessagesPreview: nope(), trimMessages: nope(), resetLink: nope(),
     setNickname: nope(), changePassword: vi.fn(async () => ok(undefined)), setAvatar: nope(), removeAvatar: vi.fn(async () => ok(undefined)), pushState: vi.fn(async () => fail('unknown', 404)), setPush: vi.fn(async () => ok(undefined)), removePush: vi.fn(async () => ok(undefined)), disableMember: vi.fn(async () => ok(undefined)),
     enableMember: vi.fn(async () => ok(undefined)),
     friends: nope(), askFriend: nope(), acceptFriend: vi.fn(async () => ok(undefined)), withdrawFriend: vi.fn(async () => ok(undefined)),

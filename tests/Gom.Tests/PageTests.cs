@@ -9,7 +9,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
 {
     public static TheoryData<string, string> Pages => new()
     {
-        { "/", "home" }, { "/c/6f1d0b5e-0000-4000-8000-000000000000", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/reset/some-token", "reset" },
+        { "/", "home" }, { "/c/6f1d0b5e-0000-4000-8000-000000000000", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/sign-up", "signup" }, { "/reset/some-token", "reset" },
         { "/settings", "settings" }, { "/friends", "friends" }, { "/groups/new", "newgroup" }, { "/groups/6f1d0b5e-0000-4000-8000-000000000000", "group" }, { "/add/some_id", "add" }, { "/owner", "owner" }, { "/owner/storage", "storage" },
     };
 
@@ -67,6 +67,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         Assert.Equal(200, l.GetProperty("listPreviewChars").GetInt32());
         Assert.Equal(30, l.GetProperty("inviteDays").GetInt32());
         Assert.Equal(100, l.GetProperty("inviteUses").GetInt32());
+        Assert.Equal(200, l.GetProperty("noteChars").GetInt32());
         Assert.Equal(7, l.GetProperty("inviteDefaultDays").GetInt32());
         Assert.Equal(10, l.GetProperty("inviteDefaultUses").GetInt32());
     }

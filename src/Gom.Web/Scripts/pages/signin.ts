@@ -14,6 +14,8 @@ export function mountSignIn(root: HTMLElement, api: Api, go: (path: string) => v
   let shown = false;
   let busy = false;
   let error: Failure | null = null;
+  /** Whether the owner lets people ask to join; until the server says, the invite-only line. */
+  let open = false;
 
   const view = () => html`
     <div class="page">
@@ -26,7 +28,7 @@ export function mountSignIn(root: HTMLElement, api: Api, go: (path: string) => v
           onInput: (v) => { password = v; }, onToggle: () => { shown = !shown; update(); } })}
         <button class="btn" type="submit" ?disabled=${busy}>${say.account.signIn}</button>
       </form>
-      <p class="foot">${say.account.invitedOnly}</p>
+      <p class="foot" data-sign-in-foot>${open ? html`${say.account.noAccount} <a href="/sign-up" data-ask-to-join>${say.account.askToJoin}</a>` : say.account.invitedOnly}</p>
     </div>`;
   const update = () => render(view(), root);
 
@@ -40,4 +42,5 @@ export function mountSignIn(root: HTMLElement, api: Api, go: (path: string) => v
   }
 
   update();
+  void api.signUpOpen().then((result) => { if (result.ok && result.data.open) { open = true; update(); } });
 }

@@ -20,6 +20,8 @@ export interface Limits {
   quoteChars: number;
   /** How much of the last message the conversation list keeps. */
   listPreviewChars: number;
+  /** What someone asking to join says about who they are. */
+  noteChars: number;
   inviteDays: number;
   inviteUses: number;
   /** What a new invite starts at on the owner's page: the server's defaults. */
