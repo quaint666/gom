@@ -29,8 +29,9 @@ public sealed class PushOptions
     /// <summary>How long one push service may take to answer.</summary>
     public int TimeoutSeconds { get; set; } = 10;
 
-    /// <summary>How long a push service keeps a notification for a device that is off.</summary>
-    public int TtlSeconds { get; set; } = 86_400;
+    /// <summary>How long a push service keeps a notification for a device that is off: 28 days, the longest Google's takes;
+    /// a service with a shorter limit shortens it. Once shown, a notification stays until closed.</summary>
+    public int TtlSeconds { get; set; } = 2_419_200;
 
     public bool Enabled => PublicKey.Length > 0 && PrivateKey.Length > 0;
 
