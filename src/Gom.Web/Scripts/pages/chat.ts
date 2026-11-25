@@ -9,7 +9,7 @@ import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMe
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { avatarUrl, errorBox } from '../ui.js';
-import { matches } from '../search.js';
+import { markedExcerpt, matches, type Run } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
 import { isAppFile } from '../appfiles.js';
 import { PALETTES, PATTERNS, storedPattern } from '../theme.js';
@@ -49,9 +49,12 @@ const UPLOADS_AT_ONCE = 2;
 /** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
 const FORWARD_MAX = 5;
 /** How much of a message a one-line preview shows: the pinned bar and panel, a search result or the pin list, what is being forwarded. */
-const CLIP = { pin: 100, result: 160, forward: 120 } as const;
+const CLIP = { pin: 100, result: 160, found: 70, forward: 120 } as const;
 /** How long "Hoàn tác" stays after a conversation is hidden. */
 const UNDO_HIDE_MS = 5000;
+/** How long typing must pause before a search is sent, and the fewest characters that search as you type (Enter searches any). */
+const SEARCH_WAIT_MS = 300;
+const SEARCH_AS_YOU_TYPE_CHARS = 2;
 /** The browser says when a scroll has come to rest; where it does not, a pause in scrolling stands in for it. */
 const SCROLL_END = typeof window !== 'undefined' && 'onscrollend' in window;
 
@@ -149,6 +152,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const slowWaiting = new Set<string>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
+  /** Messages in all your conversations that contain what is typed above the list; `asked` is the search they answer. */
+  let foundEverywhere: { asked: string; results: ChatMessage[] } | null = null;
+  /** Only the newest search may fill the list: an older, slower answer is dropped. */
+  let everywhereTicket = 0;
+  let everywhereTimer: number | null = null;
+  let threadSearchTimer: number | null = null;
   /**
    * Someone's card, opened from a member of a group, a sender's name or a 1:1 conversation's header. `asking` is the question
    * before unfriending or blocking.
@@ -581,10 +590,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** Looking for words in this conversation: a field, and the messages that contain them, newest first. */
   const searchPanel = (s: NonNullable<typeof searching>) => html`
     <div class="searchbar" role="search">
-      <form data-search-form @submit=${(e: Event) => { e.preventDefault(); void runSearch(); }}>
+      <form data-search-form @submit=${(e: Event) => { e.preventDefault(); searchNow(); }}>
         <div class="searchfield input">${icons.search()}
           <input type="search" name="q" aria-label=${say.chat.searchWords} placeholder=${say.chat.searchMessages} autocomplete="off" maxlength=${limits().searchChars} enterkeyhint="search"
-            .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; }}
+            .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; searchSoon(s); }}
             @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { searching = null; update(); } }}>
           <button class="clear" type="button" data-close-search aria-label=${say.chat.closeSearch} @click=${() => { searching = null; update(); }}>${icons.close()}</button>
         </div>
@@ -594,8 +603,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         : html`<ul class="results">${s.results.map((r) => html`
           <li><button type="button" class="result" data-result=${r.id} @click=${() => void reveal(r)}>
             <b>${r.sender.id === me?.id ? say.common.you : r.sender.displayName}</b><small>${listTime(r.createdAt, deps.now())}</small>
-            <span>${clip(r.body, CLIP.result)}</span></button></li>`)}</ul>`}
+            <span>${marked(markedExcerpt(r.body, s.asked, CLIP.result))}</span></button></li>`)}</ul>`}
     </div>`;
+  /** The words a search found, in bold. */
+  const marked = (runs: Run[]) => runs.map((r) => r.hit ? html`<mark>${r.text}</mark>` : r.text);
   /** The pinned messages: the newest one stays under the header, and a button opens them all. */
   const pinBar = (t: Thread) => t.pins.length === 0 ? nothing : html`
     <div class="pinbar" data-pinbar>
@@ -1029,15 +1040,30 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
-  /** The list as narrowed by what is typed, with any hidden conversations it finds under their own heading. */
+  /**
+   * The list as narrowed by what is typed, with any hidden conversations it finds under their own heading, then the messages that
+   * contain the words.
+   */
   const listView = () => {
     const shown = visibleChats();
     const found = hiddenMatches(filter);
-    if (shown.length === 0 && found.length === 0) return html`<p class="hint nomatch" data-no-match>${say.chat.noChatsFound}</p>`;
-    // One scroller for both, so the hidden ones follow the others instead of splitting the pane.
+    const messages = foundEverywhere?.results ?? [];
+    if (shown.length === 0 && found.length === 0 && messages.length === 0) return html`<p class="hint nomatch" data-no-match>${say.chat.noChatsFound}</p>`;
+    // One scroller for all, so each part follows the one before instead of splitting the pane.
     return html`<div class="items">
       ${shown.length === 0 ? nothing : html`<ul class="rows">${repeat(shown, (c) => c.id, row)}</ul>`}
-      ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, row)}</ul>`}</div>`;
+      ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, row)}</ul>`}
+      ${messages.length === 0 ? nothing : html`<h3 class="hidden-label" data-found-label>${say.chat.foundMessages}</h3>
+        <ul class="results found-list" data-found-list>${messages.map((m) => foundRow(m, foundEverywhere!.asked))}</ul>`}</div>`;
+  };
+
+  /** A message the list's search found: where it was said, by whom, the words around what was found, and when. */
+  const foundRow = (m: ChatMessage, asked: string) => {
+    const c = chatOf(m.conversationId);
+    const who = m.sender.id === me?.id ? `${say.common.you}: ` : c?.kind === 'group' ? `${m.sender.displayName}: ` : '';
+    return html`<li><button type="button" class="result" data-found=${m.id} @click=${() => openAt(m)}>
+      <b>${c?.title ?? '…'}</b><small>${listTime(m.createdAt, deps.now())}</small>
+      <span>${who}${marked(markedExcerpt(m.body, asked, CLIP.found))}</span></button></li>`;
   };
 
   const view = () => html`
@@ -1052,8 +1078,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${chats === null || chats.length === 0 ? nothing : html`
           <div class="searchfield input list-search">${icons.search()}
             <input type="search" name="filter" aria-label=${say.common.searchChats} placeholder=${say.common.search} autocomplete="off" maxlength=${limits().nameChars}
-              .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); }}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; update(); } }}></div>`}
+              .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); searchEverywhereSoon(); }}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; searchEverywhereSoon(); } else if (e.key === 'Enter' && !e.isComposing) searchEverywhereSoon(0); }}></div>`}
         ${banner()}
         ${pushBanner()}
         ${errorBox(error)}
@@ -1231,7 +1257,19 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- loading
 
-  async function loadHistory(id: string): Promise<void> {
+  /** The first page of a conversation being asked for, so something waiting for it (going to a found message) waits for the same one. */
+  const historyLoads = new Map<string, Promise<void>>();
+
+  function loadHistory(id: string): Promise<void> {
+    let loading = historyLoads.get(id);
+    if (loading === undefined) {
+      loading = fetchHistory(id).finally(() => historyLoads.delete(id));
+      historyLoads.set(id, loading);
+    }
+    return loading;
+  }
+
+  async function fetchHistory(id: string): Promise<void> {
     const t = threadOf(id);
     if (t.loading) return;
     t.loading = true;
@@ -1921,6 +1959,49 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- searching
 
+  /** Searches the open conversation once typing pauses; emptied, the results go. A character or two waits for Enter. */
+  function searchSoon(s: NonNullable<typeof searching>): void {
+    if (threadSearchTimer !== null) deps.timer.clear(threadSearchTimer);
+    threadSearchTimer = null;
+    const q = s.q.trim();
+    if (q === '') { s.ticket++; s.results = null; s.asked = ''; update(); return; }
+    if ([...q].length < SEARCH_AS_YOU_TYPE_CHARS) return;
+    threadSearchTimer = deps.timer.set(() => { threadSearchTimer = null; void runSearch(); }, SEARCH_WAIT_MS);
+  }
+
+  function searchNow(): void {
+    if (threadSearchTimer !== null) deps.timer.clear(threadSearchTimer);
+    threadSearchTimer = null;
+    void runSearch();
+  }
+
+  /**
+   * Searches all your conversations for what is typed above the list once typing pauses (or at once, for Enter). Less than
+   * SEARCH_AS_YOU_TYPE_CHARS characters only narrows the list by name.
+   */
+  function searchEverywhereSoon(wait = SEARCH_WAIT_MS): void {
+    if (everywhereTimer !== null) deps.timer.clear(everywhereTimer);
+    everywhereTimer = null;
+    const q = filter.trim();
+    if ([...q].length < (wait === 0 ? 1 : SEARCH_AS_YOU_TYPE_CHARS)) { everywhereTicket++; foundEverywhere = null; update(); return; }
+    everywhereTimer = deps.timer.set(() => { everywhereTimer = null; void searchEverywhere(q); }, wait);
+  }
+
+  async function searchEverywhere(q: string): Promise<void> {
+    const ticket = ++everywhereTicket;
+    const result = await api.searchAll(q);
+    if (ticket !== everywhereTicket) return;
+    if (!result.ok) { handleFailure(result); return; }
+    foundEverywhere = { asked: q, results: result.data.results };
+    update();
+  }
+
+  /** Opens the conversation a message found by the list's search is in, and goes to the message. */
+  function openAt(m: ChatMessage): void {
+    if (openId !== m.conversationId) open(m.conversationId);
+    void reveal(m);
+  }
+
   async function runSearch(): Promise<void> {
     if (searching === null || openId === null) return;
     const s = searching;
@@ -1946,8 +2027,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const id = m.conversationId;
     const t = threadOf(id);
     searching = null;
+    if (!t.loaded) await loadHistory(id);   // just opened from the list's search
     t.pinsOpen = false;
     t.stick = false;
+    t.jump = false;
     update();
     for (let pages = 0; !t.messages.some((x) => x.id === m.id) && t.hasMore && pages < 40; pages++) await loadOlder(id);
     found = m.id;
@@ -1973,6 +2056,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     }
     if (menu?.id === messageId) menu = null;
     if (searching?.results) searching.results = searching.results.filter((r) => r.id !== messageId);
+    if (foundEverywhere !== null) foundEverywhere.results = foundEverywhere.results.filter((r) => r.id !== messageId);
     update();
     void refreshList();
   }

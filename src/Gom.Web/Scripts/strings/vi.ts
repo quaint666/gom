@@ -538,6 +538,7 @@ export const vi = {
     searchMessages: 'Tìm tin nhắn',
     closeSearch: 'Đóng tìm kiếm',
     noMessagesFound: 'Không tìm thấy tin nhắn nào.',
+    foundMessages: 'Tin nhắn',
     pinned: 'Tin đã ghim',
     // forwarding
     forwardMax: (n: number) => `Chọn tối đa ${n} cuộc trò chuyện mỗi lần.`,

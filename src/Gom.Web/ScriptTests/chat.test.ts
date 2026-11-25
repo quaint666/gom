@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { avatarTone, clock } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { Pusher, PushSupport } from '../Scripts/push.js';
@@ -2572,6 +2572,50 @@ describe('chat: searching a conversation', () => {
     expect(root.querySelector('[data-result="id1"]')).toBeNull();
   });
 
+  it('searches as you type once typing pauses, from two characters; Enter searches even one', async () => {
+    const h = open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
+    await flush();
+    await toggle();
+    const input = root.querySelector<HTMLInputElement>('.searchbar input')!;
+    const typing = (q: string) => { input.value = q; input.dispatchEvent(new Event('input', { bubbles: true })); };
+    const pauses = h.timers.filter((t) => t.ms === 300);
+    typing('p');
+    expect(h.timers.filter((t) => t.ms === 300)).toEqual(pauses);   // one character: nothing until Enter
+    typing('ph');
+    typing('phở');
+    const waits = h.timers.filter((t) => t.ms === 300 && t.live);
+    expect(waits).toHaveLength(1);   // each key starts the wait again
+    expect(h.api.search).not.toHaveBeenCalled();
+    waits[0]!.fn();
+    await flush();
+    expect(h.api.search).toHaveBeenCalledWith(C1, 'phở');
+    expect(root.querySelector('[data-result="id1"]')).not.toBeNull();
+    await ask('ă');
+    expect(h.api.search).toHaveBeenLastCalledWith(C1, 'ă');
+  });
+
+  it('takes the results away when the field is emptied, and an answer still on its way is dropped', async () => {
+    const finish: Array<(v: unknown) => void> = [];
+    const search = vi.fn(() => new Promise((resolve) => { finish.push(resolve); }));
+    open({ search });
+    await flush();
+    await toggle();
+    await ask('phở');
+    const input = root.querySelector<HTMLInputElement>('.searchbar input')!;
+    input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true }));
+    finish[0]!(ok({ results: [hit(messages[0]!)] })); await flush();
+    expect(root.querySelector('[data-result="id1"]')).toBeNull();
+    expect(root.querySelector('[data-no-results]')).toBeNull();
+  });
+
+  it('shows the words found in bold, whatever their accents', async () => {
+    open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
+    await flush();
+    await toggle();
+    await ask('an pho');
+    expect([...root.querySelectorAll('[data-result="id1"] mark')].map((m) => m.textContent)).toEqual(['ăn', 'phở']);
+  });
+
   it('takes you to a result that is already on screen, and marks it for a moment', async () => {
     const h = open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
     await flush();
@@ -3170,6 +3214,63 @@ describe('chat: the list of conversations', () => {
     root.querySelector('input[name="filter"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await flush();
     expect(root.querySelector('[data-no-match]')).toBeNull();
     expect(names()).toHaveLength(2);
+  });
+
+  describe('looking for messages in every conversation', () => {
+    const found = msg(4, 'minh', 'Tối nay ăn phở ở đâu', at(10, 4), C2);
+    const lists = (h: Harness) => h.timers.filter((t) => t.ms === 300 && t.live);
+    const pause = async (h: Harness) => { for (const t of lists(h)) t.fn(); await flush(); };
+
+    it('asks once typing pauses and lists the messages under the conversations: where, who and the words in bold', async () => {
+      const groups = [chat(C1, 'Đào Thị Lan', { lastSeq: 0 }), { ...chat(C2, 'Gia đình', { lastSeq: 4 }), kind: 'group' as const }];
+      const h = start({ chats: groups, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+      await flush();
+      type('gia pho'); await flush();
+      expect(h.api.searchAll).not.toHaveBeenCalled();
+      await pause(h);
+      expect(h.api.searchAll).toHaveBeenCalledWith('gia pho');
+      expect(text(root.querySelector('[data-found-label]')!)).toBe('Tin nhắn');
+      const row = root.querySelector('[data-found="id4"]')!;
+      expect(text(row)).toContain('Gia đình');
+      expect(text(row)).toContain('Minh: Tối nay ăn phở ở đâu');
+      expect([...row.querySelectorAll('mark')].map((m) => m.textContent)).toEqual(['phở']);
+      expect(root.querySelector('[data-no-match]')).toBeNull();   // no conversation is named that, but a message says it
+    });
+
+    it('opens the conversation at the message, once it has loaded', async () => {
+      const layout = fakeLayout();
+      onTestFinished(() => layout.restore());
+      const h = start({ chats: several, history: { [C2]: [msg(3, 'mom', 'trước', at(10, 3), C2), found] }, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+      await flush();
+      type('pho'); await pause(h);
+      root.querySelector<HTMLButtonElement>('[data-found="id4"]')!.click();
+      await flush(); await flush();
+      expect(h.nav.path).toBe(`/c/${C2}`);
+      expect(root.querySelector('[data-msg="id4"]')!.classList.contains('found')).toBe(true);
+      expect(layout.landed()?.getAttribute('data-msg')).toBe('id4');
+    });
+
+    it('a single character only narrows the list by name, and clearing the field takes the messages away', async () => {
+      const h = start({ chats: several, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+      await flush();
+      type('g'); await pause(h);
+      expect(h.api.searchAll).not.toHaveBeenCalled();
+      type('pho'); await pause(h);
+      expect(root.querySelector('[data-found-list]')).not.toBeNull();
+      root.querySelector('input[name="filter"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await flush();
+      expect(root.querySelector('[data-found-list]')).toBeNull();
+    });
+
+    it('lets only the newest answer fill the list', async () => {
+      const finish: Array<(v: unknown) => void> = [];
+      const h = start({ chats: several, api: { searchAll: vi.fn(() => new Promise((resolve) => { finish.push(resolve); })) } });
+      await flush();
+      type('phở'); await pause(h);
+      type('bún'); await pause(h);
+      finish[1]!(ok({ results: [] })); await flush();
+      finish[0]!(ok({ results: [found] })); await flush();
+      expect(root.querySelector('[data-found-list]')).toBeNull();
+    });
   });
 
   it('has no search when there is nothing to search', async () => {

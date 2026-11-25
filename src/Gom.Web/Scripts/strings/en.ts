@@ -533,6 +533,7 @@ export const en: Strings = {
     searchMessages: 'Search messages',
     closeSearch: 'Close search',
     noMessagesFound: 'No messages found.',
+    foundMessages: 'Messages',
     pinned: 'Pinned messages',
     forwardMax: (n: number) => `Choose at most ${count(n, 'conversation', 'conversations')} at a time.`,
     forwardNote: 'Note to send with it',
