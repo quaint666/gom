@@ -9,10 +9,13 @@ namespace Gom.Web.Social;
 public static class ConversationEndpoints
 {
     public sealed record OpenRequest(string? GomId);
-    public sealed record MuteRequest(bool? Muted);
+    public sealed record MuteRequest(bool? Muted, DateTimeOffset? Until);
 
     /// <summary>The list carries only the start of the last message; history has the whole of it.</summary>
     private const int PreviewChars = 200;
+
+    /// <summary>The longest a mute for a while may last; longer is "until turned back on". The choices offered end within a day.</summary>
+    private static readonly TimeSpan LongestMute = TimeSpan.FromDays(7);
 
     public static void MapConversations(this IEndpointRouteBuilder app)
     {
@@ -59,20 +62,31 @@ public static class ConversationEndpoints
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 
-    /// <summary>Mutes or unmutes a conversation for this person only. Their other devices are told to reload the list.</summary>
-    private static async Task<IResult> SetMute(Guid id, MuteRequest request, HttpContext http, GomDbContext db, Chat.Live.LiveDelivery live, CancellationToken ct)
+    /// <summary>
+    /// Mutes a conversation for this person only: until they turn it back on, or with <c>until</c> for a while (the phone works out the
+    /// time, so "until 8 in the morning" is its own morning). Unmuting clears both. Their other devices are told to reload the list.
+    /// </summary>
+    private static async Task<IResult> SetMute(Guid id, MuteRequest request, HttpContext http, GomDbContext db, TimeProvider clock, Chat.Live.LiveDelivery live, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
-        if (request.Muted is not { } muted) return Results.Json(new { error = "invalid_mute" }, statusCode: StatusCodes.Status400BadRequest);
-        var changed = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s.SetProperty(m => m.Muted, muted), ct);
+        if (request.Muted is not { } muted) return InvalidMute();
+        var now = clock.GetUtcNow();
+        if (request.Until is { } until && (!muted || until <= now || until > now + LongestMute)) return InvalidMute();
+        var always = muted && request.Until is null;
+        var ends = request.Until?.ToUniversalTime();
+        var changed = await db.Members.Where(m => m.ConversationId == id && m.UserId == me)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.Muted, always).SetProperty(m => m.MutedUntil, ends), ct);
         if (changed == 0) return Results.NotFound();
         live.ConversationsChanged([me]);
         return Results.NoContent();
     }
 
-    private static async Task<IResult> List(HttpContext http, GomDbContext db, CancellationToken ct)
+    private static IResult InvalidMute() => Results.Json(new { error = "invalid_mute" }, statusCode: StatusCodes.Status400BadRequest);
+
+    private static async Task<IResult> List(HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
+        var now = clock.GetUtcNow();
         var rows = await (
             from m in db.Members
             where m.UserId == me
@@ -80,7 +94,7 @@ public static class ConversationEndpoints
             orderby (c.LastMessageAt ?? c.CreatedAt) descending
             select new
             {
-                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, m.LastReadSeq, m.Muted,
+                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, m.LastReadSeq, m.Muted, m.MutedUntil,
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new { u.Id, u.GomId, u.DisplayName, u.AvatarId }).FirstOrDefault(),
@@ -103,7 +117,8 @@ public static class ConversationEndpoints
             lastSeq = r.LastSeq,
             lastReadSeq = r.LastReadSeq,
             unread = r.Unread,
-            muted = r.Muted,
+            muted = r.Muted || r.MutedUntil > now,
+            mutedUntil = r.MutedUntil > now ? r.MutedUntil : null,
             joinApproval = r.Kind == ConversationKind.Group && r.JoinApproval,
             lastMessage = r.Last is null ? null : new
             {

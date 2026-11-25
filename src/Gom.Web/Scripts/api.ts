@@ -59,7 +59,9 @@ export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated
 export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'file' | null }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: (Person & { id: string }) | null; lastSeq: number; lastReadSeq: number;
-  unread: number; lastMessage: LastMessage | null; memberCount?: number; muted?: boolean; joinApproval?: boolean;
+  unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
+  /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
+  muted?: boolean; mutedUntil?: string | null;
 }
 /**
  * Someone's card, as you may see it: their Gom ID only if you are friends, where a friend request between you stands, and the groups
@@ -141,7 +143,8 @@ export interface Api {
   /** 204 when the person is in; 202 with status "pending" when the group asks for approval first. */
   addMember(conversation: string, gomId: string): Promise<Result<{ status: 'pending' } | undefined>>;
   leaveGroup(conversation: string): Promise<Result<void>>;
-  setMute(conversation: string, muted: boolean): Promise<Result<void>>;
+  /** Without `until`, muting lasts until it is turned back on. */
+  setMute(conversation: string, muted: boolean, until?: string): Promise<Result<void>>;
   renameGroup(conversation: string, title: string): Promise<Result<void>>;
   removeMember(conversation: string, userId: string, ban?: boolean): Promise<Result<void>>;
   setJoinApproval(conversation: string, on: boolean): Promise<Result<void>>;
@@ -238,7 +241,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
     person: (userId) => call('GET', `/api/people/${enc(userId)}`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
-    setMute: (conversation, muted) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, { muted }),
+    setMute: (conversation, muted, until) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, until === undefined ? { muted } : { muted, until }),
     renameGroup: (conversation, title) => call('PATCH', `/api/conversations/${enc(conversation)}`, { title }),
     leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
     removeMember: (conversation, userId, ban) => call('DELETE', `/api/conversations/${enc(conversation)}/members/${enc(userId)}${ban ? '?ban=true' : ''}`),
