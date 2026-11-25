@@ -7,19 +7,22 @@ namespace Gom.Web.Uploads;
 /// <summary>Deletes uploads nobody put in a message, once they are older than the allowed time.</summary>
 public static class AttachmentCleaner
 {
-    /// <summary>Returns how many were removed.</summary>
+    /// <summary>
+    /// Returns how many were removed. The rows go first, in one statement that checks again that each is still in no message (a send
+    /// may take one at the last moment); only the files of the rows it deleted go, after. Read first and deleted later, a send in
+    /// between kept a message whose file was gone, and its row was deleted from under it.
+    /// </summary>
     public static async Task<int> RunOnce(GomDbContext db, IBlobStore store, DateTimeOffset now, TimeSpan keep, CancellationToken ct)
     {
         var cutoff = now - keep;
-        var old = await db.Attachments.Where(a => a.MessageId == null && a.CreatedAt < cutoff).OrderBy(a => a.CreatedAt).Take(500).ToListAsync(ct);
-        foreach (var a in old)
-        {
-            store.Delete(a.Id.ToString());
-            store.Delete(a.Id + ".t");
-        }
-        db.Attachments.RemoveRange(old);
-        await db.SaveChangesAsync(ct);
-        return old.Count;
+        var gone = await db.Database.SqlQuery<Guid>($"""
+            DELETE FROM attachments WHERE id IN (
+                SELECT id FROM attachments WHERE message_id IS NULL AND created_at < {cutoff} ORDER BY created_at LIMIT 500 FOR UPDATE SKIP LOCKED)
+            AND message_id IS NULL
+            RETURNING id AS "Value"
+            """).ToListAsync(ct);
+        AttachmentFiles.Forget(store, gone);
+        return gone.Count;
     }
 }
 

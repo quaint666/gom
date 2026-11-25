@@ -49,6 +49,18 @@ describe('new group page', () => {
     expect(go).toHaveBeenCalledWith('/sign-in');
   });
 
+  it('starts with a friend ticked when it comes from "make a group with", and ignores someone who is not a friend', async () => {
+    mountNewGroup(root, api(), vi.fn(), 'lan');
+    await flush();
+    const ticked = (host: HTMLElement) => [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].filter((b) => b.checked).map((b) => b.value);
+    expect(ticked(root)).toEqual(['lan']);
+    const other = document.createElement('div');
+    mountNewGroup(other, api(), vi.fn(), 'stranger');
+    await flush();
+    expect(ticked(other)).toEqual([]);
+    expect(other.querySelector('[data-picked]')).toBeNull();   // nobody counted as picked either
+  });
+
   it('offers your friends as labelled checkboxes and a name field', async () => {
     mountNewGroup(root, api(), vi.fn());
     await flush();

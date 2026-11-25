@@ -59,7 +59,7 @@ if (root) {
     case 'settings': mountSettings(root, api, go, installer, pusher); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
-    case 'newgroup': mountNewGroup(root, api, go); break;
+    case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
     case 'group': mountGroup(root, api, go, token); break;
     case 'owner': mountOwner(root, api, go, location.origin); break;
     case 'storage': mountStorage(root, api, go); break;

@@ -146,6 +146,31 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .item.unread .pv { color: var(--text); font-weight: 600; }
 .item.unread .tm { color: var(--link); font-weight: 600; }
 .badge { min-inline-size: 22px; block-size: 22px; border-radius: 11px; background: var(--badge); color: #fff; font-size: 12px; font-weight: 600; display: grid; place-items: center; padding-inline: 7px; flex: none; }
+/* Marked unread by hand: a dot, no number. */
+.badge.dot { min-inline-size: 12px; block-size: 12px; padding: 0; }
+
+/*
+ * The "..." button of a row: shown on the open conversation's row, and on a row a mouse is over (in the time's place), so the list is
+ * not a column of dots. A finger holds a row for a second to open the same menu.
+ */
+.row { position: relative; }
+.row .item { -webkit-touch-callout: none; }
+.row-more { position: absolute; inset-inline-end: 6px; inset-block-start: 4px; inline-size: 36px; block-size: 36px; opacity: 0; background: var(--surface); }
+.row:has(.item.active) .row-more, .row-more:focus-visible, .row-more[aria-expanded="true"] { opacity: 1; }
+.row:has(.item.active) .row-more { background: var(--tint); }
+.pin-mark { display: grid; place-items: center; color: var(--muted); flex: none; }
+.pin-mark svg { inline-size: 14px; block-size: 14px; }
+@media (hover: hover) and (pointer: fine) {
+  .row:hover .row-more { opacity: 1; }
+  .row:is(:hover, :has(.item.active), :has(.row-more:focus-visible), :has(.row-more[aria-expanded="true"])) .tm { visibility: hidden; }
+}
+@media not ((hover: hover) and (pointer: fine)) {
+  /* Not there to be tapped by mistake on the other rows: only the open one has it. */
+  .row:not(:has(.item.active)) .row-more:not(:focus-visible, [aria-expanded="true"]) { visibility: hidden; }
+  .row-more { inline-size: 44px; block-size: 44px; inset-block-start: 50%; translate: 0 -50%; }
+  .row:has(.item.active) .item { padding-inline-end: 50px; }
+}
+
 
 .thread-pane { background: var(--bg); }
 .thread-pane.none { place-content: center; }
@@ -257,6 +282,7 @@ button.th-title:hover b { text-decoration: underline; }
 .egroups { display: flex; gap: 2px; overflow-x: auto; margin-block-end: 4px; }
 .egroup { flex: none; inline-size: 40px; block-size: 40px; border: 0; border-radius: 10px; background: none; font-size: 20px; cursor: pointer; }
 .egroup[aria-pressed="true"] { background: var(--tint); }
+.egroup img { display: block; margin: auto; }
 .e-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
 .e-pick { block-size: 44px; border: 0; border-radius: 10px; background: none; font-size: 28px; line-height: 1; cursor: pointer; }
 .e-pick:hover, .egroup:hover { background: var(--hover); }
@@ -363,6 +389,7 @@ button.th-title:hover b { text-decoration: underline; }
 .items-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .mi { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; min-block-size: 64px; padding: 8px 2px; border: 0; border-radius: 10px; background: none; color: var(--text); font: inherit; font-size: 12px; text-align: center; cursor: pointer; }
 .mi:hover { background: var(--hover); }
+a.mi { text-decoration: none; }
 .mi .i { color: var(--link); }
 .mi.danger, .mi.danger .i { color: var(--err-text); }
 @media (hover: hover) and (pointer: fine) and (min-width: 600px) {
@@ -472,7 +499,7 @@ button.th-title:hover b { text-decoration: underline; }
   .rail-i.gear { margin-block-start: auto; }
   .list-pane > .bar { display: none; }
   .gearmenu { display: flex; flex-direction: column; position: fixed; z-index: 21; inset-inline-start: 72px; inset-block-end: 12px; inline-size: 240px; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgb(0 0 0 / .4); }
-  .gearmenu .mi { flex-direction: row; justify-content: flex-start; gap: 12px; min-block-size: 40px; padding: 6px 10px; font-size: 14px; text-align: start; text-decoration: none; inline-size: 100%; }
+  .gearmenu .mi { flex-direction: row; justify-content: flex-start; gap: 12px; min-block-size: 40px; padding: 6px 10px; font-size: 14px; text-align: start; inline-size: 100%; }
   .gearmenu .mi .i { inline-size: 18px; block-size: 18px; }
   .scrim[data-gear-scrim] { background: transparent; }
 }

@@ -52,6 +52,13 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
         }
     }
 
+    /// <summary>Tells one person's devices that they deleted a conversation for themself, up to this number.</summary>
+    public void ConversationCleared(Guid person, Guid conversation, long seq)
+    {
+        var frame = Frames.Cleared(conversation, seq);
+        foreach (var connection in registry.For(person)) connection.TryEnqueue(frame);
+    }
+
     /// <summary>Tells one person's devices that they deleted a message for themself.</summary>
     public void MessageHidden(Guid person, Guid conversation, Guid message)
     {
@@ -68,8 +75,9 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
         {
             // Membership is read now, not remembered: whoever is a member at this moment gets it, nobody else.
             // And a member who joined after the message was written is not told anything about it, not even that it was taken back.
-            var members = await db.Members.AsNoTracking().Where(m => m.ConversationId == message.ConversationId && m.JoinedSeq < message.Seq)
-                .Select(m => new { m.UserId, m.JoinedSeq }).ToListAsync();
+            // Someone who deleted the conversation for themself after it is not told either: for them it is gone.
+            var members = await db.Members.AsNoTracking().Where(m => m.ConversationId == message.ConversationId && m.JoinedSeq < message.Seq && m.ClearedSeq < message.Seq)
+                .Select(m => new { m.UserId, SeesAfter = m.JoinedSeq > m.ClearedSeq ? m.JoinedSeq : m.ClearedSeq }).ToListAsync();
             // Someone who deleted this message for themself is not told of later changes to it: it would come back.
             var gone = kind == "created" ? [] : await db.Hides.AsNoTracking().Where(h => h.MessageId == message.Id).Select(h => h.UserId).ToListAsync();
             members = members.Where(m => !gone.Contains(m.UserId)).ToList();
@@ -79,7 +87,7 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
                 : Frames.Live(message.ConversationId, new EventDto(eventSeq, kind, message with { Reply = Replies.Hidden(message.Reply.Id) }));
             foreach (var member in members)
             {
-                var send = parentSeq is { } p && member.JoinedSeq >= p ? hidden : frame;
+                var send = parentSeq is { } p && member.SeesAfter >= p ? hidden : frame;
                 foreach (var connection in registry.For(member.UserId))
                     connection.TryEnqueue(send);
             }

@@ -64,7 +64,9 @@ public static class GroupEndpoints
         if (wanted.Count == 0) return Error(StatusCodes.Status400BadRequest, "no_members");
         if (wanted.Count + 1 > options.Value.MaxGroupMembers) return Error(StatusCodes.Status400BadRequest, "group_too_big");
 
-        var people = await db.Users.Where(u => wanted.Contains(u.GomId) && u.DisabledAt == null).Select(u => u.Id).ToListAsync(ct);
+        // Only what can be a Gom ID is looked up; anything else is simply not found (and a NUL never reaches PostgreSQL).
+        var valid = wanted.Where(GomId.IsValid).ToList();
+        var people = await db.Users.Where(u => valid.Contains(u.GomId) && u.DisabledAt == null).Select(u => u.Id).ToListAsync(ct);
         // A stranger, an ID that does not exist and a locked member all get the same answer.
         if (people.Count != wanted.Count) return Error(StatusCodes.Status403Forbidden, "not_friends");
         foreach (var person in people)
@@ -424,6 +426,7 @@ public static class GroupEndpoints
         var members = await (from m in db.Members where m.ConversationId == id join u in db.Users on m.UserId equals u.Id orderby u.DisplayName, u.Id
                              select new { u.Id, u.GomId, u.DisplayName, u.AvatarId, m.Role }).ToListAsync(ct);
         var mine = await db.Friendships.Where(f => f.UserLow == me || f.UserHigh == me).ToListAsync(ct);
+        var blocked = (await db.Blocks.Where(b => b.BlockerId == me).Select(b => b.BlockedId).ToListAsync(ct)).ToHashSet();
 
         return Results.Ok(members.Select(m =>
         {
@@ -439,7 +442,8 @@ public static class GroupEndpoints
                 isFriend,
                 // A Gom ID is shown to the person themself and to their friends, and to nobody else.
                 gomId = m.Id == me || isFriend ? m.GomId : null,
-                request = row is { Status: FriendStatus.Pending } ? (row.RequestedBy == me ? "sent" : "received") : "none",
+                // A request from someone I blocked is not shown to me.
+                request = row is { Status: FriendStatus.Pending } ? (row.RequestedBy == me ? "sent" : blocked.Contains(m.Id) ? "none" : "received") : "none",
             };
         }));
     }

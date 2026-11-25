@@ -1,12 +1,22 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { STICKERS, recentStickers, rememberSticker, stickerName } from '../Scripts/stickers.js';
+import { STICKER_PACKS, STICKERS, recentStickers, rememberSticker, stickerName } from '../Scripts/stickers.js';
 
 describe('stickers', () => {
   beforeEach(() => localStorage.clear());
 
-  it('are 48, each once', () => {
-    expect(STICKERS).toHaveLength(48);
-    expect(new Set(STICKERS).size).toBe(48);
+  it('are 110 in six named packs, each once', () => {
+    expect(STICKERS).toHaveLength(110);
+    expect(new Set(STICKERS).size).toBe(110);
+    expect(STICKER_PACKS.map((p) => p.name)).toEqual(['Cảm xúc', 'Cử chỉ', 'Yêu thương', 'Động vật', 'Đồ ăn', 'Lễ hội']);
+    for (const p of STICKER_PACKS) expect(p.codes.length, p.name).toBeGreaterThan(0);
+  });
+
+  it('still has every sticker that was ever offered, so a message already sent still draws', () => {
+    const first48 = ['1f600', '1f604', '1f606', '1f605', '1f602', '1f923', '1f60a', '1f607', '1f609', '1f60d', '1f970', '1f618',
+      '1f60b', '1f61c', '1f92a', '1f917', '1f92d', '1f914', '1f644', '1f60f', '1f634', '1f60e', '1f973', '1f97a',
+      '1f622', '1f62d', '1f631', '1f633', '1f621', '1f624', '1f92f', '1f912', '1f44d', '1f44f', '1f64f', '1f44b',
+      '1f4aa', '1f91d', '2764', '1f494', '1f525', '1f389', '1f382', '1f381', '1f339', '1f4af', '1f415', '1f98b'];
+    for (const code of first48) expect(STICKERS, code).toContain(code);
   });
 
   it('are named by the emoji they show', () => {

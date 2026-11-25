@@ -37,14 +37,15 @@ public static class AuthEndpoints
         var gomId = request.GomId.Trim().ToLowerInvariant();
         var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
-        var wait = throttle.Wait(ip, gomId);
+        var wait = throttle.Begin(ip, gomId);
         if (wait > TimeSpan.Zero)
         {
             http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString();
             return Results.Json(new { error = "too_many_attempts" }, statusCode: StatusCodes.Status429TooManyRequests);
         }
 
-        var user = await db.Users.SingleOrDefaultAsync(u => u.GomId == gomId, ct);
+        // Something that cannot be a Gom ID is nobody, without asking the database (a NUL there would be a 500).
+        var user = GomId.IsValid(gomId) ? await db.Users.SingleOrDefaultAsync(u => u.GomId == gomId, ct) : null;
 
         // A missing user is checked against a dummy hash, so the answer takes as long either way.
         var password = request.Password;
@@ -53,15 +54,13 @@ public static class AuthEndpoints
             if (user is null) { passwords.BurnTime(password); return PasswordCheck.Wrong; }
             return passwords.Verify(user.PasswordHash, password);
         });
-        if (check is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        if (check is null) { throttle.Undo(ip, gomId); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
 
+        // A wrong password was counted by Begin already.
         if (user is null || user.DisabledAt is not null || check == PasswordCheck.Wrong)
-        {
-            throttle.Failed(ip, gomId);
             return Results.Json(new { error = "invalid_credentials" }, statusCode: StatusCodes.Status401Unauthorized);
-        }
 
-        throttle.Succeeded(gomId);
+        throttle.Succeeded(ip, gomId);
 
         if (check == PasswordCheck.OkRehash)
         {

@@ -61,7 +61,9 @@ public static class PeopleEndpoints
             avatar = them.AvatarId,
             // A Gom ID is shown to friends only, as in a group's member list.
             gomId = friends ? them.GomId : null,
-            friend = friends ? "friends" : row is { Status: FriendStatus.Pending } ? (row.RequestedBy == me ? "sent" : "received") : "none",
+            // A request from someone I blocked is not shown to me.
+            friend = friends ? "friends" : row is { Status: FriendStatus.Pending } ? (row.RequestedBy == me ? "sent"
+                : await db.Blocks.AnyAsync(b => b.BlockerId == me && b.BlockedId == userId, ct) ? "none" : "received") : "none",
             commonGroups = groups,
             deleted = them.Deleted,
         });

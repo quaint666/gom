@@ -4,6 +4,7 @@ import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Script
 import type { Pusher, PushSupport } from '../Scripts/push.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
 import { mountChat, type ChatDeps, type OutboxItem } from '../Scripts/pages/chat.js';
+import { STICKER_PACKS, STICKERS } from '../Scripts/stickers.js';
 import { fail, fakeApi, fill, flush, ok, text } from './helpers.js';
 
 let root: HTMLElement;
@@ -2190,6 +2191,21 @@ describe('chat: the offer to turn on notifications', () => {
     expect(text(bar()!)).toContain('Không bật được');
     expect(root.querySelector('[data-push-yes]')).toBeNull();
   });
+
+  it('says once that a browser without a push service (Helium) cannot get them, and does not offer them there again', async () => {
+    open(device({ subscribe: async () => 'no-service' }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-push-yes]')!.click();
+    await flush();
+    expect(text(bar()!)).toContain('không có dịch vụ thông báo đẩy');
+    expect(text(bar()!)).toContain('Helium');
+    expect(root.querySelector('[data-push-yes]')).toBeNull();
+
+    root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page on the same device
+    open(device({ subscribe: async () => 'no-service' }));
+    await flush();
+    expect(bar()).toBeNull();
+  });
 });
 
 describe('chat: deleting a message for yourself', () => {
@@ -4049,6 +4065,16 @@ describe("chat: someone's card", () => {
     expect(text(root.querySelector('[data-peer-card]')!)).toContain('@minh · 2 nhóm chung');
   });
 
+  it("a 1:1 conversation's header shows no Gom ID once you are no longer friends, and no stray @", async () => {
+    const person = vi.fn(async () => ok(cardOf({ gomId: null, friend: 'none', commonGroups: [{ id: G, title: 'Nhà', memberCount: 3 }] })));
+    const former = chat(C2, 'Minh', { peer: { id: 'u-minh', gomId: null, displayName: 'Minh' } });
+    start({ path: `/c/${C2}`, chats: [former], history: { [C2]: [] }, api: { person } });
+    await flush(); await flush();
+    const line = text(root.querySelector('[data-peer-card]')!);
+    expect(line).toContain('1 nhóm chung');
+    expect(line).not.toContain('@');
+  });
+
   it('says so when the card cannot be had, and closes when the browser closes the dialog', async () => {
     inGroup({ person: vi.fn(async () => fail('unknown', 404)) });
     await flush();
@@ -4146,15 +4172,21 @@ describe('chat: stickers', () => {
     ok({ ...sticker(9, 'mom', code), conversationId: conversation, id: `s-${clientId}`, clientId, ...(replyTo ? { reply: { id: replyTo, sender: null, snippet: null } } : {}) }));
   const panel = () => root.querySelector('[data-sticker-panel]');
   const toggle = async () => { root.querySelector<HTMLButtonElement>('[data-picker-toggle]')!.click(); await flush(); };
-  const tap = async (code: string, where = '[data-all-stickers]') => { root.querySelector<HTMLButtonElement>(`${where} [data-send-sticker="${code}"]`)!.click(); await flush(); await flush(); };
+  const pack = async (index: number) => { root.querySelector<HTMLButtonElement>(`[data-sticker-pack="${index}"]`)!.click(); await flush(); };
+  const shown = () => [...root.querySelectorAll('[data-shown-stickers] [data-send-sticker]')].map((b) => b.getAttribute('data-send-sticker'));
+  const tap = async (code: string, where = '[data-shown-stickers]') => { root.querySelector<HTMLButtonElement>(`${where} [data-send-sticker="${code}"]`)!.click(); await flush(); await flush(); };
 
-  it('opens a panel of all 48 stickers from the smiley, with the credit, and closes it again', async () => {
+  it('opens a panel of sticker packs from the smiley, on the first pack, with the credit, and closes it again', async () => {
     open();
     await flush();
     expect(panel()).toBeNull();
     await toggle();
     expect(root.querySelector('[data-picker-toggle]')!.getAttribute('aria-expanded')).toBe('true');
-    expect(panel()!.querySelectorAll('[data-all-stickers] [data-send-sticker]')).toHaveLength(48);
+    const buttons = [...panel()!.querySelectorAll('[data-sticker-pack]')];
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(STICKER_PACKS.map((p) => p.name));
+    expect(buttons[0]!.getAttribute('aria-pressed')).toBe('true');
+    expect(shown()).toEqual(STICKER_PACKS[0]!.codes);
+    expect(text(panel()!)).toContain('Cảm xúc');
     expect(root.querySelector('[data-send-sticker="1f602"]')!.getAttribute('aria-label')).toBe('Gửi nhãn dán 😂');
     expect(root.querySelector<HTMLImageElement>('[data-send-sticker="1f602"] img')!.getAttribute('src')).toBe('/stickers/1f602.svg');
     expect(text(panel()!)).toContain('Noto Emoji của Google');
@@ -4184,13 +4216,31 @@ describe('chat: stickers', () => {
     open({ sendSticker: echo() });
     await flush();
     await toggle();
-    expect(root.querySelector('[data-recent-stickers]')).toBeNull();
+    expect(root.querySelector('[data-sticker-pack="-1"]')).toBeNull();
     await tap('1f602');
+    expect(shown()).toEqual(STICKER_PACKS[0]!.codes);   // stays on the pack being chosen from
+    await pack(2);
     await tap('2764');
+    await pack(0);
     await tap('1f602');
-    const recent = [...root.querySelectorAll('[data-recent-stickers] [data-send-sticker]')].map((b) => b.getAttribute('data-send-sticker'));
-    expect(recent).toEqual(['1f602', '2764']);
+    await pack(-1);
+    expect(shown()).toEqual(['1f602', '2764']);
     expect(text(panel()!)).toContain('Gần đây');
+    // Opened again, it starts there.
+    await toggle(); await toggle();
+    expect(root.querySelector('[data-sticker-pack="-1"]')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('shows one pack at a time, each with its own stickers, and every sticker is in one pack', async () => {
+    open();
+    await flush();
+    await toggle();
+    for (const [i, p] of STICKER_PACKS.entries()) {
+      await pack(i);
+      expect(shown(), p.name).toEqual(p.codes);
+      expect(text(panel()!.querySelector('h3')!)).toBe(p.name);
+    }
+    expect(STICKER_PACKS.flatMap((p) => p.codes)).toEqual(STICKERS);
   });
 
   it('closes the panel when the message field is used, or on Escape', async () => {
@@ -4233,6 +4283,7 @@ describe('chat: stickers', () => {
     await flush();
     expect(text(root.querySelector('[data-replybar]')!)).toContain('Nhãn dán');
     await toggle();
+    await pack(1);   // 👍 is among the gestures
     await tap('1f44d');
     expect(sendSticker).toHaveBeenCalledWith(C1, 'new-1', '1f44d', 'id1');
     expect(root.querySelector('[data-replybar]')).toBeNull();
@@ -4382,5 +4433,260 @@ describe('chat: someone who deleted their account', () => {
     await flush();
     expect(root.querySelector('form.composer')).not.toBeNull();
     expect(root.querySelector('[data-peer-deleted]')).toBeNull();
+  });
+});
+
+describe('the menu of a conversation in the list', () => {
+  const C3 = '33333333-3333-4333-8333-333333333333';
+  const openMenu = async (id: string) => { root.querySelector<HTMLButtonElement>(`[data-row-menu="${id}"]`)!.click(); await flush(); };
+  const menuEl = () => root.querySelector<HTMLElement>('[data-conversation-menu]');
+  const item = (attr: string) => menuEl()!.querySelector<HTMLElement>(`[data-${attr}]`);
+
+  it('every row has a button that opens a menu named after the conversation, focused on its first item, and Escape closes it back to the button', async () => {
+    start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan')] });
+    await flush();
+    expect(root.querySelectorAll('[data-row-menu]')).toHaveLength(2);
+    await openMenu(C2);
+    expect(menuEl()!.getAttribute('aria-label')).toBe('Tùy chọn cho Lan');
+    expect(root.querySelector(`[data-row-menu="${C2}"]`)!.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(menuEl()!.querySelector('[role="menuitem"]'));
+    menuEl()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(menuEl()).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector(`[data-row-menu="${C2}"]`));
+  });
+
+  it('right-click on a row opens the same menu instead of the browser\'s', async () => {
+    start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 50, clientY: 60 });
+    rows()[0]!.dispatchEvent(e);
+    await flush();
+    expect(e.defaultPrevented).toBe(true);
+    expect(menuEl()).not.toBeNull();
+  });
+
+  it('pins and unpins, then shows the list as the server now has it, with a pin mark', async () => {
+    const h = start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan')] });
+    await flush();
+    h.api.conversations.mockImplementation(async () => ok([chat(C2, 'Lan', { pinned: true }), chat(C1, 'Minh')]));
+    await openMenu(C2);
+    item('pin-chat')!.click();
+    await flush();
+    expect(h.api.setPinned).toHaveBeenCalledWith(C2, true);
+    expect(menuEl()).toBeNull();
+    expect(rows()[0]!.getAttribute('data-chat')).toBe(C2);
+    expect(rows()[0]!.querySelector('.pin-mark')!.getAttribute('aria-label')).toBe('Đã ghim');
+    await openMenu(C2);
+    item('unpin-chat')!.click();
+    await flush();
+    expect(h.api.setPinned).toHaveBeenLastCalledWith(C2, false);
+  });
+
+  it('says so in words when no more can be pinned', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')], api: { setPinned: vi.fn(async () => fail('pin_limit', 409)) } });
+    await flush();
+    await openMenu(C1);
+    item('pin-chat')!.click();
+    await flush();
+    expect(h.api.setPinned).toHaveBeenCalled();
+    expect(text(root)).toContain('Bạn đã ghim tối đa số cuộc trò chuyện.');
+  });
+
+  it('marks a read conversation unread with a dot and no number, and opening it reads it even with nothing new', async () => {
+    const m = msg(3, 'minh');
+    const h = start({ chats: [withLast(m, { lastReadSeq: 3 })], history: { [C1]: [m] } });
+    await flush();
+    await openMenu(C1);
+    expect(item('mark-read')).toBeNull();
+    h.api.conversations.mockImplementation(async () => ok([withLast(m, { lastReadSeq: 3, markedUnread: true })]));
+    item('mark-unread')!.click();
+    await flush();
+    expect(h.api.setMarkedUnread).toHaveBeenCalledWith(C1, true);
+    const dot = rows()[0]!.querySelector('[data-marked-unread]')!;
+    expect(dot.getAttribute('aria-label')).toBe('Đánh dấu chưa đọc');
+    expect(dot.textContent).toBe('');
+    expect(rows()[0]!.classList.contains('unread')).toBe(true);
+
+    rows()[0]!.click();
+    await flush(); await flush();
+    expect(h.api.markRead).toHaveBeenCalledWith(C1, 3);
+    expect(rows()[0]!.querySelector('[data-marked-unread]')).toBeNull();
+  });
+
+  it('reads a conversation marked unread when it is opened, even one with nothing in it yet', async () => {
+    const h = start({ chats: [chat(C1, 'Minh', { markedUnread: true })], history: { [C1]: [] } });
+    await flush();
+    rows()[0]!.click();
+    await flush(); await flush();
+    expect(h.api.markRead).toHaveBeenCalledWith(C1, 0);
+  });
+
+  it('offers "mark as read" for a conversation with unread messages or a mark, which reads up to its end', async () => {
+    const h = start({ chats: [chat(C1, 'Minh', { lastSeq: 7, lastReadSeq: 2, unread: 5 }), chat(C2, 'Lan', { lastSeq: 4, lastReadSeq: 4, markedUnread: true })] });
+    await flush();
+    await openMenu(C1);
+    expect(item('mark-unread')).toBeNull();
+    item('mark-read')!.click();
+    await flush();
+    expect(h.api.markRead).toHaveBeenCalledWith(C1, 7);
+    await openMenu(C2);
+    item('mark-read')!.click();
+    await flush();
+    expect(h.api.markRead).toHaveBeenLastCalledWith(C2, 4);
+  });
+
+  it('mutes through the same choices as the bell, and unmutes at once', async () => {
+    const h = start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { muted: true })] });
+    await flush();
+    await openMenu(C1);
+    item('mute-chat')!.click();
+    await flush();
+    expect(menuEl()).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-mute-panel] [data-mute-for="always"]')!.click();
+    await flush();
+    expect(h.api.setMute).toHaveBeenCalledWith(C1, true, undefined);
+    await openMenu(C2);
+    item('unmute-chat')!.click();
+    await flush();
+    expect(h.api.setMute).toHaveBeenLastCalledWith(C2, false, undefined);
+  });
+
+  it('offers a group with a friend from a one-to-one chat only, with that friend ticked on the new-group page', async () => {
+    const group: Conversation = { ...chat(C2, 'Nhà'), kind: 'group', peer: null };
+    const gone = chat(C3, 'Cũ', { peer: { id: 'u-old', gomId: 'old', displayName: 'Cũ', deleted: true } });
+    start({ chats: [chat(C1, 'Minh'), group, gone] });
+    await flush();
+    await openMenu(C1);
+    expect(item('group-with')!.getAttribute('href')).toBe('/groups/new?with=minh');
+    expect(item('group-with')!.textContent).toContain('Tạo nhóm với Minh');
+    await openMenu(C2);
+    expect(item('group-with')).toBeNull();
+    await openMenu(C3);
+    expect(item('group-with')).toBeNull();
+  });
+
+  it('hides a conversation: it leaves the list, and an open one closes', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh'), chat(C2, 'Lan')], history: { [C1]: [msg(1, 'minh')] } });
+    await flush();
+    await openMenu(C1);
+    item('hide-chat')!.click();
+    await flush();
+    expect(h.api.setHidden).toHaveBeenCalledWith(C1, true);
+    expect(h.nav.push).toHaveBeenCalledWith('/');
+    expect(root.querySelector('form.composer')).toBeNull();
+  });
+
+  it('asks before deleting a conversation for you, and a no changes nothing', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    await openMenu(C1);
+    item('clear-chat')!.click();
+    await flush();
+    expect(text(menuEl()!)).toContain('Xóa toàn bộ tin nhắn của cuộc trò chuyện này ở phía bạn? Người khác vẫn thấy chúng.');
+    expect(document.activeElement).toBe(menuEl()!.querySelector('[data-confirm-clear]'));
+    menuEl()!.querySelector<HTMLButtonElement>('[data-cancel-clear]')!.click();
+    await flush();
+    expect(h.api.clearConversation).not.toHaveBeenCalled();
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('deletes the conversation for you: its messages are gone from this page, and opening it again asks the server', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh', 'bí mật')] } });
+    await flush();
+    expect(text(root)).toContain('bí mật');
+    await openMenu(C1);
+    item('clear-chat')!.click();
+    await flush();
+    menuEl()!.querySelector<HTMLButtonElement>('[data-confirm-clear]')!.click();
+    await flush();
+    expect(h.api.clearConversation).toHaveBeenCalledWith(C1);
+    expect(h.nav.push).toHaveBeenCalledWith('/');
+    expect(text(root)).not.toContain('bí mật');
+    const asked = h.api.history.mock.calls.length;
+    h.handlers().conversations();
+    await flush();
+    h.nav.path = `/c/${C1}`; h.nav.pop();
+    await flush();
+    expect(h.api.history.mock.calls.length).toBe(asked + 1);
+  });
+
+  it('a "cleared" frame from another device drops what this page holds and asks again for an open thread', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh', 'bí mật')] } });
+    await flush();
+    h.api.history.mockImplementation(async () => ok({ messages: [], hasMore: false, lastSeq: 1 }));
+    h.handlers().cleared(C1, 1);
+    await flush();
+    expect(text(root)).not.toContain('bí mật');
+  });
+});
+
+describe('quieter menus', () => {
+  const pointer = (type: string, init: { pointerType?: string; clientX?: number; clientY?: number } = {}) =>
+    Object.assign(new Event(type, { bubbles: true, cancelable: true }), { pointerType: init.pointerType ?? 'touch', clientX: init.clientX ?? 100, clientY: init.clientY ?? 100 });
+  const menuEl = () => root.querySelector('[data-conversation-menu]');
+
+  it('a finger held on a row for a second opens its menu, and the click that ends it does not open the conversation', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    rows()[0]!.dispatchEvent(pointer('pointerdown'));
+    const timer = h.timers[h.timers.length - 1]!;
+    expect(timer.ms).toBe(1000);
+    expect(menuEl()).toBeNull();
+    timer.fn();
+    await flush();
+    expect(menuEl()).not.toBeNull();
+    rows()[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(h.nav.push).not.toHaveBeenCalled();
+    // The next tap opens it as usual.
+    root.querySelector<HTMLElement>('[data-close-row-menu]')!.click();
+    rows()[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(h.nav.push).toHaveBeenCalledWith(`/c/${C1}`);
+  });
+
+  it('a finger lifted early, or moving on to scroll, opens nothing; a mouse press is not a long press', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    rows()[0]!.dispatchEvent(pointer('pointerdown'));
+    let timer = h.timers[h.timers.length - 1]!;
+    rows()[0]!.dispatchEvent(pointer('pointerup'));
+    timer.fn();
+    rows()[0]!.dispatchEvent(pointer('pointerdown', { clientX: 100, clientY: 100 }));
+    timer = h.timers[h.timers.length - 1]!;
+    rows()[0]!.dispatchEvent(pointer('pointermove', { clientX: 100, clientY: 140 }));
+    timer.fn();
+    const before = h.timers.length;
+    rows()[0]!.dispatchEvent(pointer('pointerdown', { pointerType: 'mouse' }));
+    expect(h.timers.length).toBe(before);
+    await flush();
+    expect(menuEl()).toBeNull();
+  });
+
+  it('on a phone the browser\'s own long-press menu is held back, and right-click opens nothing extra', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    h.coarse.value = true;
+    await flush();
+    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    rows()[0]!.dispatchEvent(e);
+    await flush();
+    expect(e.defaultPrevented).toBe(true);
+    expect(menuEl()).toBeNull();
+  });
+
+  it('a press outside the emoji and sticker panel closes it; a press inside it or on its button does not', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] } });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-picker-toggle]')!.click();
+    await flush();
+    expect(root.querySelector('[data-picker]')).not.toBeNull();
+    root.querySelector('[data-picker]')!.dispatchEvent(pointer('pointerdown'));
+    root.querySelector('[data-picker-toggle]')!.dispatchEvent(pointer('pointerdown'));
+    await flush();
+    expect(root.querySelector('[data-picker]')).not.toBeNull();
+    root.querySelector('.msgs')!.dispatchEvent(pointer('pointerdown'));
+    await flush();
+    expect(root.querySelector('[data-picker]')).toBeNull();
   });
 });

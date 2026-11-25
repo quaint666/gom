@@ -2,8 +2,8 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
-import type { Pusher } from '../push.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, User } from '../api.js';
+import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
+import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, Result, User } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
@@ -11,7 +11,7 @@ import * as icons from '../icons.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { errorText, formatSize } from '../text.js';
-import { STICKERS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
+import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
@@ -117,6 +117,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let scrollAnchor: number | null = null;
   /** `at` is where it was asked for (the pointer or the button), so a mouse gets it there; a finger always gets the sheet at the bottom. */
   let menu: { id: string; confirming: boolean; hide?: boolean; at?: { x: number; y: number } } | null = null;
+  /** The "..." menu of one conversation in the list; `confirming` while it asks before deleting the conversation for you. */
+  let rowMenu: { id: string; confirming: boolean; at?: { x: number; y: number } } | null = null;
   /** The search bar of the open conversation: what was asked, and what came back (null while waiting for the first answer). */
   /** Messages that just arrived from someone else in the open chat: they rise in once, and are forgotten a moment later. */
   const fresh = new Set<string>();
@@ -131,7 +133,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let viewerSync = false;
   let trayKey = 0;
   /** The banner that offers notifications: the server's key and the level to register with, while it is offered. */
-  let pushOffer: { key: string; level: PushLevel; busy: boolean; failed: boolean } | null = null;
+  let pushOffer: { key: string; level: PushLevel; busy: boolean; failed: boolean; noService?: boolean } | null = null;
   let infoOpen = ((): boolean => { try { return localStorage.getItem('gom-info') === '1'; } catch { return false; } })();
   const people = new Map<string, GroupMember[]>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
@@ -155,6 +157,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let forwarding: { body: string; attachments: Attachment[]; sticker: string | null; picked: string[]; q: string; note: string; busy: boolean } | null = null;
   /** The panel under the composer, open on its emoji or its sticker tab; the tab last used is remembered on this device. */
   let picker: 'emoji' | 'stickers' | null = null;
+  /** The pack of stickers shown: -1 is "Gần đây" (the ones this device sent lately). */
+  let stickerPack = -1;
   /** The group of emoji shown: -1 is "Gần đây". */
   let emojiGroup = recentEmoji().length > 0 ? -1 : 0;
 
@@ -198,15 +202,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   const row = (c: Conversation) => html`
-    <li><a class="item ${c.unread > 0 ? 'unread' : ''} ${c.id === openId ? 'active' : ''}" href="/c/${c.id}" data-chat=${c.id}
-      aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}>
+    <li class="row"><a class="item ${c.unread > 0 || c.markedUnread ? 'unread' : ''} ${c.id === openId ? 'active' : ''}" href="/c/${c.id}" data-chat=${c.id}
+      aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}
+      @contextmenu=${(e: MouseEvent) => onRowContext(e, c.id)}
+      @pointerdown=${(e: PointerEvent) => rowPressStart(e, c.id)} @pointermove=${rowPressMove} @pointerup=${rowPressEnd} @pointercancel=${rowPressEnd} @pointerleave=${rowPressEnd}>
       ${avatar(c.title ?? '?', c.peer?.avatar)}
       <div class="im">
-        <div class="l1"><span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
+        <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label="Đã ghim">${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv">${preview(c)}</span>
           ${isMuted(c) ? html`<span class="mute-mark" role="img" aria-label="Đã tắt thông báo">${icons.bellOff()}</span>` : nothing}
-          ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>` : nothing}</div>
-      </div></a></li>`;
+          ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label="${c.unread} tin chưa đọc">${c.unread > 99 ? '99+' : c.unread}</span>`
+            : c.markedUnread ? html`<span class="badge dot ${isMuted(c) ? 'muted' : ''}" data-marked-unread role="img" aria-label="Đánh dấu chưa đọc"></span>` : nothing}</div>
+      </div></a>
+      <button class="ib row-more" type="button" data-row-menu=${c.id} aria-label=${`Tùy chọn cho ${c.title ?? 'cuộc trò chuyện'}`} aria-haspopup="menu"
+        aria-expanded=${rowMenu?.id === c.id ? 'true' : 'false'} @click=${(e: MouseEvent) => openRowMenu(c.id, rowMenuPoint(e))}>${icons.more()}</button></li>`;
 
   /** The conversations whose name matches what is typed above the list (all of them when nothing is typed). */
   const visibleChats = (): Conversation[] => (chats ?? []).filter((c) => matches(c.title ?? '', filter));
@@ -706,7 +715,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function peerLine(c: Conversation): string {
     const shared = c.peer === null ? undefined : cards.get(c.peer.id)?.commonGroups.length;
     if (c.peer?.deleted) return 'Tài khoản đã bị xóa';
-    return [`@${c.peer?.gomId ?? ''}`, shared ? `${shared} nhóm chung` : ''].filter((x) => x !== '').join(' · ');
+    return [c.peer?.gomId ? `@${c.peer.gomId}` : '', shared ? `${shared} nhóm chung` : ''].filter((x) => x !== '').join(' · ');
   }
 
   /**
@@ -812,7 +821,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${cardView()}
-        ${muteView()}
         ${c?.peer?.deleted ? html`
           <p class="closed-note" role="status" data-peer-deleted>Tài khoản này đã bị xóa. Bạn vẫn đọc được tin nhắn cũ nhưng không gửi thêm được.</p>` : html`
           ${t.editing === null ? nothing : html`
@@ -869,15 +877,25 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </section>`;
   };
 
-  /** The stickers, the ones this device sent lately first. A tap sends one at once, as Zalo does. */
+  /**
+   * The stickers, a pack at a time, as the emoji are shown a group at a time; "Gần đây" (sent lately from this device) comes first once
+   * there are some. Only the pack shown is fetched. A tap sends one at once, as Zalo does.
+   */
   const stickerPanel = (id: string) => {
     const recent = recentStickers();
+    const pack = stickerPack === -1 && recent.length === 0 ? 0 : stickerPack;
+    const shown = pack === -1 ? recent : STICKER_PACKS[pack]?.codes ?? [];
     const tile = (code: string) => html`<button class="stk-pick" type="button" data-send-sticker=${code} aria-label=${`Gửi nhãn dán ${stickerName(code)}`}
       @click=${() => void sendSticker(id, code)}><img src=${stickerUrl(code)} alt="" loading="lazy" width="56" height="56" draggable="false"></button>`;
+    const chooser = (index: number, face: TemplateResult | string, name: string) => html`
+      <button class="egroup" type="button" data-sticker-pack=${index} aria-label=${name} aria-pressed=${pack === index ? 'true' : 'false'}
+        @click=${() => { stickerPack = index; update(); }}>${face}</button>`;
     return html`
       <section class="stickers" role="tabpanel" aria-label="Nhãn dán" data-sticker-panel>
-        ${recent.length === 0 ? nothing : html`<h3>Gần đây</h3><div class="stk-grid" data-recent-stickers>${recent.map(tile)}</div><h3>Tất cả</h3>`}
-        <div class="stk-grid" data-all-stickers>${STICKERS.map(tile)}</div>
+        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', 'Gần đây') : nothing}${STICKER_PACKS.map((p, i) =>
+          chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, p.name))}</div>
+        <h3>${pack === -1 ? 'Gần đây' : STICKER_PACKS[pack]?.name}</h3>
+        <div class="stk-grid" data-shown-stickers>${shown.map(tile)}</div>
         <p class="credit">Nhãn dán: Noto Emoji của Google, giấy phép SIL Open Font License 1.1.</p>
       </section>`;
   };
@@ -888,6 +906,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function togglePicker(): void {
     if (picker !== null) { picker = null; update(); return; }
     picker = ((): 'emoji' | 'stickers' => { try { return localStorage.getItem(PICKER_TAB) === 'emoji' ? 'emoji' : 'stickers'; } catch { return 'stickers'; } })();
+    // Opens on "Gần đây" when there are some, else on the first pack; it then stays where the person put it, sending or not.
+    stickerPack = recentStickers().length > 0 ? -1 : 0;
     root.querySelector<HTMLTextAreaElement>('.composer textarea')?.blur();
     update();
   }
@@ -930,13 +950,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </section>
       ${threadPane()}
       ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
+      ${rowMenuView()}
+      ${muteView()}
     </div>`;
 
   /** Once per device: turn notifications on from here (the browser asks in the tap itself), or not now. */
   const pushBanner = () => pushOffer === null ? nothing : html`
     <div class="pushbar" data-push-banner>
       ${icons.bell()}
-      <span>${pushOffer.failed ? 'Không bật được thông báo trên trình duyệt này. Bạn có thể thử lại trong Cài đặt.' : 'Bật thông báo để biết khi có tin nhắn mới.'}</span>
+      <span>${pushOffer.noService ? NO_PUSH_SERVICE : pushOffer.failed ? 'Không bật được thông báo trên trình duyệt này. Bạn có thể thử lại trong Cài đặt.' : 'Bật thông báo để biết khi có tin nhắn mới.'}</span>
       ${pushOffer.failed ? nothing : html`<button class="btn small" type="button" data-push-yes ?disabled=${pushOffer.busy} @click=${() => void acceptPush()}>Bật</button>`}
       <button class="btn secondary small" type="button" data-push-later ?disabled=${pushOffer.busy} @click=${laterPush}>${pushOffer.failed ? 'Đóng' : 'Để sau'}</button>
     </div>`;
@@ -957,9 +979,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (pushOffer === null || p === undefined || pushOffer.busy) return;
     pushOffer.busy = true; update();
     const sub = await p.subscribe(pushOffer.key);
-    const result = sub === 'denied' || sub === 'failed' ? null : await api.setPush(sub, pushOffer.level);
+    const result = sub === 'denied' || sub === 'failed' || sub === 'no-service' ? null : await api.setPush(sub, pushOffer.level);
     if (sub === 'denied' || result?.ok) pushOffer = null;   // refused: the browser will not ask again, and Settings explains
-    else pushOffer = { ...pushOffer, busy: false, failed: true };
+    else if (sub === 'no-service') {
+      // It never can on this browser: said once, and not offered again here.
+      pushOffer = { ...pushOffer, busy: false, failed: true, noService: true };
+      try { localStorage.setItem(PUSH_LATER, '1'); } catch { /* it is just not remembered */ }
+    } else pushOffer = { ...pushOffer, busy: false, failed: true };
     update();
   }
 
@@ -1016,6 +1042,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   // ---- the person's actions
 
   function onRowClick(e: MouseEvent, id: string): void {
+    // The click that ends a long press opened the menu; it does not also open the conversation.
+    if (rowPressOpened) { rowPressOpened = false; e.preventDefault(); return; }
     if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     open(id);
@@ -1139,11 +1167,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const t = threads.get(id);
     if (c === undefined || t === undefined || !t.loaded || !deps.visible()) return;
     const newest = newestSeq(t);
-    if (newest <= c.lastReadSeq && c.unread === 0) return;
+    // A conversation marked unread is read by opening it, even with nothing new in it.
+    if (newest <= c.lastReadSeq && c.unread === 0 && !c.markedUnread) return;
     c.lastReadSeq = Math.max(c.lastReadSeq, newest);
     c.unread = 0;
+    c.markedUnread = false;
     update();
-    if (newest > 0) void api.markRead(id, newest);
+    void api.markRead(id, newest);
   }
 
   /** Takes a created event into the thread and the list. Safe to apply twice: the second time changes nothing. */
@@ -1279,6 +1309,120 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     handleFailure(result);
   }
 
+  // ---- the "..." menu of a conversation in the list: pin, mark unread, mute, make a group, hide, delete for me (all yours alone)
+
+  /** Under the button, its right edge on the button's; from the keyboard too. */
+  function rowMenuPoint(e: MouseEvent): { x: number; y: number } {
+    const r = (e.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    return r === undefined ? { x: e.clientX, y: e.clientY } : { x: r.right - 236, y: r.bottom };
+  }
+
+  function openRowMenu(id: string, at: { x: number; y: number }): void {
+    menu = null;
+    rowMenu = { id, confirming: false, at: deps.coarsePointer() ? undefined : at };
+    update();
+    root.querySelector<HTMLElement>('[data-conversation-menu] [role="menuitem"]')?.focus();
+  }
+
+  /**
+   * A finger held on a row for a second opens its menu (the "..." shows only on the open conversation's row, so the list stays calm).
+   * Longer than a message's 450 ms: a row is mostly tapped to open, and a held finger on a list is often the start of a scroll.
+   */
+  const ROW_PRESS_MS = 1000;
+  let rowPress: { timer: number; x: number; y: number } | null = null;
+  let rowPressOpened = false;
+
+  function rowPressStart(e: PointerEvent, id: string): void {
+    rowPressEnd();
+    if (e.pointerType !== 'touch') return;
+    const at = { x: e.clientX, y: e.clientY };
+    const timer = deps.timer.set(() => { rowPress = null; rowPressOpened = true; openRowMenu(id, at); }, ROW_PRESS_MS);
+    rowPress = { timer, ...at };
+  }
+
+  function rowPressMove(e: PointerEvent): void {
+    if (rowPress !== null && Math.hypot(e.clientX - rowPress.x, e.clientY - rowPress.y) > PRESS_SLOP_PX) rowPressEnd();
+  }
+
+  function rowPressEnd(): void {
+    if (rowPress === null) return;
+    deps.timer.clear(rowPress.timer);
+    rowPress = null;
+  }
+
+  /** Right-click opens the row's menu there. A finger's long press is handled above: its own menu from the browser is held back. */
+  function onRowContext(e: MouseEvent, id: string): void {
+    e.preventDefault();
+    if (deps.coarsePointer()) return;
+    openRowMenu(id, { x: e.clientX, y: e.clientY });
+  }
+
+  function closeRowMenu(): void {
+    const id = rowMenu?.id;
+    rowMenu = null;
+    update();
+    if (id !== undefined) root.querySelector<HTMLElement>(`[data-row-menu="${id}"]`)?.focus();
+  }
+
+  const rowMenuView = () => {
+    const c = rowMenu === null ? undefined : chatOf(rowMenu.id);
+    if (c === undefined) return nothing;
+    const unread = c.unread > 0 || c.markedUnread === true;
+    const friend = c.kind === 'direct' && c.peer !== null && !c.peer.deleted && c.peer.gomId ? c.peer.gomId : null;
+    return html`
+      <div class="scrim" data-scrim @click=${closeRowMenu}></div>
+      <div class="menu" role="menu" aria-label=${`Tùy chọn cho ${c.title ?? 'cuộc trò chuyện'}`} data-conversation-menu
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') closeRowMenu(); }}>
+      ${rowMenu!.confirming ? html`
+        <p>Xóa toàn bộ tin nhắn của cuộc trò chuyện này ở phía bạn? Người khác vẫn thấy chúng.</p>
+        <div class="ask"><button class="btn small" type="button" data-confirm-clear @click=${() => void clearConversation(c)}>Xóa với tôi</button>
+        <button class="btn secondary small" type="button" data-cancel-clear @click=${closeRowMenu}>Hủy</button></div>` : html`
+        <div class="items-grid">
+        ${c.pinned ? menuItem('unpin-chat', icons.pin(), 'Bỏ ghim hội thoại', () => void setPinned(c, false)) : menuItem('pin-chat', icons.pin(), 'Ghim hội thoại', () => void setPinned(c, true))}
+        ${unread ? menuItem('mark-read', icons.checks(), 'Đánh dấu đã đọc', () => void markAllRead(c)) : menuItem('mark-unread', icons.unread(), 'Đánh dấu chưa đọc', () => void setMarkedUnread(c))}
+        ${isMuted(c) ? menuItem('unmute-chat', icons.bell(), 'Bật thông báo', () => { rowMenu = null; onBell(c); })
+          : menuItem('mute-chat', icons.bellOff(), 'Tắt thông báo', () => { rowMenu = null; onBell(c); })}
+        ${friend === null ? nothing : html`<a class="mi" role="menuitem" href=${`/groups/new?with=${encodeURIComponent(friend)}`} data-group-with>${icons.users()}<span>Tạo nhóm với ${c.title}</span></a>`}
+        ${menuItem('hide-chat', icons.eyeOff(), 'Ẩn trò chuyện', () => void hideConversation(c))}
+        ${menuItem('clear-chat', icons.trash(), 'Xóa hội thoại', () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}
+        </div>
+        <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${closeRowMenu}>Đóng</button>`}
+      </div>`;
+  };
+
+  /** Each action: the server first, then the list as it now is (the other devices are told by the server). */
+  async function rowAction(result: Promise<Result<void>>, after?: () => void): Promise<void> {
+    rowMenu = null;
+    update();
+    const done = await result;
+    if (!done.ok) {
+      if (done.error === 'pin_limit') { notice = 'Bạn đã ghim tối đa số cuộc trò chuyện. Hãy bỏ ghim một cuộc trước.'; update(); }
+      else handleFailure(done);
+      return;
+    }
+    after?.();
+    await refreshList();
+  }
+
+  const setPinned = (c: Conversation, on: boolean) => rowAction(api.setPinned(c.id, on));
+  const setMarkedUnread = (c: Conversation) => rowAction(api.setMarkedUnread(c.id, true));
+
+  /** "Mark as read": the read position moves to the end, which also clears a mark. */
+  const markAllRead = (c: Conversation) => rowAction(api.markRead(c.id, Math.max(c.lastSeq, c.lastReadSeq)));
+
+  /** Leaves the list (and closes it, if it is open) until something new is said. */
+  const hideConversation = (c: Conversation) => rowAction(api.setHidden(c.id, true), () => forget(c.id, false));
+
+  const clearConversation = (c: Conversation) => rowAction(api.clearConversation(c.id), () => forget(c.id, true));
+
+  /** Takes a conversation out of the list; with `thread`, what this page holds of its messages goes too. */
+  function forget(id: string, thread: boolean): void {
+    chats = (chats ?? []).filter((x) => x.id !== id);
+    if (thread) { const t = threads.get(id); if (t !== undefined) { t.messages = []; t.pins = []; t.hasMore = false; t.loaded = false; } mediaLists.delete(id); }
+    if (openId === id) { deps.nav.push('/'); openId = null; }
+    update();
+  }
+
   // ---- opening the menu without the button
 
   /**
@@ -1286,8 +1430,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    * refuses a style attribute (also the one a template would write on the first draw), but allows this.
    */
   function placeMenu(): void {
-    const at = menu?.at;
-    const pop = root.querySelector<HTMLElement>('.menu');
+    const at = rowMenu !== null ? rowMenu.at : menu?.at;
+    const pop = root.querySelector<HTMLElement>(rowMenu !== null ? '.menu[data-conversation-menu]' : '.menu');
     if (at === undefined || pop === null) return;
     pop.style.setProperty('--x', `${Math.round(at.x)}px`);
     pop.style.setProperty('--y', `${Math.round(at.y)}px`);
@@ -1853,6 +1997,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (openId !== null) void fetchReads(openId);   // a switch may have been flipped by someone
     },
     hidden: (conversation, messageId) => drop(conversation, messageId),
+    // Deleted for you on another device: what this page holds goes, and an open thread asks again (it is empty now, for you).
+    cleared: (conversation) => afterTrim(conversation),
     pins: (conversation) => { if (threads.get(conversation)?.loaded) void refreshPins(conversation); },
     read(conversation, userId, seq) {
       const t = threads.get(conversation);
@@ -1888,6 +2034,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   });
 
   addEventListener('online', () => { live?.retryNow(); retryAll(); });
+
+  // A press anywhere outside the emoji and sticker panel (and its button, which toggles it) closes the panel.
+  document.addEventListener('pointerdown', (e) => {
+    if (picker === null) return;
+    const target = e.target as Element | null;
+    if (target?.closest?.('[data-picker], [data-picker-toggle]')) return;
+    picker = null;
+    update();
+  }, true);
 
   update();
   void api.me().then(async (result) => {

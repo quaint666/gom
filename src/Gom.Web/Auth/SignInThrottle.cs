@@ -28,15 +28,45 @@ public sealed class SignInThrottle(TimeProvider clock, int maxEntries = 10_000)
         }
     }
 
-    public void Failed(string ip, string gomId)
+    /// <summary>
+    /// Starts an attempt: how long to wait if one must, else zero, and the attempt is counted as a failure already. Counted before the
+    /// password is checked, so a burst of attempts sent together meets the wait too (counted after, all of them passed the check at
+    /// once: 18 of 30 were checked where 3 should have been). A right password takes its count back (<see cref="Succeeded(string, string)"/>),
+    /// and so does an attempt that was never checked (<see cref="Undo"/>).
+    /// </summary>
+    public TimeSpan Begin(string ip, string gomId)
     {
         lock (_lock)
         {
             var now = clock.GetUtcNow();
+            var wait = Max(WaitFor("ip:" + ip, now), WaitFor("id:" + gomId, now));
+            if (wait > TimeSpan.Zero) return wait;
             Count("ip:" + ip, now);
             Count("id:" + gomId, now);
             if (_entries.Count > maxEntries) Trim(now);
+            return TimeSpan.Zero;
         }
+    }
+
+    /// <summary>An attempt <see cref="Begin"/> counted that was never checked (no hashing slot): it does not count.</summary>
+    public void Undo(string ip, string gomId)
+    {
+        lock (_lock) { TakeBack("ip:" + ip); TakeBack("id:" + gomId); }
+    }
+
+    /// <summary>
+    /// A right password after <see cref="Begin"/>: that ID is cleared, and the address gets this attempt back but keeps the rest (clearing the
+    /// address would let an attacker reset it with an account of their own; keeping this one would slow a family behind one address).
+    /// </summary>
+    public void Succeeded(string ip, string gomId)
+    {
+        lock (_lock) { _entries.Remove("id:" + gomId); TakeBack("ip:" + ip); }
+    }
+
+    private void TakeBack(string key)
+    {
+        if (!_entries.TryGetValue(key, out var e)) return;
+        if (--e.Count <= 0) _entries.Remove(key); else _entries[key] = e;
     }
 
     /// <summary>A correct password clears that ID only. Clearing the address too would let an attacker reset it with an account of their own.</summary>

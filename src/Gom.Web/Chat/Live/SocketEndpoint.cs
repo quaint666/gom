@@ -47,6 +47,7 @@ public static class SocketEndpoint
         var writer = connection.RunWriter();
         using var beating = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted);
         var heartbeat = Heartbeat(connection, TimeSpan.FromSeconds(Math.Max(1, o.HeartbeatSeconds)), beating.Token);
+        var watching = WatchSession(connection, scopes, clock, TimeSpan.FromSeconds(Math.Max(1, o.SessionCheckSeconds)), beating.Token);
         var lost = "";
         try
         {
@@ -63,6 +64,7 @@ public static class SocketEndpoint
             connection.Finish();
             await writer;
             await heartbeat;
+            await watching;
             // Who ended it, with what code and how old it was: facts only. What a client writes as its reason is never logged.
             var age = (int)Math.Round(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds);
             var log = loggers.CreateLogger("Gom.Web.Chat.Live.Socket");
@@ -74,6 +76,30 @@ public static class SocketEndpoint
     }
 
     /// <summary>Sends "still here" at a steady pace until the connection ends, so a quiet line is never silent.</summary>
+    /// <summary>Closes the socket (4401, "go to sign-in") once its session is no longer live: expired, ended, or its person locked.</summary>
+    private static async Task WatchSession(Connection connection, IServiceScopeFactory scopes, TimeProvider clock, TimeSpan every, CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(every);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                bool live;
+                try
+                {
+                    await using var scope = scopes.CreateAsyncScope();
+                    var db = scope.ServiceProvider.GetRequiredService<GomDbContext>();
+                    var now = clock.GetUtcNow();
+                    live = await (from s in db.Sessions where s.Id == connection.SessionId && s.RevokedAt == null && s.ExpiresAt > now
+                                  join u in db.Users on s.UserId equals u.Id where u.DisabledAt == null select s.Id).AnyAsync(ct);
+                }
+                catch (Exception e) when (e is not OperationCanceledException) { continue; }   // the database is away: keep the socket, ask again later
+                if (!live) { connection.Close(ConnectionRegistry.SessionEnded, "session ended"); return; }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
     private static async Task Heartbeat(Connection connection, TimeSpan every, CancellationToken ct)
     {
         using var timer = new PeriodicTimer(every);
@@ -149,19 +175,19 @@ public static class SocketEndpoint
         // Membership on every ask: "not a member" and "no such conversation" look the same.
         var access = await Access.Of(db, conversation, me, ct);
         if (access is null) return Frames.Error("not_found", conversation);
-        var floor = Math.Max(after, access.JoinedSeq);   // never what was said before they joined
+        var floor = Math.Max(after, access.SeesAfter);   // never what was said before they joined
 
         var rows = await (
             from e in db.Events.AsNoTracking()
             where e.ConversationId == conversation && e.Seq > floor
             orderby e.Seq
             join m in db.Messages on e.MessageId equals m.Id
-            where m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
+            where m.Seq > access.SeesAfter && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
             join u in db.Users on m.SenderId equals u.Id
             select new { e.Seq, e.Kind, Message = m, u.Id, u.DisplayName }).Take(SyncPage + 1).ToListAsync(ct);
 
         var page = rows.Take(SyncPage).ToList();
-        var replies = await Replies.For(db, page.Select(r => r.Message), me, access.JoinedSeq, ct);
+        var replies = await Replies.For(db, page.Select(r => r.Message), me, access.SeesAfter, ct);
         var reactions = await Reactions.For(db, conversation, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         var withFiles = await MessageAttachments.For(db, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         var events = page.Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),

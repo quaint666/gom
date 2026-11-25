@@ -1,26 +1,22 @@
 import type { DeviceSubscription } from './push.js';
-export type ErrorCode =
-  | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
-  | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
-  | 'wrong_password' | 'cannot_disable_owner' | 'confirm_mismatch' | 'owner_cannot_delete' | 'account_deleted' | 'group_not_empty' | 'invalid_trim' | 'trim_not_confirmed' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
-  | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
-  | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
-  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
-  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit' | 'invalid_reaction' | 'banned' | 'already_requested' | 'invalid_setting'
-  | 'invalid_invite' | 'too_large' | 'image_dimensions' | 'invalid_image' | 'busy' | 'too_many_uploads' | 'uploads_disabled' | 'empty_upload' | 'invalid_attachment' | 'too_many_attachments'
-  | 'invalid_endpoint' | 'invalid_keys'
-  | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
-
-const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
+/** The error codes the server sends, each once. A code missing here would reach the page as 'unknown' and lose its own words. */
+const SERVER_CODE_LIST = [
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
-  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner', 'confirm_mismatch', 'owner_cannot_delete', 'account_deleted', 'group_not_empty', 'invalid_trim', 'trim_not_confirmed',
+  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner',
+  'confirm_mismatch', 'owner_cannot_delete', 'account_deleted', 'group_not_empty', 'invalid_trim', 'trim_not_confirmed',
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
-  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
+  'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
   'invalid_invite', 'too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
-]);
+  'invalid_endpoint', 'invalid_keys',
+] as const;
+
+/** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
+export type ErrorCode = (typeof SERVER_CODE_LIST)[number] | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
+
+const SERVER_CODES: ReadonlySet<string> = new Set<string>(SERVER_CODE_LIST);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
 export type Result<T> = { ok: true; data: T } | Failure;
@@ -67,10 +63,8 @@ export interface Reply { id: string; sender: Sender | null; snippet: string | nu
  * `removed`: the owner trimmed it; only a placeholder is shown, and it cannot be opened, saved or forwarded.
  */
 export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean }
-/** One picture or file in the side panel's list, with the message it belongs to. */
 /** A picture or file of a conversation, with the message it came in: who sent it and its words (the viewer shows them under the picture). */
 export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string; sender: Sender; body: string }
-/** What the page behind the first address in a message says about itself. The picture, if any, is at /api/attachments/{imageId}/thumb. */
 /**
  * A line in a thread that says what happened (who was added or taken out, who left, a new name; or, in any conversation, that the
  * owner trimmed pictures and files, or messages, sent before `before`): not something anyone wrote.
@@ -87,10 +81,13 @@ export interface LastMessage { seq: number; body: string; createdAt: string; sen
 export type PushLevel = 'name' | 'nothing';
 export interface PushState { key: string; subscribed: boolean; level: PushLevel }
 export interface Conversation {
-  id: string; kind: 'direct' | 'group'; title: string | null; peer: (Person & { id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
+  /** `peer.gomId` is there only while you are friends (the chat stays after an unfriend or a block; their ID does not). */
+  id: string; kind: 'direct' | 'group'; title: string | null; peer: (Omit<Person, 'gomId'> & { gomId: string | null; id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
   /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
   muted?: boolean; mutedUntil?: string | null;
+  /** Your own handling of it in your list: pinned to the top, and marked unread to come back to (your read position does not move). */
+  pinned?: boolean; markedUnread?: boolean;
 }
 /**
  * Someone's card, as you may see it: their Gom ID only if you are friends, where a friend request between you stands, and the groups
@@ -193,6 +190,13 @@ export interface Api {
   leaveGroup(conversation: string): Promise<Result<void>>;
   /** Without `until`, muting lasts until it is turned back on. */
   setMute(conversation: string, muted: boolean, until?: string): Promise<Result<void>>;
+  /** The "..." menu of a conversation in the list: each is yours alone. */
+  setPinned(conversation: string, on: boolean): Promise<Result<void>>;
+  setMarkedUnread(conversation: string, on: boolean): Promise<Result<void>>;
+  /** Out of your list until something new is said in it. */
+  setHidden(conversation: string, on: boolean): Promise<Result<void>>;
+  /** Deletes the conversation for you: what was said so far is gone for you alone. */
+  clearConversation(conversation: string): Promise<Result<void>>;
   renameGroup(conversation: string, title: string): Promise<Result<void>>;
   removeMember(conversation: string, userId: string, ban?: boolean): Promise<Result<void>>;
   setJoinApproval(conversation: string, on: boolean): Promise<Result<void>>;
@@ -208,13 +212,25 @@ export interface Api {
 }
 
 /** The browser sends the Origin header itself on same-origin POST and DELETE; the server checks it. */
+/**
+ * How long a request may take before the page gives up on it and calls it a network failure. Without one, a request lost on a bad mobile
+ * line could hang for minutes, and the messages queued behind it in a conversation with it. Giving up is safe: a message is sent again
+ * with the same client id, so the server stores it once.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+/** The owner's trims work through every conversation: they get longer. */
+const SLOW_REQUEST_TIMEOUT_MS = 300_000;
+/** An upload is given up when no byte has gone for this long (a large file on a slow line takes minutes, but it keeps moving). */
+export const UPLOAD_STALL_MS = 60_000;
+
 export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest()): Api {
-  async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
+  async function call<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Result<T>> {
     let response: Response;
     try {
       response = await fetchFn(path, {
         method,
         credentials: 'same-origin',
+        signal: AbortSignal.timeout(timeoutMs),
         ...(body === undefined ? {} : body instanceof Blob ? { headers: { 'Content-Type': 'application/octet-stream' }, body }
           : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
       });
@@ -235,9 +251,13 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       xhr.open('POST', `/api/conversations/${encodeURIComponent(conversation)}/attachments?name=${encodeURIComponent(file.name ?? 'tệp')}`);
       xhr.withCredentials = true;
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-      xhr.upload.onprogress = (e) => { if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total); };
-      xhr.onerror = xhr.ontimeout = () => resolve({ ok: false, status: 0, error: 'network' });
+      // Given up when nothing has moved for a while; every bit of progress starts the wait again.
+      let stall = 0;
+      const watch = () => { clearTimeout(stall); stall = setTimeout(() => xhr.abort(), UPLOAD_STALL_MS) as unknown as number; };
+      xhr.upload.onprogress = (e) => { watch(); if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total); };
+      xhr.onerror = xhr.ontimeout = xhr.onabort = () => { clearTimeout(stall); resolve({ ok: false, status: 0, error: 'network' }); };
       xhr.onload = () => {
+        clearTimeout(stall);
         let json: unknown = null;
         try { json = JSON.parse(xhr.responseText); } catch { /* not JSON: a proxy's own answer */ }
         if (xhr.status >= 200 && xhr.status < 300 && json !== null) { resolve({ ok: true, data: json as Attachment }); return; }
@@ -247,6 +267,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
         resolve({ ok: false, status: xhr.status, error });
       };
       xhr.send(file);
+      watch();
     });
   }
 
@@ -269,9 +290,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     storage: () => call('GET', '/api/owner/storage'),
     deleteEmptyGroup: (id) => call('DELETE', `/api/owner/groups/${enc(id)}`),
     trimPreview: (rule) => call('POST', '/api/owner/trim/files/preview', rule),
-    trimFiles: (rule, confirm) => call('POST', '/api/owner/trim/files', { ...rule, confirm }),
+    trimFiles: (rule, confirm) => call('POST', '/api/owner/trim/files', { ...rule, confirm }, SLOW_REQUEST_TIMEOUT_MS),
     trimMessagesPreview: (rule) => call('POST', '/api/owner/trim/messages/preview', rule),
-    trimMessages: (rule, confirm) => call('POST', '/api/owner/trim/messages', { ...rule, confirm }),
+    trimMessages: (rule, confirm) => call('POST', '/api/owner/trim/messages', { ...rule, confirm }, SLOW_REQUEST_TIMEOUT_MS),
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
@@ -301,6 +322,10 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     person: (userId) => call('GET', `/api/people/${enc(userId)}`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
     setMute: (conversation, muted, until) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, until === undefined ? { muted } : { muted, until }),
+    setPinned: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/pinned`, { on }),
+    setMarkedUnread: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/unread`, { on }),
+    setHidden: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/hidden`, { on }),
+    clearConversation: (conversation) => call('POST', `/api/conversations/${enc(conversation)}/clear`),
     renameGroup: (conversation, title) => call('PATCH', `/api/conversations/${enc(conversation)}`, { title }),
     leaveGroup: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/members/me`),
     removeMember: (conversation, userId, ban) => call('DELETE', `/api/conversations/${enc(conversation)}/members/${enc(userId)}${ban ? '?ban=true' : ''}`),

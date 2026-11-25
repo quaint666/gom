@@ -139,7 +139,8 @@ public class StickerTests(AppFixture app) : IClassFixture<AppFixture>
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
         var page = await File.ReadAllTextAsync(Path.Combine(dir!.FullName, "src", "Gom.Web", "Scripts", "stickers.ts"));
-        var listed = Regex.Match(page, @"STICKERS: readonly string\[\] = \[([^\]]*)\]").Groups[1].Value;
+        // Every code inside the packs' list, up to its closing "];".
+        var listed = Regex.Match(page, @"STICKER_PACKS: readonly StickerPack\[\] = \[(.*?)\n\];", RegexOptions.Singleline).Groups[1].Value;
         var codes = Regex.Matches(listed, @"'([0-9a-f_]+)'").Select(m => m.Groups[1].Value).ToList();
         Assert.Equal(Stickers.Allowed.Count, codes.Count);
         Assert.True(Stickers.Allowed.SetEquals(codes));

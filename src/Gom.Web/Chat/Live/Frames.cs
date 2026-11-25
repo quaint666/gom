@@ -20,6 +20,8 @@ public static class Frames
     public static byte[] Read(Guid conversation, Guid reader, long seq) => Json(new { t = "read", c = conversation, u = reader, seq });
     /// <summary>"This person deleted this message for themself": their other devices drop it.</summary>
     public static byte[] Hidden(Guid conversation, Guid message) => Json(new { t = "hidden", c = conversation, m = message });
+    /// <summary>"This person deleted the conversation for themself up to here": their other devices drop what they hold of it.</summary>
+    public static byte[] Cleared(Guid conversation, long seq) => Json(new { t = "cleared", c = conversation, seq });
     /// <summary>"Still here", sent every few seconds. The page closes and reconnects if nothing at all arrives for a minute.</summary>
     public static byte[] Heartbeat() => Json(new { t = "hb" });
     /// <summary>"The pinned messages of this conversation changed": ask for them again.</summary>
