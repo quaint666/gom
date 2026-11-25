@@ -175,6 +175,17 @@ public class PushCryptoTests
     }
 
     [Fact]
+    public void A_device_that_chose_the_words_sees_them_and_the_kind_of_message_when_there_are_none()
+    {
+        var text = new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 2, 0, Text: "ảnh hôm qua");
+        Assert.Equal(("Minh", "ảnh hôm qua"), PushSender.Words(text, ConversationKind.Direct, null, words: true));
+        Assert.Equal(("Nhà mình", "Minh: ảnh hôm qua"), PushSender.Words(text, ConversationKind.Group, "Nhà mình", words: true));
+        Assert.Equal(("Minh", "Đã gửi 2 ảnh"), PushSender.Words(text, ConversationKind.Direct, null));
+        var pictures = new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 2, 0);
+        Assert.Equal(("Minh", "Đã gửi 2 ảnh"), PushSender.Words(pictures, ConversationKind.Direct, null, words: true));
+    }
+
+    [Fact]
     public void A_sticker_is_named_as_one()
     {
         var job = new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 0, 0, Sticker: true);
@@ -347,7 +358,7 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
         var p = await Pair();
         using var phone = new FakeBrowser();
         using var mine = new FakeBrowser();
-        await Subscribe(p.CA, phone);
+        await Subscribe(p.CA, phone, "name");
         await Subscribe(p.CB, mine);
 
         var seq = await Say(p.CB, p.Chat, "bí mật");
@@ -503,5 +514,59 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
             await app.Push.Next(phone.Endpoint);   // the push did start, and is waiting
         }
         finally { stuck.SetResult(201); }
+    }
+
+    private async Task<(Guid Id, long Seq)> Said(string cookie, Guid chat, string body)
+    {
+        using var r = await app.Call(HttpMethod.Post, $"/api/conversations/{chat}/messages", new { clientId = Guid.NewGuid(), body }, cookie);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var m = await AppFixture.Json(r);
+        return (m.GetProperty("id").GetGuid(), m.GetProperty("seq").GetInt64());
+    }
+
+    [Fact]
+    public async Task A_new_device_shows_the_words_unless_it_chooses_less_and_a_long_message_is_cut()
+    {
+        var p = await Pair();
+        Assert.Equal("words", (await State(p.CA)).GetProperty("level").GetString());   // what a device not yet registered is offered
+        using var phone = new FakeBrowser();
+        await Subscribe(p.CA, phone);
+        Assert.Equal("words", (await State(p.CA)).GetProperty("level").GetString());
+
+        var (id, _) = await Said(p.CB, p.Chat, "mật khẩu wifi là 1234");
+        var note = phone.Read((await app.Push.Next(phone.Endpoint)).Body);
+        Assert.Equal("mật khẩu wifi là 1234", note.GetProperty("body").GetString());
+        Assert.Equal(id, note.GetProperty("m").GetGuid());
+
+        var flags = string.Concat(Enumerable.Repeat("🇻🇳", 150));   // one character each, as a person counts them
+        await Said(p.CB, p.Chat, flags);
+        note = phone.Read((await app.Push.Next(phone.Endpoint, 1)).Body);
+        Assert.Equal(string.Concat(Enumerable.Repeat("🇻🇳", 100)), note.GetProperty("body").GetString());
+    }
+
+    [Fact]
+    public async Task A_message_taken_back_replaces_its_notification_on_the_devices_that_showed_its_words_only()
+    {
+        var p = await Pair();
+        using var words = new FakeBrowser();
+        using var name = new FakeBrowser();
+        await Subscribe(p.CA, words, "words");
+        var other = await app.SignIn(p.A.GomId);
+        await Subscribe(other, name, "name");
+
+        var (id, _) = await Said(p.CB, p.Chat, "gửi nhầm");
+        await app.Push.Next(words.Endpoint);
+        await app.Push.Next(name.Endpoint);
+        using var r = await app.Call(HttpMethod.Delete, $"/api/conversations/{p.Chat}/messages/{id}", cookie: p.CB);
+        Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+
+        var sent = await app.Push.Next(words.Endpoint, 1);
+        var note = words.Read(sent.Body);
+        Assert.True(note.GetProperty("recalled").GetBoolean());
+        Assert.Equal(id, note.GetProperty("m").GetGuid());
+        Assert.Equal("Tin nhắn đã được thu hồi", note.GetProperty("body").GetString());
+        Assert.Equal("normal", sent.Headers["Urgency"]);
+        Assert.Equal(Base64Url.EncodeToString(p.Chat.ToByteArray()), sent.Headers["Topic"]);   // replaces the message's push if it is still waiting
+        Assert.Single(app.Push.To(name.Endpoint));   // the recall is that device's only job after the message, and it skipped it
     }
 }

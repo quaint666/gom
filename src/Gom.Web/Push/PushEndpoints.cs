@@ -21,13 +21,13 @@ public static class PushEndpoints
         api.MapDelete("", Unsubscribe);
     }
 
-    /// <summary>The server's public key (a browser needs it to subscribe), and whether this device is on, at which level.</summary>
+    /// <summary>The server's public key (a browser needs it to subscribe), and whether this device is on, at which level (for a device that is not: the default, words).</summary>
     private static async Task<IResult> Get(HttpContext http, GomDbContext db, IOptions<PushOptions> options, CancellationToken ct)
     {
         if (!options.Value.Enabled) return Results.NotFound();
         var session = GomClaims.Session(http.User);
         var mine = await db.PushSubscriptions.AsNoTracking().Where(p => p.SessionId == session).Select(p => (PushLevel?)p.Level).SingleOrDefaultAsync(ct);
-        return Results.Ok(new { key = options.Value.PublicKey, subscribed = mine is not null, level = Level(mine ?? PushLevel.Name) });
+        return Results.Ok(new { key = options.Value.PublicKey, subscribed = mine is not null, level = Level(mine ?? PushLevel.Words) });
     }
 
     /// <summary>
@@ -44,7 +44,8 @@ public static class PushEndpoints
         PushLevel level;
         switch (request.Level)
         {
-            case null or "name": level = PushLevel.Name; break;
+            case null or "words": level = PushLevel.Words; break;
+            case "name": level = PushLevel.Name; break;
             case "nothing": level = PushLevel.Nothing; break;
             default: return Error("invalid_level");
         }
@@ -71,7 +72,7 @@ public static class PushEndpoints
         return Results.NoContent();
     }
 
-    private static string Level(PushLevel l) => l == PushLevel.Nothing ? "nothing" : "name";
+    private static string Level(PushLevel l) => l switch { PushLevel.Nothing => "nothing", PushLevel.Words => "words", _ => "name" };
 
     private static byte[]? Decode(string? s)
     {

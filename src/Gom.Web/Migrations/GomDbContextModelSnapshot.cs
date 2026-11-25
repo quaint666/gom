@@ -739,7 +739,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("push_subscriptions", null, t =>
                         {
-                            t.HasCheckConstraint("ck_push_level", "level IN ('name', 'nothing')");
+                            t.HasCheckConstraint("ck_push_level", "level IN ('name', 'nothing', 'words')");
                         });
                 });
 

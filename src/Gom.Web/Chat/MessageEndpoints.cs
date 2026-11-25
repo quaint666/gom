@@ -156,7 +156,8 @@ public static class MessageEndpoints
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
         var files = dto.Attachments ?? [];
-        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind != "image"), message.Sticker is not null));
+        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind != "image"), message.Sticker is not null,
+            Replies.Snippet(message.Body), message.Id));
         return Results.Ok(dto);
     }
 
@@ -183,7 +184,7 @@ public static class MessageEndpoints
     /// Takes back one of your own messages: its words are erased, and a "deleted" event takes the next number so every device,
     /// even one that was away, learns of it from the stream. Taking back twice changes nothing.
     /// </summary>
-    private static async Task<IResult> Recall(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
+    private static async Task<IResult> Recall(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IBlobStore blobs, Push.PushQueue push, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -223,6 +224,8 @@ public static class MessageEndpoints
         if (pinsGone) await live.PinsChangedAsync(db, id);
         var sender = new PersonDto(me, http.User.FindFirst(GomClaims.DisplayName)!.Value);
         await live.PublishAsync(db, seq, "deleted", ToDto(new Message { Id = messageId, ConversationId = id, Seq = found.Seq, SenderId = me, ClientId = found.ClientId, Body = "", CreatedAt = found.CreatedAt, DeletedAt = now }, sender));
+        // Devices that showed its words get their notification replaced, so the words do not stay on a lock screen.
+        push.Enqueue(new Push.PushJob(id, found.Seq, me, sender.DisplayName, 0, 0, MessageId: messageId, Recalled: true));
         return Results.NoContent();
     }
 

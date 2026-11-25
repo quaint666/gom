@@ -1,7 +1,7 @@
 namespace Gom.Web.Data;
 
 /// <summary>How much a notification on this device says.</summary>
-public enum PushLevel { Name = 0, Nothing = 1 }
+public enum PushLevel { Name = 0, Nothing = 1, Words = 2 }
 
 /// <summary>
 /// One device's notifications: where its push service takes them, and the keys to encrypt them for that browser. It belongs to one

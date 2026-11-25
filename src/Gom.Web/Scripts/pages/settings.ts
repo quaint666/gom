@@ -85,11 +85,11 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
             ${p.subscribed ? html`
               <fieldset class="choices" data-push-level>
                 <legend class="hint">${say.settings.pushShows}</legend>
-                ${([['name', say.settings.pushLevelName], ['nothing', say.settings.pushLevelNothing]] as const).map(([value, label]) => html`
+                ${([['words', say.settings.pushLevelWords], ['name', say.settings.pushLevelName], ['nothing', say.settings.pushLevelNothing]] as const).map(([value, label]) => html`
                   <div class="choice"><input type="radio" name="push-level" id=${`push-${value}`} value=${value} .checked=${live(p.level === value)} ?disabled=${pushBusy}
                     @change=${() => void setPushLevel(value)}><label for=${`push-${value}`}>${label}</label></div>`)}
               </fieldset>` : nothing}
-            <p class="hint">${say.settings.pushNeverWords}</p>`}
+            ${p.subscribed && p.level === 'words' ? html`<p class="hint" data-push-words-note>${say.settings.pushWordsNote}</p>` : nothing}`}
         <p class="hint" role="status" data-push-status>${pushStatus}</p>
       </div>`;
   };

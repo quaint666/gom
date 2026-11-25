@@ -10,6 +10,8 @@ public sealed class ServerText
     public required IReadOnlyDictionary<string, string> PageTitles { get; init; }
     public required string NewMessage { get; init; }
     public required string Group { get; init; }
+    /// <summary>What replaces a notification once its message is taken back.</summary>
+    public required string Recalled { get; init; }
     public required string SentSticker { get; init; }
     public required Func<int, string> SentPictures { get; init; }
     public required Func<int, string> SentFiles { get; init; }
@@ -32,6 +34,7 @@ public sealed class ServerText
         },
         NewMessage = "Tin nhắn mới",
         Group = "Nhóm",
+        Recalled = "Tin nhắn đã được thu hồi",
         SentSticker = "Đã gửi 1 nhãn dán",
         SentPictures = n => $"Đã gửi {n} ảnh",
         SentFiles = n => $"Đã gửi {n} file",

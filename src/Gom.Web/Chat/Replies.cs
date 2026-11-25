@@ -39,7 +39,8 @@ public static class Replies
 
     public static ReplyDto Hidden(Guid id) => new(id, null, null);
 
-    private static string Snippet(string body)
+    /// <summary>The first <see cref="SnippetChars"/> characters, as a person counts them: a quote, and the words in a notification.</summary>
+    public static string Snippet(string body)
     {
         var info = new StringInfo(body);
         return info.LengthInTextElements <= SnippetChars ? body : info.SubstringByTextElements(0, SnippetChars);

@@ -79,7 +79,7 @@ export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
 export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'file' | null; sticker?: string | null }
 /** How much a notification on this device says: who and where, or only "Tin nhắn mới". */
-export type PushLevel = 'name' | 'nothing';
+export type PushLevel = 'words' | 'name' | 'nothing';
 export interface PushState { key: string; subscribed: boolean; level: PushLevel }
 export interface Conversation {
   /** `peer.gomId` is there only while you are friends (the chat stays after an unfriend or a block; their ID does not). */

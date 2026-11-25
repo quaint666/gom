@@ -58,7 +58,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
 
         b.Entity<PushSubscription>(e =>
         {
-            e.ToTable("push_subscriptions", t => t.HasCheckConstraint("ck_push_level", "level IN ('name', 'nothing')"));
+            e.ToTable("push_subscriptions", t => t.HasCheckConstraint("ck_push_level", "level IN ('name', 'nothing', 'words')"));
             e.HasIndex(x => x.SessionId).IsUnique();
             e.HasIndex(x => x.Endpoint).IsUnique();
             // A session is ended by marking it, not deleting it; were it ever deleted, its notifications go with it.
