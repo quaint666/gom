@@ -121,6 +121,8 @@ export function buildThread(
   return items;
 }
 
+const dayFormat = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
 /** A notice in words, from the point of view of whoever reads it ("Bạn" and "bạn" for yourself). */
 export function noticeText(m: ChatMessage, me: string): string {
   const notice = m.notice;
@@ -132,5 +134,7 @@ export function noticeText(m: ChatMessage, me: string): string {
     case 'removed': return `${who} đã xóa ${target} khỏi nhóm`;
     case 'left': return `${who} đã rời nhóm`;
     case 'renamed': return `${who} đã đổi tên nhóm thành "${notice.title ?? ''}"`;
+    // The owner did it, but it is not about anyone: no name.
+    case 'filesTrimmed': return `Ảnh và tệp gửi trước ${notice.before ? dayFormat.format(new Date(notice.before)) : ''} đã được dọn`;
   }
 }

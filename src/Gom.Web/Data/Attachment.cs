@@ -24,4 +24,9 @@ public class Attachment
     public int? Width { get; set; }
     public int? Height { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>
+    /// Set when the owner trimmed it: its bytes are gone for good (backups included), the row stays so the message can say a picture
+    /// or a file was here. Never fetched, forwarded or listed again.
+    /// </summary>
+    public DateTimeOffset? RemovedAt { get; set; }
 }

@@ -70,8 +70,11 @@ public class ConversationMember
 }
 
 /// <summary>The materialized state of one message. The event stream (<see cref="MessageEvent"/>) is what clients follow.</summary>
-/// <summary>What a notice in a thread says happened. A notice is a line in the conversation, not something a person wrote.</summary>
-public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4 }
+/// <summary>
+/// What a notice in a thread says happened. A notice is a line in the conversation, not something a person wrote.
+/// <see cref="FilesTrimmed"/>: the owner trimmed pictures and files sent before a date (the date is the notice's body).
+/// </summary>
+public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5 }
 
 public class Message
 {

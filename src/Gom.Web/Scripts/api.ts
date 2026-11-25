@@ -2,7 +2,7 @@ import type { DeviceSubscription } from './push.js';
 export type ErrorCode =
   | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
   | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
-  | 'wrong_password' | 'cannot_disable_owner' | 'confirm_mismatch' | 'owner_cannot_delete' | 'account_deleted' | 'group_not_empty' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
+  | 'wrong_password' | 'cannot_disable_owner' | 'confirm_mismatch' | 'owner_cannot_delete' | 'account_deleted' | 'group_not_empty' | 'invalid_trim' | 'trim_not_confirmed' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
@@ -13,7 +13,7 @@ export type ErrorCode =
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
-  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner', 'confirm_mismatch', 'owner_cannot_delete', 'account_deleted', 'group_not_empty',
+  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner', 'confirm_mismatch', 'owner_cannot_delete', 'account_deleted', 'group_not_empty', 'invalid_trim', 'trim_not_confirmed',
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
@@ -44,6 +44,10 @@ export interface Storage {
   disk: { total: number; free: number } | null; database: number; uploadsFolder: number | null; pictures: Totals; files: Totals;
   direct: { conversations: number; messages: number; files: number; bytes: number }; groups: GroupUse[]; people: PersonUse[];
 }
+/** What to trim: sent before `before`; `kind` 'all', 'image' or 'file'; `where` 'all', 'direct' (every one-to-one chat) or a group's id. */
+export interface TrimRule { before: string; kind: 'all' | 'image' | 'file'; where: string; minBytes: number | null }
+/** What a trim would remove (a preview) or removed. */
+export interface TrimResult { pictures: Totals; files: Totals; conversations: number }
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
 export interface JoinBody { gomId: string; password: string; displayName: string }
 
@@ -56,14 +60,20 @@ export interface Sender { id: string; displayName: string }
 export interface Reaction { emoji: string; users: Sender[] }
 /** The quote above an answer. With no sender and no snippet, the quoted message is not there for this reader. A quoted sticker comes as its code. */
 export interface Reply { id: string; sender: Sender | null; snippet: string | null; sticker?: string | null }
-/** A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb. */
-export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null }
+/**
+ * A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb.
+ * `removed`: the owner trimmed it; only a placeholder is shown, and it cannot be opened, saved or forwarded.
+ */
+export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean }
 /** One picture or file in the side panel's list, with the message it belongs to. */
 /** A picture or file of a conversation, with the message it came in: who sent it and its words (the viewer shows them under the picture). */
 export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string; sender: Sender; body: string }
 /** What the page behind the first address in a message says about itself. The picture, if any, is at /api/attachments/{imageId}/thumb. */
-/** A line in a group's thread that says what happened (who was added or taken out, who left, a new name): not something anyone wrote. */
-export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed'; target?: Sender | null; title?: string | null }
+/**
+ * A line in a thread that says what happened (who was added or taken out, who left, a new name; or, in any conversation, that the
+ * owner trimmed pictures and files sent before `before`): not something anyone wrote.
+ */
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed'; target?: Sender | null; title?: string | null; before?: string | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
   /** Set when the message is one sticker (its code): then it has no words and no files. */
   sticker?: string | null }
@@ -118,6 +128,9 @@ export interface Api {
   storage(): Promise<Result<Storage>>;
   /** Deletes a group nobody is in, with everything in it. */
   deleteEmptyGroup(id: string): Promise<Result<void>>;
+  trimPreview(rule: TrimRule): Promise<Result<TrimResult>>;
+  /** Removes for good what the rule covers; `confirm` is what the owner typed ("Delete"). */
+  trimFiles(rule: TrimRule, confirm: string): Promise<Result<TrimResult>>;
   resetLink(gomId: string): Promise<Result<Issued>>;
   setNickname(displayName: string): Promise<Result<User>>;
   changePassword(current: string, password: string): Promise<Result<void>>;
@@ -250,6 +263,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     members: () => call('GET', '/api/users'),
     storage: () => call('GET', '/api/owner/storage'),
     deleteEmptyGroup: (id) => call('DELETE', `/api/owner/groups/${enc(id)}`),
+    trimPreview: (rule) => call('POST', '/api/owner/trim/files/preview', rule),
+    trimFiles: (rule, confirm) => call('POST', '/api/owner/trim/files', { ...rule, confirm }),
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),

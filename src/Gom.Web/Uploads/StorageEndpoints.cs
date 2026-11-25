@@ -23,12 +23,13 @@ public static class StorageEndpoints
         var owner = app.MapGroup("/api/owner").RequireAuthorization("Owner");
         owner.MapGet("/storage", Get);
         owner.MapDelete("/groups/{id:guid}", DeleteEmptyGroup);
+        owner.MapTrim();
     }
 
     private static async Task<IResult> Get(GomDbContext db, IOptions<UploadOptions> options, CancellationToken ct)
     {
-        // Pictures and files count once they are in a message; an upload nobody sent is gone within the hour.
-        var sent = db.Attachments.Where(a => a.MessageId != null);
+        // Pictures and files count once they are in a message and until they are trimmed; an upload nobody sent is gone within the hour.
+        var sent = db.Attachments.Where(a => a.MessageId != null && a.RemovedAt == null);
         var byKind = await sent.GroupBy(a => a.Kind).Select(g => new { Kind = g.Key, Count = g.Count(), Bytes = g.Sum(a => a.Size) }).ToListAsync(ct);
         Totals Of(AttachmentKind kind) => byKind.Where(k => k.Kind == kind).Select(k => new Totals(k.Count, k.Bytes)).SingleOrDefault() ?? new Totals(0, 0);
 
