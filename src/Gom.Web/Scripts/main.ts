@@ -50,11 +50,11 @@ const pusher = createPusher();
  * The video converter, fetched the first time a video is picked: its address is on the page (`data-video-script`, the server's
  * fingerprinted name), so a new version is a new name. Typed from the module itself; nothing of it is bundled here.
  */
-const prepareVideo: ChatDeps['prepareVideo'] = async (file, onProgress) => {
+const prepareVideo: ChatDeps['prepareVideo'] = async (file, onProgress, maxBytes) => {
   const address = document.body.dataset['videoScript'];
   if (!address) return null;
   const converter = await import(address) as typeof import('./video.js');
-  return converter.prepareVideo(file, onProgress);
+  return converter.prepareVideo(file, onProgress, maxBytes);
 };
 
 const chatDeps = (): ChatDeps => ({

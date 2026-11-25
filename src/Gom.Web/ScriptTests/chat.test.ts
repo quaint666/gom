@@ -3479,13 +3479,14 @@ describe('chat: videos', () => {
   it('makes a video smaller on the device, showing how far it is, then sends it as an MP4 with its still picture', async () => {
     let progress: (f: number) => void = () => undefined;
     let done: (v: { video: Blob; poster: Blob | null }) => void = () => undefined;
-    const prepareVideo = vi.fn((_f: File, onProgress: (f: number) => void) => { progress = onProgress; return new Promise<{ video: Blob; poster: Blob | null }>((r) => { done = r; }); });
+    const prepareVideo = vi.fn((_f: File, onProgress: (f: number) => void, _max: number) => { progress = onProgress; return new Promise<{ video: Blob; poster: Blob | null }>((r) => { done = r; }); });
     const upload = vi.fn(async (_c: string, file: File) => ok(video('v1', { name: file.name })));
     const setPoster = vi.fn(async () => ok(undefined));
     const h = open({ api: { upload, setPoster }, prepareVideo });
     await flush();
     await pickGallery([clip('Nhà mình.mov')]);
     expect(prepareVideo).toHaveBeenCalledOnce();
+    expect(prepareVideo.mock.calls[0]![2]).toBe(45 * 1024 * 1024);
     const bar = root.querySelector<HTMLProgressElement>('[data-tray-converting]')!;
     expect(bar.getAttribute('aria-label')).toBe('Đang chuẩn bị video Nhà mình.mov');
     progress(0.5); await flush();
@@ -3518,7 +3519,7 @@ describe('chat: videos', () => {
     Object.defineProperty(big, 'size', { value: 45 * 1024 * 1024 + 1 });
     await pickGallery([big]);
     expect(upload).toHaveBeenCalledOnce();
-    expect(text(root.querySelector('[data-tray-item].failed [role="alert"]')!)).toContain('Video quá lớn (tối đa 45 MB).');
+    expect(text(root.querySelector('[data-tray-item].failed [role="alert"]')!)).toContain('Video quá lớn (tối đa 45 MB, khoảng 8 phút).');
   });
 
   it('plays a video in its message with its still picture and length, and offers a download where it cannot play', async () => {

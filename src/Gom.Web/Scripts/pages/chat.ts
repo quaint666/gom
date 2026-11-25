@@ -39,7 +39,7 @@ export interface ChatDeps {
    * Makes a picked video smaller on this device (`onProgress` from 0 to 1); null when this device cannot. Loaded only when a video
    * is picked. Without it every video goes as it is.
    */
-  prepareVideo?(file: File, onProgress: (fraction: number) => void): Promise<PreparedVideo | null>;
+  prepareVideo?(file: File, onProgress: (fraction: number) => void, maxBytes: number): Promise<PreparedVideo | null>;
 }
 
 /** Remembered per device (browser storage) once "Để sau" is tapped: the banner does not come back there. */
@@ -2209,8 +2209,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /**
-   * Makes a picked video smaller on this device, once. When this device cannot, the video goes as it is if it is within the limit
-   * (the server keeps it as a video when it is an MP4, as a file when not); over the limit it fails here, before any upload.
+   * Makes a picked video smaller on this device, once, to fit the limit. When this device cannot, or the video is too long to fit, it
+   * goes as it is if it is within the limit (the server keeps it as a video when it is an MP4, as a file when not); over the limit it
+   * fails here, before any upload.
    * False when it failed.
    */
   async function prepare(item: TrayItem): Promise<boolean> {
@@ -2219,7 +2220,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     item.progress = 0;
     update();
     let ready: PreparedVideo | null = null;
-    try { ready = await deps.prepareVideo?.(original, (fraction) => { item.progress = fraction; update(); }) ?? null; } catch { ready = null; }
+    try { ready = await deps.prepareVideo?.(original, (fraction) => { item.progress = fraction; update(); }, limits().videoBytes) ?? null; } catch { ready = null; }
     item.prepared = true;
     if (ready !== null) {
       item.file = new File([ready.video], mp4Name(original.name), { type: 'video/mp4' });

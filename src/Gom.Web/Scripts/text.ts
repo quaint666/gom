@@ -1,6 +1,7 @@
 import type { Failure } from './api.js';
 import { limits } from './limits.js';
 import { say } from './say.js';
+import { longestVideo } from './videoPlan.js';
 
 /** A number as the page's language writes it: 4.000 and 1,2 in Vietnamese. */
 const number = (n: number): string => new Intl.NumberFormat(say.locale, { maximumFractionDigits: 1 }).format(n);
@@ -58,7 +59,7 @@ export function errorText(failure: Failure): string {
     case 'invalid_invite': return say.errors.invalidInvite(l.inviteDays, l.inviteUses);
     case 'too_large': return say.errors.tooLarge(formatSize(l.imageBytes), formatSize(l.fileBytes));
     case 'animated_too_large': return say.errors.animatedTooLarge(formatSize(l.animatedBytes));
-    case 'video_too_large': return say.errors.videoTooLarge(formatSize(l.videoBytes));
+    case 'video_too_large': return say.errors.videoTooLarge(formatSize(l.videoBytes), Math.floor(longestVideo(l.videoBytes) / 60));
     case 'image_dimensions': return say.errors.imageDimensions;
     case 'invalid_image': return say.errors.invalidImage;
     case 'busy': return say.errors.busy;
