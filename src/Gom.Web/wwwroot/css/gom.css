@@ -123,6 +123,8 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .list-pane { background: var(--surface); }
 .list-pane > .alert, .list-pane > .note { margin: 8px 14px; }
 .items { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-block-size: 0; }
+.rows { list-style: none; margin: 0; padding: 0; }   /* a list inside the one scroller of .items or .fwd-list */
+.fwd-list > .hidden-label { margin-inline: 8px; }
 .item { display: flex; align-items: center; gap: 12px; min-block-size: 72px; padding: 10px 14px; border-inline-start: 3px solid transparent; color: var(--text); text-decoration: none; }
 .item:hover { background: var(--hover); }
 .item.active { background: var(--tint); border-inline-start-color: var(--btn); }
@@ -155,6 +157,7 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
  */
 .row { position: relative; }
 .row .item { -webkit-touch-callout: none; }
+.hidden-label { margin: 12px 16px 4px; font-size: 13px; font-weight: 600; color: var(--muted); }   /* "Đã ẩn": hidden ones a search found */
 .row-more { position: absolute; inset-inline-end: 6px; inset-block-start: 4px; inline-size: 36px; block-size: 36px; opacity: 0; background: var(--surface); }
 .row:has(.item.active) .row-more, .row-more:focus-visible, .row-more[aria-expanded="true"] { opacity: 1; }
 .row:has(.item.active) .row-more { background: var(--tint); }

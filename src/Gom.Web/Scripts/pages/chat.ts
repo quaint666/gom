@@ -221,6 +221,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const shownChats = (): Conversation[] => (chats ?? []).filter((c) => c.hidden !== true);
   /** The conversations whose name matches what is typed above the list (all of them when nothing is typed). */
   const visibleChats = (): Conversation[] => shownChats().filter((c) => matches(c.title ?? '', filter));
+  /** Hidden conversations whose name matches what is typed: found by a search only, never listed with nothing typed. */
+  const hiddenMatches = (q: string): Conversation[] => q.trim() === '' ? [] : (chats ?? []).filter((c) => c.hidden === true && matches(c.title ?? '', q));
+  const hiddenLabel = () => html`<h3 class="hidden-label" data-hidden-label>Đã ẩn</h3>`;
 
   const banner = () => offline ? html`<div class="warn" role="status">${icons.wifiOff()}<span>Mất kết nối. Đang kết nối lại…</span></div>` : nothing;
 
@@ -573,11 +576,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    */
   const forwardPanel = (f: NonNullable<typeof forwarding>) => {
     const shown = shownChats().filter((c) => matches(c.title ?? '', f.q));
+    // A hidden one ticked stays in view after the search is cleared, so what is ticked is always seen.
+    const found = (chats ?? []).filter((c) => c.hidden === true && (hiddenMatches(f.q).includes(c) || f.picked.includes(c.id)));
     const full = f.picked.length >= FORWARD_MAX;
     const pictures = f.attachments.filter((a) => a.kind === 'image').length;
     const files = f.attachments.length - pictures;
     const what = [pictures > 0 ? `${pictures} ảnh` : '', files > 0 ? `${files} tệp` : ''].filter((x) => x !== '').join(', ');
     const cancel = () => { if (!f.busy) { forwarding = null; update(); } };
+    const pickRow = (c: Conversation) => {
+      const on = f.picked.includes(c.id);
+      return html`<li><label class="fwd-row">
+        <input type="checkbox" data-forward-pick=${c.id} .checked=${on} ?disabled=${f.busy || (!on && full)}
+          @change=${(e: Event) => { const yes = (e.target as HTMLInputElement).checked; f.picked = yes ? [...f.picked.filter((x) => x !== c.id), c.id] : f.picked.filter((x) => x !== c.id); update(); }}>
+        ${avatar(c.title ?? '?', c.peer?.avatar)}<span>${c.title ?? '…'}</span></label></li>`;
+    };
     return html`
       <dialog class="fwd" aria-labelledby="fwd-title" data-forward-panel data-modal @close=${cancel}
         @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } }}>
@@ -591,14 +603,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="searchfield input">${icons.search()}
           <input type="search" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength="60" data-forward-search
             .value=${liveValue(f.q)} @input=${(e: Event) => { f.q = (e.target as HTMLInputElement).value; update(); }}></div>
-        ${shown.length === 0 ? html`<p class="hint" data-forward-none>Không tìm thấy cuộc trò chuyện nào.</p>` : html`
-          <ul class="fwd-list">${repeat(shown, (c) => c.id, (c) => {
-            const on = f.picked.includes(c.id);
-            return html`<li><label class="fwd-row">
-              <input type="checkbox" data-forward-pick=${c.id} .checked=${on} ?disabled=${f.busy || (!on && full)}
-                @change=${(e: Event) => { const yes = (e.target as HTMLInputElement).checked; f.picked = yes ? [...f.picked.filter((x) => x !== c.id), c.id] : f.picked.filter((x) => x !== c.id); update(); }}>
-              ${avatar(c.title ?? '?', c.peer?.avatar)}<span>${c.title ?? '…'}</span></label></li>`;
-          })}</ul>`}
+        ${shown.length === 0 && found.length === 0 ? html`<p class="hint" data-forward-none>Không tìm thấy cuộc trò chuyện nào.</p>` : html`
+          <div class="fwd-list">
+          ${shown.length === 0 ? nothing : html`<ul class="rows">${repeat(shown, (c) => c.id, pickRow)}</ul>`}
+          ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, pickRow)}</ul>`}</div>`}
         ${full ? html`<p class="hint" data-forward-full>Chọn tối đa ${FORWARD_MAX} cuộc trò chuyện mỗi lần.</p>` : nothing}
         <textarea class="fwd-note" rows="2" aria-label="Lời nhắn kèm theo" placeholder="Nhập lời nhắn (không bắt buộc)" maxlength="4000" data-forward-note
           .value=${liveValue(f.note)} @input=${(e: Event) => { f.note = (e.target as HTMLTextAreaElement).value; }}></textarea>
@@ -932,6 +940,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  /** The list as narrowed by what is typed, with any hidden conversations it finds under their own heading. */
+  const listView = () => {
+    const shown = visibleChats();
+    const found = hiddenMatches(filter);
+    if (shown.length === 0 && found.length === 0) return html`<p class="hint nomatch" data-no-match>Không tìm thấy cuộc trò chuyện nào.</p>`;
+    // One scroller for both, so the hidden ones follow the others instead of splitting the pane.
+    return html`<div class="items">
+      ${shown.length === 0 ? nothing : html`<ul class="rows">${repeat(shown, (c) => c.id, row)}</ul>`}
+      ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, row)}</ul>`}</div>`;
+  };
+
   const view = () => html`
     <div class="chat" data-pane=${openId === null ? 'list' : 'thread'} data-infostate=${infoOpen && openId !== null ? 'open' : 'closed'}>
       ${rail()}
@@ -950,7 +969,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${pushBanner()}
         ${errorBox(error)}
         ${notice === '' ? nothing : html`<p class="note" role="status">${notice}</p>`}
-        ${me === null || chats === null ? nothing : shownChats().length === 0 && filter === '' ? empty() : visibleChats().length === 0 ? html`<p class="hint nomatch" data-no-match>Không tìm thấy cuộc trò chuyện nào.</p>` : html`<ul class="items">${repeat(visibleChats(), (c) => c.id, row)}</ul>`}
+        ${me === null || chats === null ? nothing : shownChats().length === 0 && filter === '' ? empty() : listView()}
       </section>
       ${threadPane()}
       ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
@@ -1099,6 +1118,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     openId = id;
     const t = threadOf(id);
     const c = chatOf(id);
+    if (c?.hidden) unhide(c);
     if (c !== undefined) { t.lastReadAtOpen = c.lastReadSeq; t.unreadAtOpen = c.unread; }
     t.stick = true;
     t.jump = t.unreadAtOpen > 0;
@@ -1388,7 +1408,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${isMuted(c) ? menuItem('unmute-chat', icons.bell(), 'Bật thông báo', () => { rowMenu = null; onBell(c); })
           : menuItem('mute-chat', icons.bellOff(), 'Tắt thông báo', () => { rowMenu = null; onBell(c); })}
         ${friend === null ? nothing : html`<a class="mi" role="menuitem" href=${`/groups/new?with=${encodeURIComponent(friend)}`} data-group-with>${icons.users()}<span>Tạo nhóm với ${c.title}</span></a>`}
-        ${menuItem('hide-chat', icons.eyeOff(), 'Ẩn trò chuyện', () => void hideConversation(c))}
+        ${c.hidden ? menuItem('unhide-chat', icons.eye(), 'Bỏ ẩn trò chuyện', () => void rowAction(api.setHidden(c.id, false)))
+          : menuItem('hide-chat', icons.eyeOff(), 'Ẩn trò chuyện', () => void hideConversation(c))}
         ${menuItem('clear-chat', icons.trash(), 'Xóa hội thoại', () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}
         </div>
         <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${closeRowMenu}>Đóng</button>`}
@@ -1414,6 +1435,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** "Mark as read": the read position moves to the end, which also clears a mark. */
   const markAllRead = (c: Conversation) => rowAction(api.markRead(c.id, Math.max(c.lastSeq, c.lastReadSeq)));
+
+  /** Opening a hidden conversation brings it back to the list: on the page at once, then on the server (which tells your other devices). */
+  function unhide(c: Conversation): void {
+    c.hidden = false;
+    void api.setHidden(c.id, false).then((done) => { if (!done.ok) handleFailure(done); });
+  }
 
   /** Leaves the list (and closes it, if it is open) until something new is said. */
   const hideConversation = (c: Conversation) => rowAction(api.setHidden(c.id, true), () => forget(c.id, false));
