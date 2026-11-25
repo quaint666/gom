@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Gom.Web.Chat;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
@@ -130,6 +131,27 @@ public class StickerTests(AppFixture app) : IClassFixture<AppFixture>
         var reply = (await AppFixture.Json(r)).GetProperty("reply");
         Assert.Equal("1f382", reply.GetProperty("sticker").GetString());
         Assert.Equal(p.A.Id, reply.GetProperty("sender").GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task The_page_lists_the_same_stickers_as_the_server_and_each_picture_is_served()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
+        var page = await File.ReadAllTextAsync(Path.Combine(dir!.FullName, "src", "Gom.Web", "Scripts", "stickers.ts"));
+        var listed = Regex.Match(page, @"STICKERS: readonly string\[\] = \[([^\]]*)\]").Groups[1].Value;
+        var codes = Regex.Matches(listed, @"'([0-9a-f_]+)'").Select(m => m.Groups[1].Value).ToList();
+        Assert.Equal(Stickers.Allowed.Count, codes.Count);
+        Assert.True(Stickers.Allowed.SetEquals(codes));
+
+        var client = app.Factory.CreateClient();
+        foreach (var code in codes)
+        {
+            using var r = await client.GetAsync($"/stickers/{code}.svg");
+            Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+            Assert.Equal("image/svg+xml", r.Content.Headers.ContentType?.MediaType);
+            Assert.Equal("public, max-age=604800", r.Headers.CacheControl?.ToString());
+        }
     }
 
     [Fact]

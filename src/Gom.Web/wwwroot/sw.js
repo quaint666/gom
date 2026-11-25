@@ -1,12 +1,12 @@
-// Gom's service worker. It shows a "no connection" page when a page cannot be fetched, it keeps the scripts, styles, fonts and
-// icons so the app opens faster, and it shows notifications. It never touches /api or the socket, and never stores a page,
+// Gom's service worker. It shows a "no connection" page when a page cannot be fetched, it keeps the scripts, styles, fonts,
+// icons and stickers so the app opens faster, and it shows notifications. It never touches /api or the socket, and never stores a page,
 // so nothing of what people wrote is kept here. Pages load fingerprinted copies of the script and the styles (a new version has a
 // new name); fonts, icons and the plain names are not fingerprinted. Either way a file is fetched from the network first and the
 // stored copy is only the fallback: an update arrives as soon as there is a connection.
 const STATIC = 'gom-static-v1';
 const OFFLINE = '/offline.html';
 const KEPT = [OFFLINE, '/offline.js', '/css/gom.css', '/icon.svg'];
-const isStatic = (url) => /^\/(js|css|fonts|icons)\//.test(url.pathname) || ['/icon.svg', '/offline.html', '/offline.js'].includes(url.pathname);
+const isStatic = (url) => /^\/(js|css|fonts|icons|stickers)\//.test(url.pathname) || ['/icon.svg', '/offline.html', '/offline.js'].includes(url.pathname);
 // A connection that hangs (Wi-Fi without internet) never fails, and an app opened from the Home Screen would show its splash
 // screen for as long as the browser waits. A page that has not come in this long gets the "no connection" page instead.
 const WAIT_MS = 8000;

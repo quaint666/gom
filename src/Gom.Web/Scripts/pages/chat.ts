@@ -11,6 +11,7 @@ import * as icons from '../icons.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { errorText, formatSize } from '../text.js';
+import { STICKERS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -33,7 +34,7 @@ export interface ChatDeps {
 /** Remembered per device (browser storage) once "Để sau" is tapped: the banner does not come back there. */
 const PUSH_LATER = 'gom-push-later';
 
-export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply; attachments?: Attachment[] }
+export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply; attachments?: Attachment[]; sticker?: string }
 
 /** How many pictures and files one message may carry (the server's limit is the same by default). */
 const MAX_ATTACHMENTS = 10;
@@ -150,7 +151,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** The conversation whose "for how long" choices are open, when its bell was tapped to mute it. */
   let muting: string | null = null;
   /** What is being passed on, while the person picks where to (at most FORWARD_MAX), with the search over the list and a note to send after it. */
-  let forwarding: { body: string; attachments: Attachment[]; picked: string[]; q: string; note: string; busy: boolean } | null = null;
+  let forwarding: { body: string; attachments: Attachment[]; sticker: string | null; picked: string[]; q: string; note: string; busy: boolean } | null = null;
+  /** Whether the sticker panel under the composer is open. */
+  let stickersOpen = false;
 
   function idFromPath(): string | null { return CONVERSATION_PATH.exec(deps.nav.path())?.[1]?.toLowerCase() ?? null; }
   const chatOf = (id: string | null): Conversation | undefined => (id === null ? undefined : chats?.find((c) => c.id === id));
@@ -188,7 +191,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (last === null) return 'Chưa có tin nhắn';
     if (last.deleted) return recalledText(last.sender.id === me?.id, c.kind === 'group' ? last.sender.displayName : null);
     const who = last.sender.id === me?.id ? 'Bạn: ' : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
-    return who + (last.body !== '' ? last.body : last.attachment === 'image' ? 'Đã gửi một hình ảnh' : last.attachment === 'file' ? 'Đã gửi một tệp' : '');
+    return who + (last.body !== '' ? last.body : last.sticker ? 'Đã gửi một nhãn dán' : last.attachment === 'image' ? 'Đã gửi một hình ảnh' : last.attachment === 'file' ? 'Đã gửi một tệp' : '');
   }
 
   const row = (c: Conversation) => html`
@@ -248,11 +251,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="emoji" type="button" data-react=${e} aria-label=${`Thả ${e}`} @click=${() => void setReaction(m, e)}>${e}</button>`)}</div>
         <div class="items-grid">
         ${menuItem('reply', icons.reply(), 'Trả lời', () => startReply(m))}
-        ${menuItem('copy', icons.copy(), 'Sao chép', () => void copyText(m))}
+        ${m.sticker ? nothing : menuItem('copy', icons.copy(), 'Sao chép', () => void copyText(m))}
         ${pinned ? menuItem('unpin', icons.pin(), 'Bỏ ghim', () => void setPin(m, false)) : menuItem('pin', icons.pin(), 'Ghim', () => void setPin(m, true))}
-        ${menuItem('forward', icons.forward(), 'Chuyển tiếp', () => { menu = null; startForward(m.body, m.attachments ?? []); })}
+        ${menuItem('forward', icons.forward(), 'Chuyển tiếp', () => { menu = null; startForward(m.body, m.attachments ?? [], m.sticker ?? null); })}
         ${m.attachments?.length === 1 ? saveItem(m.attachments[0]!) : nothing}
-        ${mine ? menuItem('edit', icons.pencil(), 'Chỉnh sửa', () => startEdit(m)) : nothing}
+        ${mine && !m.sticker ? menuItem('edit', icons.pencil(), 'Chỉnh sửa', () => startEdit(m)) : nothing}
         ${menuItem('hide', icons.trash(), 'Xóa với tôi', () => { menu = { id: m.id, confirming: false, hide: true }; update(); })}
         ${mine ? menuItem('recall', icons.undo(), 'Thu hồi', () => { menu = { id: m.id, confirming: true }; update(); }, true) : nothing}
         </div>
@@ -282,7 +285,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const quote = (r: Reply) => html`
     <div class="quote" data-quote=${r.id}>${r.sender === null || r.snippet === null
       ? html`<span class="gone">Tin nhắn không còn hiển thị</span>`
-      : html`<b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b><span>${r.snippet}</span>`}</div>`;
+      : html`<b>${r.sender.id === me?.id ? 'Bạn' : r.sender.displayName}</b>${r.sticker
+        ? html`<span class="q-stk"><img src=${stickerUrl(r.sticker)} alt="">Nhãn dán</span>` : html`<span>${r.snippet}</span>`}`}</div>`;
 
   /** The words of a message, with every http or https address made into a link that opens in a new tab and tells that site nothing about this one. */
   const words = (body: string) => linkify(body).map((p) => 'url' in p
@@ -457,7 +461,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null, tick: Tick): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
-    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''}`;
+    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${m.sticker && !m.deleted ? 'sticker' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
     const tools = hasMenu ? html`
@@ -474,7 +478,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm') : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
-          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
+          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${`Nhãn dán ${stickerName(m.sticker)}`} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? 'Đã xem' : 'Đã gửi'}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${!item.mine ? tools : nothing}
       </div>
@@ -533,14 +537,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const pinBar = (t: Thread) => t.pins.length === 0 ? nothing : html`
     <div class="pinbar" data-pinbar>
       <button class="pin-top" type="button" data-pin-top @click=${() => void reveal(t.pins[0]!)}>
-        ${icons.pin()}<span class="pin-text"><b>Tin đã ghim</b><span>${[...t.pins[0]!.body].length > 100 ? [...t.pins[0]!.body].slice(0, 100).join('') + '…' : t.pins[0]!.body}</span></span></button>
+        ${icons.pin()}<span class="pin-text"><b>Tin đã ghim</b><span>${t.pins[0]!.sticker ? 'Nhãn dán' : [...t.pins[0]!.body].length > 100 ? [...t.pins[0]!.body].slice(0, 100).join('') + '…' : t.pins[0]!.body}</span></span></button>
       ${t.pins.length > 1 ? html`<button class="btn secondary small" type="button" data-pin-all aria-expanded=${t.pinsOpen ? 'true' : 'false'}
         @click=${() => { t.pinsOpen = !t.pinsOpen; update(); }}>${t.pins.length} tin</button>` : nothing}
     </div>
     ${t.pinsOpen ? html`<ul class="pinlist" data-pinlist>${t.pins.map((p) => html`
       <li><button type="button" class="result" data-pin-item=${p.id} @click=${() => void reveal(p)}>
         <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
-        <span>${[...p.body].length > 160 ? [...p.body].slice(0, 160).join('') + '…' : p.body}</span></button></li>`)}</ul>` : nothing}`;
+        <span>${p.sticker ? 'Nhãn dán' : [...p.body].length > 160 ? [...p.body].slice(0, 160).join('') + '…' : p.body}</span></button></li>`)}</ul>` : nothing}`;
 
   /**
    * Where to pass a message on: a dialog with your conversations (newest first, narrowed by what is typed), up to FORWARD_MAX ticked,
@@ -559,6 +563,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <header class="fwd-head"><h2 id="fwd-title">Chuyển tiếp</h2>
           <button class="ib" type="button" data-close-forward aria-label="Đóng" @click=${cancel}>${icons.close()}</button></header>
         <div class="fwd-what">
+          ${f.sticker === null ? nothing : html`<img class="fw-stk" src=${stickerUrl(f.sticker)} alt=${`Nhãn dán ${stickerName(f.sticker)}`} width="64" height="64">`}
           ${f.body === '' ? nothing : html`<p class="fw-text">${[...f.body].length > 120 ? [...f.body].slice(0, 120).join('') + '…' : f.body}</p>`}
           ${what === '' ? nothing : html`<p class="hint">${what}</p>`}
         </div>
@@ -804,7 +809,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           </div>`}
         ${t.replying === null ? nothing : html`
           <div class="replybar" data-replybar>
-            <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.snippet ?? ''}</span></div>
+            <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.sticker ? 'Nhãn dán' : t.replying.snippet ?? ''}</span></div>
             <button class="ib" type="button" data-cancel-reply aria-label="Hủy trả lời" @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
           </div>`}
         ${trayView(t)}
@@ -813,11 +818,36 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             <button class="ib attach" type="button" data-attach aria-label="Đính kèm ảnh hoặc tệp" @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
             <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
               @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
+          ${t.editing === null ? html`<button class="ib stickers-btn" type="button" data-stickers aria-label="Nhãn dán" aria-expanded=${stickersOpen ? 'true' : 'false'}
+            @click=${toggleStickers}>${icons.smile()}</button>` : nothing}
           <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
-            .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}></textarea>
+            .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}
+            @focus=${() => { if (stickersOpen) { stickersOpen = false; update(); } }}></textarea>
           <button class="send" type="submit" aria-label="Gửi" ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
         </form>
+        ${stickersOpen && t.editing === null ? stickerPanel(openId!) : nothing}
       </section>`;
+  }
+
+  /** The stickers under the composer, the ones this device sent lately first. A tap sends one at once, as Zalo does. */
+  const stickerPanel = (id: string) => {
+    const recent = recentStickers();
+    const tile = (code: string) => html`<button class="stk-pick" type="button" data-send-sticker=${code} aria-label=${`Gửi nhãn dán ${stickerName(code)}`}
+      @click=${() => void sendSticker(id, code)}><img src=${stickerUrl(code)} alt="" loading="lazy" width="56" height="56" draggable="false"></button>`;
+    return html`
+      <section class="stickers" role="group" aria-label="Nhãn dán" data-sticker-panel
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { stickersOpen = false; update(); root.querySelector<HTMLButtonElement>('[data-stickers]')?.focus(); } }}>
+        ${recent.length === 0 ? nothing : html`<h3>Gần đây</h3><div class="stk-grid" data-recent-stickers>${recent.map(tile)}</div><h3>Tất cả</h3>`}
+        <div class="stk-grid" data-all-stickers>${STICKERS.map(tile)}</div>
+        <p class="credit">Nhãn dán: Noto Emoji của Google, giấy phép SIL Open Font License 1.1.</p>
+      </section>`;
+  };
+
+  /** Opens or closes the sticker panel. Opening it puts the keyboard away on a phone, so the panel takes its place. */
+  function toggleStickers(): void {
+    stickersOpen = !stickersOpen;
+    if (stickersOpen) root.querySelector<HTMLTextAreaElement>('.composer textarea')?.blur();
+    update();
   }
 
   const view = () => html`
@@ -984,6 +1014,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     t.jump = t.unreadAtOpen > 0;
     t.below = 0;
     leaving = false;
+    stickersOpen = false;
     update();
     deps.clearNotifications?.(id);
     if (!t.loaded) void loadHistory(id);
@@ -1291,7 +1322,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     menu = null;
     const t = threadOf(m.conversationId);
     const body = [...m.body];
-    t.replying = { id: m.id, sender: m.sender, snippet: body.length > QUOTE_CHARS ? body.slice(0, QUOTE_CHARS).join('') : m.body };
+    t.replying = { id: m.id, sender: m.sender, snippet: body.length > QUOTE_CHARS ? body.slice(0, QUOTE_CHARS).join('') : m.body, ...(m.sticker ? { sticker: m.sticker } : {}) };
     update();
     root.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus();
   }
@@ -1302,10 +1333,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
-  /** Opens the dialog for passing on these words, pictures and files (a whole message, or one picture from the viewer). */
-  function startForward(body: string, attachments: Attachment[]): void {
+  /** Opens the dialog for passing on these words, pictures and files, or a sticker (a whole message, or one picture from the viewer). */
+  function startForward(body: string, attachments: Attachment[], sticker: string | null = null): void {
     menu = null;
-    forwarding = { body, attachments, picked: [], q: '', note: '', busy: false };
+    forwarding = { body, attachments, sticker, picked: [], q: '', note: '', busy: false };
     update();
     root.querySelector<HTMLInputElement>('[data-forward-search]')?.focus();
   }
@@ -1351,12 +1382,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (copy.error === 'unauthorized') { go('/sign-in'); return { kind: 'signed-out' }; }
       return { kind: 'failed', why: copy.error === 'network' ? `Chưa chuyển tiếp được đến ${name}. Cần có mạng để chuyển ảnh và tệp.` : errorText(copy) };
     }
-    const queue = (body: string, files: Attachment[]): string => {
+    const queue = (body: string, files: Attachment[], sticker: string | null = null): string => {
       const clientId = deps.newId();
       const waiting = t.pending.some((x) => x.state === 'queued');
       t.pending.push({
         id: clientId, clientId, seq: 0, conversationId: target, sender: { id: me!.id, displayName: me!.displayName }, body,
-        createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(files.length > 0 ? { attachments: files } : {}),
+        createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(files.length > 0 ? { attachments: files } : {}), ...(sticker ? { sticker } : {}),
       });
       persist();
       update();
@@ -1372,7 +1403,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       persist();
       return { kind: 'failed', why: p.error ? errorText(p.error) : `Chưa chuyển tiếp được đến ${name}.` };
     };
-    const passed = await outcome(queue(f.body, copies));
+    const passed = await outcome(queue(f.body, copies, f.sticker));
     // The note goes after what it is about: not at all if that was refused, and behind it in the queue if that is waiting for the network.
     const note = f.note.trim();
     if (note === '' || passed.kind === 'failed') return passed;
@@ -1590,7 +1621,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function persist(): void {
     if (outbox === null) return;
     outbox.save([...threads].flatMap(([id, t]) => t.pending.filter((p) => p.state !== 'failed')
-      .map((p) => ({ conversation: id, clientId: p.clientId, body: p.body, createdAt: p.createdAt, ...(p.reply ? { replyTo: p.reply } : {}), ...(p.attachments && p.attachments.length > 0 ? { attachments: p.attachments } : {}) }))));
+      .map((p) => ({ conversation: id, clientId: p.clientId, body: p.body, createdAt: p.createdAt, ...(p.reply ? { replyTo: p.reply } : {}), ...(p.attachments && p.attachments.length > 0 ? { attachments: p.attachments } : {}), ...(p.sticker ? { sticker: p.sticker } : {}) }))));
   }
 
   async function send(id: string): Promise<void> {
@@ -1602,14 +1633,27 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (t.tray.some((i) => i.state !== 'done')) return;   // still going up, or failed: remove or retry it first
     t.draft = '';
     t.tray = [];
+    await post(id, { body, ...(ready.length > 0 ? { attachments: ready } : {}) });
+  }
+
+  /** Sends a sticker at once (as the answer, if one is being written). Like words, it waits behind anything still on its way. */
+  async function sendSticker(id: string, code: string): Promise<void> {
+    if (me === null || threadOf(id).editing !== null) return;
+    rememberSticker(code);
+    await post(id, { body: '', sticker: code });
+  }
+
+  /** Puts a message of yours in the conversation, as the answer if one is being written, and sends it. */
+  async function post(id: string, what: { body: string; attachments?: Attachment[]; sticker?: string }): Promise<void> {
+    const t = threadOf(id);
     const reply = t.replying;
     t.replying = null;
     const clientId = deps.newId();
     // If an earlier message is still waiting, this one waits behind it: they must reach the server in the order written.
     const waiting = t.pending.some((x) => x.state === 'queued');
     t.pending.push({
-      id: clientId, clientId, seq: 0, conversationId: id, sender: { id: me.id, displayName: me.displayName }, body,
-      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(reply ? { reply } : {}), ...(ready.length > 0 ? { attachments: ready } : {}),
+      id: clientId, clientId, seq: 0, conversationId: id, sender: { id: me!.id, displayName: me!.displayName }, ...what,
+      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(reply ? { reply } : {}),
     });
     t.stick = true;
     persist();
@@ -1630,7 +1674,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         delete p.error;
         update();
         const files = p.attachments?.map((a) => a.id) ?? [];
-        const result = files.length > 0 ? await api.send(id, p.clientId, p.body, p.reply?.id, files) : await api.send(id, p.clientId, p.body, p.reply?.id);
+        const result = p.sticker ? await api.sendSticker(id, p.clientId, p.sticker, p.reply?.id)
+          : files.length > 0 ? await api.send(id, p.clientId, p.body, p.reply?.id, files) : await api.send(id, p.clientId, p.body, p.reply?.id);
         if (result.ok) {
           t.failures = 0;
           t.attempts.delete(p.clientId);
@@ -1705,7 +1750,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (chatOf(item.conversation) === undefined) continue;   // no longer in that conversation: let it go
       threadOf(item.conversation).pending.push({
         id: item.clientId, clientId: item.clientId, seq: 0, conversationId: item.conversation,
-        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued', ...(item.replyTo ? { reply: item.replyTo } : {}), ...(item.attachments && item.attachments.length > 0 ? { attachments: item.attachments } : {}),
+        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued', ...(item.replyTo ? { reply: item.replyTo } : {}), ...(item.attachments && item.attachments.length > 0 ? { attachments: item.attachments } : {}), ...(item.sticker ? { sticker: item.sticker } : {}),
       });
     }
     persist();
