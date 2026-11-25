@@ -239,7 +239,8 @@ public static class MessageEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
-        var text = (q ?? "").Trim();
+        // A control character (a NUL would make PostgreSQL refuse the query) counts as a space.
+        var text = new string((q ?? "").Select(c => char.IsControl(c) ? ' ' : c).ToArray()).Trim();
         if (text.Length == 0 || new StringInfo(text).LengthInTextElements > SearchMaxChars) return Error(StatusCodes.Status400BadRequest, "invalid_query");
 
         // % _ and \ typed by a person are ordinary characters.
@@ -465,13 +466,14 @@ public static class MessageEndpoints
 
     // ---- history
 
-    private static async Task<IResult> History(Guid id, long? before, string? limit, HttpContext http, GomDbContext db, CancellationToken ct)
+    private static async Task<IResult> History(Guid id, long? before, int? limit, HttpContext http, GomDbContext db, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
 
-        var take = int.TryParse(limit, out var n) ? Math.Clamp(n, 1, 100) : 50;
+        // "limit=abc" is a 400 (the framework refuses what does not bind), not a quiet 50.
+        var take = Math.Clamp(limit ?? 50, 1, 100);
         var rows = await (
             from m in db.Messages.AsNoTracking()
             where m.ConversationId == id && m.Seq > access.SeesAfter && (before == null || m.Seq < before)

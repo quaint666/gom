@@ -64,7 +64,9 @@ public static class GroupEndpoints
         if (wanted.Count == 0) return Error(StatusCodes.Status400BadRequest, "no_members");
         if (wanted.Count + 1 > options.Value.MaxGroupMembers) return Error(StatusCodes.Status400BadRequest, "group_too_big");
 
-        var people = await db.Users.Where(u => wanted.Contains(u.GomId) && u.DisabledAt == null).Select(u => u.Id).ToListAsync(ct);
+        // Only what can be a Gom ID is looked up; anything else is simply not found (and a NUL never reaches PostgreSQL).
+        var valid = wanted.Where(GomId.IsValid).ToList();
+        var people = await db.Users.Where(u => valid.Contains(u.GomId) && u.DisabledAt == null).Select(u => u.Id).ToListAsync(ct);
         // A stranger, an ID that does not exist and a locked member all get the same answer.
         if (people.Count != wanted.Count) return Error(StatusCodes.Status403Forbidden, "not_friends");
         foreach (var person in people)

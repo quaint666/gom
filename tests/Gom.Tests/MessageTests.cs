@@ -457,7 +457,7 @@ public class MessageTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(5, await Count("?limit=5"));
         Assert.Equal(100, await Count("?limit=1000"));
         Assert.Equal(1, await Count("?limit=0"));
-        Assert.Equal(50, await Count("?limit=abc"));
+        Assert.Equal(50, await Count(""));   // "limit=abc" is a 400: HandMadeRequestTests
     }
 
     [Fact]

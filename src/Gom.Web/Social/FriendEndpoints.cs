@@ -25,10 +25,14 @@ public static class FriendEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    /// <summary>The member with this exact Gom ID (any case, spaces trimmed), or null. A locked member counts as absent.</summary>
+    /// <summary>
+    /// The member with this exact Gom ID (any case, spaces trimmed), or null. A locked member counts as absent, and so does anything that
+    /// cannot be a Gom ID (it never reaches the database: PostgreSQL refuses a NUL in text, which would be a 500).
+    /// </summary>
     internal static Task<Guid?> FindMember(GomDbContext db, string? gomId, CancellationToken ct)
     {
         var id = (gomId ?? "").Trim().ToLowerInvariant();
+        if (!GomId.IsValid(id)) return Task.FromResult<Guid?>(null);
         return db.Users.Where(u => u.GomId == id && u.DisabledAt == null).Select(u => (Guid?)u.Id).SingleOrDefaultAsync(ct);
     }
 

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createApi } from '../Scripts/api.js';
+import { errorText } from '../Scripts/text.js';
+import textSource from '../Scripts/text.ts?raw';
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
@@ -26,6 +28,18 @@ describe('api', () => {
   it('reads Retry-After on a 429', async () => {
     const api = createApi(async () => json({ error: 'too_many_attempts' }, 429, { 'Retry-After': '7' }));
     expect(await api.signIn('a', 'b')).toEqual({ ok: false, status: 429, error: 'too_many_attempts', retryAfter: 7 });
+  });
+
+  it('lets every code that has its own words through as itself, so the page never says only "something went wrong"', async () => {
+    // Every case of errorText except the page's own codes and the default.
+    const own = new Set(['unauthorized', 'forbidden', 'network', 'server', 'unknown']);
+    const worded = [...textSource.matchAll(/case '([a-z_]+)'/g)].map((m) => m[1]!).filter((c) => !own.has(c));
+    expect(worded).toContain('invalid_endpoint');
+    for (const code of worded) {
+      const failure = await createApi(async () => json({ error: code }, 400)).me();
+      expect(failure, code).toMatchObject({ ok: false, error: code });
+      if (!failure.ok) expect(errorText(failure), code).not.toBe(errorText({ ok: false, status: 400, error: 'unknown' }));
+    }
   });
 
   it('calls a 401 without a body "unauthorized" and a 403 "forbidden"', async () => {

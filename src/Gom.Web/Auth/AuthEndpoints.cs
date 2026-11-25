@@ -44,7 +44,8 @@ public static class AuthEndpoints
             return Results.Json(new { error = "too_many_attempts" }, statusCode: StatusCodes.Status429TooManyRequests);
         }
 
-        var user = await db.Users.SingleOrDefaultAsync(u => u.GomId == gomId, ct);
+        // Something that cannot be a Gom ID is nobody, without asking the database (a NUL there would be a 500).
+        var user = GomId.IsValid(gomId) ? await db.Users.SingleOrDefaultAsync(u => u.GomId == gomId, ct) : null;
 
         // A missing user is checked against a dummy hash, so the answer takes as long either way.
         var password = request.Password;

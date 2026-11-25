@@ -1,26 +1,22 @@
 import type { DeviceSubscription } from './push.js';
-export type ErrorCode =
-  | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
-  | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
-  | 'wrong_password' | 'cannot_disable_owner' | 'confirm_mismatch' | 'owner_cannot_delete' | 'account_deleted' | 'group_not_empty' | 'invalid_trim' | 'trim_not_confirmed' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
-  | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
-  | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
-  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
-  | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'pin_limit' | 'invalid_reaction' | 'banned' | 'already_requested' | 'invalid_setting'
-  | 'invalid_invite' | 'too_large' | 'image_dimensions' | 'invalid_image' | 'busy' | 'too_many_uploads' | 'uploads_disabled' | 'empty_upload' | 'invalid_attachment' | 'too_many_attachments'
-  | 'invalid_endpoint' | 'invalid_keys'
-  | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
-
-const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
+/** The error codes the server sends, each once. A code missing here would reach the page as 'unknown' and lose its own words. */
+const SERVER_CODE_LIST = [
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
-  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner', 'confirm_mismatch', 'owner_cannot_delete', 'account_deleted', 'group_not_empty', 'invalid_trim', 'trim_not_confirmed',
+  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner',
+  'confirm_mismatch', 'owner_cannot_delete', 'account_deleted', 'group_not_empty', 'invalid_trim', 'trim_not_confirmed',
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
-  'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
+  'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
   'invalid_invite', 'too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
-]);
+  'invalid_endpoint', 'invalid_keys',
+] as const;
+
+/** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
+export type ErrorCode = (typeof SERVER_CODE_LIST)[number] | 'unauthorized' | 'forbidden' | 'network' | 'server' | 'unknown';
+
+const SERVER_CODES: ReadonlySet<string> = new Set<string>(SERVER_CODE_LIST);
 
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
 export type Result<T> = { ok: true; data: T } | Failure;
@@ -67,10 +63,8 @@ export interface Reply { id: string; sender: Sender | null; snippet: string | nu
  * `removed`: the owner trimmed it; only a placeholder is shown, and it cannot be opened, saved or forwarded.
  */
 export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean }
-/** One picture or file in the side panel's list, with the message it belongs to. */
 /** A picture or file of a conversation, with the message it came in: who sent it and its words (the viewer shows them under the picture). */
 export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string; sender: Sender; body: string }
-/** What the page behind the first address in a message says about itself. The picture, if any, is at /api/attachments/{imageId}/thumb. */
 /**
  * A line in a thread that says what happened (who was added or taken out, who left, a new name; or, in any conversation, that the
  * owner trimmed pictures and files, or messages, sent before `before`): not something anyone wrote.
