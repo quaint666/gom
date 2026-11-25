@@ -48,6 +48,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<int?>("DurationMs")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_ms");
+
                     b.Property<int?>("Height")
                         .HasColumnType("integer")
                         .HasColumnName("height");

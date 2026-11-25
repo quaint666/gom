@@ -15,9 +15,9 @@ namespace Gom.Web.Uploads;
 /// </summary>
 public static class FileTrim
 {
-    /// <summary><see cref="Where"/>: "all", "direct" (every one-to-one chat), or a group's id. <see cref="Kind"/>: "all", "image" or "file".</summary>
+    /// <summary><see cref="Where"/>: "all", "direct" (every one-to-one chat), or a group's id. <see cref="Kind"/>: "all", "image", "video" or "file".</summary>
     public sealed record TrimRequest(DateTimeOffset? Before, string? Kind, string? Where, long? MinBytes, string? Confirm);
-    public sealed record TrimResult(StorageEndpoints.Totals Pictures, StorageEndpoints.Totals Files, int Conversations);
+    public sealed record TrimResult(StorageEndpoints.Totals Pictures, StorageEndpoints.Totals Files, int Conversations, StorageEndpoints.Totals Videos);
 
     /// <summary>What the owner types to say yes. English on purpose, as agreed: it is not a word anyone types by accident.</summary>
     public const string ConfirmWord = "Delete";
@@ -40,6 +40,7 @@ public static class FileTrim
         {
             case "all": kind = null; break;
             case "image": kind = AttachmentKind.Image; break;
+            case "video": kind = AttachmentKind.Video; break;
             case "file": kind = AttachmentKind.File; break;
             default: return null;
         }
@@ -70,7 +71,7 @@ public static class FileTrim
     {
         var byKind = await q.GroupBy(a => a.Kind).Select(g => new { Kind = g.Key, Count = g.Count(), Bytes = g.Sum(a => a.Size) }).ToListAsync(ct);
         StorageEndpoints.Totals Of(AttachmentKind kind) => byKind.Where(k => k.Kind == kind).Select(k => new StorageEndpoints.Totals(k.Count, k.Bytes)).SingleOrDefault() ?? new(0, 0);
-        return new TrimResult(Of(AttachmentKind.Image), Of(AttachmentKind.File), await q.Select(a => a.ConversationId).Distinct().CountAsync(ct));
+        return new TrimResult(Of(AttachmentKind.Image), Of(AttachmentKind.File), await q.Select(a => a.ConversationId).Distinct().CountAsync(ct), Of(AttachmentKind.Video));
     }
 
     private static async Task<IResult> Preview(TrimRequest request, GomDbContext db, TimeProvider clock, CancellationToken ct)
@@ -92,8 +93,8 @@ public static class FileTrim
 
         var owner = GomClaims.User(http.User);
         var conversations = await Matching(db, rule).Select(a => a.ConversationId).Distinct().ToListAsync(ct);
-        int pictures = 0, files = 0, touched = 0;
-        long pictureBytes = 0, fileBytes = 0;
+        var removed = new Tally();
+        var touched = 0;
         foreach (var conversation in conversations)
         {
             List<Guid> gone;
@@ -107,15 +108,26 @@ public static class FileTrim
                 await db.Attachments.Where(a => gone.Contains(a.Id)).ExecuteUpdateAsync(s => s.SetProperty(a => a.RemovedAt, (DateTimeOffset?)now), ct);
                 notice = await Notices.Write(db, conversation, owner, NoticeKind.FilesTrimmed, null, rule.Before.ToString("O"), now, ct);
                 await tx.CommitAsync(ct);
-                foreach (var r in rows)
-                {
-                    if (r.Kind == AttachmentKind.Image) { pictures++; pictureBytes += r.Size; } else { files++; fileBytes += r.Size; }
-                }
+                foreach (var r in rows) removed.Add(r.Kind, r.Size);
             }
             touched++;
             AttachmentFiles.Forget(blobs, gone);
             await Notices.Publish(db, live, notice, ct);
         }
-        return Results.Ok(new TrimResult(new(pictures, pictureBytes), new(files, fileBytes), touched));
+        return Results.Ok(new TrimResult(removed.Of(AttachmentKind.Image), removed.Of(AttachmentKind.File), touched, removed.Of(AttachmentKind.Video)));
     }
+}
+
+/// <summary>How many pictures, videos and files a trim took, and their bytes, kind by kind.</summary>
+internal sealed class Tally
+{
+    private readonly Dictionary<AttachmentKind, (int Count, long Bytes)> _byKind = [];
+
+    public void Add(AttachmentKind kind, long bytes)
+    {
+        var (count, sum) = _byKind.GetValueOrDefault(kind);
+        _byKind[kind] = (count + 1, sum + bytes);
+    }
+
+    public StorageEndpoints.Totals Of(AttachmentKind kind) => _byKind.TryGetValue(kind, out var t) ? new(t.Count, t.Bytes) : new(0, 0);
 }

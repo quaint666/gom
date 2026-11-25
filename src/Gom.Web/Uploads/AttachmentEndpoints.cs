@@ -7,14 +7,15 @@ using Microsoft.Extensions.Options;
 
 namespace Gom.Web.Uploads;
 
-/// <summary>Uploading a picture or a file to a conversation, and fetching it again. Putting it in a message is a separate step.</summary>
+/// <summary>Uploading a picture, a video or a file to a conversation, and fetching it again. Putting it in a message is a separate step.</summary>
 public static class AttachmentEndpoints
 {
     /// <summary>
     /// What an upload turned into, as the browser sees it. <see cref="Removed"/>: the owner trimmed it; only a placeholder is shown.
     /// <see cref="Animated"/>: a moving picture, whose own address is the moving one and whose small version is still.
+    /// <see cref="DurationMs"/>: how long a video plays.
     /// </summary>
-    public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height, bool Removed = false, bool Animated = false);
+    public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height, bool Removed = false, bool Animated = false, int? DurationMs = null);
 
     /// <summary>Which picture or file to copy into another conversation.</summary>
     public sealed record CopyRequest(Guid? From);
@@ -30,28 +31,35 @@ public static class AttachmentEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    public static AttachmentDto ToDto(Attachment a) => new(a.Id, a.Kind == AttachmentKind.Image ? "image" : "file", a.Name, a.Size, a.Width, a.Height, a.RemovedAt != null, a.Animated);
+    public static AttachmentDto ToDto(Attachment a) => new(a.Id, KindName(a.Kind), a.Name, a.Size, a.Width, a.Height, a.RemovedAt != null, a.Animated, a.DurationMs);
+
+    /// <summary>The kind as the browser names it.</summary>
+    public static string KindName(AttachmentKind kind) => kind switch { AttachmentKind.Image => "image", AttachmentKind.Video => "video", _ => "file" };
+
+    /// <summary>What the browser shows in a conversation's picture grid: pictures and videos together, as a phone's gallery does.</summary>
+    private static readonly AttachmentKind[] Gallery = [AttachmentKind.Image, AttachmentKind.Video];
 
     public static void MapAttachments(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api").RequireAuthorization();
         api.MapPost("/conversations/{id:guid}/attachments", Upload);
         api.MapPost("/conversations/{id:guid}/attachments/copy", Copy);
+        api.MapPut("/attachments/{id:guid}/poster", Poster);
         api.MapGet("/conversations/{id:guid}/media", Media);
         api.MapGet("/attachments/{id:guid}", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: false, http, db, sp, ct));
         api.MapGet("/attachments/{id:guid}/thumb", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: true, http, db, sp, ct));
     }
 
     /// <summary>
-    /// The pictures ("image") or the files ("file") of a conversation, newest message first, a page of messages at a time; ask for the
+    /// The pictures and videos ("image") or the files ("file") of a conversation, newest message first, a page of messages at a time; ask for the
     /// next page with before = the seq of the last item. Only what this person may fetch: said after they joined, not taken back, not
     /// hidden by them, and in a message (an upload not yet sent is not listed).
     /// </summary>
     private static async Task<IResult> Media(Guid id, string? kind, long? before, HttpContext http, GomDbContext db, CancellationToken ct)
     {
-        AttachmentKind wanted;
-        if (kind == "image") wanted = AttachmentKind.Image;
-        else if (kind == "file") wanted = AttachmentKind.File;
+        AttachmentKind[] wanted;
+        if (kind == "image") wanted = Gallery;
+        else if (kind == "file") wanted = [AttachmentKind.File];
         else return Error(StatusCodes.Status400BadRequest, "invalid_kind");
 
         var me = GomClaims.User(http.User);
@@ -60,7 +68,7 @@ public static class AttachmentEndpoints
 
         var visible =
             from a in db.Attachments.AsNoTracking()
-            where a.ConversationId == id && a.Kind == wanted && a.RemovedAt == null
+            where a.ConversationId == id && wanted.Contains(a.Kind) && a.RemovedAt == null
             join m in db.Messages on a.MessageId equals m.Id
             where m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null && (before == null || m.Seq < before)
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
@@ -99,19 +107,21 @@ public static class AttachmentEndpoints
 
         // Only what is in a message this person may fetch: "not yours to see" and "not there" look the same.
         var source = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == from, ct);
-        if (source is null || source.MessageId is null || source.RemovedAt is not null || source.Kind is not (AttachmentKind.Image or AttachmentKind.File) || !await MayFetch(db, source, me, ct)) return Results.NotFound();
+        if (source is null || source.MessageId is null || source.RemovedAt is not null || source.Kind is not (AttachmentKind.Image or AttachmentKind.File or AttachmentKind.Video) || !await MayFetch(db, source, me, ct)) return Results.NotFound();
         if (await OverDaily(db, me, source.Size, options.Value, clock, ct)) return Error(StatusCodes.Status429TooManyRequests, "daily_upload_limit");
 
         var copy = new Attachment
         {
             Id = Guid.NewGuid(), ConversationId = id, UploaderId = me, Kind = source.Kind, Name = source.Name, ContentType = source.ContentType,
-            Size = source.Size, Width = source.Width, Height = source.Height, Animated = source.Animated, CreatedAt = clock.GetUtcNow(),
+            Size = source.Size, Width = source.Width, Height = source.Height, Animated = source.Animated, DurationMs = source.DurationMs, CreatedAt = clock.GetUtcNow(),
         };
         var store = services.GetRequiredService<IBlobStore>();
         try
         {
+            // A video's still picture is copied when it has one (a sender's browser may not have made one).
             var copied = await store.CopyAsync(source.Id.ToString(), copy.Id.ToString(), ct)
                 && (source.Kind != AttachmentKind.Image || await store.CopyAsync(source.Id + ".t", copy.Id + ".t", ct));
+            if (copied && source.Kind == AttachmentKind.Video) await store.CopyAsync(source.Id + ".t", copy.Id + ".t", ct);
             if (!copied) { store.Delete(copy.Id.ToString()); store.Delete(copy.Id + ".t"); return Results.NotFound(); }   // the original went while this ran
             db.Attachments.Add(copy);
             await db.SaveChangesAsync(ct);
@@ -158,15 +168,21 @@ public static class AttachmentEndpoints
         if (await OverDaily(db, me, 1, o, clock, ct)) return Error(StatusCodes.Status429TooManyRequests, "daily_upload_limit");
 
         // Turned away before a byte is read when the size is announced, and cut off while reading when it is not.
-        var most = Math.Max(o.MaxFileBytes, o.MaxImageBytes);
+        var most = Math.Max(o.MaxVideoBytes, Math.Max(o.MaxFileBytes, o.MaxImageBytes));
         if (http.Request.ContentLength > most) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
         http.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize = most;
 
+        // An MP4 goes to disk as it arrives; everything else is read into memory to be looked at.
+        var head = await ReadHead(http.Request.Body, Mp4.HeadBytes, ct);
+        if (Mp4.LooksLikeMp4(head)) return await UploadVideo(id, me, name, head, http, db, clock, services, o, ct);
+        var buffered = Math.Max(o.MaxFileBytes, o.MaxImageBytes);
+        if (http.Request.ContentLength > buffered) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
+
         // The bytes being received are held in memory: wait for room, so a few big uploads cannot use up the whole container.
         var wait = TimeSpan.FromSeconds(o.ImageWaitSeconds);
-        using var bodyHold = await memory.Bodies.EnterAsync(Math.Min(http.Request.ContentLength ?? most, memory.Bodies.Total), wait);
+        using var bodyHold = await memory.Bodies.EnterAsync(Math.Min(http.Request.ContentLength ?? buffered, memory.Bodies.Total), wait);
         if (bodyHold is null) return Error(StatusCodes.Status503ServiceUnavailable, "busy");
-        var received = await ReadLimited(http.Request.Body, most, ct);
+        var received = await ReadLimited(http.Request.Body, buffered, ct, head);
         if (received is null) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
         if (received.Length == 0) return Error(StatusCodes.Status400BadRequest, "empty_upload");
 
@@ -258,10 +274,98 @@ public static class AttachmentEndpoints
         return used + adding > o.DailyBytes;
     }
 
-    /// <summary>All of the body, or null when it is longer than the limit.</summary>
-    public static async Task<byte[]?> ReadLimited(Stream body, long limit, CancellationToken ct)
+    /// <summary>
+    /// A video: written to disk as it arrives, then read for its size and length. An MP4 with no pictures in it (sound alone) is kept
+    /// as a file when it is small enough for one. The day's limit is checked once its size is known.
+    /// </summary>
+    private static async Task<IResult> UploadVideo(Guid id, Guid me, string? name, byte[] head, HttpContext http, GomDbContext db, TimeProvider clock,
+        IServiceProvider services, UploadOptions o, CancellationToken ct)
+    {
+        var attachment = new Attachment { Id = Guid.NewGuid(), ConversationId = id, UploaderId = me, Name = FileNames.Clean(name), CreatedAt = clock.GetUtcNow() };
+        var key = attachment.Id.ToString();
+        var store = services.GetRequiredService<IBlobStore>();
+        try
+        {
+            var size = await store.WriteStreamAsync(key, head, http.Request.Body, Math.Max(o.MaxVideoBytes, o.MaxFileBytes), ct);
+            if (size is not { } bytes) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
+
+            VideoInfo? video;
+            await using (var file = store.OpenRead(key)) video = file is null ? null : Mp4.Read(file);
+            if (video is not null)
+            {
+                if (bytes > o.MaxVideoBytes) { store.Delete(key); return Error(StatusCodes.Status413PayloadTooLarge, "video_too_large"); }
+                attachment.Kind = AttachmentKind.Video;
+                attachment.ContentType = "video/mp4";
+                attachment.Width = video.Width; attachment.Height = video.Height; attachment.DurationMs = video.DurationMs;
+            }
+            else
+            {
+                if (bytes > o.MaxFileBytes) { store.Delete(key); return Error(StatusCodes.Status413PayloadTooLarge, "too_large"); }
+                attachment.Kind = AttachmentKind.File;
+                attachment.ContentType = "application/octet-stream";
+            }
+            attachment.Size = bytes;
+            if (await OverDaily(db, me, bytes, o, clock, ct)) { store.Delete(key); return Error(StatusCodes.Status429TooManyRequests, "daily_upload_limit"); }
+            db.Attachments.Add(attachment);
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            store.Delete(key);   // nothing is kept of an upload that did not make it into the database
+            throw;
+        }
+        return Results.Json(ToDto(attachment), statusCode: StatusCodes.Status201Created);
+    }
+
+    /// <summary>
+    /// A video's still picture, made by the sender's browser, shown before it plays: only its uploader, only before it is in a message.
+    /// It is made into a small WebP like any picture's small version; sent again, it replaces the first.
+    /// </summary>
+    private static async Task<IResult> Poster(Guid id, HttpContext http, GomDbContext db, IServiceProvider services, IOptions<UploadOptions> options,
+        ImageLimiter images, UploadMemory memory, CancellationToken ct)
+    {
+        var o = options.Value;
+        var me = GomClaims.User(http.User);
+        var video = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(a => a.Id == id, ct);
+        if (video is null || video.UploaderId != me || video.Kind != AttachmentKind.Video || video.MessageId is not null || video.RemovedAt is not null)
+            return Results.NotFound();
+
+        if (http.Request.ContentLength > o.MaxPosterBytes) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
+        http.Features.Get<IHttpMaxRequestBodySizeFeature>()?.MaxRequestBodySize = o.MaxPosterBytes;
+        var received = await ReadLimited(http.Request.Body, o.MaxPosterBytes, ct);
+        if (received is null) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
+        if (!ImageProcessor.LooksLikeImage(received) || ImageProcessor.PlanAnimated(received, o).Animated) return Error(StatusCodes.Status422UnprocessableEntity, "invalid_image");
+
+        var planned = ImageProcessor.Plan(received, o);
+        if (planned.Problem is { } early) return Error(StatusCodes.Status422UnprocessableEntity, early == ImageProblem.TooManyPixels ? "image_dimensions" : "invalid_image");
+        var plan = planned.Plan!;
+        if (!memory.Images.Fits(plan.Cost)) return Error(StatusCodes.Status422UnprocessableEntity, "image_dimensions");
+        using var imageHold = await memory.Images.EnterAsync(plan.Cost, TimeSpan.FromSeconds(o.ImageWaitSeconds));
+        if (imageHold is null) return Error(StatusCodes.Status503ServiceUnavailable, "busy");
+        var result = await images.RunAsync(() => ImageProcessor.Process(received, plan, o));
+        if (result is null) return Error(StatusCodes.Status503ServiceUnavailable, "busy");
+        if (result.Problem is { } problem) return Error(StatusCodes.Status422UnprocessableEntity, problem == ImageProblem.TooManyPixels ? "image_dimensions" : "invalid_image");
+        await services.GetRequiredService<IBlobStore>().WriteAsync(id + ".t", result.Image!.Thumb, ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>Up to <paramref name="count"/> bytes from the start of the body (fewer only when the body is shorter).</summary>
+    private static async Task<byte[]> ReadHead(Stream body, int count, CancellationToken ct)
+    {
+        var head = new byte[count];
+        var n = await body.ReadAtLeastAsync(head, count, throwOnEndOfStream: false, ct);
+        return head[..n];
+    }
+
+    /// <summary>All of the body (after <paramref name="head"/>, bytes already read from it), or null when it is longer than the limit.</summary>
+    public static async Task<byte[]?> ReadLimited(Stream body, long limit, CancellationToken ct, byte[]? head = null)
     {
         using var buffer = new MemoryStream();
+        if (head is { Length: > 0 })
+        {
+            if (head.Length > limit) return null;
+            buffer.Write(head);
+        }
         var chunk = new byte[81_920];
         int n;
         while ((n = await body.ReadAsync(chunk, ct)) > 0)
@@ -280,14 +384,16 @@ public static class AttachmentEndpoints
         if (a is null || a.RemovedAt is not null) return Results.NotFound();
         if (!await MayFetch(db, a, me, ct)) return Results.NotFound();
         var picture = a.Kind == AttachmentKind.Image;
-        if (thumb && !picture) return Results.NotFound();
+        var video = a.Kind == AttachmentKind.Video;
+        if (thumb && !picture && !video) return Results.NotFound();
 
         var stream = services.GetRequiredService<IBlobStore>().OpenRead(thumb ? id + ".t" : id.ToString());
         if (stream is null) return Results.NotFound();
 
-        // A picture may stay in the browser for a day (opening a conversation again must not fetch every picture again); it never
-        // changes, so its id is its tag. A file is not kept: the site-wide "no-store" applies.
-        if (picture)
+        // A picture or a video may stay in the browser for a day (opening a conversation again must not fetch every picture again); it
+        // never changes, so its id is its tag (a video's still picture can be sent again only before anyone else can see it). A video
+        // plays in the page, a piece at a time. A file is not kept: the site-wide "no-store" applies.
+        if (picture || video)
         {
             http.Response.Headers.CacheControl = "private, max-age=86400";
             return Results.Stream(stream, thumb ? "image/webp" : a.ContentType, entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{id}{(thumb ? "t" : "")}\""), enableRangeProcessing: true);

@@ -20,6 +20,9 @@ public sealed class ServerText
     public required Func<int, string> SentPictures { get; init; }
     public required Func<int, string> SentFiles { get; init; }
     public required Func<int, int, string> SentPicturesAndFiles { get; init; }
+    public required Func<int, string> SentVideos { get; init; }
+    /// <summary>Videos with pictures or files: only how many things in all.</summary>
+    public required Func<int, string> SentAttachments { get; init; }
 
     public static readonly ServerText Vi = new()
     {
@@ -32,6 +35,8 @@ public sealed class ServerText
         SentPictures = n => $"Đã gửi {n} ảnh",
         SentFiles = n => $"Đã gửi {n} file",
         SentPicturesAndFiles = (pictures, files) => $"Đã gửi {pictures} ảnh và {files} file",
+        SentVideos = n => $"Đã gửi {n} video",
+        SentAttachments = n => $"Đã gửi {n} tệp đính kèm",
     };
 
     public static readonly ServerText En = new()
@@ -45,6 +50,8 @@ public sealed class ServerText
         SentPictures = n => n == 1 ? "Sent a picture" : $"Sent {n} pictures",
         SentFiles = n => n == 1 ? "Sent a file" : $"Sent {n} files",
         SentPicturesAndFiles = (pictures, files) => $"Sent {Count(pictures, "picture", "pictures")} and {Count(files, "file", "files")}",
+        SentVideos = n => n == 1 ? "Sent a video" : $"Sent {n} videos",
+        SentAttachments = n => $"Sent {n} attachments",
     };
 
     /// <summary>A person's language's words; anything unknown reads Vietnamese.</summary>

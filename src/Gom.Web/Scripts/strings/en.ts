@@ -118,6 +118,7 @@ export const en: Strings = {
     invalidInvite: (days: number, people: number) => `An invite lasts 1 to ${days} days and lets in at most ${people} people.`,
     tooLarge: (picture: string, file: string) => `This file is too large (pictures up to ${picture}, files up to ${file}).`,
     animatedTooLarge: (size: string) => `This moving picture is too large (up to ${size}).`,
+    videoTooLarge: (size: string) => `This video is too large (up to ${size}).`,
     other: 'Something went wrong. Please try again.',
     invalidLink: 'This link no longer works.',
     badOrigin: 'Gom did not accept this request. Please reload the page and try again.',

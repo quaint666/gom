@@ -55,6 +55,8 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         Assert.Equal(10, l.GetProperty("attachments").GetInt32());
         Assert.Equal(10 * 1024 * 1024, l.GetProperty("imageBytes").GetInt64());
         Assert.Equal(25 * 1024 * 1024, l.GetProperty("fileBytes").GetInt64());
+        Assert.Equal(45 * 1024 * 1024, l.GetProperty("videoBytes").GetInt64());
+        Assert.Equal(1024 * 1024, l.GetProperty("posterBytes").GetInt64());
         Assert.Equal(3, l.GetProperty("pins").GetInt32());
         Assert.Equal(60, l.GetProperty("nameChars").GetInt32());
         Assert.Equal(10, l.GetProperty("passwordMin").GetInt32());

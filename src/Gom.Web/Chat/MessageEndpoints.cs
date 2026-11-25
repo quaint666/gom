@@ -157,8 +157,8 @@ public static class MessageEndpoints
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
         var files = dto.Attachments ?? [];
-        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind != "image"), message.Sticker is not null,
-            Replies.Snippet(message.Body), message.Id));
+        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind == "file"), message.Sticker is not null,
+            Replies.Snippet(message.Body), message.Id, Videos: files.Count(a => a.Kind == "video")));
         return Results.Ok(dto);
     }
 

@@ -20,6 +20,15 @@ public sealed class UploadOptions
     public int MaxFrames { get; set; } = 1000;
     public long MaxAnimatedPixels { get; set; } = 150_000_000;
 
+    /// <summary>
+    /// The largest video accepted, in bytes: an MP4 is kept as it was sent (the sender's browser makes it smaller first). It is written
+    /// to disk as it arrives, never held in memory. A proxy in front must let a little more than this through.
+    /// </summary>
+    public long MaxVideoBytes { get; set; } = 45L * 1024 * 1024;
+
+    /// <summary>A video's still picture, made by the sender's browser: the largest accepted, in bytes (it is made smaller like any picture).</summary>
+    public long MaxPosterBytes { get; set; } = 1024 * 1024;
+
     /// <summary>The largest file accepted, in bytes. Files are kept as they are.</summary>
     public long MaxFileBytes { get; set; } = 25 * 1024 * 1024;
 

@@ -10,7 +10,7 @@ const SERVER_CODE_LIST = [
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
   'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
-  'invalid_invite', 'too_large', 'animated_too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'daily_upload_limit', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
+  'invalid_invite', 'too_large', 'animated_too_large', 'video_too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'daily_upload_limit', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
   'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
   'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette', 'invalid_pattern',
 ] as const;
