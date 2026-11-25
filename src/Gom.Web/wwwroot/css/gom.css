@@ -560,6 +560,11 @@ a.mi { text-decoration: none; }
 .pic img { display: block; inline-size: 100%; block-size: auto; object-fit: cover; }
 .pics:not(.n1) .pic { aspect-ratio: 1; }
 .pics:not(.n1) .pic img { block-size: 100%; }
+.pic.moving { position: relative; cursor: default; }
+.pic-open { display: block; padding: 0; border: 0; background: none; inline-size: 100%; block-size: 100%; cursor: zoom-in; }
+.moving-toggle { position: absolute; inset-block-end: 6px; inset-inline-start: 6px; display: flex; align-items: center; gap: 4px; min-block-size: 36px;
+  padding: 0 10px 0 8px; border: 0; border-radius: 18px; background: rgb(0 0 0 / .6); color: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.moving-toggle .i { inline-size: 16px; block-size: 16px; }
 /* A picture or file the owner trimmed: its place stays, saying so, with nothing to open. */
 .pic.removed { display: grid; place-items: center; min-block-size: 96px; padding: 8px; cursor: default; border: 1px dashed var(--border); background: transparent; color: var(--muted); font-size: 12px; text-align: center; }
 .pics.n1 .pic.removed { inline-size: 200px; }

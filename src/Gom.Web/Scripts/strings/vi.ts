@@ -499,6 +499,8 @@ export const vi = {
     seenBy: (n: number) => `Đã xem bởi ${n}`,
     // pictures
     viewPicture: (n: number, of: number) => `Xem ảnh ${n} trên ${of}`,
+    playMoving: 'Phát ảnh động',
+    pauseMoving: 'Dừng ảnh động',
     viewer: 'Xem ảnh',
     forwardPicture: 'Chuyển tiếp ảnh',
     goToMessage: 'Xem tin nhắn',

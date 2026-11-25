@@ -69,7 +69,7 @@ export interface Reply { id: string; sender: Sender | null; snippet: string | nu
  * A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb.
  * `removed`: the owner trimmed it; only a placeholder is shown, and it cannot be opened, saved or forwarded.
  */
-export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean }
+export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean; animated?: boolean }
 /** A picture or file of a conversation, with the message it came in: who sent it and its words (the viewer shows them under the picture). */
 export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string; sender: Sender; body: string }
 /**

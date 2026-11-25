@@ -321,6 +321,26 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const words = (body: string) => linkify(body).map((p) => 'url' in p
     ? html`<a class="ext" href=${p.url} target="_blank" rel="noopener noreferrer nofollow">${p.text}</a>` : p.text);
 
+  /** Moving pictures someone paused or played here; any other plays, unless the device asks for less motion. */
+  const movingChoice = new Map<string, boolean>();
+  const lessMotion = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const isMoving = (id: string): boolean => movingChoice.get(id) ?? !lessMotion();
+
+  /**
+   * A GIF in a message: the moving picture while it plays, its still first frame while paused. Anything that moves by itself for more
+   * than a few seconds needs a way to stop it, so it always has its own pause button beside the one that opens the viewer.
+   */
+  const movingPicture = (a: Attachment, i: number, of: number, open: () => void): TemplateResult => {
+    const moving = isMoving(a.id);
+    return html`
+      <div class="pic moving" data-moving=${a.id}>
+        <button class="pic-open" type="button" data-pic=${a.id} aria-label=${say.chat.viewPicture(i + 1, of)} @click=${open}>
+          <img src=${moving ? `/api/attachments/${a.id}` : `/api/attachments/${a.id}/thumb`} alt=${a.name} decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>
+        <button class="moving-toggle" type="button" data-moving-toggle aria-label=${moving ? say.chat.pauseMoving : say.chat.playMoving}
+          @click=${() => { movingChoice.set(a.id, !moving); update(); }}>${moving ? icons.pause() : icons.play()}<span aria-hidden="true">GIF</span></button>
+      </div>`;
+  };
+
   /** The pictures of a message as a grid, then its files as cards. */
   const attachmentsOf = (m: ChatMessage): TemplateResult | typeof nothing => {
     const all = m.attachments ?? [];
@@ -331,6 +351,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${pictures.length === 0 ? nothing : html`<div class=${`pics n${Math.min(pictures.length, 5)}`} data-pics>${pictures.map((a, i) => a.removed
         // Trimmed by the owner: the place stays, saying so; nothing to open.
         ? html`<div class="pic removed" data-pic-removed=${a.id}><span>${say.chat.pictureGone}</span></div>`
+        : a.animated ? movingPicture(a, i, pictures.length, () => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id))
         : html`
         <button class="pic" type="button" data-pic=${a.id} aria-label=${say.chat.viewPicture(i + 1, pictures.length)} @click=${() => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id)}>
           <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}

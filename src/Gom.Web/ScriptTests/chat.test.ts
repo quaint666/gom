@@ -3433,6 +3433,43 @@ describe('chat: pictures and files', () => {
     expect(bubble.querySelector('.txt')).toBeNull();
   });
 
+  it('plays a moving picture in the message, and its own button pauses it on the still first frame and plays it again', async () => {
+    const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [{ ...att('g1', 'image', 'meo.gif'), animated: true }, att('p2')] };
+    open({}, [m]);
+    await flush();
+    const moving = root.querySelector<HTMLElement>('[data-moving="g1"]')!;
+    const img = () => moving.querySelector('img')!.getAttribute('src');
+    const toggle = () => moving.querySelector<HTMLButtonElement>('[data-moving-toggle]')!;
+    expect(img()).toBe('/api/attachments/g1');
+    expect(toggle().getAttribute('aria-label')).toBe('Dừng ảnh động');
+    toggle().click();
+    await flush();
+    expect(img()).toBe('/api/attachments/g1/thumb');
+    expect(toggle().getAttribute('aria-label')).toBe('Phát ảnh động');
+    toggle().click();
+    await flush();
+    expect(img()).toBe('/api/attachments/g1');
+    // A still picture beside it is drawn as before, and the moving one still opens the viewer.
+    expect(root.querySelector('[data-pic="p2"] img')!.getAttribute('src')).toBe('/api/attachments/p2/thumb');
+    moving.querySelector<HTMLButtonElement>('[data-pic="g1"]')!.click();
+    await flush();
+    expect(root.querySelector('[data-viewer]')).not.toBeNull();
+  });
+
+  it('starts a moving picture paused when the device asks for less motion', async () => {
+    const match = vi.fn((q: string) => ({ matches: q.includes('reduce'), media: q, addEventListener() {}, removeEventListener() {} }));
+    vi.stubGlobal('matchMedia', match);
+    try {
+      const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [{ ...att('g1', 'image', 'meo.gif'), animated: true }] };
+      open({}, [m]);
+      await flush();
+      expect(root.querySelector('[data-moving="g1"] img')!.getAttribute('src')).toBe('/api/attachments/g1/thumb');
+      root.querySelector<HTMLButtonElement>('[data-moving-toggle]')!.click();
+      await flush();
+      expect(root.querySelector('[data-moving="g1"] img')!.getAttribute('src')).toBe('/api/attachments/g1');
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('warns about an app file on its card and asks before saving it; an ordinary file has neither', async () => {
     const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [att('f1', 'file', 'thiep_tet.APK'), att('f2', 'file', 'ghi chú.txt')] };
     open({}, [m]);

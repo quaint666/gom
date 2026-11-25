@@ -495,6 +495,8 @@ export const en: Strings = {
     newBelow: (n: number) => count(n, 'new message', 'new messages'),
     seenBy: (n: number) => `Seen by ${n}`,
     viewPicture: (n: number, of: number) => `View picture ${n} of ${of}`,
+    playMoving: 'Play the moving picture',
+    pauseMoving: 'Pause the moving picture',
     viewer: 'Picture viewer',
     forwardPicture: 'Forward picture',
     goToMessage: 'Go to message',
