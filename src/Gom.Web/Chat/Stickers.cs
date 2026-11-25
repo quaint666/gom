@@ -46,42 +46,76 @@ public static class Stickers
         "1f3f4_200d_2620", "1f1e6_1f1e8", "1f1e6_1f1e9", "1f1e6_1f1ea", "1f1e6_1f1eb", "1f1e6_1f1ec", "1f1e6_1f1ee",
         "1f1e6_1f1f1", "1f1e6_1f1f2", "1f1e6_1f1f4", "1f1e6_1f1f6", "1f1e6_1f1f7", "1f1e6_1f1f8", "1f1e6_1f1f9",
         "1f1e6_1f1fa", "1f1e6_1f1fc", "1f1e6_1f1fd", "1f1e6_1f1ff", "1f1e7_1f1e6", "1f1e7_1f1e7", "1f1e7_1f1e9",
-        "1f1e7_1f1ea", "1f1e7_1f1eb", "1f1e7_1f1ec", "1f1e7_1f1ed", "1f1e7_1f1ee", "1f1e7_1f1ef", "1f1e7_1f1f1",
-        "1f1e7_1f1f2", "1f1e7_1f1f3", "1f1e7_1f1f4", "1f1e7_1f1f6", "1f1e7_1f1f7", "1f1e7_1f1f8", "1f1e7_1f1f9",
-        "1f1e7_1f1fb", "1f1e7_1f1fc", "1f1e7_1f1fe", "1f1e7_1f1ff", "1f1e8_1f1e6", "1f1e8_1f1e8", "1f1e8_1f1e9",
-        "1f1e8_1f1eb", "1f1e8_1f1ec", "1f1e8_1f1ed", "1f1e8_1f1ee", "1f1e8_1f1f0", "1f1e8_1f1f1", "1f1e8_1f1f2",
-        "1f1e8_1f1f3", "1f1e8_1f1f4", "1f1e8_1f1f5", "1f1e8_1f1f7", "1f1e8_1f1fa", "1f1e8_1f1fb", "1f1e8_1f1fc",
-        "1f1e8_1f1fd", "1f1e8_1f1fe", "1f1e8_1f1ff", "1f1e9_1f1ea", "1f1e9_1f1ec", "1f1e9_1f1ef", "1f1e9_1f1f0",
-        "1f1e9_1f1f2", "1f1e9_1f1f4", "1f1e9_1f1ff", "1f1ea_1f1e6", "1f1ea_1f1e8", "1f1ea_1f1ea", "1f1ea_1f1ec",
-        "1f1ea_1f1ed", "1f1ea_1f1f7", "1f1ea_1f1f8", "1f1ea_1f1f9", "1f1ea_1f1fa", "1f1eb_1f1ee", "1f1eb_1f1ef",
-        "1f1eb_1f1f0", "1f1eb_1f1f2", "1f1eb_1f1f4", "1f1eb_1f1f7", "1f1ec_1f1e6", "1f1ec_1f1e7", "1f1ec_1f1e9",
-        "1f1ec_1f1ea", "1f1ec_1f1eb", "1f1ec_1f1ec", "1f1ec_1f1ed", "1f1ec_1f1ee", "1f1ec_1f1f1", "1f1ec_1f1f2",
-        "1f1ec_1f1f3", "1f1ec_1f1f5", "1f1ec_1f1f6", "1f1ec_1f1f7", "1f1ec_1f1f8", "1f1ec_1f1f9", "1f1ec_1f1fa",
-        "1f1ec_1f1fc", "1f1ec_1f1fe", "1f1ed_1f1f0", "1f1ed_1f1f2", "1f1ed_1f1f3", "1f1ed_1f1f7", "1f1ed_1f1f9",
+        "1f1e7_1f1ea", "1f1e7_1f1eb", "1f1e7_1f1ec", "1f1e7_1f1ed", "1f1e7_1f1ee", "1f1e7_1f1ef", "1f1e7_1f1f2",
+        "1f1e7_1f1f3", "1f1e7_1f1f4", "1f1e7_1f1f7", "1f1e7_1f1f8", "1f1e7_1f1f9", "1f1e7_1f1fc", "1f1e7_1f1fe",
+        "1f1e7_1f1ff", "1f1e8_1f1e6", "1f1e8_1f1e8", "1f1e8_1f1e9", "1f1e8_1f1eb", "1f1e8_1f1ec", "1f1e8_1f1ed",
+        "1f1e8_1f1ee", "1f1e8_1f1f0", "1f1e8_1f1f1", "1f1e8_1f1f2", "1f1e8_1f1f3", "1f1e8_1f1f4", "1f1e8_1f1f7",
+        "1f1e8_1f1fa", "1f1e8_1f1fb", "1f1e8_1f1fc", "1f1e8_1f1fd", "1f1e8_1f1fe", "1f1e8_1f1ff", "1f1e9_1f1ea",
+        "1f1e9_1f1ef", "1f1e9_1f1f0", "1f1e9_1f1f2", "1f1e9_1f1f4", "1f1e9_1f1ff", "1f1ea_1f1e8", "1f1ea_1f1ea",
+        "1f1ea_1f1ec", "1f1ea_1f1ed", "1f1ea_1f1f7", "1f1ea_1f1f8", "1f1ea_1f1f9", "1f1ea_1f1fa", "1f1eb_1f1ee",
+        "1f1eb_1f1ef", "1f1eb_1f1f0", "1f1eb_1f1f2", "1f1eb_1f1f4", "1f1eb_1f1f7", "1f1ec_1f1e6", "1f1ec_1f1e7",
+        "1f1ec_1f1e9", "1f1ec_1f1ea", "1f1ec_1f1eb", "1f1ec_1f1ec", "1f1ec_1f1ed", "1f1ec_1f1ee", "1f1ec_1f1f1",
+        "1f1ec_1f1f2", "1f1ec_1f1f3", "1f1ec_1f1f5", "1f1ec_1f1f6", "1f1ec_1f1f7", "1f1ec_1f1f8", "1f1ec_1f1f9",
+        "1f1ec_1f1fa", "1f1ec_1f1fc", "1f1ec_1f1fe", "1f1ed_1f1f0", "1f1ed_1f1f3", "1f1ed_1f1f7", "1f1ed_1f1f9",
         "1f1ed_1f1fa", "1f1ee_1f1e8", "1f1ee_1f1e9", "1f1ee_1f1ea", "1f1ee_1f1f1", "1f1ee_1f1f2", "1f1ee_1f1f3",
         "1f1ee_1f1f4", "1f1ee_1f1f6", "1f1ee_1f1f7", "1f1ee_1f1f8", "1f1ee_1f1f9", "1f1ef_1f1ea", "1f1ef_1f1f2",
         "1f1ef_1f1f4", "1f1ef_1f1f5", "1f1f0_1f1ea", "1f1f0_1f1ec", "1f1f0_1f1ed", "1f1f0_1f1ee", "1f1f0_1f1f2",
         "1f1f0_1f1f3", "1f1f0_1f1f5", "1f1f0_1f1f7", "1f1f0_1f1fc", "1f1f0_1f1fe", "1f1f0_1f1ff", "1f1f1_1f1e6",
         "1f1f1_1f1e7", "1f1f1_1f1e8", "1f1f1_1f1ee", "1f1f1_1f1f0", "1f1f1_1f1f7", "1f1f1_1f1f8", "1f1f1_1f1f9",
         "1f1f1_1f1fa", "1f1f1_1f1fb", "1f1f1_1f1fe", "1f1f2_1f1e6", "1f1f2_1f1e8", "1f1f2_1f1e9", "1f1f2_1f1ea",
-        "1f1f2_1f1eb", "1f1f2_1f1ec", "1f1f2_1f1ed", "1f1f2_1f1f0", "1f1f2_1f1f1", "1f1f2_1f1f2", "1f1f2_1f1f3",
-        "1f1f2_1f1f4", "1f1f2_1f1f5", "1f1f2_1f1f6", "1f1f2_1f1f7", "1f1f2_1f1f8", "1f1f2_1f1f9", "1f1f2_1f1fa",
-        "1f1f2_1f1fb", "1f1f2_1f1fc", "1f1f2_1f1fd", "1f1f2_1f1fe", "1f1f2_1f1ff", "1f1f3_1f1e6", "1f1f3_1f1e8",
-        "1f1f3_1f1ea", "1f1f3_1f1eb", "1f1f3_1f1ec", "1f1f3_1f1ee", "1f1f3_1f1f1", "1f1f3_1f1f4", "1f1f3_1f1f5",
-        "1f1f3_1f1f7", "1f1f3_1f1fa", "1f1f3_1f1ff", "1f1f4_1f1f2", "1f1f5_1f1e6", "1f1f5_1f1ea", "1f1f5_1f1eb",
-        "1f1f5_1f1ec", "1f1f5_1f1ed", "1f1f5_1f1f0", "1f1f5_1f1f1", "1f1f5_1f1f2", "1f1f5_1f1f3", "1f1f5_1f1f7",
-        "1f1f5_1f1f8", "1f1f5_1f1f9", "1f1f5_1f1fc", "1f1f5_1f1fe", "1f1f6_1f1e6", "1f1f7_1f1ea", "1f1f7_1f1f4",
-        "1f1f7_1f1f8", "1f1f7_1f1fa", "1f1f7_1f1fc", "1f1f8_1f1e6", "1f1f8_1f1e7", "1f1f8_1f1e8", "1f1f8_1f1e9",
-        "1f1f8_1f1ea", "1f1f8_1f1ec", "1f1f8_1f1ed", "1f1f8_1f1ee", "1f1f8_1f1ef", "1f1f8_1f1f0", "1f1f8_1f1f1",
-        "1f1f8_1f1f2", "1f1f8_1f1f3", "1f1f8_1f1f4", "1f1f8_1f1f7", "1f1f8_1f1f8", "1f1f8_1f1f9", "1f1f8_1f1fb",
-        "1f1f8_1f1fd", "1f1f8_1f1fe", "1f1f8_1f1ff", "1f1f9_1f1e6", "1f1f9_1f1e8", "1f1f9_1f1e9", "1f1f9_1f1eb",
-        "1f1f9_1f1ec", "1f1f9_1f1ed", "1f1f9_1f1ef", "1f1f9_1f1f0", "1f1f9_1f1f1", "1f1f9_1f1f2", "1f1f9_1f1f3",
-        "1f1f9_1f1f4", "1f1f9_1f1f7", "1f1f9_1f1f9", "1f1f9_1f1fb", "1f1f9_1f1fc", "1f1f9_1f1ff", "1f1fa_1f1e6",
-        "1f1fa_1f1ec", "1f1fa_1f1f2", "1f1fa_1f1f3", "1f1fa_1f1f8", "1f1fa_1f1fe", "1f1fa_1f1ff", "1f1fb_1f1e6",
-        "1f1fb_1f1e8", "1f1fb_1f1ea", "1f1fb_1f1ec", "1f1fb_1f1ee", "1f1fb_1f1fa", "1f1fc_1f1eb", "1f1fc_1f1f8",
-        "1f1fd_1f1f0", "1f1fe_1f1ea", "1f1fe_1f1f9", "1f1ff_1f1e6", "1f1ff_1f1f2", "1f1ff_1f1fc",
+        "1f1f2_1f1ec", "1f1f2_1f1ed", "1f1f2_1f1f0", "1f1f2_1f1f1", "1f1f2_1f1f2", "1f1f2_1f1f3", "1f1f2_1f1f4",
+        "1f1f2_1f1f5", "1f1f2_1f1f7", "1f1f2_1f1f8", "1f1f2_1f1f9", "1f1f2_1f1fa", "1f1f2_1f1fb", "1f1f2_1f1fc",
+        "1f1f2_1f1fd", "1f1f2_1f1fe", "1f1f2_1f1ff", "1f1f3_1f1e6", "1f1f3_1f1e8", "1f1f3_1f1ea", "1f1f3_1f1eb",
+        "1f1f3_1f1ec", "1f1f3_1f1ee", "1f1f3_1f1f1", "1f1f3_1f1f4", "1f1f3_1f1f5", "1f1f3_1f1f7", "1f1f3_1f1fa",
+        "1f1f3_1f1ff", "1f1f4_1f1f2", "1f1f5_1f1e6", "1f1f5_1f1ea", "1f1f5_1f1eb", "1f1f5_1f1ec", "1f1f5_1f1ed",
+        "1f1f5_1f1f0", "1f1f5_1f1f1", "1f1f5_1f1f2", "1f1f5_1f1f3", "1f1f5_1f1f7", "1f1f5_1f1f8", "1f1f5_1f1f9",
+        "1f1f5_1f1fc", "1f1f5_1f1fe", "1f1f6_1f1e6", "1f1f7_1f1f4", "1f1f7_1f1f8", "1f1f7_1f1fa", "1f1f7_1f1fc",
+        "1f1f8_1f1e6", "1f1f8_1f1e7", "1f1f8_1f1e8", "1f1f8_1f1e9", "1f1f8_1f1ea", "1f1f8_1f1ec", "1f1f8_1f1ed",
+        "1f1f8_1f1ee", "1f1f8_1f1f0", "1f1f8_1f1f1", "1f1f8_1f1f2", "1f1f8_1f1f3", "1f1f8_1f1f4", "1f1f8_1f1f7",
+        "1f1f8_1f1f8", "1f1f8_1f1f9", "1f1f8_1f1fb", "1f1f8_1f1fd", "1f1f8_1f1fe", "1f1f8_1f1ff", "1f1f9_1f1e6",
+        "1f1f9_1f1e8", "1f1f9_1f1e9", "1f1f9_1f1ec", "1f1f9_1f1ed", "1f1f9_1f1ef", "1f1f9_1f1f0", "1f1f9_1f1f1",
+        "1f1f9_1f1f2", "1f1f9_1f1f3", "1f1f9_1f1f4", "1f1f9_1f1f7", "1f1f9_1f1f9", "1f1f9_1f1fb", "1f1f9_1f1fc",
+        "1f1f9_1f1ff", "1f1fa_1f1e6", "1f1fa_1f1ec", "1f1fa_1f1f3", "1f1fa_1f1f8", "1f1fa_1f1fe", "1f1fa_1f1ff",
+        "1f1fb_1f1e6", "1f1fb_1f1e8", "1f1fb_1f1ea", "1f1fb_1f1ec", "1f1fb_1f1ee", "1f1fb_1f1fa", "1f1fc_1f1eb",
+        "1f1fc_1f1f8", "1f1fd_1f1f0", "1f1fe_1f1ea", "1f1fe_1f1f9", "1f1ff_1f1e6", "1f1ff_1f1f2", "1f1ff_1f1fc",
         "1f3f4_e0067_e0062_e0065_e006e_e0067_e007f", "1f3f4_e0067_e0062_e0073_e0063_e0074_e007f",
         "1f3f4_e0067_e0062_e0077_e006c_e0073_e007f",
+        // Not offered any more, still accepted (see NotOffered)
+        "1f1e7_1f1fb",   // BV: the same picture as NO
+        "1f1e8_1f1f5",   // CP: the same picture as FR
+        "1f1e9_1f1ec",   // DG: the same picture as IO
+        "1f1ea_1f1e6",   // EA: the same picture as ES
+        "1f1ed_1f1f2",   // HM: the same picture as AU
+        "1f1f2_1f1eb",   // MF: the same picture as FR
+        "1f1f8_1f1ef",   // SJ: the same picture as NO
+        "1f1fa_1f1f2",   // UM: the same picture as US
+        "1f1e7_1f1f1",   // BL
+        "1f1e7_1f1f6",   // BQ
+        "1f1f2_1f1f6",   // MQ
+        "1f1f7_1f1ea",   // RE
+        "1f1f9_1f1eb",   // TF
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Flags still accepted, so one sent before still draws, but no longer offered by the page (its NOT_OFFERED). From Noto Emoji's own
+    /// tables (commit 99701e0): emoji_aliases.txt draws the first eight with another region's flag (they showed twice), and
+    /// unknown_flag_aliases.txt lists the last five as flags Noto explicitly omits.
+    /// </summary>
+    public static readonly FrozenSet<string> NotOffered = new[]
+    {
+        "1f1e7_1f1fb",
+        "1f1e8_1f1f5",
+        "1f1e9_1f1ec",
+        "1f1ea_1f1e6",
+        "1f1ed_1f1f2",
+        "1f1f2_1f1eb",
+        "1f1f8_1f1ef",
+        "1f1fa_1f1f2",
+        "1f1e7_1f1f1",
+        "1f1e7_1f1f6",
+        "1f1f2_1f1f6",
+        "1f1f7_1f1ea",
+        "1f1f9_1f1eb",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>The column's size: the longest code is a subdivision flag (England: 41 characters), with room to spare.</summary>

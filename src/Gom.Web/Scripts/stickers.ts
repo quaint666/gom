@@ -48,49 +48,69 @@ export const STICKER_PACKS: readonly StickerPack[] = [
     '1f4da', '270f', '1f4dd', '1f393', '1f4bb', '1f4f1', '23f0', '1f4c5', '1f4bc', '1f4a1', '2705', '274c',
     '2753', '1f4a4', '1f4b0', '1f3e0',
   ] },
-  // Every flag the emoji list has (Noto's waved flags; Việt Nam first, then Unicode's order).
+  // Every flag the emoji list has (Noto's waved flags; Việt Nam first, then Unicode's order), less the NOT_OFFERED ones.
   { name: 'Cờ', codes: [
     '1f1fb_1f1f3', '1f3c1', '1f6a9', '1f38c', '1f3f4', '1f3f3', '1f3f3_200d_1f308', '1f3f3_200d_26a7',
     '1f3f4_200d_2620', '1f1e6_1f1e8', '1f1e6_1f1e9', '1f1e6_1f1ea', '1f1e6_1f1eb', '1f1e6_1f1ec', '1f1e6_1f1ee',
     '1f1e6_1f1f1', '1f1e6_1f1f2', '1f1e6_1f1f4', '1f1e6_1f1f6', '1f1e6_1f1f7', '1f1e6_1f1f8', '1f1e6_1f1f9',
     '1f1e6_1f1fa', '1f1e6_1f1fc', '1f1e6_1f1fd', '1f1e6_1f1ff', '1f1e7_1f1e6', '1f1e7_1f1e7', '1f1e7_1f1e9',
-    '1f1e7_1f1ea', '1f1e7_1f1eb', '1f1e7_1f1ec', '1f1e7_1f1ed', '1f1e7_1f1ee', '1f1e7_1f1ef', '1f1e7_1f1f1',
-    '1f1e7_1f1f2', '1f1e7_1f1f3', '1f1e7_1f1f4', '1f1e7_1f1f6', '1f1e7_1f1f7', '1f1e7_1f1f8', '1f1e7_1f1f9',
-    '1f1e7_1f1fb', '1f1e7_1f1fc', '1f1e7_1f1fe', '1f1e7_1f1ff', '1f1e8_1f1e6', '1f1e8_1f1e8', '1f1e8_1f1e9',
-    '1f1e8_1f1eb', '1f1e8_1f1ec', '1f1e8_1f1ed', '1f1e8_1f1ee', '1f1e8_1f1f0', '1f1e8_1f1f1', '1f1e8_1f1f2',
-    '1f1e8_1f1f3', '1f1e8_1f1f4', '1f1e8_1f1f5', '1f1e8_1f1f7', '1f1e8_1f1fa', '1f1e8_1f1fb', '1f1e8_1f1fc',
-    '1f1e8_1f1fd', '1f1e8_1f1fe', '1f1e8_1f1ff', '1f1e9_1f1ea', '1f1e9_1f1ec', '1f1e9_1f1ef', '1f1e9_1f1f0',
-    '1f1e9_1f1f2', '1f1e9_1f1f4', '1f1e9_1f1ff', '1f1ea_1f1e6', '1f1ea_1f1e8', '1f1ea_1f1ea', '1f1ea_1f1ec',
-    '1f1ea_1f1ed', '1f1ea_1f1f7', '1f1ea_1f1f8', '1f1ea_1f1f9', '1f1ea_1f1fa', '1f1eb_1f1ee', '1f1eb_1f1ef',
-    '1f1eb_1f1f0', '1f1eb_1f1f2', '1f1eb_1f1f4', '1f1eb_1f1f7', '1f1ec_1f1e6', '1f1ec_1f1e7', '1f1ec_1f1e9',
-    '1f1ec_1f1ea', '1f1ec_1f1eb', '1f1ec_1f1ec', '1f1ec_1f1ed', '1f1ec_1f1ee', '1f1ec_1f1f1', '1f1ec_1f1f2',
-    '1f1ec_1f1f3', '1f1ec_1f1f5', '1f1ec_1f1f6', '1f1ec_1f1f7', '1f1ec_1f1f8', '1f1ec_1f1f9', '1f1ec_1f1fa',
-    '1f1ec_1f1fc', '1f1ec_1f1fe', '1f1ed_1f1f0', '1f1ed_1f1f2', '1f1ed_1f1f3', '1f1ed_1f1f7', '1f1ed_1f1f9',
+    '1f1e7_1f1ea', '1f1e7_1f1eb', '1f1e7_1f1ec', '1f1e7_1f1ed', '1f1e7_1f1ee', '1f1e7_1f1ef', '1f1e7_1f1f2',
+    '1f1e7_1f1f3', '1f1e7_1f1f4', '1f1e7_1f1f7', '1f1e7_1f1f8', '1f1e7_1f1f9', '1f1e7_1f1fc', '1f1e7_1f1fe',
+    '1f1e7_1f1ff', '1f1e8_1f1e6', '1f1e8_1f1e8', '1f1e8_1f1e9', '1f1e8_1f1eb', '1f1e8_1f1ec', '1f1e8_1f1ed',
+    '1f1e8_1f1ee', '1f1e8_1f1f0', '1f1e8_1f1f1', '1f1e8_1f1f2', '1f1e8_1f1f3', '1f1e8_1f1f4', '1f1e8_1f1f7',
+    '1f1e8_1f1fa', '1f1e8_1f1fb', '1f1e8_1f1fc', '1f1e8_1f1fd', '1f1e8_1f1fe', '1f1e8_1f1ff', '1f1e9_1f1ea',
+    '1f1e9_1f1ef', '1f1e9_1f1f0', '1f1e9_1f1f2', '1f1e9_1f1f4', '1f1e9_1f1ff', '1f1ea_1f1e8', '1f1ea_1f1ea',
+    '1f1ea_1f1ec', '1f1ea_1f1ed', '1f1ea_1f1f7', '1f1ea_1f1f8', '1f1ea_1f1f9', '1f1ea_1f1fa', '1f1eb_1f1ee',
+    '1f1eb_1f1ef', '1f1eb_1f1f0', '1f1eb_1f1f2', '1f1eb_1f1f4', '1f1eb_1f1f7', '1f1ec_1f1e6', '1f1ec_1f1e7',
+    '1f1ec_1f1e9', '1f1ec_1f1ea', '1f1ec_1f1eb', '1f1ec_1f1ec', '1f1ec_1f1ed', '1f1ec_1f1ee', '1f1ec_1f1f1',
+    '1f1ec_1f1f2', '1f1ec_1f1f3', '1f1ec_1f1f5', '1f1ec_1f1f6', '1f1ec_1f1f7', '1f1ec_1f1f8', '1f1ec_1f1f9',
+    '1f1ec_1f1fa', '1f1ec_1f1fc', '1f1ec_1f1fe', '1f1ed_1f1f0', '1f1ed_1f1f3', '1f1ed_1f1f7', '1f1ed_1f1f9',
     '1f1ed_1f1fa', '1f1ee_1f1e8', '1f1ee_1f1e9', '1f1ee_1f1ea', '1f1ee_1f1f1', '1f1ee_1f1f2', '1f1ee_1f1f3',
     '1f1ee_1f1f4', '1f1ee_1f1f6', '1f1ee_1f1f7', '1f1ee_1f1f8', '1f1ee_1f1f9', '1f1ef_1f1ea', '1f1ef_1f1f2',
     '1f1ef_1f1f4', '1f1ef_1f1f5', '1f1f0_1f1ea', '1f1f0_1f1ec', '1f1f0_1f1ed', '1f1f0_1f1ee', '1f1f0_1f1f2',
     '1f1f0_1f1f3', '1f1f0_1f1f5', '1f1f0_1f1f7', '1f1f0_1f1fc', '1f1f0_1f1fe', '1f1f0_1f1ff', '1f1f1_1f1e6',
     '1f1f1_1f1e7', '1f1f1_1f1e8', '1f1f1_1f1ee', '1f1f1_1f1f0', '1f1f1_1f1f7', '1f1f1_1f1f8', '1f1f1_1f1f9',
     '1f1f1_1f1fa', '1f1f1_1f1fb', '1f1f1_1f1fe', '1f1f2_1f1e6', '1f1f2_1f1e8', '1f1f2_1f1e9', '1f1f2_1f1ea',
-    '1f1f2_1f1eb', '1f1f2_1f1ec', '1f1f2_1f1ed', '1f1f2_1f1f0', '1f1f2_1f1f1', '1f1f2_1f1f2', '1f1f2_1f1f3',
-    '1f1f2_1f1f4', '1f1f2_1f1f5', '1f1f2_1f1f6', '1f1f2_1f1f7', '1f1f2_1f1f8', '1f1f2_1f1f9', '1f1f2_1f1fa',
-    '1f1f2_1f1fb', '1f1f2_1f1fc', '1f1f2_1f1fd', '1f1f2_1f1fe', '1f1f2_1f1ff', '1f1f3_1f1e6', '1f1f3_1f1e8',
-    '1f1f3_1f1ea', '1f1f3_1f1eb', '1f1f3_1f1ec', '1f1f3_1f1ee', '1f1f3_1f1f1', '1f1f3_1f1f4', '1f1f3_1f1f5',
-    '1f1f3_1f1f7', '1f1f3_1f1fa', '1f1f3_1f1ff', '1f1f4_1f1f2', '1f1f5_1f1e6', '1f1f5_1f1ea', '1f1f5_1f1eb',
-    '1f1f5_1f1ec', '1f1f5_1f1ed', '1f1f5_1f1f0', '1f1f5_1f1f1', '1f1f5_1f1f2', '1f1f5_1f1f3', '1f1f5_1f1f7',
-    '1f1f5_1f1f8', '1f1f5_1f1f9', '1f1f5_1f1fc', '1f1f5_1f1fe', '1f1f6_1f1e6', '1f1f7_1f1ea', '1f1f7_1f1f4',
-    '1f1f7_1f1f8', '1f1f7_1f1fa', '1f1f7_1f1fc', '1f1f8_1f1e6', '1f1f8_1f1e7', '1f1f8_1f1e8', '1f1f8_1f1e9',
-    '1f1f8_1f1ea', '1f1f8_1f1ec', '1f1f8_1f1ed', '1f1f8_1f1ee', '1f1f8_1f1ef', '1f1f8_1f1f0', '1f1f8_1f1f1',
-    '1f1f8_1f1f2', '1f1f8_1f1f3', '1f1f8_1f1f4', '1f1f8_1f1f7', '1f1f8_1f1f8', '1f1f8_1f1f9', '1f1f8_1f1fb',
-    '1f1f8_1f1fd', '1f1f8_1f1fe', '1f1f8_1f1ff', '1f1f9_1f1e6', '1f1f9_1f1e8', '1f1f9_1f1e9', '1f1f9_1f1eb',
-    '1f1f9_1f1ec', '1f1f9_1f1ed', '1f1f9_1f1ef', '1f1f9_1f1f0', '1f1f9_1f1f1', '1f1f9_1f1f2', '1f1f9_1f1f3',
-    '1f1f9_1f1f4', '1f1f9_1f1f7', '1f1f9_1f1f9', '1f1f9_1f1fb', '1f1f9_1f1fc', '1f1f9_1f1ff', '1f1fa_1f1e6',
-    '1f1fa_1f1ec', '1f1fa_1f1f2', '1f1fa_1f1f3', '1f1fa_1f1f8', '1f1fa_1f1fe', '1f1fa_1f1ff', '1f1fb_1f1e6',
-    '1f1fb_1f1e8', '1f1fb_1f1ea', '1f1fb_1f1ec', '1f1fb_1f1ee', '1f1fb_1f1fa', '1f1fc_1f1eb', '1f1fc_1f1f8',
-    '1f1fd_1f1f0', '1f1fe_1f1ea', '1f1fe_1f1f9', '1f1ff_1f1e6', '1f1ff_1f1f2', '1f1ff_1f1fc',
+    '1f1f2_1f1ec', '1f1f2_1f1ed', '1f1f2_1f1f0', '1f1f2_1f1f1', '1f1f2_1f1f2', '1f1f2_1f1f3', '1f1f2_1f1f4',
+    '1f1f2_1f1f5', '1f1f2_1f1f7', '1f1f2_1f1f8', '1f1f2_1f1f9', '1f1f2_1f1fa', '1f1f2_1f1fb', '1f1f2_1f1fc',
+    '1f1f2_1f1fd', '1f1f2_1f1fe', '1f1f2_1f1ff', '1f1f3_1f1e6', '1f1f3_1f1e8', '1f1f3_1f1ea', '1f1f3_1f1eb',
+    '1f1f3_1f1ec', '1f1f3_1f1ee', '1f1f3_1f1f1', '1f1f3_1f1f4', '1f1f3_1f1f5', '1f1f3_1f1f7', '1f1f3_1f1fa',
+    '1f1f3_1f1ff', '1f1f4_1f1f2', '1f1f5_1f1e6', '1f1f5_1f1ea', '1f1f5_1f1eb', '1f1f5_1f1ec', '1f1f5_1f1ed',
+    '1f1f5_1f1f0', '1f1f5_1f1f1', '1f1f5_1f1f2', '1f1f5_1f1f3', '1f1f5_1f1f7', '1f1f5_1f1f8', '1f1f5_1f1f9',
+    '1f1f5_1f1fc', '1f1f5_1f1fe', '1f1f6_1f1e6', '1f1f7_1f1f4', '1f1f7_1f1f8', '1f1f7_1f1fa', '1f1f7_1f1fc',
+    '1f1f8_1f1e6', '1f1f8_1f1e7', '1f1f8_1f1e8', '1f1f8_1f1e9', '1f1f8_1f1ea', '1f1f8_1f1ec', '1f1f8_1f1ed',
+    '1f1f8_1f1ee', '1f1f8_1f1f0', '1f1f8_1f1f1', '1f1f8_1f1f2', '1f1f8_1f1f3', '1f1f8_1f1f4', '1f1f8_1f1f7',
+    '1f1f8_1f1f8', '1f1f8_1f1f9', '1f1f8_1f1fb', '1f1f8_1f1fd', '1f1f8_1f1fe', '1f1f8_1f1ff', '1f1f9_1f1e6',
+    '1f1f9_1f1e8', '1f1f9_1f1e9', '1f1f9_1f1ec', '1f1f9_1f1ed', '1f1f9_1f1ef', '1f1f9_1f1f0', '1f1f9_1f1f1',
+    '1f1f9_1f1f2', '1f1f9_1f1f3', '1f1f9_1f1f4', '1f1f9_1f1f7', '1f1f9_1f1f9', '1f1f9_1f1fb', '1f1f9_1f1fc',
+    '1f1f9_1f1ff', '1f1fa_1f1e6', '1f1fa_1f1ec', '1f1fa_1f1f3', '1f1fa_1f1f8', '1f1fa_1f1fe', '1f1fa_1f1ff',
+    '1f1fb_1f1e6', '1f1fb_1f1e8', '1f1fb_1f1ea', '1f1fb_1f1ec', '1f1fb_1f1ee', '1f1fb_1f1fa', '1f1fc_1f1eb',
+    '1f1fc_1f1f8', '1f1fd_1f1f0', '1f1fe_1f1ea', '1f1fe_1f1f9', '1f1ff_1f1e6', '1f1ff_1f1f2', '1f1ff_1f1fc',
     '1f3f4_e0067_e0062_e0065_e006e_e0067_e007f', '1f3f4_e0067_e0062_e0073_e0063_e0074_e007f',
     '1f3f4_e0067_e0062_e0077_e006c_e0073_e007f',
   ] },
+];
+
+/**
+ * Flags still accepted (one sent before stays a sticker that draws) but no longer offered in the panel. From Noto Emoji's own tables
+ * (commit 99701e0): `emoji_aliases.txt` draws the first eight with another region's flag, so they showed twice ("two United States");
+ * `unknown_flag_aliases.txt` lists the last five as flags Noto explicitly omits (its font draws an unknown flag), where the pictures here
+ * were local or unofficial ones. The server keeps the same list (Chat/Stickers.cs, NotOffered).
+ */
+export const NOT_OFFERED: readonly string[] = [
+  '1f1e7_1f1fb',   // BV: the same picture as NO
+  '1f1e8_1f1f5',   // CP: the same picture as FR
+  '1f1e9_1f1ec',   // DG: the same picture as IO
+  '1f1ea_1f1e6',   // EA: the same picture as ES
+  '1f1ed_1f1f2',   // HM: the same picture as AU
+  '1f1f2_1f1eb',   // MF: the same picture as FR
+  '1f1f8_1f1ef',   // SJ: the same picture as NO
+  '1f1fa_1f1f2',   // UM: the same picture as US
+  '1f1e7_1f1f1',   // BL
+  '1f1e7_1f1f6',   // BQ
+  '1f1f2_1f1f6',   // MQ
+  '1f1f7_1f1ea',   // RE
+  '1f1f9_1f1eb',   // TF
 ];
 
 /** Every sticker, pack after pack. */
