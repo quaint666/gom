@@ -1,26 +1,28 @@
 # Next session: research and plan
 
-Written 2026-11-24, at the end of the session that built PRs #46 to #59. Nothing here is built yet. Claims are marked
+Written 2026-11-24, at the end of the session that built PRs #46 to #59; updated 2026-11-25 after the small items were built (sections 1 and 2 say which). Sections 3 to 6 are still plan only: nothing in them is built. Claims are marked
 **[verified]** (seen in the code or real output), **[stated]** (a source says so; link given), or **[inferred]** (reasoned, not tried).
 Search results were read as summaries, not as the full pages, so the sources are leads to confirm before building.
 
 ## 1. Where things stand
 
 - Merged: the 12-item stack (#46 to #56), the install button (#57), the attach button hidden when uploads are off (#58), and the screenshot fixes (#59).
-- Uploads are on in production and in staging. Link previews are off in both until the container-to-host network check is done (operations side).
-- Not tried on a real phone: PWA install through the new button, the keyboard and blank-strip fix (the page itself cannot scroll now), the sheet animations.
-- Known limits: the invite link is shown once; forwarding copies words only; the side panel lists only loaded media; no update prompt for a new service worker.
+- Uploads are on in production and in staging. Link previews were off in both; they are removed (#61).
+- Tried on a real phone by H on 2026-11-25, no errors or visual bugs: PWA install through the button, the keyboard and blank-strip fix, the sheet animations. **[stated by H]**
+- Open pull requests of 2026-11-25, one per change, all from `main`: #61 remove link previews, #62 side panel media from the server, #63 forwarding carries pictures and files, #64 per-socket `sync` limit, #65 update prompt, #66 fingerprinted file names, #67 arrow to the end of the conversation, and the one that carries this file.
+- Known limits: the invite link is shown once. The others listed on 2026-11-24 (forwarding copies words only, the side panel lists only loaded media, no update prompt) are what #63, #62 and #65 fix.
 
 ## 2. Work queue (agreed order)
 
 Small items first, each its own PR:
 
-1. Side-panel photos and files from a server list (not just what is loaded).
-2. An update prompt when a new version is deployed.
-3. Forwarding carries pictures and files.
-4. A per-socket limit on `sync` requests.
-5. Fingerprinted static file names (safer caching than today's network-first rule).
-6. README updates: uploads, previews off by default, the proxy body-size limit, the backup note.
+1. Side-panel photos and files from a server list (not just what is loaded): #62
+2. An update prompt when a new version is deployed: #65
+3. Forwarding carries pictures and files: #63
+4. A per-socket limit on `sync` requests: #64
+5. Fingerprinted static file names (safer caching than today's network-first rule): #66
+6. README updates: uploads, the proxy body-size limit, the backup note: this pull request (previews are gone, so no note about them).
+7. Added by H: an arrow in the corner that goes to the end of the conversation: #67.
 
 Then the larger items below. Optional, later: a load test at the 256 MB limit with several people uploading; a second full review of the repo.
 
@@ -47,7 +49,7 @@ Then the larger items below. Optional, later: a load test at the 256 MB limit wi
 - A `push_subscriptions` table: user, endpoint, the two keys, user agent label, created and last-used times; unique on endpoint.
 - Subscribing and unsubscribing are REST calls with the Origin check. A push that comes back 404 or 410 deletes the subscription.
 - Who is notified: members of the conversation other than the sender, not muted, not hidden, and (decision 2) without a live socket. Joined-sequence rules apply as everywhere (nobody is told about what they may not read).
-- Sending happens after the commit, off the request path, through a bounded queue and a background worker, like link previews. A slow or failing push service never delays a send. [inferred, follows the existing pattern]
+- Sending happens after the commit, off the request path, through a bounded queue and a background worker (the shape link previews had before #61 removed them; it is in the git history). A slow or failing push service never delays a send. [inferred, follows the existing pattern]
 - Notices (added, removed, renamed) do not notify. Edits and reactions: not in the first version.
 - Tapping the notification opens the conversation; if a Gom window is already open, focus it.
 - Tests: encryption round trip, a subscription of someone removed from the group gets nothing, a muted conversation gets nothing, a dead endpoint is deleted, a failing push service does not fail the send. Each guard broken on purpose.
@@ -66,6 +68,7 @@ Lean for Gom:
 - Durations 1 hour, 8 hours, 1 day, 1 week, always (Signal's set).
 - Stored on the server as `muted_until` per (user, conversation), so every device of the person obeys it, and push respects it without the client's help.
 - A muted conversation still counts unread messages and still updates live; it only sends no push. A small muted icon in the list.
+- Today mute is a plain on/off per person and conversation: `PUT /api/conversations/{id}/mute` with `muted`, the `members.muted` column, a bell in the thread header and the side panel, tests in `MuteTests.cs`. **[verified in the code, 2026-11-25]** What is missing is the durations (a `muted_until`, with a migration) and the push that obeys it.
 - Set from the conversation's menu and from the info panel; unmuting is one tap.
 
 ## 5. GIFs and stickers
@@ -106,7 +109,10 @@ Rehearse on a copy of a real dump before shipping, as with the earlier migration
 
 ## 7. Not verified yet
 
-- Anything on a real phone (see section 1).
-- Link previews on the real internet, IPv6-only sites, and a name answering with both public and private addresses.
+- Anything on a real phone beyond what section 1 lists as tried.
+- The open pull requests on a real phone: where the arrow to the end sits beside the "new messages" pill, the update bar, the side panel's "Xem thêm", forwarding a picture. None of them was looked at in a screenshot.
+- The migration `RemoveLinkPreviews` (#61) on a copy of a real dump; the migration is small and the empty-database tests apply it, but it was not rehearsed.
+- A real deploy of #65 and #66 together (the old hashed script should 404 and the bar should appear); `docker build` of #66 was run and the image checked, a deploy was not.
+- Forwarding a file near the largest allowed size (#63 copies it as a stream, so memory should not matter; that was not measured).
 - That the app can open a file restored from backup (no sign-in-free read path exists; the restore test proves only that the database and files agree).
 - Every claim in sections 3 to 5 marked **[stated]** or **[inferred]**.
