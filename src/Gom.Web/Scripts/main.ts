@@ -29,6 +29,7 @@ addEventListener('storage', (e) => { if (e.key === 'color-scheme') applyScheme(s
 const pusher = createPusher();
 const chatDeps = (): ChatDeps => ({
   clearNotifications: (conversation) => pusher.clear(conversation),
+  pusher,
   live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, handlers),
   nav: { path: () => location.pathname, push: (path) => history.pushState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) },
   now: () => new Date(),

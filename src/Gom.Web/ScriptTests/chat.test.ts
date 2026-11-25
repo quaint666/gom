@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { avatarTone, clock } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
+import type { Pusher, PushSupport } from '../Scripts/push.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
 import { mountChat, type ChatDeps, type OutboxItem } from '../Scripts/pages/chat.js';
 import { fail, fakeApi, fill, flush, ok, text } from './helpers.js';
@@ -39,7 +40,7 @@ interface Harness {
   notes: ReturnType<typeof vi.fn>;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown> } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(me)),
@@ -80,6 +81,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     coarsePointer: () => coarse.value,
     visible: () => visible.value,
     clearNotifications: notes,
+    ...(opts.pusher ? { pusher: opts.pusher } : {}),
   };
   mountChat(root, api, go, deps);
   return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes };
@@ -2082,6 +2084,76 @@ describe('chat: notifications on this device', () => {
     h.visible.value = true;
     document.dispatchEvent(new Event('visibilitychange'));
     expect(h.notes).toHaveBeenCalledWith(C2);
+  });
+});
+
+describe('chat: the offer to turn on notifications', () => {
+  const SUB = { endpoint: 'https://fcm.googleapis.com/fcm/send/x', keys: { p256dh: 'k', auth: 'a' } };
+  const device = (over: { support?: PushSupport; permission?: NotificationPermission; subscribe?: Pusher['subscribe'] } = {}) => ({
+    support: vi.fn(() => over.support ?? 'ok'), permission: vi.fn(() => over.permission ?? 'default'),
+    subscribe: vi.fn(over.subscribe ?? (async () => SUB)), current: vi.fn(async () => SUB), unsubscribe: vi.fn(async () => undefined), clear: vi.fn(),
+  });
+  const offered = (subscribed = false) => vi.fn(async () => ok({ key: 'SERVERKEY', subscribed, level: 'name' as const }));
+  const open = (pusher: Pusher | undefined, api: Record<string, unknown> = { pushState: offered() }) => start({ path: '/', chats: [chat(C1, 'Minh')], api, ...(pusher ? { pusher } : {}) });
+  const bar = () => root.querySelector('[data-push-banner]');
+  beforeEach(() => { try { localStorage.removeItem('gom-push-later'); } catch { /* none */ } });
+
+  it('offers it on a device that can have it, and turns it on from the tap', async () => {
+    const p = device();
+    const h = open(p);
+    await flush();
+    expect(text(bar()!)).toContain('Bật thông báo');
+    root.querySelector<HTMLButtonElement>('[data-push-yes]')!.click();
+    await flush();
+    expect(p.subscribe).toHaveBeenCalledWith('SERVERKEY');
+    expect(h.api.setPush).toHaveBeenCalledWith(SUB, 'name');
+    expect(bar()).toBeNull();
+  });
+
+  it('"Để sau" hides it on this device for good', async () => {
+    open(device());
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-push-later]')!.click();
+    await flush();
+    expect(bar()).toBeNull();
+    root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
+    open(device());
+    await flush();
+    expect(bar()).toBeNull();
+  });
+
+  it('is not offered where it cannot work or is already on', async () => {
+    for (const [p, api] of [
+      [undefined, { pushState: offered() }],
+      [device({ support: 'unsupported' }), { pushState: offered() }],
+      [device({ support: 'needs-home-screen' }), { pushState: offered() }],
+      [device({ permission: 'denied' }), { pushState: offered() }],
+      [device(), { pushState: offered(true) }],
+      [device(), { pushState: vi.fn(async () => fail('unknown', 404)) }],
+    ] as const) {
+      root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
+      open(p as Pusher | undefined, api);
+      await flush();
+      expect(bar()).toBeNull();
+    }
+  });
+
+  it('goes away when the person says no to the browser, and says so when the browser fails', async () => {
+    const no = device({ subscribe: async () => 'denied' });
+    const h = open(no);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-push-yes]')!.click();
+    await flush();
+    expect(bar()).toBeNull();
+    expect(h.api.setPush).not.toHaveBeenCalled();
+
+    root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
+    open(device({ subscribe: async () => 'failed' }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-push-yes]')!.click();
+    await flush();
+    expect(text(bar()!)).toContain('Không bật được');
+    expect(root.querySelector('[data-push-yes]')).toBeNull();
   });
 });
 
