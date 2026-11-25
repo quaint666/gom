@@ -30,6 +30,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("Animated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("animated");
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(100)

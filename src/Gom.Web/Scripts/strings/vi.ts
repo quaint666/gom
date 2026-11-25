@@ -119,6 +119,7 @@ export const vi = {
     pinLimit: (max: number) => `Chỉ ghim được tối đa ${max} tin nhắn. Hãy bỏ ghim một tin trước.`,
     invalidInvite: (days: number, people: number) => `Lời mời chỉ có hiệu lực từ 1 đến ${days} ngày và cho tối đa ${people} người.`,
     tooLarge: (picture: string, file: string) => `Tệp quá lớn (ảnh tối đa ${picture}, tệp tối đa ${file}).`,
+    animatedTooLarge: (size: string) => `Ảnh động quá lớn (tối đa ${size}).`,
     other: 'Có lỗi xảy ra. Hãy thử lại.',
     invalidLink: 'Liên kết này không dùng được nữa.',
     badOrigin: 'Gom không nhận yêu cầu này. Hãy tải lại trang rồi thử lại.',

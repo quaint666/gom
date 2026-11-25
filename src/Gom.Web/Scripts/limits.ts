@@ -6,6 +6,8 @@ export interface Limits {
   attachments: number;
   imageBytes: number;
   fileBytes: number;
+  /** A moving picture (GIF), kept as sent. */
+  animatedBytes: number;
   /** What one person may upload in any 24 hours, as stored. 0: no limit. */
   uploadDailyBytes: number;
   /** Pinned messages in one conversation. */

@@ -12,6 +12,14 @@ public sealed class UploadOptions
     /// <summary>How many pictures and files one message may carry.</summary>
     public int MaxPerMessage { get; set; } = 10;
 
+    /// <summary>
+    /// A moving picture (a GIF, or a WebP with frames) is kept as it was sent, so it has its own limits: its size in bytes, its frames,
+    /// and its pixels counted over every frame (each frame is decoded once to check it is whole).
+    /// </summary>
+    public long MaxAnimatedBytes { get; set; } = 8 * 1024 * 1024;
+    public int MaxFrames { get; set; } = 1000;
+    public long MaxAnimatedPixels { get; set; } = 150_000_000;
+
     /// <summary>The largest file accepted, in bytes. Files are kept as they are.</summary>
     public long MaxFileBytes { get; set; } = 25 * 1024 * 1024;
 

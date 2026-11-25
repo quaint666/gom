@@ -17,8 +17,13 @@ public class Attachment
     public AttachmentKind Kind { get; set; }
     /// <summary>The name to show and to save under: the uploaded one, cleaned.</summary>
     public string Name { get; set; } = "";
-    /// <summary>What is served: image/webp for a picture, a download type for a file (never what the sender claimed).</summary>
+    /// <summary>
+    /// What is served: image/webp for a picture, image/gif or image/webp for a moving one (kept as sent), a download type for a file
+    /// (never what the sender claimed).
+    /// </summary>
     public string ContentType { get; set; } = "";
+    /// <summary>A moving picture (a GIF, or a WebP with frames), kept as it was sent; its small version is its first frame, still.</summary>
+    public bool Animated { get; set; }
     /// <summary>Bytes on disk (for a picture, after it was made smaller).</summary>
     public long Size { get; set; }
     public int? Width { get; set; }

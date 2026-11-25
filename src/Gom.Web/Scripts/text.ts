@@ -57,6 +57,7 @@ export function errorText(failure: Failure): string {
     case 'missing_fields': return say.errors.missingFields;
     case 'invalid_invite': return say.errors.invalidInvite(l.inviteDays, l.inviteUses);
     case 'too_large': return say.errors.tooLarge(formatSize(l.imageBytes), formatSize(l.fileBytes));
+    case 'animated_too_large': return say.errors.animatedTooLarge(formatSize(l.animatedBytes));
     case 'image_dimensions': return say.errors.imageDimensions;
     case 'invalid_image': return say.errors.invalidImage;
     case 'busy': return say.errors.busy;

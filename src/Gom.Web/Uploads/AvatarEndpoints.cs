@@ -51,6 +51,8 @@ public static class AvatarEndpoints
         if (received is null) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
         if (received.Length == 0) return Error(StatusCodes.Status400BadRequest, "empty_upload");
 
+        // A profile picture is a still JPEG, PNG or WebP; a GIF is turned away rather than frozen on its first frame.
+        if (ImageProcessor.LooksLikeGif(received)) return Error(StatusCodes.Status422UnprocessableEntity, "invalid_image");
         var planned = ImageProcessor.Plan(received, o);
         if (planned.Problem is { } early) return Error(StatusCodes.Status422UnprocessableEntity, early == ImageProblem.TooManyPixels ? "image_dimensions" : "invalid_image");
         var plan = planned.Plan!;

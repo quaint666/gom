@@ -43,6 +43,7 @@ public static class Pages
         attachments = uploads.MaxPerMessage,
         imageBytes = uploads.MaxImageBytes,
         fileBytes = uploads.MaxFileBytes,
+        animatedBytes = uploads.MaxAnimatedBytes,
         uploadDailyBytes = uploads.DailyBytes,
         pins = chat.MaxPins,
         nameChars = DisplayName.MaxLength,

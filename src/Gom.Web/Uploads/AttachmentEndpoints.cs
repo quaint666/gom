@@ -10,8 +10,11 @@ namespace Gom.Web.Uploads;
 /// <summary>Uploading a picture or a file to a conversation, and fetching it again. Putting it in a message is a separate step.</summary>
 public static class AttachmentEndpoints
 {
-    /// <summary>What an upload turned into, as the browser sees it. <see cref="Removed"/>: the owner trimmed it; only a placeholder is shown.</summary>
-    public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height, bool Removed = false);
+    /// <summary>
+    /// What an upload turned into, as the browser sees it. <see cref="Removed"/>: the owner trimmed it; only a placeholder is shown.
+    /// <see cref="Animated"/>: a moving picture, whose own address is the moving one and whose small version is still.
+    /// </summary>
+    public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height, bool Removed = false, bool Animated = false);
 
     /// <summary>Which picture or file to copy into another conversation.</summary>
     public sealed record CopyRequest(Guid? From);
@@ -27,7 +30,7 @@ public static class AttachmentEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    public static AttachmentDto ToDto(Attachment a) => new(a.Id, a.Kind == AttachmentKind.Image ? "image" : "file", a.Name, a.Size, a.Width, a.Height, a.RemovedAt != null);
+    public static AttachmentDto ToDto(Attachment a) => new(a.Id, a.Kind == AttachmentKind.Image ? "image" : "file", a.Name, a.Size, a.Width, a.Height, a.RemovedAt != null, a.Animated);
 
     public static void MapAttachments(this IEndpointRouteBuilder app)
     {
@@ -102,7 +105,7 @@ public static class AttachmentEndpoints
         var copy = new Attachment
         {
             Id = Guid.NewGuid(), ConversationId = id, UploaderId = me, Kind = source.Kind, Name = source.Name, ContentType = source.ContentType,
-            Size = source.Size, Width = source.Width, Height = source.Height, CreatedAt = clock.GetUtcNow(),
+            Size = source.Size, Width = source.Width, Height = source.Height, Animated = source.Animated, CreatedAt = clock.GetUtcNow(),
         };
         var store = services.GetRequiredService<IBlobStore>();
         try
@@ -173,7 +176,28 @@ public static class AttachmentEndpoints
         var attachment = new Attachment { Id = attachmentId, ConversationId = id, UploaderId = me, CreatedAt = now };
         byte[] main; byte[]? thumb = null;
 
-        if (ImageProcessor.LooksLikeImage(received))
+        var moving = ImageProcessor.PlanAnimated(received, o);
+        if (moving.Animated)
+        {
+            // Kept as it was sent (nothing here can write a moving picture again): every frame is decoded once to prove it is whole and
+            // within its limits, and the first frame, still, is its small version.
+            if (received.Length > o.MaxAnimatedBytes) return Error(StatusCodes.Status413PayloadTooLarge, "animated_too_large");
+            if (moving.Problem is { } early) return Error(StatusCodes.Status422UnprocessableEntity, early == ImageProblem.TooManyPixels ? "image_dimensions" : "invalid_image");
+            var plan = moving.Plan!;
+            if (!memory.Images.Fits(plan.Cost)) return Error(StatusCodes.Status422UnprocessableEntity, "image_dimensions");
+            using var imageHold = await memory.Images.EnterAsync(plan.Cost, wait);
+            if (imageHold is null) return Error(StatusCodes.Status503ServiceUnavailable, "busy");
+            var result = await images.RunAsync(() => ImageProcessor.CheckAnimated(received, plan, o));
+            if (result is null) return Error(StatusCodes.Status503ServiceUnavailable, "busy");
+            if (result.Still is not { } still) return Error(StatusCodes.Status422UnprocessableEntity, "invalid_image");
+            main = received; thumb = still;
+            attachment.Kind = AttachmentKind.Image;
+            attachment.Animated = true;
+            attachment.Name = clean;
+            attachment.ContentType = plan.Gif ? "image/gif" : "image/webp";
+            attachment.Width = plan.Width; attachment.Height = plan.Height;
+        }
+        else if (ImageProcessor.LooksLikeImage(received))
         {
             if (received.Length > o.MaxImageBytes) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
             var planned = ImageProcessor.Plan(received, o);
@@ -266,7 +290,7 @@ public static class AttachmentEndpoints
         if (picture)
         {
             http.Response.Headers.CacheControl = "private, max-age=86400";
-            return Results.Stream(stream, "image/webp", entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{id}{(thumb ? "t" : "")}\""), enableRangeProcessing: true);
+            return Results.Stream(stream, thumb ? "image/webp" : a.ContentType, entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{id}{(thumb ? "t" : "")}\""), enableRangeProcessing: true);
         }
         return Results.Stream(stream, a.ContentType, fileDownloadName: a.Name, enableRangeProcessing: true);
     }
