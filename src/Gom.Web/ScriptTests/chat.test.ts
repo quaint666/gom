@@ -4296,6 +4296,14 @@ describe('chat: stickers', () => {
     expect(text(root.querySelector(`[data-chat="${C1}"] .pv`)!)).toBe('Đã gửi một nhãn dán');
   });
 
+  it('says so in the list too for a sticker that arrives live', async () => {
+    const h = start({ chats: [withLast(msg(1, 'minh'))] });
+    await flush();
+    h.handlers().event(C1, created(sticker(2, 'minh', '1f44b')));
+    await flush();
+    expect(text(root.querySelector(`[data-chat="${C1}"] .pv`)!)).toBe('Đã gửi một nhãn dán');
+  });
+
   it('passes a sticker on as a sticker', async () => {
     const sendSticker = echo();
     const send = vi.fn();
