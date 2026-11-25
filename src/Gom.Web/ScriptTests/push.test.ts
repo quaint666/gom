@@ -38,7 +38,8 @@ describe('api: notifications', () => {
 });
 
 describe('settings: notifications', () => {
-  const state = (subscribed = false, level = 'name') => vi.fn(async () => ok({ key: 'SERVERKEY', subscribed, level }));
+  // The server offers words for a device not yet registered (the default for new devices).
+  const state = (subscribed = false, level = 'words') => vi.fn(async () => ok({ key: 'SERVERKEY', subscribed, level }));
   const api = (extra = {}) => fakeApi({ me: vi.fn(async () => ok(me)), sessions: vi.fn(async () => ok([])), pushState: state(), ...extra });
   const card = () => root.querySelector('[data-push]');
   const toggle = async (on: boolean) => {
@@ -61,14 +62,16 @@ describe('settings: notifications', () => {
     await flush();
     expect(root.querySelector<HTMLInputElement>('[data-push-switch]')!.checked).toBe(false);
     expect(root.querySelector('[data-push-level]')).toBeNull();
-    expect(text(card()!)).toContain('không bao giờ hiện nội dung');
+    expect(root.querySelector('[data-push-words-note]')).toBeNull();
 
     await toggle(true);
     expect(p.subscribe).toHaveBeenCalledWith('SERVERKEY');
-    expect(a.setPush).toHaveBeenCalledWith(SUB, 'name');
+    expect(a.setPush).toHaveBeenCalledWith(SUB, 'words');
     expect(root.querySelector<HTMLInputElement>('[data-push-switch]')!.checked).toBe(true);
     expect(text(root.querySelector('[data-push-status]')!)).toContain('Đã bật');
     expect(root.querySelector('[data-push-level]')).not.toBeNull();
+    expect(root.querySelector<HTMLInputElement>('#push-words')!.checked).toBe(true);
+    expect(text(root.querySelector('[data-push-words-note]')!)).toContain('màn hình khóa');
   });
 
   it('says so and registers nothing when the person does not allow it, or the browser fails', async () => {
@@ -95,8 +98,8 @@ describe('settings: notifications', () => {
     expect(root.querySelector('[data-push-level]')).toBeNull();
   });
 
-  it('changes how much a notification says, for this device', async () => {
-    const a = api({ pushState: state(true) });
+  it('changes how much a notification says, for this device (one registered before words were offered keeps "name")', async () => {
+    const a = api({ pushState: state(true, 'name') });
     mountSettings(root, a, vi.fn(), undefined, fakePusher());
     await flush();
     expect(root.querySelector<HTMLInputElement>('#push-name')!.checked).toBe(true);
@@ -207,7 +210,12 @@ function worker(windows: Array<{ url: string; focus: () => Promise<unknown>; nav
   const self = {
     location: { origin: 'https://gom.test' },
     addEventListener: (type: string, fn: (e: unknown) => void) => { listeners[type] = fn; },
-    registration: { showNotification: async (title: string, options: Record<string, unknown>) => { shown.push({ title, options }); } },
+    registration: {
+      showNotification: async (title: string, options: Record<string, unknown>) => { shown.push({ title, options }); },
+      // What is still on screen: the last one shown for each tag.
+      getNotifications: async ({ tag }: { tag: string }) => shown.filter((s) => s.options['tag'] === tag).slice(-1)
+        .map((s) => ({ title: s.title, body: s.options['body'], data: s.options['data'] })),
+    },
     clients: { matchAll: async () => windows, openWindow, claim: async () => undefined },
   };
   const caches = {
@@ -331,5 +339,40 @@ describe('the "no connection" page', () => {
     const { location, listeners } = run();
     listeners['online']!();
     expect(location.reload).toHaveBeenCalledOnce();
+  });
+});
+
+describe('service worker: a message taken back', () => {
+  const C = '3f2b8c1e-0000-4000-8000-000000000001';
+  const M1 = '9a000000-0000-4000-8000-000000000001';
+  const M2 = '9a000000-0000-4000-8000-000000000002';
+  const words = (m: string, body: string) => ({ data: { json: () => ({ c: C, m, title: 'Minh', body }) } });
+  const recalled = (m: string) => ({ data: { json: () => ({ c: C, m, title: 'Minh', body: 'Tin nhắn đã được thu hồi', recalled: true }) } });
+
+  it('keeps the message id with its notification', async () => {
+    const w = worker();
+    await w.fire('push', words(M1, 'mật khẩu wifi là 1234'));
+    expect(w.shown[0]!.options['data']).toEqual({ url: `/c/${C}`, m: M1 });
+  });
+
+  it('replaces the words of its notification, quietly', async () => {
+    const w = worker();
+    await w.fire('push', words(M1, 'mật khẩu wifi là 1234'));
+    await w.fire('push', recalled(M1));
+    expect(w.shown[1]).toEqual({ title: 'Minh', options: expect.objectContaining({ body: 'Tin nhắn đã được thu hồi', tag: C, renotify: false, silent: true }) });
+  });
+
+  it('leaves a newer message\'s notification as it is, shown again without a sound', async () => {
+    const w = worker();
+    await w.fire('push', words(M1, 'cũ'));
+    await w.fire('push', words(M2, 'mới hơn'));
+    await w.fire('push', recalled(M1));
+    expect(w.shown[2]).toEqual({ title: 'Minh', options: expect.objectContaining({ body: 'mới hơn', tag: C, silent: true, renotify: false, data: { url: `/c/${C}`, m: M2 } }) });
+  });
+
+  it('with nothing shown for the conversation, still shows something, quietly', async () => {
+    const w = worker();
+    await w.fire('push', recalled(M1));
+    expect(w.shown).toEqual([{ title: 'Minh', options: expect.objectContaining({ body: 'Tin nhắn đã được thu hồi', silent: true, renotify: false }) }]);
   });
 });

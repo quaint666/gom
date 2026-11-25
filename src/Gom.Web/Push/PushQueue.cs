@@ -4,7 +4,12 @@ using Microsoft.Extensions.Options;
 namespace Gom.Web.Push;
 
 /// <summary>A message that may need notifications: what is needed to word them, and who wrote it (who is not told).</summary>
-public sealed record PushJob(Guid ConversationId, long Seq, Guid SenderId, string SenderName, int Images, int Files, bool Sticker = false);
+/// <summary>
+/// One message to tell people about: who wrote, what kind it is, its words (already cut to a snippet) for the devices that show
+/// them, and its id. <paramref name="Recalled"/>: it was taken back, so a notification showing its words is replaced.
+/// </summary>
+public sealed record PushJob(Guid ConversationId, long Seq, Guid SenderId, string SenderName, int Images, int Files, bool Sticker = false,
+    string Text = "", Guid MessageId = default, bool Recalled = false);
 
 /// <summary>
 /// Messages waiting for their notifications, handed over after the commit. Bounded: when it is full a notification is dropped, never

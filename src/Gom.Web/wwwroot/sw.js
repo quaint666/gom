@@ -46,20 +46,34 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-// A notification. The server encrypts for this browser only, and writes the words (who and where, and the kind of message, never
-// its words). Every push must show something, or a browser may take the permission away, so a push that cannot be read still
-// says "Tin nhắn mới". One conversation keeps one notification: a new one replaces it (tag) and makes a sound again (renotify).
+// A notification. The server encrypts for this browser only, and writes the words (who and where, the kind of message, and its
+// words where this device chose them). Every push must show something, or a browser may take the permission away, so a push that
+// cannot be read still says "Tin nhắn mới". One conversation keeps one notification: a new one replaces it (tag) and makes a
+// sound again (renotify).
+const ICON = '/icons/icon-192.png';
 self.addEventListener('push', (event) => {
   let note = {};
   try { note = event.data ? event.data.json() : {}; } catch { note = {}; }
   const conversation = typeof note.c === 'string' ? note.c : '';
-  event.waitUntil(self.registration.showNotification(typeof note.title === 'string' && note.title ? note.title : 'Gom', {
-    body: typeof note.body === 'string' && note.body ? note.body : 'Tin nhắn mới',
-    tag: conversation || 'gom',
-    renotify: true,
-    icon: '/icons/icon-192.png',
-    data: { url: /^[0-9a-f-]{36}$/i.test(conversation) ? `/c/${conversation}` : '/' },
-  }));
+  const message = typeof note.m === 'string' && /^[0-9a-f-]{36}$/i.test(note.m) ? note.m : '';
+  const tag = conversation || 'gom';
+  const title = typeof note.title === 'string' && note.title ? note.title : 'Gom';
+  const body = typeof note.body === 'string' && note.body ? note.body : 'Tin nhắn mới';
+  const url = /^[0-9a-f-]{36}$/i.test(conversation) ? `/c/${conversation}` : '/';
+  const data = message ? { url, m: message } : { url };
+  if (note.recalled === true) {
+    // A message was taken back. Its notification, if still shown, now says so, without a sound. A newer notification of the
+    // conversation stays as it is (shown again, unchanged and silent, since every push must show something); with none, the quiet line.
+    event.waitUntil((async () => {
+      const shown = (await self.registration.getNotifications({ tag }))[0];
+      if (shown && shown.data?.m !== message) {
+        return self.registration.showNotification(shown.title, { body: shown.body, tag, renotify: false, silent: true, icon: ICON, data: shown.data });
+      }
+      return self.registration.showNotification(title, { body, tag, renotify: false, silent: true, icon: ICON, data });
+    })());
+    return;
+  }
+  event.waitUntil(self.registration.showNotification(title, { body, tag, renotify: true, icon: ICON, data }));
 });
 
 // A tap opens its conversation: in a Gom window already open (brought to the front), or a new one.
