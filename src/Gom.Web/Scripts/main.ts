@@ -10,6 +10,7 @@ import { mountJoin } from './pages/join.js';
 import { mountOwner } from './pages/owner.js';
 import { mountReset } from './pages/reset.js';
 import { mountSettings } from './pages/settings.js';
+import { createPusher } from './push.js';
 import { mountSignIn } from './pages/signin.js';
 import { applyScheme, storedScheme } from './theme.js';
 import { showUpdateBar, watchForUpdate } from './update.js';
@@ -25,7 +26,9 @@ const token = decodeURIComponent(location.pathname.split('/')[2] ?? '');
 // Another tab changed the colour scheme: follow it.
 addEventListener('storage', (e) => { if (e.key === 'color-scheme') applyScheme(storedScheme()); });
 
+const pusher = createPusher();
 const chatDeps = (): ChatDeps => ({
+  clearNotifications: (conversation) => pusher.clear(conversation),
   live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, handlers),
   nav: { path: () => location.pathname, push: (path) => history.pushState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) },
   now: () => new Date(),
@@ -51,7 +54,7 @@ if (root) {
     case 'join': mountJoin(root, api, go, token); break;
     case 'reset': mountReset(root, api, go, token); break;
     case 'home': mountChat(root, api, go, chatDeps()); break;
-    case 'settings': mountSettings(root, api, go, installer); break;
+    case 'settings': mountSettings(root, api, go, installer, pusher); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go); break;

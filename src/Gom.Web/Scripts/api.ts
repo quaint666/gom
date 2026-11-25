@@ -1,3 +1,4 @@
+import type { DeviceSubscription } from './push.js';
 export type ErrorCode =
   | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
   | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
@@ -57,6 +58,9 @@ export interface ChatMessage { id: string; seq: number; conversationId: string; 
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
 export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'file' | null }
+/** How much a notification on this device says: who and where, or only "Tin nhắn mới". */
+export type PushLevel = 'name' | 'nothing';
+export interface PushState { key: string; subscribed: boolean; level: PushLevel }
 export interface Conversation {
   id: string; kind: 'direct' | 'group'; title: string | null; peer: (Person & { id: string }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
@@ -102,6 +106,10 @@ export interface Api {
   /** Makes this picture your profile picture (the server keeps a square from its middle); the answer is its id. */
   setAvatar(picture: Blob): Promise<Result<{ avatar: string }>>;
   removeAvatar(): Promise<Result<void>>;
+  /** The server's key for notifications and whether this device gets them; a failure (404) means push is off on this server. */
+  pushState(): Promise<Result<PushState>>;
+  setPush(subscription: DeviceSubscription, level: PushLevel): Promise<Result<void>>;
+  removePush(): Promise<Result<void>>;
   disableMember(gomId: string): Promise<Result<void>>;
   enableMember(gomId: string): Promise<Result<void>>;
   friends(): Promise<Result<FriendLists>>;
@@ -223,6 +231,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
     setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
     removeAvatar: () => call('DELETE', '/api/me/avatar'),
+    pushState: () => call('GET', '/api/push'),
+    setPush: (subscription, level) => call('PUT', '/api/push', { ...subscription, level }),
+    removePush: () => call('DELETE', '/api/push'),
     disableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/disable`),
     enableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/enable`),
     friends: () => call('GET', '/api/friends'),

@@ -36,6 +36,7 @@ interface Harness {
   coarse: { value: boolean };
   timers: { ms: number; fn: () => void; live: boolean }[];
   outbox: { items: OutboxItem[]; saves: number };
+  notes: ReturnType<typeof vi.fn>;
 }
 
 function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown> } = {}): Harness {
@@ -55,6 +56,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     push: vi.fn((p: string) => { nav.path = p; }),
     pop: () => popCallback(),
   };
+  const notes = vi.fn();
   const visible = { value: true };
   const coarse = { value: false };
   const go = vi.fn();
@@ -77,9 +79,10 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     newId: () => `new-${++n}`,
     coarsePointer: () => coarse.value,
     visible: () => visible.value,
+    clearNotifications: notes,
   };
   mountChat(root, api, go, deps);
-  return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox };
+  return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes };
 }
 
 const rows = () => [...root.querySelectorAll<HTMLElement>('[data-chat]')];
@@ -2059,6 +2062,26 @@ describe('chat: muting', () => {
     await flush();
     expect(bell().getAttribute('aria-pressed')).toBe('false');
     expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+});
+
+describe('chat: notifications on this device', () => {
+  const chats = [chat(C1, 'Minh', { lastSeq: 1 }), chat(C2, 'Lan', { lastSeq: 1 })];
+
+  it('closes a conversation\'s notifications when it is opened, and again when the page comes back on screen', async () => {
+    const h = start({ path: '/', chats, history: { [C1]: [msg(1, 'minh')], [C2]: [msg(1, 'minh', 'x', at(10, 1), C2)] }, api: {} });
+    await flush();
+    expect(h.notes).not.toHaveBeenCalled();
+    root.querySelector<HTMLAnchorElement>(`[data-chat="${C2}"] a, a[data-chat="${C2}"]`)!.click();
+    await flush();
+    expect(h.notes).toHaveBeenCalledWith(C2);
+    h.notes.mockClear();
+    h.visible.value = false;
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(h.notes).not.toHaveBeenCalled();
+    h.visible.value = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(h.notes).toHaveBeenCalledWith(C2);
   });
 });
 
