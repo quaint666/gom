@@ -13,11 +13,13 @@ import { mountSettings } from './pages/settings.js';
 import { mountStorage } from './pages/storage.js';
 import { createPusher } from './push.js';
 import { mountSignIn } from './pages/signin.js';
+import { mountSignUp } from './pages/signup.js';
 import { applyScheme, storedScheme } from './theme.js';
 import { showUpdateBar, watchForUpdate } from './update.js';
 
 const root = document.getElementById('app');
-const api = createApi();
+// A request to join that is still waiting is sent home, where the chat page shows its waiting screen.
+const api = createApi(undefined, undefined, () => { if (location.pathname !== '/') location.assign('/'); });
 // The browser offers to install the app once, early: listen on every page so the settings page can use it.
 const installer = createInstaller(window);
 const go = (path: string): void => location.assign(path);
@@ -54,6 +56,7 @@ if (root) {
   switch (document.body.dataset['page']) {
     case 'signin': mountSignIn(root, api, go, new URLSearchParams(location.search).get('next')); break;
     case 'join': mountJoin(root, api, go, token); break;
+    case 'signup': mountSignUp(root, api, go); break;
     case 'reset': mountReset(root, api, go, token); break;
     case 'home': mountChat(root, api, go, chatDeps()); break;
     case 'settings': mountSettings(root, api, go, installer, pusher); break;

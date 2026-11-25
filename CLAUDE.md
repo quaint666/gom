@@ -1,5 +1,5 @@
 # Gom
-A small invite-only web chat for family and friends, replacing Zalo, with message history on the server. ASP.NET Core 10 (Kestrel) with raw WebSockets (no SignalR), PostgreSQL 19, EF Core 10 + Npgsql; in the browser, framework-free TypeScript plus lit-html, multi-page (from M1). UI text is Vietnamese; code, docs and chat are English.
+A small web chat for family and friends, joined by invite or with the owner's approval, replacing Zalo, with message history on the server. ASP.NET Core 10 (Kestrel) with raw WebSockets (no SignalR), PostgreSQL 19, EF Core 10 + Npgsql; in the browser, framework-free TypeScript plus lit-html, multi-page (from M1). UI text is Vietnamese; code, docs and chat are English.
 
 ## Local setup
 See `README.md`. `dotnet test` needs `ConnectionStrings__Default` pointing at a PostgreSQL 19 server.

@@ -1,5 +1,5 @@
 import { html, nothing, render } from 'lit-html';
-import type { Api, Failure, Invite, Issued, Member } from '../api.js';
+import type { Api, Failure, Invite, Issued, JoinRequest, Member } from '../api.js';
 import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, errorBox, formatTime } from '../ui.js';
@@ -27,6 +27,9 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let uses: number = limits().inviteDefaultUses;
   let moreInvites = false;
   let moreMembers = false;
+  /** Asking to join: whether it is open, and who asked (waiting first, then refused). */
+  let signUpOpen = false;
+  let requests: JoinRequest[] = [];
 
   const inviteRow = (i: Invite) => html`
     <li class="li invite" data-invite=${i.id} data-status=${i.status}>
@@ -57,6 +60,31 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
     </div>`;
 
   /** A handful of members, or everyone who matches what was typed. */
+  const requestRow = (r: JoinRequest) => html`
+    <li class="li" data-join-request=${r.gomId}>
+      <div class="t"><b>${r.displayName}</b><small>@${r.gomId} · ${say.owner.askedAt(formatTime(r.requestedAt))}</small>
+        <span class="request-note">${r.note}</span></div>
+      <div class="acts">
+        <button class="btn small" type="button" data-approve @click=${() => answer(() => api.approveJoin(r.gomId))}>${say.owner.approve}</button>
+        ${r.refused
+          ? html`<button class="btn secondary small" type="button" data-delete-request @click=${() => answer(() => api.deleteJoin(r.gomId))}>${say.owner.remove}</button>`
+          : html`<button class="btn secondary small" type="button" data-refuse @click=${() => answer(() => api.refuseJoin(r.gomId))}>${say.owner.refuse}</button>`}
+      </div>
+    </li>`;
+
+  const requestsView = () => {
+    const waiting = requests.filter((r) => !r.refused);
+    const refused = requests.filter((r) => r.refused);
+    return html`
+      <h2 class="section">${say.owner.signUp}</h2>
+      <div class="pick" data-sign-up-switch><input type="checkbox" id="sign-up-open" data-sign-up-open .checked=${signUpOpen}
+        @change=${(e: Event) => void setOpen((e.target as HTMLInputElement).checked)}><label for="sign-up-open">${say.owner.openSignUp}</label></div>
+      ${waiting.length === 0 && !signUpOpen ? nothing : html`
+        <h3 class="section">${say.owner.waitingCount(waiting.length)}</h3>
+        ${waiting.length === 0 ? html`<p class="hint" data-none-waiting>${say.owner.noneWaiting}</p>` : html`<ul class="list" data-waiting-list>${waiting.map(requestRow)}</ul>`}`}
+      ${refused.length === 0 ? nothing : html`<h3 class="section">${say.owner.refusedList}</h3><ul class="list" data-refused-list>${refused.map(requestRow)}</ul>`}`;
+  };
+
   const shownMembers = (): Member[] => {
     if (query.trim() !== '') return members.filter((m) => matches(`${m.displayName} ${m.gomId}`, query));
     return moreMembers || members.length <= HANDFUL ? members : members.slice(0, HANDFUL);
@@ -76,6 +104,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         <button class="btn" type="button" data-create-invite @click=${makeInvite}>${say.owner.makeInvite}</button>
       </div>
       ${linkBox()}
+      ${requestsView()}
       <h2 class="section">${say.owner.invites}</h2>
       <ul class="list">${(moreInvites || invites.length <= HANDFUL ? invites : invites.slice(0, HANDFUL)).map(inviteRow)}</ul>
       ${moreInvites || invites.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-invites @click=${() => { moreInvites = true; update(); }}>${say.friends.seeMoreCount(invites.length - HANDFUL)}</button>`}
@@ -92,9 +121,25 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   const show = (issued: Issued, note: string) => { link = { url: origin + issued.path, note }; copied = ''; error = null; };
 
   async function reload(): Promise<void> {
-    const [i, m] = await Promise.all([api.invites(), api.members()]);
+    const [i, m, r] = await Promise.all([api.invites(), api.members(), api.signUpRequests()]);
     if (i.ok) invites = i.data; else error = i;
     if (m.ok) members = m.data; else error = m;
+    if (r.ok) { signUpOpen = r.data.open; requests = r.data.requests; } else error = r;
+    update();
+  }
+
+  /** Approve, refuse or delete a request; then everything again (an approved one is now a member). */
+  async function answer(act: () => Promise<{ ok: true } | Failure>): Promise<void> {
+    error = null;
+    const result = await act();
+    if (!result.ok) error = result;
+    await reload();
+  }
+
+  async function setOpen(open: boolean): Promise<void> {
+    error = null;
+    const result = await api.setSignUpOpen(open);
+    if (result.ok) signUpOpen = open; else error = result;
     update();
   }
 

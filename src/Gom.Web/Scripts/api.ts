@@ -11,7 +11,8 @@ const SERVER_CODE_LIST = [
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
   'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
   'invalid_invite', 'too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
-  'invalid_endpoint', 'invalid_keys',
+  'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
+  'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request',
 ] as const;
 
 /** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
@@ -23,7 +24,12 @@ export interface Failure { ok: false; status: number; error: ErrorCode; retryAft
 export type Result<T> = { ok: true; data: T } | Failure;
 
 /** `avatar` is the id of the profile picture (at /api/avatars/{avatar}); none means the initials. */
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null }
+/** `standing`: a member, or someone who asked to join and is waiting ("pending") or was refused. */
+export type Standing = 'member' | 'pending' | 'refused';
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing }
+/** Someone asking to join, as the owner sees them. */
+export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
+export interface SignUpBody { gomId: string; password: string; displayName: string; note: string }
 export interface SessionInfo { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }
 /** A link the owner gives out. It works for `maxUses` people (any number when null) until it expires or is revoked. */
 export interface Invite {
@@ -127,6 +133,16 @@ export interface Api {
   invites(): Promise<Result<Invite[]>>;
   revokeInvite(id: string): Promise<Result<void>>;
   members(): Promise<Result<Member[]>>;
+  /** Whether anyone may ask to join (the sign-in page offers it). */
+  signUpOpen(): Promise<Result<{ open: boolean }>>;
+  signUp(body: SignUpBody): Promise<Result<User>>;
+  /** The person takes back their own request: the account goes. */
+  withdrawSignUp(): Promise<Result<void>>;
+  signUpRequests(): Promise<Result<{ open: boolean; requests: JoinRequest[] }>>;
+  setSignUpOpen(open: boolean): Promise<Result<void>>;
+  approveJoin(gomId: string): Promise<Result<void>>;
+  refuseJoin(gomId: string): Promise<Result<void>>;
+  deleteJoin(gomId: string): Promise<Result<void>>;
   storage(): Promise<Result<Storage>>;
   /** Deletes a group nobody is in, with everything in it. */
   deleteEmptyGroup(id: string): Promise<Result<void>>;
@@ -226,7 +242,8 @@ const SLOW_REQUEST_TIMEOUT_MS = 300_000;
 /** An upload is given up when no byte has gone for this long (a large file on a slow line takes minutes, but it keeps moving). */
 export const UPLOAD_STALL_MS = 60_000;
 
-export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest()): Api {
+/** `onPending`: called when the server refuses because this account is a request to join still waiting (the page then shows the waiting screen). */
+export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest(), onPending?: () => void): Api {
   async function call<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Result<T>> {
     let response: Response;
     try {
@@ -244,7 +261,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       if (response.status === 204) return { ok: true, data: undefined as T };
       try { return { ok: true, data: (await response.json()) as T }; } catch { return { ok: false, status: response.status, error: 'server' }; }
     }
-    return failure(response);
+    const failed = await failure(response);
+    if (failed.error === 'pending_approval') onPending?.();
+    return failed;
   }
 
   /** fetch cannot tell how much of an upload has gone, so uploads use XMLHttpRequest. */
@@ -290,6 +309,14 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     invites: () => call('GET', '/api/invites'),
     revokeInvite: (id) => call('DELETE', `/api/invites/${enc(id)}`),
     members: () => call('GET', '/api/users'),
+    signUpOpen: () => call('GET', '/api/sign-up'),
+    signUp: (body) => call('POST', '/api/sign-up', body),
+    withdrawSignUp: () => call('DELETE', '/api/sign-up'),
+    signUpRequests: () => call('GET', '/api/join-requests'),
+    setSignUpOpen: (open) => call('PUT', '/api/sign-up-open', { open }),
+    approveJoin: (gomId) => call('POST', `/api/join-requests/${enc(gomId)}/approve`),
+    refuseJoin: (gomId) => call('POST', `/api/join-requests/${enc(gomId)}/refuse`),
+    deleteJoin: (gomId) => call('DELETE', `/api/join-requests/${enc(gomId)}`),
     storage: () => call('GET', '/api/owner/storage'),
     deleteEmptyGroup: (id) => call('DELETE', `/api/owner/groups/${enc(id)}`),
     trimPreview: (rule) => call('POST', '/api/owner/trim/files/preview', rule),

@@ -23,7 +23,8 @@ describe('errorText', () => {
   });
 
   it('never shows a raw code for something unknown', () => {
-    expect(errorText(fail('unknown', 418))).toBe(errorText(fail('bad_origin', 403)));
+    expect(errorText(fail('unknown', 418))).toBe(errorText(fail('forbidden', 403)));
+    expect(errorText(fail('unknown', 418))).toBe('Có lỗi xảy ra. Hãy thử lại.');
     expect(errorText(fail('unknown', 418))).not.toContain('unknown');
   });
 
