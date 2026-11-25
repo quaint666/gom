@@ -149,20 +149,28 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 /* Marked unread by hand: a dot, no number. */
 .badge.dot { min-inline-size: 12px; block-size: 12px; padding: 0; }
 
-/* The "..." button of a row. A mouse sees it over the row (in the time's place); a finger always has it, at the end of the row. */
+/*
+ * The "..." button of a row: shown on the open conversation's row, and on a row a mouse is over (in the time's place), so the list is
+ * not a column of dots. A finger holds a row for a second to open the same menu.
+ */
 .row { position: relative; }
-.row-more { position: absolute; inset-inline-end: 6px; inset-block-start: 4px; inline-size: 36px; block-size: 36px; }
+.row .item { -webkit-touch-callout: none; }
+.row-more { position: absolute; inset-inline-end: 6px; inset-block-start: 4px; inline-size: 36px; block-size: 36px; opacity: 0; background: var(--surface); }
+.row:has(.item.active) .row-more, .row-more:focus-visible, .row-more[aria-expanded="true"] { opacity: 1; }
+.row:has(.item.active) .row-more { background: var(--tint); }
 .pin-mark { display: grid; place-items: center; color: var(--muted); flex: none; }
 .pin-mark svg { inline-size: 14px; block-size: 14px; }
 @media (hover: hover) and (pointer: fine) {
-  .row-more { opacity: 0; background: var(--surface); }
-  .row:hover .row-more, .row-more:focus-visible, .row-more[aria-expanded="true"] { opacity: 1; }
-  .row:hover .tm, .row:has(.row-more:focus-visible) .tm, .row:has(.row-more[aria-expanded="true"]) .tm { visibility: hidden; }
+  .row:hover .row-more { opacity: 1; }
+  .row:is(:hover, :has(.item.active), :has(.row-more:focus-visible), :has(.row-more[aria-expanded="true"])) .tm { visibility: hidden; }
 }
 @media not ((hover: hover) and (pointer: fine)) {
-  .row .item { padding-inline-end: 50px; }
-  .row-more { inset-block-start: 50%; translate: 0 -50%; inline-size: 44px; block-size: 44px; }
+  /* Not there to be tapped by mistake on the other rows: only the open one has it. */
+  .row:not(:has(.item.active)) .row-more:not(:focus-visible, [aria-expanded="true"]) { visibility: hidden; }
+  .row-more { inline-size: 44px; block-size: 44px; inset-block-start: 50%; translate: 0 -50%; }
+  .row:has(.item.active) .item { padding-inline-end: 50px; }
 }
+
 
 .thread-pane { background: var(--bg); }
 .thread-pane.none { place-content: center; }

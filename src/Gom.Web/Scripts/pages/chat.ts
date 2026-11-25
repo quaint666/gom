@@ -202,7 +202,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const row = (c: Conversation) => html`
     <li class="row"><a class="item ${c.unread > 0 || c.markedUnread ? 'unread' : ''} ${c.id === openId ? 'active' : ''}" href="/c/${c.id}" data-chat=${c.id}
       aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}
-      @contextmenu=${(e: MouseEvent) => { e.preventDefault(); openRowMenu(c.id, { x: e.clientX, y: e.clientY }); }}>
+      @contextmenu=${(e: MouseEvent) => onRowContext(e, c.id)}
+      @pointerdown=${(e: PointerEvent) => rowPressStart(e, c.id)} @pointermove=${rowPressMove} @pointerup=${rowPressEnd} @pointercancel=${rowPressEnd} @pointerleave=${rowPressEnd}>
       ${avatar(c.title ?? '?', c.peer?.avatar)}
       <div class="im">
         <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label="Đã ghim">${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
@@ -1023,6 +1024,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   // ---- the person's actions
 
   function onRowClick(e: MouseEvent, id: string): void {
+    // The click that ends a long press opened the menu; it does not also open the conversation.
+    if (rowPressOpened) { rowPressOpened = false; e.preventDefault(); return; }
     if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     open(id);
@@ -1301,6 +1304,39 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     rowMenu = { id, confirming: false, at: deps.coarsePointer() ? undefined : at };
     update();
     root.querySelector<HTMLElement>('[data-conversation-menu] [role="menuitem"]')?.focus();
+  }
+
+  /**
+   * A finger held on a row for a second opens its menu (the "..." shows only on the open conversation's row, so the list stays calm).
+   * Longer than a message's 450 ms: a row is mostly tapped to open, and a held finger on a list is often the start of a scroll.
+   */
+  const ROW_PRESS_MS = 1000;
+  let rowPress: { timer: number; x: number; y: number } | null = null;
+  let rowPressOpened = false;
+
+  function rowPressStart(e: PointerEvent, id: string): void {
+    rowPressEnd();
+    if (e.pointerType !== 'touch') return;
+    const at = { x: e.clientX, y: e.clientY };
+    const timer = deps.timer.set(() => { rowPress = null; rowPressOpened = true; openRowMenu(id, at); }, ROW_PRESS_MS);
+    rowPress = { timer, ...at };
+  }
+
+  function rowPressMove(e: PointerEvent): void {
+    if (rowPress !== null && Math.hypot(e.clientX - rowPress.x, e.clientY - rowPress.y) > PRESS_SLOP_PX) rowPressEnd();
+  }
+
+  function rowPressEnd(): void {
+    if (rowPress === null) return;
+    deps.timer.clear(rowPress.timer);
+    rowPress = null;
+  }
+
+  /** Right-click opens the row's menu there. A finger's long press is handled above: its own menu from the browser is held back. */
+  function onRowContext(e: MouseEvent, id: string): void {
+    e.preventDefault();
+    if (deps.coarsePointer()) return;
+    openRowMenu(id, { x: e.clientX, y: e.clientY });
   }
 
   function closeRowMenu(): void {
@@ -1980,6 +2016,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   });
 
   addEventListener('online', () => { live?.retryNow(); retryAll(); });
+
+  // A press anywhere outside the emoji and sticker panel (and its button, which toggles it) closes the panel.
+  document.addEventListener('pointerdown', (e) => {
+    if (picker === null) return;
+    const target = e.target as Element | null;
+    if (target?.closest?.('[data-picker], [data-picker-toggle]')) return;
+    picker = null;
+    update();
+  }, true);
 
   update();
   void api.me().then(async (result) => {

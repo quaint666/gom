@@ -4579,3 +4579,73 @@ describe('the menu of a conversation in the list', () => {
     expect(text(root)).not.toContain('bí mật');
   });
 });
+
+describe('quieter menus', () => {
+  const pointer = (type: string, init: { pointerType?: string; clientX?: number; clientY?: number } = {}) =>
+    Object.assign(new Event(type, { bubbles: true, cancelable: true }), { pointerType: init.pointerType ?? 'touch', clientX: init.clientX ?? 100, clientY: init.clientY ?? 100 });
+  const menuEl = () => root.querySelector('[data-conversation-menu]');
+
+  it('a finger held on a row for a second opens its menu, and the click that ends it does not open the conversation', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    rows()[0]!.dispatchEvent(pointer('pointerdown'));
+    const timer = h.timers[h.timers.length - 1]!;
+    expect(timer.ms).toBe(1000);
+    expect(menuEl()).toBeNull();
+    timer.fn();
+    await flush();
+    expect(menuEl()).not.toBeNull();
+    rows()[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(h.nav.push).not.toHaveBeenCalled();
+    // The next tap opens it as usual.
+    root.querySelector<HTMLElement>('[data-close-row-menu]')!.click();
+    rows()[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(h.nav.push).toHaveBeenCalledWith(`/c/${C1}`);
+  });
+
+  it('a finger lifted early, or moving on to scroll, opens nothing; a mouse press is not a long press', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    rows()[0]!.dispatchEvent(pointer('pointerdown'));
+    let timer = h.timers[h.timers.length - 1]!;
+    rows()[0]!.dispatchEvent(pointer('pointerup'));
+    timer.fn();
+    rows()[0]!.dispatchEvent(pointer('pointerdown', { clientX: 100, clientY: 100 }));
+    timer = h.timers[h.timers.length - 1]!;
+    rows()[0]!.dispatchEvent(pointer('pointermove', { clientX: 100, clientY: 140 }));
+    timer.fn();
+    const before = h.timers.length;
+    rows()[0]!.dispatchEvent(pointer('pointerdown', { pointerType: 'mouse' }));
+    expect(h.timers.length).toBe(before);
+    await flush();
+    expect(menuEl()).toBeNull();
+  });
+
+  it('on a phone the browser\'s own long-press menu is held back, and right-click opens nothing extra', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    h.coarse.value = true;
+    await flush();
+    const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    rows()[0]!.dispatchEvent(e);
+    await flush();
+    expect(e.defaultPrevented).toBe(true);
+    expect(menuEl()).toBeNull();
+  });
+
+  it('a press outside the emoji and sticker panel closes it; a press inside it or on its button does not', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] } });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-picker-toggle]')!.click();
+    await flush();
+    expect(root.querySelector('[data-picker]')).not.toBeNull();
+    root.querySelector('[data-picker]')!.dispatchEvent(pointer('pointerdown'));
+    root.querySelector('[data-picker-toggle]')!.dispatchEvent(pointer('pointerdown'));
+    await flush();
+    expect(root.querySelector('[data-picker]')).not.toBeNull();
+    root.querySelector('.msgs')!.dispatchEvent(pointer('pointerdown'));
+    await flush();
+    expect(root.querySelector('[data-picker]')).toBeNull();
+  });
+});
