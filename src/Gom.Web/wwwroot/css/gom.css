@@ -571,6 +571,9 @@ a.mi { text-decoration: none; }
 .filecard .fi { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
 .filecard b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filecard small { color: var(--muted); }
+.appwarn { display: flex; gap: 6px; align-items: flex-start; max-inline-size: 320px; margin-block: 4px 2px; padding: 6px 8px; border: 1px solid var(--warn-border); border-radius: 10px;
+  background: var(--warn-bg); color: var(--warn-text); font-size: 12.5px; line-height: 1.35; }
+.appwarn svg { inline-size: 16px; block-size: 16px; flex: none; margin-block-start: 1px; }
 .mrow .bub:has(> .pics:only-child), .mrow .bub:has(> .pics:first-child:nth-last-child(2)) { padding: 4px; }
 .mrow .bub > .pics:only-child { margin-block-end: 0; }
 
@@ -648,6 +651,8 @@ select:focus-visible { outline-offset: 0; }
 .pcard-top h2 { margin: 6px 0 0; font-size: 19px; overflow-wrap: anywhere; }
 .pcard-top small { color: var(--muted); }
 .pcard-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-block: 14px 6px; }
+.appq h2 { margin: 18px 0 8px; font-size: 18px; }
+.appq b { overflow-wrap: anywhere; }
 .pcard h3 { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .pcard .ask { margin-block-start: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
 .pcard .ask p { flex-basis: 100%; margin: 0; }

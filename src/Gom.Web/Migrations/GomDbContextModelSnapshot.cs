@@ -91,11 +91,11 @@ namespace Gom.Web.Migrations
                     b.HasIndex("MessageId")
                         .HasDatabaseName("ix_attachments_message_id");
 
-                    b.HasIndex("UploaderId")
-                        .HasDatabaseName("ix_attachments_uploader_id");
-
                     b.HasIndex("MessageId", "CreatedAt")
                         .HasDatabaseName("ix_attachments_message_id_created_at");
+
+                    b.HasIndex("UploaderId", "CreatedAt")
+                        .HasDatabaseName("ix_attachments_uploader_id_created_at");
 
                     b.ToTable("attachments", null, t =>
                         {

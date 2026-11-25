@@ -61,6 +61,7 @@ export function errorText(failure: Failure): string {
     case 'invalid_image': return say.errors.invalidImage;
     case 'busy': return say.errors.busy;
     case 'too_many_uploads': return say.errors.tooManyUploads;
+    case 'daily_upload_limit': return say.errors.dailyUploadLimit(formatSize(l.uploadDailyBytes));
     case 'uploads_disabled': return say.errors.uploadsDisabled;
     case 'empty_upload': return say.errors.emptyUpload;
     case 'invalid_attachment': return say.errors.invalidAttachment;

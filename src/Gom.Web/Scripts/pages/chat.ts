@@ -11,6 +11,7 @@ import * as icons from '../icons.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
+import { isAppFile } from '../appfiles.js';
 import { limits } from '../limits.js';
 import { say } from '../say.js';
 import { mountWaiting } from './waiting.js';
@@ -158,6 +159,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let leaving = false;
   /** The conversation whose "for how long" choices are open, when its bell was tapped to mute it. */
   let muting: string | null = null;
+  /** An app file whose card was tapped: asked about before it is saved. */
+  let appFile: Attachment | null = null;
   /** What is being passed on, while the person picks where to (at most FORWARD_MAX), with the search over the list and a note to send after it. */
   let forwarding: { body: string; attachments: Attachment[]; sticker: string | null; picked: string[]; q: string; note: string; busy: boolean } | null = null;
   /** The panel under the composer, open on its emoji or its sticker tab; the tab last used is remembered on this device. */
@@ -333,6 +336,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}
       ${files.map((a) => a.removed
         ? html`<div class="filecard removed" data-file-removed=${a.id}>${icons.file()}<span class="fi"><b>${say.chat.fileGone}</b><small>${a.name}</small></span></div>`
+        : isAppFile(a.name) ? html`
+        <a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-file=${a.id} data-app-file
+          @click=${(e: MouseEvent) => { e.preventDefault(); appFile = a; update(); }}>${icons.file()}
+          <span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span>${icons.download()}</a>
+        <p class="appwarn" data-app-file-warning>${icons.alert()}<span>${say.chat.appFileWarning}</span></p>`
         : html`
         <a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-file=${a.id}>${icons.file()}
           <span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span>${icons.download()}</a>`)}`;
@@ -1030,6 +1038,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${openId !== null && infoPage && chatOf(openId) !== undefined ? infoSheet(chatOf(openId)!, threadOf(openId)) : nothing}
       ${rowMenuView()}
       ${muteView()}
+      ${appFileView()}
       ${undoView()}
     </div>`;
 
@@ -1375,6 +1384,31 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="pcard-head"><h2 id="mute-title">${say.common.mute}</h2><button class="ib" type="button" aria-label=${say.common.close} @click=${close}>${icons.close()}</button></div>
         <ul class="info-list">${MUTE_CHOICES.map(([key, label, end]) => html`
           <li><button class="info-person" type="button" data-mute-for=${key} @click=${() => { muting = null; void setMuted(c, true, end(deps.now())); }}>${label}</button></li>`)}</ul>
+      </dialog>`;
+  };
+
+  /** The question before an app file is saved. "Không" is the easy answer; "Vẫn tải" saves it as the card's link would have. */
+  const appFileView = () => {
+    const a = appFile;
+    if (a === null) return nothing;
+    const close = () => { appFile = null; update(); };
+    const save = () => {
+      const link = document.createElement('a');
+      link.href = `/api/attachments/${a.id}`;
+      link.download = a.name;
+      link.click();
+      close();
+    };
+    return html`
+      <dialog class="pcard appq" aria-labelledby="appfile-q" aria-describedby="appfile-note" data-app-file-panel data-modal @close=${close}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
+        <h2 id="appfile-q">${say.chat.appFileQ}</h2>
+        <p id="appfile-note" class="hint">${say.chat.appFileNote}</p>
+        <p class="hint"><b>${a.name}</b></p>
+        <div class="pcard-actions">
+          <button class="btn secondary" type="button" data-app-file-no @click=${close}>${say.common.no}</button>
+          <button class="btn secondary danger-text" type="button" data-app-file-yes @click=${save}>${say.chat.appFileYes}</button>
+        </div>
       </dialog>`;
   };
 

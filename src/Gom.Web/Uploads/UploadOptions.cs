@@ -44,6 +44,12 @@ public sealed class UploadOptions
     public int UploadBurst { get; set; } = 12;
     public double UploadPerSecond { get; set; } = 1;
 
+    /// <summary>
+    /// How many bytes one person may upload in any 24 hours, as stored (a picture counts after it was made smaller; a copy counts).
+    /// It stops a person, or a stolen session, filling the disk. 0 switches it off.
+    /// </summary>
+    public long DailyBytes { get; set; } = 500L * 1024 * 1024;
+
     /// <summary>An upload that is not put in a message within this many hours is deleted.</summary>
     public int PendingHours { get; set; } = 1;
 }

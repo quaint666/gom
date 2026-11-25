@@ -3433,6 +3433,37 @@ describe('chat: pictures and files', () => {
     expect(bubble.querySelector('.txt')).toBeNull();
   });
 
+  it('warns about an app file on its card and asks before saving it; an ordinary file has neither', async () => {
+    const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [att('f1', 'file', 'thiep_tet.APK'), att('f2', 'file', 'ghi chú.txt')] };
+    open({}, [m]);
+    await flush();
+    const bubble = root.querySelector('[data-msg="id1"] .bub')!;
+    expect(bubble.querySelectorAll('[data-app-file-warning]')).toHaveLength(1);
+    const plain = bubble.querySelector<HTMLAnchorElement>('[data-file="f2"]')!;
+    expect(plain.hasAttribute('data-app-file')).toBe(false);
+
+    const saved: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { saved.push(this.getAttribute('href')!); });
+    const card = bubble.querySelector<HTMLAnchorElement>('[data-file="f1"]')!;
+    const tap = new MouseEvent('click', { bubbles: true, cancelable: true });
+    card.dispatchEvent(tap);
+    await flush();
+    expect(tap.defaultPrevented).toBe(true);
+    expect(text(root.querySelector('[data-app-file-panel]')!)).toContain('thiep_tet.APK');
+    root.querySelector<HTMLButtonElement>('[data-app-file-no]')!.click();
+    await flush();
+    expect(root.querySelector('[data-app-file-panel]')).toBeNull();
+    expect(saved).toEqual([]);
+
+    card.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-app-file-yes]')!.click();
+    await flush();
+    expect(saved).toEqual(['/api/attachments/f1']);
+    expect(root.querySelector('[data-app-file-panel]')).toBeNull();
+    click.mockRestore();
+  });
+
   describe('the picture viewer', () => {
     const viewer = () => root.querySelector<HTMLElement>('[data-viewer]');
     const count = () => text(viewer()!.querySelector('[data-viewer-count]')!);

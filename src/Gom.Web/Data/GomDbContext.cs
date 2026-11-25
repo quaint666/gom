@@ -221,6 +221,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => x.ConversationId);
             e.HasIndex(x => x.MessageId);
             e.HasIndex(x => new { x.MessageId, x.CreatedAt });   // the cleanup of uploads nobody used
+            e.HasIndex(x => new { x.UploaderId, x.CreatedAt });  // a person's uploads of the last day, for the daily limit
             e.ToTable(t => t.HasCheckConstraint("ck_attachments_kind", "kind in (0, 1, 2)"));
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UploaderId).OnDelete(DeleteBehavior.Restrict);

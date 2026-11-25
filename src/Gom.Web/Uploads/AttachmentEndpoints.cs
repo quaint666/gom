@@ -97,6 +97,7 @@ public static class AttachmentEndpoints
         // Only what is in a message this person may fetch: "not yours to see" and "not there" look the same.
         var source = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == from, ct);
         if (source is null || source.MessageId is null || source.RemovedAt is not null || source.Kind is not (AttachmentKind.Image or AttachmentKind.File) || !await MayFetch(db, source, me, ct)) return Results.NotFound();
+        if (await OverDaily(db, me, source.Size, options.Value, clock, ct)) return Error(StatusCodes.Status429TooManyRequests, "daily_upload_limit");
 
         var copy = new Attachment
         {
@@ -150,6 +151,9 @@ public static class AttachmentEndpoints
             return Error(StatusCodes.Status429TooManyRequests, "too_many_uploads");
         }
 
+        // Already at the day's limit: turned away before a byte is read. Whether this upload fits is known once it is made smaller.
+        if (await OverDaily(db, me, 1, o, clock, ct)) return Error(StatusCodes.Status429TooManyRequests, "daily_upload_limit");
+
         // Turned away before a byte is read when the size is announced, and cut off while reading when it is not.
         var most = Math.Max(o.MaxFileBytes, o.MaxImageBytes);
         if (http.Request.ContentLength > most) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
@@ -198,6 +202,7 @@ public static class AttachmentEndpoints
             attachment.ContentType = "application/octet-stream";   // whatever the sender called it, it is only ever a download
         }
         attachment.Size = main.Length;
+        if (await OverDaily(db, me, main.Length, o, clock, ct)) return Error(StatusCodes.Status429TooManyRequests, "daily_upload_limit");
 
         var store = services.GetRequiredService<IBlobStore>();
         await store.WriteAsync(attachmentId.ToString(), main, ct);
@@ -214,6 +219,19 @@ public static class AttachmentEndpoints
             throw;
         }
         return Results.Json(ToDto(attachment), statusCode: StatusCodes.Status201Created);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="adding"/> more bytes would take this person past the day's limit: everything they uploaded in the last
+    /// 24 hours that is still kept, sent or not. Two uploads at the same moment can both fit and pass it by one upload; that is enough
+    /// to stop a disk filling up.
+    /// </summary>
+    private static async Task<bool> OverDaily(GomDbContext db, Guid me, long adding, UploadOptions o, TimeProvider clock, CancellationToken ct)
+    {
+        if (o.DailyBytes <= 0) return false;
+        var since = clock.GetUtcNow().AddHours(-24);
+        var used = await db.Attachments.Where(a => a.UploaderId == me && a.CreatedAt > since).SumAsync(a => (long?)a.Size, ct) ?? 0;
+        return used + adding > o.DailyBytes;
     }
 
     /// <summary>All of the body, or null when it is longer than the limit.</summary>
