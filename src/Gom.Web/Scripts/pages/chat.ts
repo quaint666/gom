@@ -1205,12 +1205,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     }
     update();
     if (conversation === openId) markRead(conversation);
-    if (event.kind === 'created' && message.notice?.type === 'filesTrimmed') afterTrim(conversation);
+    if (event.kind === 'created' && (message.notice?.type === 'filesTrimmed' || message.notice?.type === 'messagesTrimmed')) afterTrim(conversation);
   }
 
   /**
-   * The owner trimmed old pictures and files here. The notice does not say which, so what this page holds of the conversation is
-   * asked for again: the thread from its newest page, and the side panel's lists. The viewer closes; its picture may be gone.
+   * The owner trimmed old pictures and files, or old messages, here. The notice does not say which, so what this page holds of the
+   * conversation is asked for again: the thread from its newest page (with its pins), and the side panel's lists. The viewer closes.
    */
   function afterTrim(id: string): void {
     mediaLists.delete(id);

@@ -3663,6 +3663,21 @@ describe('chat: pictures and files', () => {
       expect(root.querySelector('[data-pic-removed="p1"]')).not.toBeNull();
     });
 
+    it('asks again too when old messages were trimmed, and says so', async () => {
+      const history: ChatMessage[] = [msg(1, 'minh', 'cũ'), msg(2, 'minh', 'mới')];
+      const h = open({}, history);
+      await flush();
+      const trimmed = { ...msg(3, 'minh', ''), notice: { type: 'messagesTrimmed' as const, target: null, before: new Date(2026, 0, 1, 12).toISOString() } };
+      history.splice(0, 1);   // the server no longer has the old one
+      history.push(trimmed);
+      h.handlers().event(C1, created(trimmed));
+      await flush();
+      expect(h.api.history).toHaveBeenCalledTimes(2);
+      expect(root.querySelector('[data-msg="id1"]')).toBeNull();
+      expect(root.querySelector('[data-msg="id2"]')).not.toBeNull();
+      expect(text(root.querySelector('[data-notice]')!)).toBe('Tin nhắn gửi trước 01/01/2026 đã được dọn');
+    });
+
     it('does not ask again for a notice of another kind', async () => {
       const h = open({}, [msg(1, 'minh')]);
       await flush();

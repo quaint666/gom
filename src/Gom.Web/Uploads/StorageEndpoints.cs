@@ -24,6 +24,7 @@ public static class StorageEndpoints
         owner.MapGet("/storage", Get);
         owner.MapDelete("/groups/{id:guid}", DeleteEmptyGroup);
         owner.MapTrim();
+        owner.MapMessageTrim();
     }
 
     private static async Task<IResult> Get(GomDbContext db, IOptions<UploadOptions> options, CancellationToken ct)

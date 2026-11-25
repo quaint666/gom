@@ -72,9 +72,10 @@ public class ConversationMember
 /// <summary>The materialized state of one message. The event stream (<see cref="MessageEvent"/>) is what clients follow.</summary>
 /// <summary>
 /// What a notice in a thread says happened. A notice is a line in the conversation, not something a person wrote.
-/// <see cref="FilesTrimmed"/>: the owner trimmed pictures and files sent before a date (the date is the notice's body).
+/// <see cref="FilesTrimmed"/> and <see cref="MessagesTrimmed"/>: the owner trimmed pictures and files, or messages, sent before a date
+/// (the date is the notice's body).
 /// </summary>
-public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5 }
+public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6 }
 
 public class Message
 {
@@ -85,7 +86,10 @@ public class Message
     public Guid SenderId { get; set; }
     /// <summary>Chosen by the sender's device; with the sender it makes a send safe to retry.</summary>
     public Guid ClientId { get; set; }
-    /// <summary>The message this one answers, in the same conversation. Null when it answers nothing.</summary>
+    /// <summary>
+    /// The message this one answers, in the same conversation. Null when it answers nothing. Not a database key: the owner may trim
+    /// the answered message and keep the answer, which then shows that the quoted message is no longer there.
+    /// </summary>
     public Guid? ReplyToId { get; set; }
     public string Body { get; set; } = "";
     /// <summary>Set when the message is one sticker (its code, from <see cref="Chat.Stickers"/>); then it has no words and no files.</summary>
