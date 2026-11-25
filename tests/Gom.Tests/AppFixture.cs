@@ -20,7 +20,7 @@ public sealed class FakeClock : TimeProvider
 }
 
 /// <summary>The whole app on a throwaway database, with a fake clock and a cheap password hash.</summary>
-public sealed class AppFixture : IAsyncLifetime
+public class AppFixture : IAsyncLifetime
 {
     public const string Origin = "https://gom.test";
     public const string Password = "correct horse battery";
@@ -46,14 +46,23 @@ public sealed class AppFixture : IAsyncLifetime
             b.UseSetting("Uploads:MaxImageBytes", "200000");
             b.UseSetting("Uploads:MaxPixels", "1000000");
             b.UseSetting("Uploads:UploadBurst", "30");
+            Settings(b);
             b.ConfigureServices(s =>
             {
+                s.RemoveAll<Gom.Web.Push.IPushTransport>();
+                s.AddSingleton<Gom.Web.Push.IPushTransport>(Push);
                 s.RemoveAll<TimeProvider>();
                 s.AddSingleton<TimeProvider>(Clock);
                 s.AddSingleton<IStartupFilter, TestIpFilter>();
             });
         });
     }
+
+    /// <summary>Where the app's notifications go in tests: nowhere, but each is kept to look at.</summary>
+    public FakePush Push { get; } = new();
+
+    /// <summary>More settings for a fixture of its own (push, for one).</summary>
+    protected virtual void Settings(IWebHostBuilder b) { }
 
     public async Task DisposeAsync()
     {

@@ -66,7 +66,7 @@ public static class MessageEndpoints
     // ---- sending
 
     private static async Task<IResult> Send(Guid id, SendRequest request, HttpContext http, GomDbContext db, TimeProvider clock,
-        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, IOptions<UploadOptions> uploads, CancellationToken ct)
+        SendLimiter limiter, LiveDelivery live, Push.PushQueue push, IOptions<ChatOptions> options, IOptions<UploadOptions> uploads, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -152,6 +152,8 @@ public static class MessageEndpoints
         var dto = ToDto(message, sender, reply, null, (await MessageAttachments.For(db, [message.Id], ct)).GetValueOrDefault(message.Id));
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
+        var files = dto.Attachments ?? [];
+        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind != "image")));
         return Results.Ok(dto);
     }
 
