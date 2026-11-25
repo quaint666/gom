@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { avatarTone } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
@@ -1803,6 +1803,21 @@ describe('chat: deleting a message for yourself', () => {
     expect(row('id1')).not.toBeNull();
   });
 
+  it('takes its pictures out of the side panel too', async () => {
+    localStorage.setItem('gom-info', '1');
+    const picture = { attachment: { id: 'px', kind: 'image' as const, name: 'a.webp', size: 1, width: 4, height: 3 }, messageId: 'id1', seq: 1, createdAt: at(10) };
+    open({ media: vi.fn(async (_c: string, kind: string) => ok({ items: kind === 'image' ? [picture] : [], hasMore: false })) });
+    await flush();
+    expect(root.querySelector('[data-info-pic="px"]')).not.toBeNull();
+    await menuOf('id1');
+    root.querySelector<HTMLButtonElement>('button[data-hide]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-confirm-hide]')!.click();
+    await flush();
+    expect(root.querySelector('[data-info-pic="px"]')).toBeNull();
+    localStorage.removeItem('gom-info');
+  });
+
   it('removes it from view after yes, and asks the server and the list again', async () => {
     const h = open();
     await flush();
@@ -2958,13 +2973,76 @@ describe('chat: pictures and files', () => {
     expect(send).toHaveBeenCalledWith(C1, 'old-1', '', undefined, ['p9']);
   });
 
-  it('lists the pictures and files seen so far in the side panel', async () => {
-    localStorage.setItem('gom-info', '1');
-    open({}, [{ ...msg(1, 'minh', '', at(10)), attachments: [att('p1'), att('f1', 'file', 'bảng.xlsx')] }]);
-    await flush();
-    expect(root.querySelector('[data-info-media] [data-info-pic="p1"]')).not.toBeNull();
-    expect(text(root.querySelector('[data-info-files]')!)).toContain('bảng.xlsx');
-    localStorage.removeItem('gom-info');
+  describe('the side panel list, from the server', () => {
+    const item = (id: string, seq: number, kind: 'image' | 'file' = 'image', name = 'a.webp') => ({ attachment: att(id, kind, name), messageId: `m${seq}`, seq, createdAt: at(10) });
+    const served = (images: ReturnType<typeof item>[], files: ReturnType<typeof item>[], hasMoreImages = false) =>
+      vi.fn(async (_c: string, kind: 'image' | 'file', before?: number) =>
+        ok({ items: (kind === 'image' ? images : files).filter((i) => before === undefined || i.seq < before), hasMore: kind === 'image' && before === undefined && hasMoreImages }));
+    const panel = () => { localStorage.setItem('gom-info', '1'); };
+    afterEach(() => localStorage.removeItem('gom-info'));
+
+    it('lists the pictures and files the server names, not only what the thread has loaded', async () => {
+      panel();
+      const media = served([item('p1', 9)], [item('f1', 8, 'file', 'bảng.xlsx')]);
+      open({ media }, [msg(1, 'minh', 'xin chào')]);   // the thread itself has no attachment at all
+      await flush();
+      expect(media).toHaveBeenCalledWith(C1, 'image', undefined);
+      expect(media).toHaveBeenCalledWith(C1, 'file', undefined);
+      expect(root.querySelector('[data-info-media] [data-info-pic="p1"]')).not.toBeNull();
+      expect(text(root.querySelector('[data-info-files]')!)).toContain('bảng.xlsx');
+      expect(root.querySelector('[data-info-more]')).toBeNull();
+    });
+
+    it('asks for the next page after the last item shown, and adds it', async () => {
+      panel();
+      const media = vi.fn(async (_c: string, kind: 'image' | 'file', before?: number) =>
+        ok(kind === 'file' ? { items: [], hasMore: false }
+          : before === undefined ? { items: [item('p9', 9), item('p8', 8)], hasMore: true } : { items: [item('p7', 7)], hasMore: false }));
+      open({ media });
+      await flush();
+      expect(root.querySelectorAll('[data-info-pic]')).toHaveLength(2);
+      root.querySelector<HTMLButtonElement>('[data-info-more="image"]')!.click();
+      await flush();
+      expect(media).toHaveBeenLastCalledWith(C1, 'image', 8);
+      expect([...root.querySelectorAll('[data-info-pic]')].map((e) => e.getAttribute('data-info-pic'))).toEqual(['p9', 'p8', 'p7']);
+      expect(root.querySelector('[data-info-more]')).toBeNull();
+    });
+
+    it('asks only when the panel is open, and again nothing on a second look', async () => {
+      const media = served([item('p1', 9)], []);
+      open({ media });
+      await flush();
+      expect(media).not.toHaveBeenCalled();
+      root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+      await flush();
+      expect(media).toHaveBeenCalledTimes(2);
+      root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+      root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+      await flush();
+      expect(media).toHaveBeenCalledTimes(2);
+    });
+
+    it('adds the pictures of a new message and drops those of a message taken back, as they happen', async () => {
+      panel();
+      const h = open({ media: served([item('p1', 1)], []) }, [msg(1, 'minh', 'a')]);
+      await flush();
+      h.handlers().event(C1, { seq: 2, kind: 'created', message: { ...msg(2, 'minh', ''), attachments: [att('p2')] } });
+      await flush();
+      expect([...root.querySelectorAll('[data-info-pic]')].map((e) => e.getAttribute('data-info-pic'))).toEqual(['p2', 'p1']);
+      h.handlers().event(C1, { seq: 3, kind: 'deleted', message: { ...msg(2, 'minh', ''), deleted: true } });
+      await flush();
+      expect([...root.querySelectorAll('[data-info-pic]')].map((e) => e.getAttribute('data-info-pic'))).toEqual(['p1']);
+    });
+
+    it('shows nothing, and no error, when the list cannot be fetched', async () => {
+      panel();
+      open({ media: vi.fn(async () => fail('server', 500)) });
+      await flush();
+      expect(root.querySelector('[data-info-panel]')).not.toBeNull();
+      expect(root.querySelector('[data-info-media]')).toBeNull();
+      expect(root.querySelector('[data-info-files]')).toBeNull();
+      expect(root.querySelector('.error')).toBeNull();
+    });
   });
 });
 
