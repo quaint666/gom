@@ -2,7 +2,7 @@ import type { DeviceSubscription } from './push.js';
 export type ErrorCode =
   | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
   | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
-  | 'wrong_password' | 'cannot_disable_owner' | 'confirm_mismatch' | 'owner_cannot_delete' | 'account_deleted' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
+  | 'wrong_password' | 'cannot_disable_owner' | 'confirm_mismatch' | 'owner_cannot_delete' | 'account_deleted' | 'group_not_empty' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
@@ -13,7 +13,7 @@ export type ErrorCode =
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
-  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner', 'confirm_mismatch', 'owner_cannot_delete', 'account_deleted',
+  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner', 'confirm_mismatch', 'owner_cannot_delete', 'account_deleted', 'group_not_empty',
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
@@ -34,6 +34,16 @@ export interface Invite {
   status: 'active' | 'full' | 'revoked' | 'expired'; members: { gomId: string; displayName: string; usedAt: string }[];
 }
 export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; deleted?: boolean; createdAt: string }
+/** A count of pictures or files and the bytes they take. */
+export interface Totals { count: number; bytes: number }
+/** One group in the storage view; `members` 0 is a group nobody is in, which the owner may delete. */
+export interface GroupUse { id: string; title: string | null; members: number; messages: number; files: number; bytes: number }
+export interface PersonUse { gomId: string; displayName: string; deleted: boolean; files: number; bytes: number }
+/** What Gom keeps, for the owner. One-to-one chats are counted together; disk and folder are missing when uploads are off. */
+export interface Storage {
+  disk: { total: number; free: number } | null; database: number; uploadsFolder: number | null; pictures: Totals; files: Totals;
+  direct: { conversations: number; messages: number; files: number; bytes: number }; groups: GroupUse[]; people: PersonUse[];
+}
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
 export interface JoinBody { gomId: string; password: string; displayName: string }
 
@@ -105,6 +115,9 @@ export interface Api {
   invites(): Promise<Result<Invite[]>>;
   revokeInvite(id: string): Promise<Result<void>>;
   members(): Promise<Result<Member[]>>;
+  storage(): Promise<Result<Storage>>;
+  /** Deletes a group nobody is in, with everything in it. */
+  deleteEmptyGroup(id: string): Promise<Result<void>>;
   resetLink(gomId: string): Promise<Result<Issued>>;
   setNickname(displayName: string): Promise<Result<User>>;
   changePassword(current: string, password: string): Promise<Result<void>>;
@@ -235,6 +248,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     invites: () => call('GET', '/api/invites'),
     revokeInvite: (id) => call('DELETE', `/api/invites/${enc(id)}`),
     members: () => call('GET', '/api/users'),
+    storage: () => call('GET', '/api/owner/storage'),
+    deleteEmptyGroup: (id) => call('DELETE', `/api/owner/groups/${enc(id)}`),
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),

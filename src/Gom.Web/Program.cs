@@ -120,6 +120,7 @@ app.MapAccount();
 app.MapFriends();
 app.MapConversations();
 app.MapGroups();
+app.MapStorage();
 app.MapPeople();
 app.MapMessages();
 app.MapAttachments();
@@ -147,6 +148,7 @@ MapPage("/groups/new", "newgroup.html");
 MapPage("/groups/{id}", "group.html");
 MapPage("/add/{gomId}", "add.html");
 MapPage("/owner", "owner.html");
+MapPage("/owner/storage", "storage.html");
 
 // 200 only when the database answers; a monitor or a proxy can poll this.
 app.MapMethods("/healthz", ["GET", "HEAD"], async (GomDbContext db, CancellationToken ct) =>

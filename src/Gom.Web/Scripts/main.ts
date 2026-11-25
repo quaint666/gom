@@ -10,6 +10,7 @@ import { mountJoin } from './pages/join.js';
 import { mountOwner } from './pages/owner.js';
 import { mountReset } from './pages/reset.js';
 import { mountSettings } from './pages/settings.js';
+import { mountStorage } from './pages/storage.js';
 import { createPusher } from './push.js';
 import { mountSignIn } from './pages/signin.js';
 import { applyScheme, storedScheme } from './theme.js';
@@ -61,6 +62,7 @@ if (root) {
     case 'newgroup': mountNewGroup(root, api, go); break;
     case 'group': mountGroup(root, api, go, token); break;
     case 'owner': mountOwner(root, api, go, location.origin); break;
+    case 'storage': mountStorage(root, api, go); break;
   }
 }
 
