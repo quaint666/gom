@@ -11,7 +11,7 @@ import * as icons from '../icons.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { errorText, formatSize } from '../text.js';
-import { STICKERS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
+import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
@@ -157,6 +157,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let forwarding: { body: string; attachments: Attachment[]; sticker: string | null; picked: string[]; q: string; note: string; busy: boolean } | null = null;
   /** The panel under the composer, open on its emoji or its sticker tab; the tab last used is remembered on this device. */
   let picker: 'emoji' | 'stickers' | null = null;
+  /** The pack of stickers shown: -1 is "Gần đây" (the ones this device sent lately). */
+  let stickerPack = -1;
   /** The group of emoji shown: -1 is "Gần đây". */
   let emojiGroup = recentEmoji().length > 0 ? -1 : 0;
 
@@ -875,15 +877,25 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </section>`;
   };
 
-  /** The stickers, the ones this device sent lately first. A tap sends one at once, as Zalo does. */
+  /**
+   * The stickers, a pack at a time, as the emoji are shown a group at a time; "Gần đây" (sent lately from this device) comes first once
+   * there are some. Only the pack shown is fetched. A tap sends one at once, as Zalo does.
+   */
   const stickerPanel = (id: string) => {
     const recent = recentStickers();
+    const pack = stickerPack === -1 && recent.length === 0 ? 0 : stickerPack;
+    const shown = pack === -1 ? recent : STICKER_PACKS[pack]?.codes ?? [];
     const tile = (code: string) => html`<button class="stk-pick" type="button" data-send-sticker=${code} aria-label=${`Gửi nhãn dán ${stickerName(code)}`}
       @click=${() => void sendSticker(id, code)}><img src=${stickerUrl(code)} alt="" loading="lazy" width="56" height="56" draggable="false"></button>`;
+    const chooser = (index: number, face: TemplateResult | string, name: string) => html`
+      <button class="egroup" type="button" data-sticker-pack=${index} aria-label=${name} aria-pressed=${pack === index ? 'true' : 'false'}
+        @click=${() => { stickerPack = index; update(); }}>${face}</button>`;
     return html`
       <section class="stickers" role="tabpanel" aria-label="Nhãn dán" data-sticker-panel>
-        ${recent.length === 0 ? nothing : html`<h3>Gần đây</h3><div class="stk-grid" data-recent-stickers>${recent.map(tile)}</div><h3>Tất cả</h3>`}
-        <div class="stk-grid" data-all-stickers>${STICKERS.map(tile)}</div>
+        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', 'Gần đây') : nothing}${STICKER_PACKS.map((p, i) =>
+          chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, p.name))}</div>
+        <h3>${pack === -1 ? 'Gần đây' : STICKER_PACKS[pack]?.name}</h3>
+        <div class="stk-grid" data-shown-stickers>${shown.map(tile)}</div>
         <p class="credit">Nhãn dán: Noto Emoji của Google, giấy phép SIL Open Font License 1.1.</p>
       </section>`;
   };
@@ -894,6 +906,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function togglePicker(): void {
     if (picker !== null) { picker = null; update(); return; }
     picker = ((): 'emoji' | 'stickers' => { try { return localStorage.getItem(PICKER_TAB) === 'emoji' ? 'emoji' : 'stickers'; } catch { return 'stickers'; } })();
+    // Opens on "Gần đây" when there are some, else on the first pack; it then stays where the person put it, sending or not.
+    stickerPack = recentStickers().length > 0 ? -1 : 0;
     root.querySelector<HTMLTextAreaElement>('.composer textarea')?.blur();
     update();
   }

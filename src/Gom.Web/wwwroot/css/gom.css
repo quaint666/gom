@@ -282,6 +282,7 @@ button.th-title:hover b { text-decoration: underline; }
 .egroups { display: flex; gap: 2px; overflow-x: auto; margin-block-end: 4px; }
 .egroup { flex: none; inline-size: 40px; block-size: 40px; border: 0; border-radius: 10px; background: none; font-size: 20px; cursor: pointer; }
 .egroup[aria-pressed="true"] { background: var(--tint); }
+.egroup img { display: block; margin: auto; }
 .e-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
 .e-pick { block-size: 44px; border: 0; border-radius: 10px; background: none; font-size: 28px; line-height: 1; cursor: pointer; }
 .e-pick:hover, .egroup:hover { background: var(--hover); }

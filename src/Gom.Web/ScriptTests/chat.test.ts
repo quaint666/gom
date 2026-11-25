@@ -4,6 +4,7 @@ import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Script
 import type { Pusher, PushSupport } from '../Scripts/push.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
 import { mountChat, type ChatDeps, type OutboxItem } from '../Scripts/pages/chat.js';
+import { STICKER_PACKS, STICKERS } from '../Scripts/stickers.js';
 import { fail, fakeApi, fill, flush, ok, text } from './helpers.js';
 
 let root: HTMLElement;
@@ -4156,15 +4157,21 @@ describe('chat: stickers', () => {
     ok({ ...sticker(9, 'mom', code), conversationId: conversation, id: `s-${clientId}`, clientId, ...(replyTo ? { reply: { id: replyTo, sender: null, snippet: null } } : {}) }));
   const panel = () => root.querySelector('[data-sticker-panel]');
   const toggle = async () => { root.querySelector<HTMLButtonElement>('[data-picker-toggle]')!.click(); await flush(); };
-  const tap = async (code: string, where = '[data-all-stickers]') => { root.querySelector<HTMLButtonElement>(`${where} [data-send-sticker="${code}"]`)!.click(); await flush(); await flush(); };
+  const pack = async (index: number) => { root.querySelector<HTMLButtonElement>(`[data-sticker-pack="${index}"]`)!.click(); await flush(); };
+  const shown = () => [...root.querySelectorAll('[data-shown-stickers] [data-send-sticker]')].map((b) => b.getAttribute('data-send-sticker'));
+  const tap = async (code: string, where = '[data-shown-stickers]') => { root.querySelector<HTMLButtonElement>(`${where} [data-send-sticker="${code}"]`)!.click(); await flush(); await flush(); };
 
-  it('opens a panel of all 48 stickers from the smiley, with the credit, and closes it again', async () => {
+  it('opens a panel of sticker packs from the smiley, on the first pack, with the credit, and closes it again', async () => {
     open();
     await flush();
     expect(panel()).toBeNull();
     await toggle();
     expect(root.querySelector('[data-picker-toggle]')!.getAttribute('aria-expanded')).toBe('true');
-    expect(panel()!.querySelectorAll('[data-all-stickers] [data-send-sticker]')).toHaveLength(48);
+    const buttons = [...panel()!.querySelectorAll('[data-sticker-pack]')];
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(STICKER_PACKS.map((p) => p.name));
+    expect(buttons[0]!.getAttribute('aria-pressed')).toBe('true');
+    expect(shown()).toEqual(STICKER_PACKS[0]!.codes);
+    expect(text(panel()!)).toContain('Cảm xúc');
     expect(root.querySelector('[data-send-sticker="1f602"]')!.getAttribute('aria-label')).toBe('Gửi nhãn dán 😂');
     expect(root.querySelector<HTMLImageElement>('[data-send-sticker="1f602"] img')!.getAttribute('src')).toBe('/stickers/1f602.svg');
     expect(text(panel()!)).toContain('Noto Emoji của Google');
@@ -4194,13 +4201,31 @@ describe('chat: stickers', () => {
     open({ sendSticker: echo() });
     await flush();
     await toggle();
-    expect(root.querySelector('[data-recent-stickers]')).toBeNull();
+    expect(root.querySelector('[data-sticker-pack="-1"]')).toBeNull();
     await tap('1f602');
+    expect(shown()).toEqual(STICKER_PACKS[0]!.codes);   // stays on the pack being chosen from
+    await pack(2);
     await tap('2764');
+    await pack(0);
     await tap('1f602');
-    const recent = [...root.querySelectorAll('[data-recent-stickers] [data-send-sticker]')].map((b) => b.getAttribute('data-send-sticker'));
-    expect(recent).toEqual(['1f602', '2764']);
+    await pack(-1);
+    expect(shown()).toEqual(['1f602', '2764']);
     expect(text(panel()!)).toContain('Gần đây');
+    // Opened again, it starts there.
+    await toggle(); await toggle();
+    expect(root.querySelector('[data-sticker-pack="-1"]')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('shows one pack at a time, each with its own stickers, and every sticker is in one pack', async () => {
+    open();
+    await flush();
+    await toggle();
+    for (const [i, p] of STICKER_PACKS.entries()) {
+      await pack(i);
+      expect(shown(), p.name).toEqual(p.codes);
+      expect(text(panel()!.querySelector('h3')!)).toBe(p.name);
+    }
+    expect(STICKER_PACKS.flatMap((p) => p.codes)).toEqual(STICKERS);
   });
 
   it('closes the panel when the message field is used, or on Escape', async () => {
@@ -4243,6 +4268,7 @@ describe('chat: stickers', () => {
     await flush();
     expect(text(root.querySelector('[data-replybar]')!)).toContain('Nhãn dán');
     await toggle();
+    await pack(1);   // 👍 is among the gestures
     await tap('1f44d');
     expect(sendSticker).toHaveBeenCalledWith(C1, 'new-1', '1f44d', 'id1');
     expect(root.querySelector('[data-replybar]')).toBeNull();
