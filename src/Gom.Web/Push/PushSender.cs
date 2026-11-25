@@ -69,17 +69,18 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
             where s.RevokedAt == null && s.ExpiresAt > now
             join p in db.PushSubscriptions on s.Id equals p.SessionId
             where !job.Recalled || p.Level == PushLevel.Words   // only a device that showed the words has anything to take back
-            select new { p.Id, p.Endpoint, p.P256dh, p.Auth, p.Level }).AsNoTracking().ToListAsync(ct);
+            select new { p.Id, p.Endpoint, p.P256dh, p.Auth, p.Level, u.Language }).AsNoTracking().ToListAsync(ct);
         if (devices.Count == 0) return;
 
-        var (title, body) = Words(job, chat.Kind, chat.Title);
-        var (_, withWords) = Words(job, chat.Kind, chat.Title, words: true);
         var topic = Base64Url.EncodeToString(job.ConversationId.ToByteArray());   // 22 characters: RFC 8030 allows up to 32
         foreach (var d in devices)
         {
-            object payload = job.Recalled ? new { c = job.ConversationId, m = job.MessageId, title, body = ServerText.Vi.Recalled, recalled = true }
-                : d.Level == PushLevel.Nothing ? new { c = job.ConversationId, m = job.MessageId, title = "Gom", body = ServerText.Vi.NewMessage, recalled = false }
-                : new { c = job.ConversationId, m = job.MessageId, title, body = d.Level == PushLevel.Words ? withWords : body, recalled = false };
+            // In the language of the person the device belongs to.
+            var say = ServerText.For(d.Language);
+            var (title, body) = Words(job, chat.Kind, chat.Title, say, words: d.Level == PushLevel.Words);
+            object payload = job.Recalled ? new { c = job.ConversationId, m = job.MessageId, title, body = say.Recalled, recalled = true }
+                : d.Level == PushLevel.Nothing ? new { c = job.ConversationId, m = job.MessageId, title = "Gom", body = say.NewMessage, recalled = false }
+                : new { c = job.ConversationId, m = job.MessageId, title, body, recalled = false };
             await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, payload, job.Recalled ? "normal" : "high", topic, now, ct);
         }
     }
@@ -93,10 +94,11 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
             join s in db.Sessions on u.Id equals s.UserId
             where s.RevokedAt == null && s.ExpiresAt > now
             join p in db.PushSubscriptions on s.Id equals p.SessionId
-            select new { p.Id, p.Endpoint, p.P256dh, p.Auth, p.Level }).AsNoTracking().ToListAsync(ct);
+            select new { p.Id, p.Endpoint, p.P256dh, p.Auth, p.Level, u.Language }).AsNoTracking().ToListAsync(ct);
         foreach (var d in devices)
         {
-            var body = d.Level == PushLevel.Nothing ? ServerText.Vi.JoinRequestUnnamed : ServerText.Vi.JoinRequest(job.SenderName);
+            var say = ServerText.For(d.Language);
+            var body = d.Level == PushLevel.Nothing ? say.JoinRequestUnnamed : say.JoinRequest(job.SenderName);
             await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, new { c = "", title = "Gom", body, open = "owner" }, "normal", "join-requests", now, ct);
         }
     }
@@ -132,15 +134,15 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
     /// What a notification says: the conversation, who wrote (in a group), and what kind of message it is; with <paramref name="words"/>
     /// (a device that chose to see them), the message's own words when it has some.
     /// </summary>
-    public static (string Title, string Body) Words(PushJob job, ConversationKind kind, string? groupTitle, bool words = false)
+    public static (string Title, string Body) Words(PushJob job, ConversationKind kind, string? groupTitle, ServerText say, bool words = false)
     {
-        var what = words && job.Text.Length > 0 ? job.Text : job.Sticker ? ServerText.Vi.SentSticker : (job.Images, job.Files) switch
+        var what = words && job.Text.Length > 0 ? job.Text : job.Sticker ? say.SentSticker : (job.Images, job.Files) switch
         {
-            ( > 0, > 0) => ServerText.Vi.SentPicturesAndFiles(job.Images, job.Files),
-            ( > 0, _) => ServerText.Vi.SentPictures(job.Images),
-            (_, > 0) => ServerText.Vi.SentFiles(job.Files),
-            _ => ServerText.Vi.NewMessage,
+            ( > 0, > 0) => say.SentPicturesAndFiles(job.Images, job.Files),
+            ( > 0, _) => say.SentPictures(job.Images),
+            (_, > 0) => say.SentFiles(job.Files),
+            _ => say.NewMessage,
         };
-        return kind == ConversationKind.Group ? (groupTitle ?? ServerText.Vi.Group, $"{job.SenderName}: {what}") : (job.SenderName, what);
+        return kind == ConversationKind.Group ? (groupTitle ?? say.Group, $"{job.SenderName}: {what}") : (job.SenderName, what);
     }
 }

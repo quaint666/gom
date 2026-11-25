@@ -21,6 +21,8 @@ public class User
     /// good). Null shows the initials.
     /// </summary>
     public Guid? AvatarId { get; set; }
+    /// <summary>The language of the pages and of the notifications this person gets: "vi" or "en".</summary>
+    public string Language { get; set; } = ServerText.DefaultLanguage;
     /// <summary>
     /// Set while this account is a request to join (signed up on its own, waiting for the owner); null for a member. A request can
     /// sign in but do nothing else until the owner approves it.

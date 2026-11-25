@@ -148,7 +148,7 @@ var limits = Pages.Limits(
     app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Auth.AuthOptions>>().Value);
 foreach (var page in Pages.All)
 {
-    var html = Assets.Apply(Pages.Render(shell, page, limits, ServerText.Vi), fingerprints);
+    var html = Assets.Apply(Pages.Render(shell, page, limits), fingerprints);
     app.MapMethods(page.Route, ["GET", "HEAD"], () => Results.Content(html, "text/html; charset=utf-8"));
 }
 

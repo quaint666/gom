@@ -6,7 +6,7 @@ import type { Installer } from '../install.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
 import { errorText, passwordHint } from '../text.js';
-import { say } from '../say.js';
+import { LANGUAGES, language, rememberLanguage, say, type Language } from '../say.js';
 import { limits } from '../limits.js';
 
 /** The choices for the colour scheme, in the order shown. */
@@ -140,6 +140,13 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
               @change=${() => { scheme = value; chooseScheme(value); update(); }}>
               <label for=${`scheme-${value}`}>${label}</label></div>`)}
         </fieldset>
+        <fieldset class="choices" data-language>
+          <legend class="hint">${say.settings.language}</legend>
+          ${LANGUAGES.map(([value, label]) => html`
+            <div class="choice"><input type="radio" name="language" id=${`language-${value}`} value=${value} .checked=${live(language === value)}
+              ?disabled=${busy} @change=${() => void chooseLanguage(value)}>
+              <label for=${`language-${value}`} lang=${value}>${label}</label></div>`)}
+        </fieldset>
         <h2 class="section">${say.settings.privacy}</h2>
         <div class="card">
           <div class="pick"><input type="checkbox" id="receipts" name="receipts" .checked=${live(receipts)} @change=${(e: Event) => void saveReceipts((e.target as HTMLInputElement).checked)}>
@@ -168,6 +175,16 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     const result = await api.sessions();
     if (result.ok) sessions = result.data; else error = result;
     update();
+  }
+
+  /** The person's language for every device: saved with their account, then this page again in it. */
+  async function chooseLanguage(chosen: Language): Promise<void> {
+    busy = true; error = null; update();
+    const result = await api.setLanguage(chosen);
+    busy = false;
+    if (!result.ok) { error = result; update(); return; }
+    rememberLanguage(chosen);
+    go('/settings');
   }
 
   async function saveReceipts(enabled: boolean): Promise<void> {

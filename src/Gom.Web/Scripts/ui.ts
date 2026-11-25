@@ -66,7 +66,7 @@ export const appBar = (o: BarOptions): TemplateResult => html`
     ${o.actions ?? nothing}
   </header>`;
 
-const dateFormat = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' });
+const dateFormat = new Intl.DateTimeFormat(say.locale, { dateStyle: 'medium', timeStyle: 'short' });
 export const formatTime = (iso: string): string => dateFormat.format(new Date(iso));
 
 /** Where a profile picture is fetched from, by its id. */

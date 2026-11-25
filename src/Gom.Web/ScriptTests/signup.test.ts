@@ -174,7 +174,7 @@ describe('the API: a waiting account', () => {
       new Response(JSON.stringify({ error: 'pending_approval' }), { status: 403 }),
       new Response(JSON.stringify({ error: 'not_allowed' }), { status: 403 }),
     ];
-    const api = createApi(async () => answers.shift()!, undefined, onPending);
+    const api = createApi(async () => answers.shift()!, undefined, { onPending });
     const first = await api.conversations();
     expect(first.ok ? '' : first.error).toBe('pending_approval');
     expect(onPending).toHaveBeenCalledOnce();

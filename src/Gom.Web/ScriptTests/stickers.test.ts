@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NOT_OFFERED, STICKER_PACKS, STICKERS, recentStickers, rememberSticker, stickerName } from '../Scripts/stickers.js';
+import { vi } from '../Scripts/strings/vi.js';
 
 describe('stickers', () => {
   beforeEach(() => localStorage.clear());
@@ -7,8 +8,8 @@ describe('stickers', () => {
   it('are 432 in eleven named packs, each once, with the flags last', () => {
     expect(STICKERS).toHaveLength(432);
     expect(new Set(STICKERS).size).toBe(432);
-    expect(STICKER_PACKS.map((p) => p.name)).toEqual(['Cảm xúc', 'Cử chỉ', 'Yêu thương', 'Động vật', 'Đồ ăn', 'Lễ hội', 'Thời tiết', 'Du lịch', 'Thể thao', 'Học tập', 'Cờ']);
-    for (const p of STICKER_PACKS) expect(p.codes.length, p.name).toBeGreaterThan(0);
+    expect(STICKER_PACKS.map((p) => vi.stickerPacks[p.key])).toEqual(['Cảm xúc', 'Cử chỉ', 'Yêu thương', 'Động vật', 'Đồ ăn', 'Lễ hội', 'Thời tiết', 'Du lịch', 'Thể thao', 'Học tập', 'Cờ']);
+    for (const p of STICKER_PACKS) expect(p.codes.length, p.key).toBeGreaterThan(0);
   });
 
   it('still has every sticker that was ever offered, so a message already sent still draws', () => {
@@ -26,7 +27,7 @@ describe('stickers', () => {
   });
 
   it('have every flag of the emoji list but the thirteen not offered, Việt Nam first, and England\'s fits the database column (48)', () => {
-    const flags = STICKER_PACKS.find((p) => p.name === 'Cờ')!.codes;
+    const flags = STICKER_PACKS.find((p) => p.key === 'flags')!.codes;
     expect(flags).toHaveLength(256);
     expect(NOT_OFFERED).toHaveLength(13);
     for (const code of NOT_OFFERED) expect(STICKERS, code).not.toContain(code);

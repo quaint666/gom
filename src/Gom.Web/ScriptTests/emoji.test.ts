@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../Scripts/emoji.js';
+import { vi } from '../Scripts/strings/vi.js';
 
 describe('emoji', () => {
   beforeEach(() => localStorage.clear());
 
   it("come in Unicode's nine groups, without skin tones, each once", () => {
-    expect(EMOJI_GROUPS.map((g) => g.name)).toEqual(['Mặt cười', 'Con người', 'Động vật và thiên nhiên', 'Đồ ăn và thức uống', 'Du lịch và địa điểm', 'Hoạt động', 'Đồ vật', 'Biểu tượng', 'Cờ']);
+    expect(EMOJI_GROUPS.map((g) => vi.emojiGroups[g.key])).toEqual(['Mặt cười', 'Con người', 'Động vật và thiên nhiên', 'Đồ ăn và thức uống', 'Du lịch và địa điểm', 'Hoạt động', 'Đồ vật', 'Biểu tượng', 'Cờ']);
     const all = EMOJI_GROUPS.flatMap((_, i) => emojiOf(i));
     expect(all).toHaveLength(1849);
     expect(new Set(all).size).toBe(all.length);

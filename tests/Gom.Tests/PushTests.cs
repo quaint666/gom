@@ -170,27 +170,36 @@ public class PushCryptoTests
     public void A_notification_says_what_kind_of_message_never_its_words(int images, int files, string what)
     {
         var job = new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", images, files);
-        Assert.Equal(("Minh", what), PushSender.Words(job, ConversationKind.Direct, null));
-        Assert.Equal(("Nhà mình", $"Minh: {what}"), PushSender.Words(job, ConversationKind.Group, "Nhà mình"));
+        Assert.Equal(("Minh", what), PushSender.Words(job, ConversationKind.Direct, null, Gom.Web.ServerText.Vi));
+        Assert.Equal(("Nhà mình", $"Minh: {what}"), PushSender.Words(job, ConversationKind.Group, "Nhà mình", Gom.Web.ServerText.Vi));
     }
 
     [Fact]
     public void A_device_that_chose_the_words_sees_them_and_the_kind_of_message_when_there_are_none()
     {
         var text = new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 2, 0, Text: "ảnh hôm qua");
-        Assert.Equal(("Minh", "ảnh hôm qua"), PushSender.Words(text, ConversationKind.Direct, null, words: true));
-        Assert.Equal(("Nhà mình", "Minh: ảnh hôm qua"), PushSender.Words(text, ConversationKind.Group, "Nhà mình", words: true));
-        Assert.Equal(("Minh", "Đã gửi 2 ảnh"), PushSender.Words(text, ConversationKind.Direct, null));
+        Assert.Equal(("Minh", "ảnh hôm qua"), PushSender.Words(text, ConversationKind.Direct, null, Gom.Web.ServerText.Vi, words: true));
+        Assert.Equal(("Nhà mình", "Minh: ảnh hôm qua"), PushSender.Words(text, ConversationKind.Group, "Nhà mình", Gom.Web.ServerText.Vi, words: true));
+        Assert.Equal(("Minh", "Đã gửi 2 ảnh"), PushSender.Words(text, ConversationKind.Direct, null, Gom.Web.ServerText.Vi));
         var pictures = new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 2, 0);
-        Assert.Equal(("Minh", "Đã gửi 2 ảnh"), PushSender.Words(pictures, ConversationKind.Direct, null, words: true));
+        Assert.Equal(("Minh", "Đã gửi 2 ảnh"), PushSender.Words(pictures, ConversationKind.Direct, null, Gom.Web.ServerText.Vi, words: true));
+    }
+
+    [Fact]
+    public void Someone_who_reads_English_gets_the_kind_of_message_in_English()
+    {
+        var en = Gom.Web.ServerText.En;
+        Assert.Equal(("Minh", "Sent a picture"), PushSender.Words(new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 1, 0), ConversationKind.Direct, null, en));
+        Assert.Equal(("Minh", "Sent 3 pictures and 1 file"), PushSender.Words(new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 3, 1), ConversationKind.Direct, null, en));
+        Assert.Equal(("Group", "Minh: New message"), PushSender.Words(new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 0, 0), ConversationKind.Group, null, en));
     }
 
     [Fact]
     public void A_sticker_is_named_as_one()
     {
         var job = new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 0, 0, Sticker: true);
-        Assert.Equal(("Minh", "Đã gửi 1 nhãn dán"), PushSender.Words(job, ConversationKind.Direct, null));
-        Assert.Equal(("Nhà mình", "Minh: Đã gửi 1 nhãn dán"), PushSender.Words(job, ConversationKind.Group, "Nhà mình"));
+        Assert.Equal(("Minh", "Đã gửi 1 nhãn dán"), PushSender.Words(job, ConversationKind.Direct, null, Gom.Web.ServerText.Vi));
+        Assert.Equal(("Nhà mình", "Minh: Đã gửi 1 nhãn dán"), PushSender.Words(job, ConversationKind.Group, "Nhà mình", Gom.Web.ServerText.Vi));
     }
 
     [Theory]
@@ -583,5 +592,16 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
         Assert.Equal("Bi xin tham gia Gom", note.GetProperty("body").GetString());
         Assert.Equal("owner", note.GetProperty("open").GetString());
         Assert.DoesNotContain("Con của cô Lan", note.ToString());   // the note stays on the owner's page
+    }
+
+    [Fact]
+    public async Task Each_device_hears_in_its_person_s_language()
+    {
+        var p = await Pair();
+        using var phone = new FakeBrowser();
+        await Subscribe(p.CA, phone, "name");
+        using (var r = await app.Call(HttpMethod.Put, "/api/me/language", new { language = "en" }, p.CA)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        await Deliver(p.Chat, await Say(p.CB, p.Chat), p.B);
+        Assert.Equal("New message", phone.Read(app.Push.To(phone.Endpoint)[0].Body).GetProperty("body").GetString());
     }
 }
