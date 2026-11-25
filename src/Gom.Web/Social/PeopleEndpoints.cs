@@ -13,6 +13,17 @@ public static class PeopleEndpoints
         api.MapGet("/people/{userId:guid}", Card);
     }
 
+    /// <summary>Whether this person may see who that one is (their name, their picture): themself, a friend, or someone they share a conversation with now.</summary>
+    internal static async Task<bool> MayKnow(GomDbContext db, Guid me, Guid userId, CancellationToken ct)
+    {
+        if (userId == me) return true;
+        var (low, high) = Friendship.Order(me, userId);
+        return await db.Friendships.AnyAsync(f => f.UserLow == low && f.UserHigh == high && f.Status == FriendStatus.Accepted, ct)
+            || await (from mine in db.Members where mine.UserId == me
+                      join theirs in db.Members on mine.ConversationId equals theirs.ConversationId
+                      where theirs.UserId == userId select mine).AnyAsync(ct);
+    }
+
     /// <summary>
     /// Someone you are friends with or share a conversation with now: their name, their Gom ID if they are your friend, where a friend
     /// request between you stands, and the groups you are both in, most recently active first. Anybody else is a 404, so an id alone
@@ -22,7 +33,7 @@ public static class PeopleEndpoints
     {
         var me = GomClaims.User(http.User);
         if (userId == me) return Results.NotFound();
-        var them = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => new { u.Id, u.GomId, u.DisplayName }).SingleOrDefaultAsync(ct);
+        var them = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => new { u.Id, u.GomId, u.DisplayName, u.AvatarId }).SingleOrDefaultAsync(ct);
         if (them is null) return Results.NotFound();
 
         var (low, high) = Friendship.Order(me, userId);
@@ -47,6 +58,7 @@ public static class PeopleEndpoints
         {
             id = them.Id,
             displayName = them.DisplayName,
+            avatar = them.AvatarId,
             // A Gom ID is shown to friends only, as in a group's member list.
             gomId = friends ? them.GomId : null,
             friend = friends ? "friends" : row is { Status: FriendStatus.Pending } ? (row.RequestedBy == me ? "sent" : "received") : "none",

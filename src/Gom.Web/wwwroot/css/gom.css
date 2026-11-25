@@ -131,6 +131,9 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .av.a5 { background: light-dark(#E7E0F1, #2C2640); color: light-dark(#4A3478, #D3C8EE); }
 .av.a6 { background: light-dark(#D8EEEC, #1B3433); color: light-dark(#1E5654, #B5E3DF); }
 .av.xl { inline-size: 72px; block-size: 72px; font-size: 26px; }
+/* a profile picture fills the circle; the square kept by the server is cut round here */
+.av.has-pic { overflow: hidden; }
+.av.has-pic img { inline-size: 100%; block-size: 100%; object-fit: cover; display: block; }
 .im { flex: 1; min-inline-size: 0; }
 .l1, .l2 { display: flex; align-items: baseline; gap: 6px; }
 .l2 { align-items: center; gap: 8px; margin-block-start: 2px; }
@@ -558,3 +561,8 @@ button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(-
 @media (max-width: 640px) {
   .pcard { inline-size: 100vw; max-inline-size: 100vw; margin: auto 0 0; border-radius: 14px 14px 0 0; border-inline: 0; border-block-end: 0; }
 }
+
+/* choosing a profile picture: the preview is cut round and from the middle, as it will be kept */
+.avatar-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.avatar-row .btn { display: inline-flex; align-items: center; justify-content: center; }
+.avatar-preview { inline-size: 72px; block-size: 72px; border-radius: 50%; object-fit: cover; object-position: center; flex: none; }

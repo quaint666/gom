@@ -4,6 +4,7 @@ import type { Api, Failure, SessionInfo, User } from '../api.js';
 import { chosenScheme, chooseScheme, type Choice } from '../theme.js';
 import type { Installer } from '../install.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
+import { errorText } from '../text.js';
 
 /** The choices for the colour scheme, in the order shown. */
 const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', 'Theo hệ thống'], ['light', 'Sáng'], ['dark', 'Tối']];
@@ -23,6 +24,9 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let busy = false;
   let scheme: Choice = chosenScheme();
   let installStatus = '';
+  /** A picture chosen for the profile, not saved yet: the file, and what the preview shows (read as a data: address, which the page's rules allow). */
+  let picked: { file: File; preview: string } | null = null;
+  let pictureStatus = '';
 
   const row = (s: SessionInfo) => html`
     <li class="li" data-session=${s.id}>
@@ -33,14 +37,38 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       ${s.current ? nothing : html`<button class="btn secondary small" type="button" @click=${() => endSession(s.id)}>Đăng xuất thiết bị</button>`}
     </li>`;
 
+  /**
+   * The profile picture: choose a photo, see the square from its middle that will be kept (a round preview), then save; or go back
+   * to the initials.
+   */
+  const pictureCard = (u: User) => html`
+    <div class="card" data-avatar>
+      <p><b>Ảnh đại diện</b></p>
+      ${picked === null ? html`
+        <div class="avatar-row">
+          <label class="btn secondary small" for="avatar-file">${u.avatar ? 'Đổi ảnh' : 'Chọn ảnh'}</label>
+          <input class="file-input" id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" data-avatar-file
+            @change=${(e: Event) => { const input = e.target as HTMLInputElement; const file = input.files?.[0]; input.value = ''; if (file) choosePicture(file); }}>
+          ${u.avatar ? html`<button class="btn secondary small" type="button" data-avatar-remove ?disabled=${busy} @click=${() => void removePicture()}>Xóa ảnh</button>` : nothing}
+        </div>
+        <p class="hint">Ảnh được cắt thành hình vuông ở giữa. Bạn bè và người cùng nhóm sẽ thấy ảnh này.</p>` : html`
+        <div class="avatar-row">
+          <img class="avatar-preview" src=${picked.preview} alt="Ảnh sẽ dùng" data-avatar-preview>
+          <button class="btn small" type="button" data-avatar-save ?disabled=${busy} @click=${() => void savePicture()}>Lưu ảnh</button>
+          <button class="btn secondary small" type="button" data-avatar-cancel ?disabled=${busy} @click=${() => { picked = null; update(); }}>Hủy</button>
+        </div>`}
+      <p class="hint" role="status" data-avatar-status>${pictureStatus}</p>
+    </div>`;
+
   const view = () => html`
     ${appBar({ title: 'Cài đặt', back: '/' })}
     <div class="page">
       ${errorBox(error)}
       ${user === null ? nothing : html`
-        <div class="profile" data-profile>${avatar(user.displayName, false, true)}
+        <div class="profile" data-profile>${avatar(user.displayName, false, true, user.avatar)}
           <div class="t"><b>${user.displayName}</b><small>@${user.gomId}</small></div></div>
         <h2 class="section">Hồ sơ</h2>
+        ${user.uploads ? pictureCard(user) : nothing}
         <form class="card" data-nickname @submit=${saveNickname}>
           <label for="display-name">Tên mọi người nhìn thấy</label>
           <div class="input"><input id="display-name" name="displayName" type="text" autocomplete="nickname" maxlength="60" enterkeyhint="done"
@@ -108,13 +136,43 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     update();
   }
 
+  function choosePicture(file: File): void {
+    pictureStatus = '';
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') { picked = { file, preview: reader.result }; update(); } };
+    reader.onerror = () => { pictureStatus = 'Không đọc được ảnh này.'; update(); };
+    reader.readAsDataURL(file);
+  }
+
+  async function savePicture(): Promise<void> {
+    if (picked === null || busy || user === null) return;
+    busy = true; pictureStatus = 'Đang lưu…'; update();
+    const result = await api.setAvatar(picked.file);
+    busy = false;
+    if (result.ok) { user = { ...user, avatar: result.data.avatar }; picked = null; pictureStatus = 'Đã lưu ảnh.'; }
+    else if (result.error === 'unauthorized') { go('/sign-in'); return; }
+    else pictureStatus = errorText(result);
+    update();
+  }
+
+  async function removePicture(): Promise<void> {
+    if (busy || user === null) return;
+    busy = true; update();
+    const result = await api.removeAvatar();
+    busy = false;
+    if (result.ok) { user = { ...user, avatar: null }; pictureStatus = 'Đã xóa ảnh.'; }
+    else if (result.error === 'unauthorized') { go('/sign-in'); return; }
+    else pictureStatus = errorText(result);
+    update();
+  }
+
   async function saveNickname(event: Event): Promise<void> {
     event.preventDefault();
     if (busy) return;
     busy = true; error = null; nicknameStatus = ''; update();
     const result = await api.setNickname(nickname);
     busy = false;
-    if (result.ok) { user = result.data; nickname = result.data.displayName; nicknameStatus = 'Đã lưu.'; } else error = result;
+    if (result.ok) { user = { ...user, ...result.data }; nickname = result.data.displayName; nicknameStatus = 'Đã lưu.'; } else error = result;
     update();
   }
 

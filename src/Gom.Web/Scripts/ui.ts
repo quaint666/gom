@@ -68,6 +68,10 @@ export const appBar = (o: BarOptions): TemplateResult => html`
 const dateFormat = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' });
 export const formatTime = (iso: string): string => dateFormat.format(new Date(iso));
 
-/** A round badge with the one or two letters of a name. */
-export const avatar = (name: string, small = false, big = false): TemplateResult =>
-  html`<div class="av a${avatarTone(name)} ${small ? 'sm' : ''} ${big ? 'xl' : ''}" aria-hidden="true">${initials(name)}</div>`;
+/** Where a profile picture is fetched from, by its id. */
+export const avatarUrl = (picture: string): string => `/api/avatars/${encodeURIComponent(picture)}`;
+
+/** A round badge: the person's picture when they have one, else the one or two letters of their name. */
+export const avatar = (name: string, small = false, big = false, picture?: string | null): TemplateResult =>
+  html`<div class="av a${avatarTone(name)} ${small ? 'sm' : ''} ${big ? 'xl' : ''} ${picture ? 'has-pic' : ''}" aria-hidden="true">${picture
+    ? html`<img src=${avatarUrl(picture)} alt="" loading="lazy" decoding="async">` : initials(name)}</div>`;

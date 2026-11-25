@@ -56,7 +56,7 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
 
   const friendRow = (p: Person) => html`
     <li class="li person" data-friend=${p.gomId}>
-      <button class="rowmain" type="button" data-action="message" @click=${() => void message(p.gomId)}>${avatar(p.displayName)}
+      <button class="rowmain" type="button" data-action="message" @click=${() => void message(p.gomId)}>${avatar(p.displayName, false, false, p.avatar)}
         <span class="t"><b>${p.displayName}</b><small>@${p.gomId}</small></span></button>
       <button class="ib" type="button" data-more aria-label=${`Tùy chọn cho ${p.displayName}`} aria-expanded=${tray === p.gomId ? 'true' : 'false'}
         @click=${() => { tray = tray === p.gomId ? null : p.gomId; update(); }}>${icons.more()}</button>

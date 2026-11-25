@@ -8,6 +8,9 @@ public sealed record ProcessedImage(byte[] Main, byte[] Thumb, int Width, int He
 /// <summary>Either the processed picture or the reason it could not be.</summary>
 public sealed record ImageResult(ProcessedImage? Image, ImageProblem? Problem);
 
+/// <summary>A profile picture as WebP bytes, or why there is none.</summary>
+public sealed record AvatarResult(byte[]? Bytes, ImageProblem? Problem);
+
 public enum ImageProblem { NotAnImage, TooManyPixels, Unreadable }
 
 /// <summary>
@@ -73,20 +76,26 @@ public static class ImageProcessor
         return planned.Plan is null ? new ImageResult(null, planned.Problem) : Process(bytes, planned.Plan, o);
     }
 
+    /// <summary>The picture decoded and turned upright, or the problem. All of it or nothing: a picture cut short is refused, not shown half grey.</summary>
+    private static (SKBitmap? Upright, ImageProblem? Problem) Decode(byte[] bytes, ImagePlan plan)
+    {
+        using var codec = SKCodec.Create(new MemoryStream(bytes, writable: false));
+        if (codec is null) return (null, ImageProblem.NotAnImage);
+        var info = codec.Info.WithSize(plan.DecodeWidth, plan.DecodeHeight);
+        var decoded = new SKBitmap(info);
+        if (codec.GetPixels(info, decoded.GetPixels()) != SKCodecResult.Success) { decoded.Dispose(); return (null, ImageProblem.Unreadable); }
+        // An upright picture is used as it is; one that needs turning makes a turned copy (the plan counted it).
+        if (codec.EncodedOrigin is SKEncodedOrigin.TopLeft or SKEncodedOrigin.Default) return (decoded, null);
+        using (decoded) return (Orient(decoded, codec.EncodedOrigin), null);
+    }
+
     public static ImageResult Process(byte[] bytes, ImagePlan plan, UploadOptions o)
     {
         try
         {
-            using var codec = SKCodec.Create(new MemoryStream(bytes, writable: false));
-            if (codec is null) return new ImageResult(null, ImageProblem.NotAnImage);
-
-            // All of it or nothing: a picture cut short is refused, not shown half grey.
-            var info = codec.Info.WithSize(plan.DecodeWidth, plan.DecodeHeight);
-            using var decoded = new SKBitmap(info);
-            if (codec.GetPixels(info, decoded.GetPixels()) != SKCodecResult.Success) return new ImageResult(null, ImageProblem.Unreadable);
-            // An upright picture is used as it is; one that needs turning makes a turned copy (the plan counted it).
-            using var turned = codec.EncodedOrigin is SKEncodedOrigin.TopLeft or SKEncodedOrigin.Default ? null : Orient(decoded, codec.EncodedOrigin);
-            var upright = turned ?? decoded;
+            var (decoded, problem) = Decode(bytes, plan);
+            if (decoded is null) return new ImageResult(null, problem);
+            using var upright = decoded;
 
             using var main = Scale(upright, o.ImageMaxEdge);
             using var thumb = Scale(main, o.ThumbEdge);
@@ -98,6 +107,32 @@ public static class ImageProcessor
         catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException or NullReferenceException)
         {
             return new ImageResult(null, ImageProblem.Unreadable);
+        }
+    }
+
+    /// <summary>
+    /// A profile picture: the largest square from the middle of the picture (turned upright), no larger than <paramref name="edge"/>
+    /// on a side, as WebP. Like every picture here it is drawn again, so nothing of the original file (its location, its camera) is kept.
+    /// </summary>
+    public static AvatarResult Avatar(byte[] bytes, ImagePlan plan, int edge, int quality)
+    {
+        try
+        {
+            var (decoded, problem) = Decode(bytes, plan);
+            if (decoded is null) return new AvatarResult(null, problem);
+            using var upright = decoded;
+            var side = Math.Min(upright.Width, upright.Height);
+            using var square = new SKBitmap();
+            if (!upright.ExtractSubset(square, SKRectI.Create((upright.Width - side) / 2, (upright.Height - side) / 2, side, side))) return new AvatarResult(null, ImageProblem.Unreadable);
+            using var small = side <= edge ? square.Copy()
+                : square.Resize(new SKImageInfo(edge, edge, square.ColorType, square.AlphaType), new SKSamplingOptions(SKCubicResampler.Mitchell))
+                  ?? throw new InvalidOperationException("The picture could not be scaled.");
+            var encoded = Encode(small, quality);
+            return encoded is null ? new AvatarResult(null, ImageProblem.Unreadable) : new AvatarResult(encoded, null);
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException or NullReferenceException)
+        {
+            return new AvatarResult(null, ImageProblem.Unreadable);
         }
     }
 

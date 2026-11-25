@@ -422,7 +422,7 @@ public static class GroupEndpoints
         if (await Access.Of(db, id, me, ct) is null) return Results.NotFound();
 
         var members = await (from m in db.Members where m.ConversationId == id join u in db.Users on m.UserId equals u.Id orderby u.DisplayName, u.Id
-                             select new { u.Id, u.GomId, u.DisplayName, m.Role }).ToListAsync(ct);
+                             select new { u.Id, u.GomId, u.DisplayName, u.AvatarId, m.Role }).ToListAsync(ct);
         var mine = await db.Friendships.Where(f => f.UserLow == me || f.UserHigh == me).ToListAsync(ct);
 
         return Results.Ok(members.Select(m =>
@@ -433,6 +433,7 @@ public static class GroupEndpoints
             {
                 id = m.Id,
                 displayName = m.DisplayName,
+                avatar = m.AvatarId,
                 isMe = m.Id == me,
                 role = m.Role.ToString().ToLowerInvariant(),
                 isFriend,

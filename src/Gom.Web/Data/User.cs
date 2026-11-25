@@ -13,6 +13,11 @@ public class User
     public DateTimeOffset? DisabledAt { get; set; }
     /// <summary>Whether others may see how far this person has read, and whether this person may see theirs. One switch, both ways.</summary>
     public bool ShareReadReceipts { get; set; } = true;
+    /// <summary>
+    /// The profile picture: the name of its file in the blob store, a new one each time it changes (so its address can be cached for
+    /// good). Null shows the initials.
+    /// </summary>
+    public Guid? AvatarId { get; set; }
 }
 
 public class Session

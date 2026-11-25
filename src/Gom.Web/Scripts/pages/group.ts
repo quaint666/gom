@@ -1,8 +1,7 @@
 import { html, nothing, render } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import type { Api, BanRow, Failure, GroupMember, JoinRequestRow, Person } from '../api.js';
-import { initials } from '../chat/model.js';
-import { appBar, errorBox } from '../ui.js';
+import { appBar, avatar, errorBox } from '../ui.js';
 
 /** Who is in a group and who leads it, asking another member to be friends, adding friends, leaving, and what a leader or deputy may do. */
 export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => void, conversation: string): void {
@@ -52,7 +51,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
 
   const memberRow = (m: GroupMember) => html`
     <li class="li" data-member=${m.id}>
-      <div class="av sm a1" aria-hidden="true">${initials(m.displayName)}</div>
+      ${avatar(m.displayName, true, false, m.avatar)}
       <div class="t"><b>${m.displayName}${m.isMe ? html`<span class="tag">Bạn</span>` : nothing}${roleTag(m)}</b>${m.gomId ? html`<small>@${m.gomId}</small>` : nothing}</div>
       ${action(m)}
       ${manages(m) ? html`<button class="btn secondary small" type="button" data-manage aria-label=${`Quản lý ${m.displayName}`} aria-expanded=${menuFor === m.id ? 'true' : 'false'}
