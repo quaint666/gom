@@ -5,7 +5,7 @@ import { fail } from './helpers.js';
 describe('errorText', () => {
   it.each([
     'invalid_credentials', 'too_many_attempts', 'id_taken', 'invalid_gom_id', 'password_too_short', 'password_too_long',
-    'password_too_common', 'invalid_display_name', 'missing_fields', 'network', 'server',
+    'password_too_common', 'invalid_display_name', 'missing_fields', 'network', 'server', 'invalid_endpoint', 'invalid_keys',
   ] as const)('has its own Vietnamese sentence for %s', (code) => {
     const sentence = errorText(fail(code));
     expect(sentence).toContain(' '); // a sentence, not the code
@@ -13,7 +13,7 @@ describe('errorText', () => {
   });
 
   it('gives every code a different sentence', () => {
-    const codes = ['invalid_credentials', 'too_many_attempts', 'id_taken', 'invalid_gom_id', 'password_too_short', 'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'network', 'server'] as const;
+    const codes = ['invalid_credentials', 'too_many_attempts', 'id_taken', 'invalid_gom_id', 'password_too_short', 'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'network', 'server', 'invalid_endpoint', 'invalid_keys'] as const;
     expect(new Set(codes.map((c) => errorText(fail(c)))).size).toBe(codes.length);
   });
 
