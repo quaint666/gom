@@ -166,7 +166,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** A round badge: the picture when there is one, else the initials. `size` is '' (48 px), 'sm' or 'xl'. */
   const avatar = (name: string, picture?: string | null, size: '' | 'sm' | 'xl' = ''): TemplateResult =>
-    html`<div class="av a${avatarTone(name)} ${size} ${picture ? 'pic' : ''}" aria-hidden="true">${picture
+    html`<div class="av a${avatarTone(name)} ${size} ${picture ? 'has-pic' : ''}" aria-hidden="true">${picture
       ? html`<img src=${avatarUrl(picture)} alt="" loading="lazy" decoding="async">` : initials(name)}</div>`;
   /** The picture of someone in a group, from its member list (asked for when the group opens). */
   const memberPicture = (conversation: string, userId: string): string | null | undefined => people.get(conversation)?.find((m) => m.id === userId)?.avatar;
