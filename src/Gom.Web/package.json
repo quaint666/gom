@@ -11,7 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "lit-html": "^3.3.3"
+    "lit-html": "^3.3.3",
+    "mediabunny": "1.66.4"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

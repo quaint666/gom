@@ -136,11 +136,13 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
     /// </summary>
     public static (string Title, string Body) Words(PushJob job, ConversationKind kind, string? groupTitle, ServerText say, bool words = false)
     {
-        var what = words && job.Text.Length > 0 ? job.Text : job.Sticker ? say.SentSticker : (job.Images, job.Files) switch
+        var what = words && job.Text.Length > 0 ? job.Text : job.Sticker ? say.SentSticker : (job.Images, job.Files, job.Videos) switch
         {
-            ( > 0, > 0) => say.SentPicturesAndFiles(job.Images, job.Files),
-            ( > 0, _) => say.SentPictures(job.Images),
-            (_, > 0) => say.SentFiles(job.Files),
+            ( > 0, > 0, 0) => say.SentPicturesAndFiles(job.Images, job.Files),
+            ( > 0, 0, 0) => say.SentPictures(job.Images),
+            (0, > 0, 0) => say.SentFiles(job.Files),
+            (0, 0, > 0) => say.SentVideos(job.Videos),
+            (var i, var f, > 0) => say.SentAttachments(i + f + job.Videos),
             _ => say.NewMessage,
         };
         return kind == ConversationKind.Group ? (groupTitle ?? say.Group, $"{job.SenderName}: {what}") : (job.SenderName, what);

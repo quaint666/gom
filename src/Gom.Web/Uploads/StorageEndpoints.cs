@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Gom.Web.Uploads;
 
 /// <summary>
-/// The owner's view of what Gom keeps: the disk, the database, pictures and files by group, one-to-one chats together, and by person.
+/// The owner's view of what Gom keeps: the disk, the database, pictures, videos and files by group, one-to-one chats together, and by person.
 /// One-to-one chats are only counted together, so the owner sees sizes, not who talks to whom. Also deletes a group nobody is in.
 /// </summary>
 public static class StorageEndpoints
@@ -16,7 +16,7 @@ public static class StorageEndpoints
     public sealed record GroupDto(Guid Id, string? Title, int Members, int Messages, int Files, long Bytes);
     public sealed record DirectDto(int Conversations, int Messages, int Files, long Bytes);
     public sealed record PersonDto(string GomId, string DisplayName, bool Deleted, int Files, long Bytes);
-    public sealed record StorageDto(DiskDto? Disk, long Database, long? UploadsFolder, Totals Pictures, Totals Files, DirectDto Direct, List<GroupDto> Groups, List<PersonDto> People);
+    public sealed record StorageDto(DiskDto? Disk, long Database, long? UploadsFolder, Totals Pictures, Totals Files, DirectDto Direct, List<GroupDto> Groups, List<PersonDto> People, Totals Videos);
 
     public static void MapStorage(this IEndpointRouteBuilder app)
     {
@@ -60,7 +60,7 @@ public static class StorageEndpoints
 
         return Results.Ok(new StorageDto(disk, database, folder, Of(AttachmentKind.Image), Of(AttachmentKind.File), directDto,
             [.. groups.OrderByDescending(g => g.Bytes).ThenByDescending(g => g.Messages)],
-            [.. people.OrderByDescending(p => p.Bytes)]));
+            [.. people.OrderByDescending(p => p.Bytes)], Of(AttachmentKind.Video)));
     }
 
     /// <summary>

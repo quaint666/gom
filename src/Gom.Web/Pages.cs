@@ -44,6 +44,8 @@ public static class Pages
         imageBytes = uploads.MaxImageBytes,
         fileBytes = uploads.MaxFileBytes,
         animatedBytes = uploads.MaxAnimatedBytes,
+        videoBytes = uploads.MaxVideoBytes,
+        posterBytes = uploads.MaxPosterBytes,
         uploadDailyBytes = uploads.DailyBytes,
         pins = chat.MaxPins,
         nameChars = DisplayName.MaxLength,

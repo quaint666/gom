@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { avatarTone, clock } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { Pusher, PushSupport } from '../Scripts/push.js';
@@ -42,7 +42,7 @@ interface Harness {
   notes: ReturnType<typeof vi.fn>;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo'] } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(me)),
@@ -88,6 +88,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     visible: () => visible.value,
     clearNotifications: notes,
     ...(opts.pusher ? { pusher: opts.pusher } : {}),
+    ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}),
   };
   mountChat(root, api, go, deps);
   return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes };
@@ -2572,6 +2573,50 @@ describe('chat: searching a conversation', () => {
     expect(root.querySelector('[data-result="id1"]')).toBeNull();
   });
 
+  it('searches as you type once typing pauses, from two characters; Enter searches even one', async () => {
+    const h = open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
+    await flush();
+    await toggle();
+    const input = root.querySelector<HTMLInputElement>('.searchbar input')!;
+    const typing = (q: string) => { input.value = q; input.dispatchEvent(new Event('input', { bubbles: true })); };
+    const pauses = h.timers.filter((t) => t.ms === 300);
+    typing('p');
+    expect(h.timers.filter((t) => t.ms === 300)).toEqual(pauses);   // one character: nothing until Enter
+    typing('ph');
+    typing('phở');
+    const waits = h.timers.filter((t) => t.ms === 300 && t.live);
+    expect(waits).toHaveLength(1);   // each key starts the wait again
+    expect(h.api.search).not.toHaveBeenCalled();
+    waits[0]!.fn();
+    await flush();
+    expect(h.api.search).toHaveBeenCalledWith(C1, 'phở');
+    expect(root.querySelector('[data-result="id1"]')).not.toBeNull();
+    await ask('ă');
+    expect(h.api.search).toHaveBeenLastCalledWith(C1, 'ă');
+  });
+
+  it('takes the results away when the field is emptied, and an answer still on its way is dropped', async () => {
+    const finish: Array<(v: unknown) => void> = [];
+    const search = vi.fn(() => new Promise((resolve) => { finish.push(resolve); }));
+    open({ search });
+    await flush();
+    await toggle();
+    await ask('phở');
+    const input = root.querySelector<HTMLInputElement>('.searchbar input')!;
+    input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true }));
+    finish[0]!(ok({ results: [hit(messages[0]!)] })); await flush();
+    expect(root.querySelector('[data-result="id1"]')).toBeNull();
+    expect(root.querySelector('[data-no-results]')).toBeNull();
+  });
+
+  it('shows the words found in bold, whatever their accents', async () => {
+    open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
+    await flush();
+    await toggle();
+    await ask('an pho');
+    expect([...root.querySelectorAll('[data-result="id1"] mark')].map((m) => m.textContent)).toEqual(['ăn', 'phở']);
+  });
+
   it('takes you to a result that is already on screen, and marks it for a moment', async () => {
     const h = open({ search: vi.fn(async () => ok({ results: [hit(messages[0]!)] })) });
     await flush();
@@ -3172,6 +3217,63 @@ describe('chat: the list of conversations', () => {
     expect(names()).toHaveLength(2);
   });
 
+  describe('looking for messages in every conversation', () => {
+    const found = msg(4, 'minh', 'Tối nay ăn phở ở đâu', at(10, 4), C2);
+    const lists = (h: Harness) => h.timers.filter((t) => t.ms === 300 && t.live);
+    const pause = async (h: Harness) => { for (const t of lists(h)) t.fn(); await flush(); };
+
+    it('asks once typing pauses and lists the messages under the conversations: where, who and the words in bold', async () => {
+      const groups = [chat(C1, 'Đào Thị Lan', { lastSeq: 0 }), { ...chat(C2, 'Gia đình', { lastSeq: 4 }), kind: 'group' as const }];
+      const h = start({ chats: groups, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+      await flush();
+      type('gia pho'); await flush();
+      expect(h.api.searchAll).not.toHaveBeenCalled();
+      await pause(h);
+      expect(h.api.searchAll).toHaveBeenCalledWith('gia pho');
+      expect(text(root.querySelector('[data-found-label]')!)).toBe('Tin nhắn');
+      const row = root.querySelector('[data-found="id4"]')!;
+      expect(text(row)).toContain('Gia đình');
+      expect(text(row)).toContain('Minh: Tối nay ăn phở ở đâu');
+      expect([...row.querySelectorAll('mark')].map((m) => m.textContent)).toEqual(['phở']);
+      expect(root.querySelector('[data-no-match]')).toBeNull();   // no conversation is named that, but a message says it
+    });
+
+    it('opens the conversation at the message, once it has loaded', async () => {
+      const layout = fakeLayout();
+      onTestFinished(() => layout.restore());
+      const h = start({ chats: several, history: { [C2]: [msg(3, 'mom', 'trước', at(10, 3), C2), found] }, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+      await flush();
+      type('pho'); await pause(h);
+      root.querySelector<HTMLButtonElement>('[data-found="id4"]')!.click();
+      await flush(); await flush();
+      expect(h.nav.path).toBe(`/c/${C2}`);
+      expect(root.querySelector('[data-msg="id4"]')!.classList.contains('found')).toBe(true);
+      expect(layout.landed()?.getAttribute('data-msg')).toBe('id4');
+    });
+
+    it('a single character only narrows the list by name, and clearing the field takes the messages away', async () => {
+      const h = start({ chats: several, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+      await flush();
+      type('g'); await pause(h);
+      expect(h.api.searchAll).not.toHaveBeenCalled();
+      type('pho'); await pause(h);
+      expect(root.querySelector('[data-found-list]')).not.toBeNull();
+      root.querySelector('input[name="filter"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await flush();
+      expect(root.querySelector('[data-found-list]')).toBeNull();
+    });
+
+    it('lets only the newest answer fill the list', async () => {
+      const finish: Array<(v: unknown) => void> = [];
+      const h = start({ chats: several, api: { searchAll: vi.fn(() => new Promise((resolve) => { finish.push(resolve); })) } });
+      await flush();
+      type('phở'); await pause(h);
+      type('bún'); await pause(h);
+      finish[1]!(ok({ results: [] })); await flush();
+      finish[0]!(ok({ results: [found] })); await flush();
+      expect(root.querySelector('[data-found-list]')).toBeNull();
+    });
+  });
+
   it('has no search when there is nothing to search', async () => {
     start({ chats: [] });
     await flush();
@@ -3349,6 +3451,120 @@ describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
     expect(root.querySelector('[data-info-panel]')).not.toBeNull();
     expect(h.api.groupMembers).not.toHaveBeenCalled();
     expect(root.querySelector('[data-info-member]')).toBeNull();
+  });
+});
+
+describe('chat: videos', () => {
+  const clip = (name = 'clip.mov', bytes = 3) => new File([new Uint8Array(bytes)], name, { type: 'video/quicktime' });
+  const video = (id: string, extra: Partial<Attachment> = {}): Attachment => ({ id, kind: 'video', name: 'clip.mp4', size: 4096, width: 1280, height: 720, durationMs: 42_000, ...extra });
+  const open = (opts: { api?: Record<string, unknown>; history?: ChatMessage[]; prepareVideo?: ChatDeps['prepareVideo'] } = {}) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: opts.history?.length ?? 0 })], history: { [C1]: opts.history ?? [] }, api: opts.api ?? {}, ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}) });
+  const pickGallery = async (files: File[]) => {
+    const input = root.querySelector<HTMLInputElement>('input[name="gallery"]')!;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush(); await flush();
+  };
+
+  it('has a button for pictures and videos beside the one for any file, as on a phone', async () => {
+    open();
+    await flush();
+    const gallery = root.querySelector<HTMLInputElement>('input[name="gallery"]')!;
+    expect(gallery.accept).toBe('image/*,video/*');
+    expect(gallery.multiple).toBe(true);
+    expect(root.querySelector('[data-gallery]')!.getAttribute('aria-label')).toBe('Gửi ảnh hoặc video');
+    expect(root.querySelector<HTMLInputElement>('input[name="files"]')!.accept).toBe('');
+  });
+
+  it('makes a video smaller on the device, showing how far it is, then sends it as an MP4 with its still picture', async () => {
+    let progress: (f: number) => void = () => undefined;
+    let done: (v: { video: Blob; poster: Blob | null }) => void = () => undefined;
+    const prepareVideo = vi.fn((_f: File, onProgress: (f: number) => void) => { progress = onProgress; return new Promise<{ video: Blob; poster: Blob | null }>((r) => { done = r; }); });
+    const upload = vi.fn(async (_c: string, file: File) => ok(video('v1', { name: file.name })));
+    const setPoster = vi.fn(async () => ok(undefined));
+    const h = open({ api: { upload, setPoster }, prepareVideo });
+    await flush();
+    await pickGallery([clip('Nhà mình.mov')]);
+    expect(prepareVideo).toHaveBeenCalledOnce();
+    const bar = root.querySelector<HTMLProgressElement>('[data-tray-converting]')!;
+    expect(bar.getAttribute('aria-label')).toBe('Đang chuẩn bị video Nhà mình.mov');
+    progress(0.5); await flush();
+    expect(root.querySelector<HTMLProgressElement>('[data-tray-converting]')!.value).toBe(0.5);
+    expect(root.querySelector<HTMLButtonElement>('.composer .send')!.disabled).toBe(true);
+    expect(upload).not.toHaveBeenCalled();
+
+    const poster = new Blob([new Uint8Array([9])], { type: 'image/jpeg' });
+    done({ video: new Blob([new Uint8Array(5)], { type: 'video/mp4' }), poster });
+    await flush(); await flush(); await flush();
+    const sent = upload.mock.calls[0]![1];
+    expect(sent.name).toBe('Nhà mình.mp4');
+    expect(sent.type).toBe('video/mp4');
+    expect(sent.size).toBe(5);
+    expect(setPoster).toHaveBeenCalledWith('v1', poster);
+    expect(root.querySelector('[data-tray-item] img')!.getAttribute('src')).toMatch(/^data:image\/jpeg;base64,/);
+    expect(root.querySelector<HTMLButtonElement>('.composer .send')!.disabled).toBe(false);
+    expect(h.api.upload).toHaveBeenCalledOnce();
+  });
+
+  it('sends the video as it is when the device cannot make it smaller, and refuses one over the limit before any upload', async () => {
+    const upload = vi.fn(async (_c: string, _f: File) => ok(video('v1')));
+    open({ api: { upload }, prepareVideo: vi.fn(async () => null) });
+    await flush();
+    const small = clip('a.mp4', 10);
+    await pickGallery([small]);
+    expect(upload.mock.calls[0]![1]).toBe(small);
+
+    const big = clip('b.mp4');
+    Object.defineProperty(big, 'size', { value: 45 * 1024 * 1024 + 1 });
+    await pickGallery([big]);
+    expect(upload).toHaveBeenCalledOnce();
+    expect(text(root.querySelector('[data-tray-item].failed [role="alert"]')!)).toContain('Video quá lớn (tối đa 45 MB).');
+  });
+
+  it('plays a video in its message with its still picture and length, and offers a download where it cannot play', async () => {
+    open({ history: [{ ...msg(1, 'minh', ''), attachments: [video('v1')] }] });
+    await flush();
+    const player = root.querySelector<HTMLVideoElement>('[data-video="v1"] video')!;
+    expect(player.getAttribute('src')).toBe('/api/attachments/v1');
+    expect(player.getAttribute('poster')).toBe('/api/attachments/v1/thumb');
+    expect(player.controls).toBe(true);
+    expect(player.getAttribute('preload')).toBe('metadata');
+    expect(player.getAttribute('aria-label')).toBe('Video clip.mp4, dài 0:42');
+    expect(text(root.querySelector('[data-video="v1"] .vid-len')!)).toBe('0:42');
+    player.dispatchEvent(new Event('error'));
+    await flush();
+    expect(root.querySelector('[data-video="v1"]')).toBeNull();
+    expect(root.querySelector('a[data-video-download="v1"]')!.getAttribute('download')).toBe('clip.mp4');
+  });
+
+  it('shows a video in the grid of pictures with a play mark, and plays it in the viewer', async () => {
+    const v = video('v1');
+    const shown = { ...msg(1, 'minh', ''), attachments: [v] };
+    const listed = { attachment: v, messageId: shown.id, seq: 1, createdAt: shown.createdAt, sender: shown.sender, body: '' };
+    open({ history: [shown], api: { media: vi.fn(async (_c: string, kind: string) => ok({ items: kind === 'image' ? [listed] : [], hasMore: false })) } });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-info-page-open]')!.click();
+    await flush(); await flush();
+    const tile = root.querySelector<HTMLButtonElement>('[data-info-pic="v1"]')!;
+    expect(tile.classList.contains('vtile')).toBe(true);
+    expect(tile.getAttribute('aria-label')).toBe('Video clip.mp4, dài 0:42');
+    tile.click();
+    await flush();
+    const player = root.querySelector<HTMLVideoElement>('[data-viewer] [data-viewer-slide="v1"] video')!;
+    expect(player.getAttribute('src')).toBe('/api/attachments/v1');
+    expect(player.controls).toBe(true);
+  });
+
+  it('says a video was sent in the list', async () => {
+    start({ chats: [chat(C1, 'Minh', { lastSeq: 1, lastMessage: { seq: 1, body: '', createdAt: at(10, 1), sender: { id: 'u-minh', displayName: 'Minh' }, attachment: 'video' } })] });
+    await flush();
+    expect(text(root.querySelector('[data-chat] .pv')!)).toBe('Đã gửi một video');
+  });
+
+  it('says a trimmed video is gone, keeping its place', async () => {
+    open({ history: [{ ...msg(1, 'minh', ''), attachments: [video('v2', { removed: true })] }] });
+    await flush();
+    expect(text(root.querySelector('[data-video-removed="v2"]')!)).toBe('Video không còn khả dụng');
   });
 });
 
@@ -5020,6 +5236,31 @@ describe('chat: the information page on a phone', () => {
     expect(page()).toBeNull();
     expect(root.querySelector('.searchbar input')).not.toBeNull();
     expect(h.nav.history).toEqual([`/c/${C1}`, `/c/${C1}`]);   // the page's step became the conversation again
+  });
+
+  it('going to a pinned message from the page closes it and shows the message, without leaving a step to come back to', async () => {
+    const pinned = msg(1, 'minh');
+    const h = await open(start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [pinned, msg(2, 'mom')] },
+      api: { person: vi.fn(async () => ok(minhCard)), pins: vi.fn(async () => ok({ pins: [pinned] })) } }));
+    page()!.querySelector<HTMLButtonElement>(`[data-info-pin="${pinned.id}"]`)!.click();
+    await flush();
+    expect(page()).toBeNull();
+    expect(root.querySelector(`[data-msg="${pinned.id}"]`)).not.toBeNull();
+    expect(h.nav.history).toEqual([`/c/${C1}`, `/c/${C1}`]);
+  });
+
+  it('going to the message of a picture opened from the page closes the page too', async () => {
+    const picture: Attachment = { id: 'p1', kind: 'image', name: 'a.webp', size: 2048, width: 40, height: 30 };
+    const shown = { ...msg(1, 'minh'), attachments: [picture] };
+    const listed = { attachment: picture, messageId: shown.id, seq: 1, createdAt: shown.createdAt, sender: shown.sender, body: shown.body };
+    await open(start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [shown, msg(2, 'mom')] },
+      api: { person: vi.fn(async () => ok(minhCard)), media: vi.fn(async (_c: string, kind: string) => ok({ items: kind === 'image' ? [listed] : [], hasMore: false })) } }));
+    page()!.querySelector<HTMLButtonElement>('[data-info-pic="p1"]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-viewer-goto]')!.click();
+    await flush();
+    expect(page()).toBeNull();
+    expect(root.querySelector(`[data-msg="${shown.id}"]`)!.classList.contains('found')).toBe(true);
   });
 
   it('hides the conversation from its foot, back to the list with the undo', async () => {

@@ -38,6 +38,34 @@ public sealed partial class DiskBlobStore : IBlobStore
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
 
+    public async Task<long?> WriteStreamAsync(string name, ReadOnlyMemory<byte> head, Stream rest, long limit, CancellationToken ct)
+    {
+        var path = PathOf(name);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        // Written beside it and then moved into place, like a write; over the limit, the part written is thrown away.
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            long written = head.Length;
+            if (written > limit) return null;
+            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81_920, FileOptions.Asynchronous))
+            {
+                await output.WriteAsync(head, ct);
+                var chunk = new byte[81_920];
+                int n;
+                while ((n = await rest.ReadAsync(chunk, ct)) > 0)
+                {
+                    written += n;
+                    if (written > limit) return null;
+                    await output.WriteAsync(chunk.AsMemory(0, n), ct);
+                }
+            }
+            File.Move(temp, path, overwrite: true);
+            return written;
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+
     public async Task<bool> CopyAsync(string from, string to, CancellationToken ct)
     {
         var source = PathOf(from);

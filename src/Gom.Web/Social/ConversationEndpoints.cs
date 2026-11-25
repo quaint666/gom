@@ -245,7 +245,7 @@ public static class ConversationEndpoints
             lastMessage = r.Last is null ? null : new
             {
                 seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt, deleted = r.Last.Deleted,
-                attachment = r.Last.Attached is null ? null : r.Last.Attached == (int)AttachmentKind.Image ? "image" : "file",
+                attachment = r.Last.Attached is { } kind ? Uploads.AttachmentEndpoints.KindName((AttachmentKind)kind) : null,
                 sticker = r.Last.Deleted ? null : r.Last.Sticker,
                 sender = new { id = r.Last.SenderId, displayName = r.Last.DisplayName },
             },

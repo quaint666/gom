@@ -13,8 +13,9 @@ const CONFIRM = 'Delete';
 /** "2026-01-31" for a date input, in this device's time. */
 const isoDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-/** "3 ảnh (1,2 MB) và 1 tệp (12 MB)" */
-const counted = (r: TrimResult): string => say.storage.counted(r.pictures.count, formatSize(r.pictures.bytes), r.files.count, formatSize(r.files.bytes));
+/** "3 ảnh (1,2 MB), 1 video (30 MB) và 1 tệp (12 MB)" */
+const counted = (r: TrimResult): string =>
+  say.storage.counted(r.pictures.count, formatSize(r.pictures.bytes), r.videos.count, formatSize(r.videos.bytes), r.files.count, formatSize(r.files.bytes));
 
 /**
  * The owner's storage page: the disk, the database, pictures and files by group, one-to-one chats only together, and by person.
@@ -56,6 +57,7 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
       ${s.uploadsFolder === null ? nothing : line(say.storage.folder, formatSize(s.uploadsFolder), 'folder')}
       ${line(say.storage.database, formatSize(s.database), 'database')}
       ${line(say.storage.picturesSent, `${s.pictures.count} · ${formatSize(s.pictures.bytes)}`, 'pictures')}
+      ${line(say.storage.videosSent, `${s.videos.count} · ${formatSize(s.videos.bytes)}`, 'videos')}
       ${line(say.storage.filesSent, `${s.files.count} · ${formatSize(s.files.bytes)}`, 'files')}
     </ul>
     <p class="hint">${say.storage.folderNote}</p>
@@ -74,7 +76,7 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
     minBytes: trim.minMb.trim() === '' ? null : Math.round(Number(trim.minMb) * 1024 * 1024),
   });
   const choose = (change: Partial<typeof trim>) => { trim = { ...trim, ...change, preview: null, typed: '', done: '' }; update(); };
-  const total = (r: TrimResult) => r.pictures.count + r.files.count;
+  const total = (r: TrimResult) => r.pictures.count + r.videos.count + r.files.count;
 
   /** Where a trim may reach: everywhere, every one-to-one chat together (never one alone), or one group. */
   const places = (s: Storage, current: string) => html`
@@ -116,6 +118,7 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
         <select id="trim-kind" name="trim-kind" @change=${(e: Event) => choose({ kind: (e.target as HTMLSelectElement).value as TrimRule['kind'] })}>
           <option value="all" ?selected=${trim.kind === 'all'}>${say.storage.picturesAndFiles}</option>
           <option value="image" ?selected=${trim.kind === 'image'}>${say.storage.picturesOnly}</option>
+          <option value="video" ?selected=${trim.kind === 'video'}>${say.storage.videosOnly}</option>
           <option value="file" ?selected=${trim.kind === 'file'}>${say.storage.filesOnly}</option></select></div>
       <div class="field"><label for="trim-where">${say.storage.where}</label>
         <select id="trim-where" name="trim-where" @change=${(e: Event) => choose({ where: (e.target as HTMLSelectElement).value })}>

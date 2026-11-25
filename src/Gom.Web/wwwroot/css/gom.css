@@ -403,6 +403,9 @@ button.th-title:hover b { text-decoration: underline; }
 .result { inline-size: 100%; text-align: start; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
 .result span { grid-column: 1 / -1; overflow-wrap: anywhere; color: var(--muted); }
 .result small { color: var(--muted); }
+.result mark { background: none; color: var(--text); font-weight: 700; }   /* the words found */
+.found-list { max-block-size: none; margin: 0; padding: 0 8px 8px; }   /* messages the list's search found, under the conversations */
+.found-list .result span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }   /* the excerpt starts near the word found */
 /* pinned messages */
 .pinbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--surface); border-block-end: 1px solid var(--border); }
 .pin-top { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 8px; min-block-size: 44px; border: 0; background: none; color: var(--text); font: inherit; text-align: start; cursor: pointer; }
@@ -645,6 +648,17 @@ a.mi { text-decoration: none; }
 .pic.removed { display: grid; place-items: center; min-block-size: 96px; padding: 8px; cursor: default; border: 1px dashed var(--border); background: transparent; color: var(--muted); font-size: 12px; text-align: center; }
 .pics.n1 .pic.removed { inline-size: 200px; }
 .filecard.removed { border: 1px dashed var(--border); background: transparent; color: var(--muted); }
+/* A video in its message: the browser's player at the video's own shape, at most as wide as pictures and not taller than most of
+   the screen, with how long it is in a corner until it plays. */
+.vid { position: relative; inline-size: fit-content; max-inline-size: 320px; margin: 0 0 4px; border-radius: 10px; overflow: hidden; background: #000; }
+.vid video { display: block; inline-size: 100%; max-inline-size: 320px; block-size: auto; max-block-size: 60vh; }
+.vid-len { position: absolute; inset-block-start: 6px; inset-inline-end: 6px; padding: 2px 6px; border-radius: 6px; background: rgb(0 0 0 / .6); color: #fff; font-size: 12px; font-weight: 600; pointer-events: none; }
+.vid:has(video:playing) .vid-len { display: none; }   /* where :playing is known; elsewhere the length stays */
+.pic.removed.vid { inline-size: 200px; }
+/* A play mark over a video's picture: in the tray and in the side panel's grid. */
+.tray-play { position: absolute; inset: 0; margin: auto; display: grid; place-items: center; inline-size: 32px; block-size: 32px; border-radius: 50%; background: rgb(0 0 0 / .55); color: #fff; pointer-events: none; }
+.tray-play .i { inline-size: 18px; block-size: 18px; }
+.info-media .vtile { position: relative; background: #000; }
 .filecard.removed:hover { background: transparent; }
 .pics.n1 .pic img { max-block-size: 360px; inline-size: auto; max-inline-size: 100%; }
 .filecard { display: flex; align-items: center; gap: 10px; min-inline-size: 200px; padding: 8px 10px; margin-block: 2px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 70%, transparent); color: var(--text); text-decoration: none; }

@@ -10,7 +10,7 @@ namespace Gom.Web.Push;
 /// <paramref name="JoinRequest"/>: not a message but someone asking to join (the sender), told to the owner.
 /// </summary>
 public sealed record PushJob(Guid ConversationId, long Seq, Guid SenderId, string SenderName, int Images, int Files, bool Sticker = false,
-    string Text = "", Guid MessageId = default, bool Recalled = false, bool JoinRequest = false);
+    string Text = "", Guid MessageId = default, bool Recalled = false, bool JoinRequest = false, int Videos = 0);
 
 /// <summary>
 /// Messages waiting for their notifications, handed over after the commit. Bounded: when it is full a notification is dropped, never

@@ -25,6 +25,7 @@ public static class MessageEndpoints
 
     public static void MapMessages(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/api/search", SearchAll).RequireAuthorization();
         var api = app.MapGroup("/api/conversations/{id:guid}").RequireAuthorization();
         api.MapPost("/messages", Send);
         api.MapGet("/messages", History);
@@ -156,8 +157,8 @@ public static class MessageEndpoints
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
         var files = dto.Attachments ?? [];
-        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind != "image"), message.Sticker is not null,
-            Replies.Snippet(message.Body), message.Id));
+        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind == "file"), message.Sticker is not null,
+            Replies.Snippet(message.Body), message.Id, Videos: files.Count(a => a.Kind == "video")));
         return Results.Ok(dto);
     }
 
@@ -236,32 +237,76 @@ public static class MessageEndpoints
     public const int SearchMaxChars = 100;
 
     /// <summary>
-    /// Finds messages of one conversation that contain the words, ignoring capitals and accents ("pho" finds "Phở"). Only what this
-    /// person can see: after they joined, not taken back, not deleted for themself. Reads the conversation's own messages (no index
-    /// yet): fine for chats of this size, and the first thing to index if one grows large.
+    /// Finds messages of one conversation that contain every word, in any order, ignoring capitals and accents ("pho ha noi" finds
+    /// "Phở ở Hà Nội"). Only what this person can see: after they joined, not taken back, not deleted for themself. Reads the
+    /// conversation's own messages (no index yet): fine for chats of this size, and the first thing to index if one grows large.
     /// </summary>
     private static async Task<IResult> Search(Guid id, string? q, HttpContext http, GomDbContext db, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
-        // A control character (a NUL would make PostgreSQL refuse the query) counts as a space.
-        var text = new string((q ?? "").Select(c => char.IsControl(c) ? ' ' : c).ToArray()).Trim();
-        if (text.Length == 0 || new StringInfo(text).LengthInTextElements > SearchMaxChars) return Error(StatusCodes.Status400BadRequest, "invalid_query");
+        var words = SearchWords(q);
+        if (words is null) return Error(StatusCodes.Status400BadRequest, "invalid_query");
+        var found = Containing(db.Messages.AsNoTracking().Where(m => m.ConversationId == id && m.Seq > access.SeesAfter), words, db, me);
+        return await SearchResults(found, newestFirst: q => q.OrderByDescending(r => r.Message.Seq), db, ct);
+    }
 
-        // % _ and \ typed by a person are ordinary characters.
-        var pattern = "%" + text.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-        var rows = await (
+    /// <summary>
+    /// The same, across every conversation this person is in (each from where they may see it), newest first: the list's search box.
+    /// A conversation they hid is searched too, as the list's search finds it by name.
+    /// </summary>
+    private static async Task<IResult> SearchAll(string? q, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var words = SearchWords(q);
+        if (words is null) return Error(StatusCodes.Status400BadRequest, "invalid_query");
+        var seen =
             from m in db.Messages.AsNoTracking()
-            where m.ConversationId == id && m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null
-                && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
-                && EF.Functions.ILike(EF.Functions.Unaccent(m.Body), EF.Functions.Unaccent(pattern), "\\")
-            orderby m.Seq descending
-            join u in db.Users on m.SenderId equals u.Id
-            select new { Message = m, u.Id, u.DisplayName }).Take(SearchLimit).ToListAsync(ct);
+            join mem in db.Members on m.ConversationId equals mem.ConversationId
+            where mem.UserId == me && m.Seq > (mem.JoinedSeq > mem.ClearedSeq ? mem.JoinedSeq : mem.ClearedSeq)
+            select m;
+        return await SearchResults(Containing(seen, words, db, me), newestFirst: q => q.OrderByDescending(r => r.Message.CreatedAt).ThenByDescending(r => r.Message.Seq), db, ct);
+    }
 
+    /// <summary>The words of a search, or null when there are none or too many characters. A control character (a NUL would make PostgreSQL refuse the query) counts as a space.</summary>
+    private static string[]? SearchWords(string? q)
+    {
+        var text = new string((q ?? "").Select(c => char.IsControl(c) ? ' ' : c).ToArray()).Trim();
+        if (text.Length == 0 || new StringInfo(text).LengthInTextElements > SearchMaxChars) return null;
+        return text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    /// <summary>Messages with words in them (not notices, not taken back, not hidden by this person) that contain every one of the words.</summary>
+    private static IQueryable<Message> Containing(IQueryable<Message> messages, string[] words, GomDbContext db, Guid me)
+    {
+        var found = messages.Where(m => m.DeletedAt == null && m.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id));
+        foreach (var word in words)
+        {
+            // % _ and \ typed by a person are ordinary characters.
+            var pattern = "%" + word.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+            found = found.Where(m => EF.Functions.ILike(EF.Functions.Unaccent(m.Body), EF.Functions.Unaccent(pattern), "\\"));
+        }
+        return found;
+    }
+
+    /// <summary>One message found and who said it. Set by name, not built by a constructor, so the database can order by its parts.</summary>
+    private sealed class Found
+    {
+        public required Message Message { get; init; }
+        public required Guid SenderId { get; init; }
+        public required string SenderName { get; init; }
+    }
+
+    /// <summary>The first <see cref="SearchLimit"/> found, in the given order, with who said each and its files.</summary>
+    private static async Task<IResult> SearchResults(IQueryable<Message> found, Func<IQueryable<Found>, IQueryable<Found>> newestFirst, GomDbContext db, CancellationToken ct)
+    {
+        var rows = await newestFirst(
+            from m in found
+            join u in db.Users on m.SenderId equals u.Id
+            select new Found { Message = m, SenderId = u.Id, SenderName = u.DisplayName }).Take(SearchLimit).ToListAsync(ct);
         var withFiles = await MessageAttachments.For(db, rows.Select(r => r.Message.Id), ct);
-        return Results.Ok(new { results = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), null, null, withFiles.GetValueOrDefault(r.Message.Id))) });
+        return Results.Ok(new { results = rows.Select(r => ToDto(r.Message, new PersonDto(r.SenderId, r.SenderName), null, null, withFiles.GetValueOrDefault(r.Message.Id))) });
     }
 
     // ---- pins

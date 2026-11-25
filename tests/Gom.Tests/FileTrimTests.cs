@@ -84,7 +84,7 @@ public class FileTrimTests(AppFixture app) : IClassFixture<AppFixture>
         foreach (var bad in new object[]
         {
             new { kind = "all", where = "all", confirm = "Delete" },   // no date
-            Rule(now.AddDays(1)), Rule(now, kind: "video"), Rule(now, where: "somewhere"), Rule(now, where: Guid.NewGuid().ToString()),
+            Rule(now.AddDays(1)), Rule(now, kind: "music"), Rule(now, where: "somewhere"), Rule(now, where: Guid.NewGuid().ToString()),
             Rule(now, where: s.Chat.ToString()),   // a one-to-one chat is never picked on its own
             Rule(now, minBytes: -1),
         })

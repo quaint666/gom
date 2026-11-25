@@ -10,14 +10,15 @@ import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build, context } from 'esbuild';
 
-const FILES = ['wwwroot/js/main.js', 'wwwroot/css/gom.css', 'wwwroot/theme-init.js'];
+// video.js (the video converter) is its own file: a page loads it only when a video is picked.
+const FILES = ['wwwroot/js/main.js', 'wwwroot/js/video.js', 'wwwroot/css/gom.css', 'wwwroot/theme-init.js'];
 const LIST = 'wwwroot/assets.json';
 /** The same length as the server checks for (Assets.cs). */
 const HASH_LENGTH = 10;
 
 const bundle = (watching) => ({
-  entryPoints: ['Scripts/main.ts'], bundle: true, format: 'esm', target: 'es2022', sourcemap: true, minify: !watching,
-  outfile: 'wwwroot/js/main.js',
+  entryPoints: { main: 'Scripts/main.ts', video: 'Scripts/video.ts' }, bundle: true, format: 'esm', target: 'es2022', sourcemap: true, minify: !watching,
+  outdir: 'wwwroot/js',
 });
 
 if (process.argv.includes('--watch')) {

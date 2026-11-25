@@ -18,7 +18,7 @@ public static class MessageTrim
 {
     public sealed record TrimRequest(DateTimeOffset? Before, string? Where, string? Confirm);
     /// <summary><see cref="Messages"/> counts what people wrote (notices go too, uncounted); the pictures and files are those the messages carried.</summary>
-    public sealed record TrimResult(int Messages, StorageEndpoints.Totals Pictures, StorageEndpoints.Totals Files, int Conversations);
+    public sealed record TrimResult(int Messages, StorageEndpoints.Totals Pictures, StorageEndpoints.Totals Files, int Conversations, StorageEndpoints.Totals Videos);
 
     private sealed record Rule(DateTimeOffset Before, string Where, Guid? Group);
 
@@ -52,7 +52,7 @@ public static class MessageTrim
         var byKind = await files.GroupBy(a => a.Kind).Select(g => new { Kind = g.Key, Count = g.Count(), Bytes = g.Sum(a => a.Size) }).ToListAsync(ct);
         StorageEndpoints.Totals Of(AttachmentKind kind) => byKind.Where(k => k.Kind == kind).Select(k => new StorageEndpoints.Totals(k.Count, k.Bytes)).SingleOrDefault() ?? new(0, 0);
         return new TrimResult(await q.CountAsync(m => m.Notice == null, ct), Of(AttachmentKind.Image), Of(AttachmentKind.File),
-            await q.Select(m => m.ConversationId).Distinct().CountAsync(ct));
+            await q.Select(m => m.ConversationId).Distinct().CountAsync(ct), Of(AttachmentKind.Video));
     }
 
     private static async Task<IResult> Preview(TrimRequest request, GomDbContext db, TimeProvider clock, CancellationToken ct)
@@ -74,8 +74,8 @@ public static class MessageTrim
 
         var owner = GomClaims.User(http.User);
         var conversations = await Matching(db, rule).Select(m => m.ConversationId).Distinct().ToListAsync(ct);
-        int messages = 0, pictures = 0, files = 0, touched = 0;
-        long pictureBytes = 0, fileBytes = 0;
+        int messages = 0, touched = 0;
+        var removed = new Tally();
         foreach (var conversation in conversations)
         {
             List<Guid> gone;
@@ -99,15 +99,12 @@ public static class MessageTrim
                 await tx.CommitAsync(ct);
 
                 messages += said;
-                foreach (var a in attached.Where(a => a.RemovedAt == null))
-                {
-                    if (a.Kind == AttachmentKind.Image) { pictures++; pictureBytes += a.Size; } else { files++; fileBytes += a.Size; }
-                }
+                foreach (var a in attached.Where(a => a.RemovedAt == null)) removed.Add(a.Kind, a.Size);
             }
             touched++;
             AttachmentFiles.Forget(blobs, gone);
             await Notices.Publish(db, live, notice, ct);
         }
-        return Results.Ok(new TrimResult(messages, new(pictures, pictureBytes), new(files, fileBytes), touched));
+        return Results.Ok(new TrimResult(messages, removed.Of(AttachmentKind.Image), removed.Of(AttachmentKind.File), touched, removed.Of(AttachmentKind.Video)));
     }
 }

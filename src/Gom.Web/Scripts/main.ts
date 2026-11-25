@@ -46,9 +46,21 @@ addEventListener('storage', (e) => {
 });
 
 const pusher = createPusher();
+/**
+ * The video converter, fetched the first time a video is picked: its address is on the page (`data-video-script`, the server's
+ * fingerprinted name), so a new version is a new name. Typed from the module itself; nothing of it is bundled here.
+ */
+const prepareVideo: ChatDeps['prepareVideo'] = async (file, onProgress) => {
+  const address = document.body.dataset['videoScript'];
+  if (!address) return null;
+  const converter = await import(address) as typeof import('./video.js');
+  return converter.prepareVideo(file, onProgress);
+};
+
 const chatDeps = (): ChatDeps => ({
   clearNotifications: (conversation) => pusher.clear(conversation),
   pusher,
+  prepareVideo,
   live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, handlers),
   nav: { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), back: () => history.back(), onPop: (callback) => addEventListener('popstate', callback) },
   now: () => new Date(),

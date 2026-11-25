@@ -9,7 +9,7 @@ import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMe
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { avatarUrl, errorBox } from '../ui.js';
-import { matches } from '../search.js';
+import { markedExcerpt, matches, type Run } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
 import { isAppFile } from '../appfiles.js';
 import { PALETTES, PATTERNS, storedPattern } from '../theme.js';
@@ -35,6 +35,11 @@ export interface ChatDeps {
   clearNotifications?(conversation: string): void;
   /** This device's notifications, for the one-time "turn them on" banner. */
   pusher?: Pusher;
+  /**
+   * Makes a picked video smaller on this device (`onProgress` from 0 to 1); null when this device cannot. Loaded only when a video
+   * is picked. Without it every video goes as it is.
+   */
+  prepareVideo?(file: File, onProgress: (fraction: number) => void): Promise<PreparedVideo | null>;
 }
 
 /** Remembered per device (browser storage) once "Để sau" is tapped: the banner does not come back there. */
@@ -49,14 +54,53 @@ const UPLOADS_AT_ONCE = 2;
 /** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
 const FORWARD_MAX = 5;
 /** How much of a message a one-line preview shows: the pinned bar and panel, a search result or the pin list, what is being forwarded. */
-const CLIP = { pin: 100, result: 160, forward: 120 } as const;
+const CLIP = { pin: 100, result: 160, found: 70, forward: 120 } as const;
 /** How long "Hoàn tác" stays after a conversation is hidden. */
 const UNDO_HIDE_MS = 5000;
+/** How long typing must pause before a search is sent, and the fewest characters that search as you type (Enter searches any). */
+const SEARCH_WAIT_MS = 300;
+const SEARCH_AS_YOU_TYPE_CHARS = 2;
 /** The browser says when a scroll has come to rest; where it does not, a pause in scrolling stands in for it. */
 const SCROLL_END = typeof window !== 'undefined' && 'onscrollend' in window;
 
 /** One picture or file chosen for the next message: it goes up at once, and joins the message when that is sent. */
-interface TrayItem { key: number; name: string; file: File | null; state: 'waiting' | 'uploading' | 'done' | 'failed'; progress: number; attachment?: Attachment; error?: Failure }
+/**
+ * Something chosen for the next message. A video is made smaller on this device first ('converting', with its progress), once:
+ * `prepared` says that step is behind it, and `poster` is its still picture, sent after it.
+ */
+interface TrayItem {
+  key: number; name: string; file: File | null; state: 'waiting' | 'converting' | 'uploading' | 'done' | 'failed'; progress: number; attachment?: Attachment; error?: Failure;
+  prepared?: boolean; poster?: Blob | null; preview?: string;
+}
+
+/** A video picked on this device made ready to send: an MP4 Gom plays everywhere, and its first picture. */
+export interface PreparedVideo { video: Blob; poster: Blob | null }
+
+/** Whether a picked file is a video, by its type or, when the device gives none, its name. */
+export const isVideoFile = (file: File): boolean => file.type.startsWith('video/') || /\.(mp4|m4v|mov|webm|mkv|3gp)$/i.test(file.name);
+
+/** A small picture made on this device, as an address the page may show (the page's policy allows data: pictures). */
+const asDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result as string);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+/** "clip.mov" sent as "clip.mp4": the name says what it now is. */
+const mp4Name = (name: string): string => `${(name || 'video').replace(/\.[^./]*$/, '')}.mp4`;
+
+/** How long a video plays, as a player shows it: "0:42", "12:05", "1:02:03". Empty when unknown. */
+export function playLength(ms: number | null | undefined): string {
+  if (!ms || ms <= 0) return '';
+  const all = Math.round(ms / 1000);
+  const h = Math.floor(all / 3600), m = Math.floor((all % 3600) / 60), sec = all % 60;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
+/** Which list of the side panel an attachment is in: videos are with the pictures, as in a phone's gallery. */
+const shelf = (a: Attachment): 'image' | 'file' => a.kind === 'file' ? 'file' : 'image';
 
 /** The mark on your own message: one check when sent, two when seen, none otherwise. */
 type Tick = 'sent' | 'seen' | null;
@@ -149,6 +193,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const slowWaiting = new Set<string>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
+  /** Messages in all your conversations that contain what is typed above the list; `asked` is the search they answer. */
+  let foundEverywhere: { asked: string; results: ChatMessage[] } | null = null;
+  /** Only the newest search may fill the list: an older, slower answer is dropped. */
+  let everywhereTicket = 0;
+  let everywhereTimer: number | null = null;
+  let threadSearchTimer: number | null = null;
   /**
    * Someone's card, opened from a member of a group, a sender's name or a 1:1 conversation's header. `asking` is the question
    * before unfriending or blocking.
@@ -211,7 +261,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (last === null) return say.chat.noMessagesYet;
     if (last.deleted) return recalledText(last.sender.id === me?.id, c.kind === 'group' ? last.sender.displayName : null);
     const who = last.sender.id === me?.id ? `${say.common.you}: ` : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
-    return who + (last.body !== '' ? last.body : last.sticker ? say.chat.sentSticker : last.attachment === 'image' ? say.chat.sentPicture : last.attachment === 'file' ? say.chat.sentFile : '');
+    return who + (last.body !== '' ? last.body : last.sticker ? say.chat.sentSticker : last.attachment === 'image' ? say.chat.sentPicture : last.attachment === 'video' ? say.chat.sentVideo : last.attachment === 'file' ? say.chat.sentFile : '');
   }
 
   const row = (c: Conversation) => html`
@@ -344,11 +394,29 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </div>`;
   };
 
-  /** The pictures of a message as a grid, then its files as cards. */
+  /** Videos that this browser could not play: shown as a card to download instead. */
+  const unplayable = new Set<string>();
+
+  /**
+   * A video in its message: the browser's own player, with its still picture (when its sender's device made one) and how long it is.
+   * Only its first moments are fetched before it is played, which also gives a picture to one without a still. One this browser
+   * cannot play becomes a download.
+   */
+  const videoView = (a: Attachment): TemplateResult => unplayable.has(a.id)
+    ? html`<a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-video-download=${a.id}>${icons.film()}
+        <span class="fi"><b>${a.name}</b><small>${say.chat.videoCannotPlay}</small></span>${icons.download()}</a>`
+    : html`<div class="vid" data-video=${a.id}>
+        <video controls playsinline preload="metadata" src=${`/api/attachments/${a.id}`} poster=${`/api/attachments/${a.id}/thumb`}
+          width=${a.width ?? nothing} height=${a.height ?? nothing} aria-label=${say.chat.videoLabel(a.name, playLength(a.durationMs))}
+          @error=${() => { unplayable.add(a.id); update(); }}></video>
+        ${a.durationMs ? html`<span class="vid-len" aria-hidden="true">${playLength(a.durationMs)}</span>` : nothing}</div>`;
+
+  /** The pictures of a message as a grid, then its videos, then its files as cards. */
   const attachmentsOf = (m: ChatMessage): TemplateResult | typeof nothing => {
     const all = m.attachments ?? [];
     if (all.length === 0) return nothing;
     const pictures = all.filter((a) => a.kind === 'image');
+    const videos = all.filter((a) => a.kind === 'video');
     const files = all.filter((a) => a.kind === 'file');
     return html`
       ${pictures.length === 0 ? nothing : html`<div class=${`pics n${Math.min(pictures.length, 5)}`} data-pics>${pictures.map((a, i) => a.removed
@@ -358,6 +426,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         : html`
         <button class="pic" type="button" data-pic=${a.id} aria-label=${say.chat.viewPicture(i + 1, pictures.length)} @click=${() => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id)}>
           <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}
+      ${videos.map((a) => a.removed
+        ? html`<div class="pic removed vid" data-video-removed=${a.id}><span>${say.chat.videoGone}</span></div>`
+        : videoView(a))}
       ${files.map((a) => a.removed
         ? html`<div class="filecard removed" data-file-removed=${a.id}>${icons.file()}<span class="fi"><b>${say.chat.fileGone}</b><small>${a.name}</small></span></div>`
         : isAppFile(a.name) ? html`
@@ -497,8 +568,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           @click=${(e: MouseEvent) => { if ((e.target as Element).classList.contains('vslide')) closeViewer(); }}>
           ${repeat(slides, (s) => s.attachment.id, (s, k) => html`
             <div class="vslide" role="group" aria-roledescription=${say.chat.pictureRole} aria-label=${`${k + 1} / ${slides.length}`} data-viewer-slide=${s.attachment.id}>
-              <img class="vimg" src=${`/api/attachments/${s.attachment.id}`} alt=${s.attachment.name} loading="lazy" decoding="async"
-                width=${s.attachment.width ?? nothing} height=${s.attachment.height ?? nothing}></div>`)}
+              ${s.attachment.kind === 'video'
+                ? html`<video class="vimg" controls playsinline preload="none" src=${`/api/attachments/${s.attachment.id}`} poster=${`/api/attachments/${s.attachment.id}/thumb`}
+                    width=${s.attachment.width ?? nothing} height=${s.attachment.height ?? nothing} aria-label=${say.chat.videoLabel(s.attachment.name, playLength(s.attachment.durationMs))}></video>`
+                : html`<img class="vimg" src=${`/api/attachments/${s.attachment.id}`} alt=${s.attachment.name} loading="lazy" decoding="async"
+                width=${s.attachment.width ?? nothing} height=${s.attachment.height ?? nothing}>`}</div>`)}
         </div>
         <div class="viewer-foot" data-viewer-foot>
           <div class="vwho"><b>${who}</b><small>${sentAt(current.createdAt)}</small></div>
@@ -513,7 +587,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${repeat(t.tray, (i) => i.key, (i) => html`
         <div class=${`tray-item ${i.state}`} data-tray-item=${i.key}>
           ${i.state === 'done' && i.attachment?.kind === 'image' ? html`<img src=${`/api/attachments/${i.attachment.id}/thumb`} alt=${i.name}>`
+            : i.preview !== undefined ? html`<img src=${i.preview} alt=${i.name}><span class="tray-play" aria-hidden="true">${icons.play()}</span>`
             : html`<div class="tray-file">${icons.file()}<span>${i.name}</span></div>`}
+          ${i.state === 'converting' ? html`<progress max="1" value=${i.progress} aria-label=${say.chat.preparingVideo(i.name)} data-tray-converting></progress>` : nothing}
           ${i.state === 'uploading' || i.state === 'waiting' ? html`<progress max="1" value=${i.state === 'waiting' ? 0 : i.progress} aria-label=${say.chat.uploading(i.name)}></progress>` : nothing}
           ${i.state === 'failed' ? html`<div class="tray-err" role="alert">${i.error ? errorText(i.error) : say.chat.uploadFailed}
             <button class="btn secondary small" type="button" data-tray-retry @click=${() => retryTray(i)}>${say.common.retry}</button></div>` : nothing}
@@ -581,10 +657,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** Looking for words in this conversation: a field, and the messages that contain them, newest first. */
   const searchPanel = (s: NonNullable<typeof searching>) => html`
     <div class="searchbar" role="search">
-      <form data-search-form @submit=${(e: Event) => { e.preventDefault(); void runSearch(); }}>
+      <form data-search-form @submit=${(e: Event) => { e.preventDefault(); searchNow(); }}>
         <div class="searchfield input">${icons.search()}
           <input type="search" name="q" aria-label=${say.chat.searchWords} placeholder=${say.chat.searchMessages} autocomplete="off" maxlength=${limits().searchChars} enterkeyhint="search"
-            .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; }}
+            .value=${liveValue(s.q)} @input=${(e: Event) => { s.q = (e.target as HTMLInputElement).value; searchSoon(s); }}
             @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { searching = null; update(); } }}>
           <button class="clear" type="button" data-close-search aria-label=${say.chat.closeSearch} @click=${() => { searching = null; update(); }}>${icons.close()}</button>
         </div>
@@ -594,8 +670,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         : html`<ul class="results">${s.results.map((r) => html`
           <li><button type="button" class="result" data-result=${r.id} @click=${() => void reveal(r)}>
             <b>${r.sender.id === me?.id ? say.common.you : r.sender.displayName}</b><small>${listTime(r.createdAt, deps.now())}</small>
-            <span>${clip(r.body, CLIP.result)}</span></button></li>`)}</ul>`}
+            <span>${marked(markedExcerpt(r.body, s.asked, CLIP.result))}</span></button></li>`)}</ul>`}
     </div>`;
+  /** The words a search found, in bold. */
+  const marked = (runs: Run[]) => runs.map((r) => r.hit ? html`<mark>${r.text}</mark>` : r.text);
   /** The pinned messages: the newest one stays under the header, and a button opens them all. */
   const pinBar = (t: Thread) => t.pins.length === 0 ? nothing : html`
     <div class="pinbar" data-pinbar>
@@ -739,7 +817,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       ${image.items.length === 0 ? nothing : html`<h3>${say.chat.picturesHeading}</h3>
         <div class="info-media" data-info-media>${image.items.map(({ attachment: a }) => html`
-          <button class="pic" type="button" data-info-pic=${a.id} aria-label=${a.name} @click=${() => openViewer(id, a.id, null)}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy"></button>`)}</div>
+          <button class=${`pic ${a.kind === 'video' ? 'vtile' : ''}`} type="button" data-info-pic=${a.id} aria-label=${a.kind === 'video' ? say.chat.videoLabel(a.name, playLength(a.durationMs)) : a.name} @click=${() => openViewer(id, a.id, null)}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy">${a.kind === 'video' ? html`<span class="tray-play" aria-hidden="true">${icons.play()}</span>` : nothing}</button>`)}</div>
         ${more('image', image)}`}
       ${file.items.length === 0 ? nothing : html`<h3>${say.chat.filesHeading}</h3>
         <ul class="info-list" data-info-files>${file.items.map(({ attachment: a }) => html`<li><a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name}>${icons.file()}<span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span></a></li>`)}</ul>
@@ -935,6 +1013,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${trayView(t)}
           <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
             ${t.editing === null && uploadsOn() ? html`
+              <button class="ib attach" type="button" data-gallery aria-label=${say.chat.picturesAndVideos} @click=${() => root.querySelector<HTMLInputElement>('input[name="gallery"]')?.click()}>${icons.image()}</button>
+              <input class="file-input" type="file" name="gallery" accept="image/*,video/*" multiple tabindex="-1" aria-hidden="true"
+                @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>
               <button class="ib attach" type="button" data-attach aria-label=${say.chat.attach} @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
               <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
                 @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
@@ -1029,15 +1110,30 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
-  /** The list as narrowed by what is typed, with any hidden conversations it finds under their own heading. */
+  /**
+   * The list as narrowed by what is typed, with any hidden conversations it finds under their own heading, then the messages that
+   * contain the words.
+   */
   const listView = () => {
     const shown = visibleChats();
     const found = hiddenMatches(filter);
-    if (shown.length === 0 && found.length === 0) return html`<p class="hint nomatch" data-no-match>${say.chat.noChatsFound}</p>`;
-    // One scroller for both, so the hidden ones follow the others instead of splitting the pane.
+    const messages = foundEverywhere?.results ?? [];
+    if (shown.length === 0 && found.length === 0 && messages.length === 0) return html`<p class="hint nomatch" data-no-match>${say.chat.noChatsFound}</p>`;
+    // One scroller for all, so each part follows the one before instead of splitting the pane.
     return html`<div class="items">
       ${shown.length === 0 ? nothing : html`<ul class="rows">${repeat(shown, (c) => c.id, row)}</ul>`}
-      ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, row)}</ul>`}</div>`;
+      ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, row)}</ul>`}
+      ${messages.length === 0 ? nothing : html`<h3 class="hidden-label" data-found-label>${say.chat.foundMessages}</h3>
+        <ul class="results found-list" data-found-list>${messages.map((m) => foundRow(m, foundEverywhere!.asked))}</ul>`}</div>`;
+  };
+
+  /** A message the list's search found: where it was said, by whom, the words around what was found, and when. */
+  const foundRow = (m: ChatMessage, asked: string) => {
+    const c = chatOf(m.conversationId);
+    const who = m.sender.id === me?.id ? `${say.common.you}: ` : c?.kind === 'group' ? `${m.sender.displayName}: ` : '';
+    return html`<li><button type="button" class="result" data-found=${m.id} @click=${() => openAt(m)}>
+      <b>${c?.title ?? '…'}</b><small>${listTime(m.createdAt, deps.now())}</small>
+      <span>${who}${marked(markedExcerpt(m.body, asked, CLIP.found))}</span></button></li>`;
   };
 
   const view = () => html`
@@ -1052,8 +1148,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${chats === null || chats.length === 0 ? nothing : html`
           <div class="searchfield input list-search">${icons.search()}
             <input type="search" name="filter" aria-label=${say.common.searchChats} placeholder=${say.common.search} autocomplete="off" maxlength=${limits().nameChars}
-              .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); }}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; update(); } }}></div>`}
+              .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); searchEverywhereSoon(); }}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; searchEverywhereSoon(); } else if (e.key === 'Enter' && !e.isComposing) searchEverywhereSoon(0); }}></div>`}
         ${banner()}
         ${pushBanner()}
         ${errorBox(error)}
@@ -1231,7 +1327,19 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- loading
 
-  async function loadHistory(id: string): Promise<void> {
+  /** The first page of a conversation being asked for, so something waiting for it (going to a found message) waits for the same one. */
+  const historyLoads = new Map<string, Promise<void>>();
+
+  function loadHistory(id: string): Promise<void> {
+    let loading = historyLoads.get(id);
+    if (loading === undefined) {
+      loading = fetchHistory(id).finally(() => historyLoads.delete(id));
+      historyLoads.set(id, loading);
+    }
+    return loading;
+  }
+
+  async function fetchHistory(id: string): Promise<void> {
     const t = threadOf(id);
     if (t.loading) return;
     t.loading = true;
@@ -1306,7 +1414,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const lists = mediaLists.get(conversation);
     if (lists !== undefined) {
       if (event.kind === 'deleted') for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.filter((i) => i.messageId !== message.id);
-      else if (event.kind === 'created') for (const a of message.attachments ?? []) lists[a.kind].items = mergeMedia(lists[a.kind].items, [{ attachment: a, messageId: message.id, seq: message.seq, createdAt: message.createdAt, sender: message.sender, body: message.body }]);
+      else if (event.kind === 'created') for (const a of message.attachments ?? []) lists[shelf(a)].items = mergeMedia(lists[shelf(a)].items, [{ attachment: a, messageId: message.id, seq: message.seq, createdAt: message.createdAt, sender: message.sender, body: message.body }]);
       else for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.map((i) => i.messageId === message.id ? { ...i, body: message.body } : i);
     }
 
@@ -1921,6 +2029,49 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- searching
 
+  /** Searches the open conversation once typing pauses; emptied, the results go. A character or two waits for Enter. */
+  function searchSoon(s: NonNullable<typeof searching>): void {
+    if (threadSearchTimer !== null) deps.timer.clear(threadSearchTimer);
+    threadSearchTimer = null;
+    const q = s.q.trim();
+    if (q === '') { s.ticket++; s.results = null; s.asked = ''; update(); return; }
+    if ([...q].length < SEARCH_AS_YOU_TYPE_CHARS) return;
+    threadSearchTimer = deps.timer.set(() => { threadSearchTimer = null; void runSearch(); }, SEARCH_WAIT_MS);
+  }
+
+  function searchNow(): void {
+    if (threadSearchTimer !== null) deps.timer.clear(threadSearchTimer);
+    threadSearchTimer = null;
+    void runSearch();
+  }
+
+  /**
+   * Searches all your conversations for what is typed above the list once typing pauses (or at once, for Enter). Less than
+   * SEARCH_AS_YOU_TYPE_CHARS characters only narrows the list by name.
+   */
+  function searchEverywhereSoon(wait = SEARCH_WAIT_MS): void {
+    if (everywhereTimer !== null) deps.timer.clear(everywhereTimer);
+    everywhereTimer = null;
+    const q = filter.trim();
+    if ([...q].length < (wait === 0 ? 1 : SEARCH_AS_YOU_TYPE_CHARS)) { everywhereTicket++; foundEverywhere = null; update(); return; }
+    everywhereTimer = deps.timer.set(() => { everywhereTimer = null; void searchEverywhere(q); }, wait);
+  }
+
+  async function searchEverywhere(q: string): Promise<void> {
+    const ticket = ++everywhereTicket;
+    const result = await api.searchAll(q);
+    if (ticket !== everywhereTicket) return;
+    if (!result.ok) { handleFailure(result); return; }
+    foundEverywhere = { asked: q, results: result.data.results };
+    update();
+  }
+
+  /** Opens the conversation a message found by the list's search is in, and goes to the message. */
+  function openAt(m: ChatMessage): void {
+    if (openId !== m.conversationId) open(m.conversationId);
+    void reveal(m);
+  }
+
   async function runSearch(): Promise<void> {
     if (searching === null || openId === null) return;
     const s = searching;
@@ -1937,13 +2088,19 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
-  /** Goes to a message found by the search: older pages are loaded until it is there, then it is brought into view and marked for a moment. */
+  /**
+   * Goes to a message (found by the search, pinned, or a picture's): older pages are loaded until it is there, then it is brought
+   * into view and marked for a moment. On a phone the information page covers the thread, so it is closed first.
+   */
   async function reveal(m: { id: string; conversationId: string }): Promise<void> {
+    closeInfoPage();
     const id = m.conversationId;
     const t = threadOf(id);
     searching = null;
+    if (!t.loaded) await loadHistory(id);   // just opened from the list's search
     t.pinsOpen = false;
     t.stick = false;
+    t.jump = false;
     update();
     for (let pages = 0; !t.messages.some((x) => x.id === m.id) && t.hasMore && pages < 40; pages++) await loadOlder(id);
     found = m.id;
@@ -1969,6 +2126,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     }
     if (menu?.id === messageId) menu = null;
     if (searching?.results) searching.results = searching.results.filter((r) => r.id !== messageId);
+    if (foundEverywhere !== null) foundEverywhere.results = foundEverywhere.results.filter((r) => r.id !== messageId);
     update();
     void refreshList();
   }
@@ -2024,7 +2182,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function pumpTray(id: string): void {
     const t = threadOf(id);
     for (;;) {
-      if (t.tray.filter((i) => i.state === 'uploading').length >= UPLOADS_AT_ONCE) return;
+      if (t.tray.filter((i) => i.state === 'uploading' || i.state === 'converting').length >= UPLOADS_AT_ONCE) return;
       const next = t.tray.find((i) => i.state === 'waiting');
       if (next === undefined) return;
       void uploadOne(id, t, next);
@@ -2032,16 +2190,51 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   async function uploadOne(id: string, t: Thread, item: TrayItem): Promise<void> {
+    if (!item.prepared && isVideoFile(item.file!)) {
+      if (!await prepare(item)) { pumpTray(id); return; }
+      if (!t.tray.includes(item)) { pumpTray(id); return; }
+    }
     item.state = 'uploading';
     item.progress = 0;
     update();
     const result = await api.upload(id, item.file!, (fraction) => { item.progress = fraction; update(); });
     if (!t.tray.includes(item)) { pumpTray(id); return; }   // taken out while it was going up
+    // A video's still picture follows it; without one it still plays (it shows nothing until then).
+    if (result.ok && result.data.kind === 'video' && item.poster) await api.setPoster(result.data.id, item.poster);
     if (result.ok) { item.state = 'done'; item.attachment = result.data; item.file = null; delete item.error; }
     else if (result.error === 'unauthorized') { go('/sign-in'); return; }
     else { item.state = 'failed'; item.error = result; }
     update();
     pumpTray(id);
+  }
+
+  /**
+   * Makes a picked video smaller on this device, once. When this device cannot, the video goes as it is if it is within the limit
+   * (the server keeps it as a video when it is an MP4, as a file when not); over the limit it fails here, before any upload.
+   * False when it failed.
+   */
+  async function prepare(item: TrayItem): Promise<boolean> {
+    const original = item.file!;
+    item.state = 'converting';
+    item.progress = 0;
+    update();
+    let ready: PreparedVideo | null = null;
+    try { ready = await deps.prepareVideo?.(original, (fraction) => { item.progress = fraction; update(); }) ?? null; } catch { ready = null; }
+    item.prepared = true;
+    if (ready !== null) {
+      item.file = new File([ready.video], mp4Name(original.name), { type: 'video/mp4' });
+      item.poster = ready.poster;
+      if (ready.poster !== null) item.preview = await asDataUrl(ready.poster);
+    }
+    if (item.file!.size > limits().videoBytes) {
+      item.state = 'failed';
+      item.error = { ok: false, status: 413, error: 'video_too_large' };
+      item.file = original;
+      item.prepared = false;   // a retry tries the device again
+      update();
+      return false;
+    }
+    return true;
   }
 
   function retryTray(item: TrayItem): void {

@@ -43,7 +43,7 @@ describe('the English words', () => {
     expect(en.common.members(1)).toBe('1 member');
     expect(en.common.members(2)).toBe('2 members');
     expect(en.chat.newMessages(1)).toBe('1 new message');
-    expect(en.storage.counted(1, '1 MB', 2, '2 MB')).toBe('1 picture (1 MB) and 2 files (2 MB)');
+    expect(en.storage.counted(1, '1 MB', 1, '5 MB', 2, '2 MB')).toBe('1 picture (1 MB), 1 video (5 MB) and 2 files (2 MB)');
   });
 });
 

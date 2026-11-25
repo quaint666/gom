@@ -25,13 +25,15 @@ public class RaceTests(AppFixture app) : IClassFixture<AppFixture>
             ids.Add((await AppFixture.Json(r)).GetProperty("id").GetGuid());
         }
 
-        var calls = ids.SelectMany(id => new[]
+        var edits = ids.Select(id => app.Call(HttpMethod.Patch, $"/api/conversations/{chat}/messages/{id}", new { body = "đã sửa" }, ca)).ToList();
+        var takeBacks = ids.Select(id => app.Call(HttpMethod.Delete, $"/api/conversations/{chat}/messages/{id}", cookie: ca)).ToList();
+        var answers = await Task.WhenAll(edits.Concat(takeBacks));
+        try
         {
-            app.Call(HttpMethod.Patch, $"/api/conversations/{chat}/messages/{id}", new { body = "đã sửa" }, ca),
-            app.Call(HttpMethod.Delete, $"/api/conversations/{chat}/messages/{id}", cookie: ca),
-        }).ToList();
-        var answers = await Task.WhenAll(calls);
-        try { Assert.All(answers, r => Assert.Equal(HttpStatusCode.NoContent, r.StatusCode)); }
+            // An edit that arrives after its message was taken back finds nothing to edit; a take-back always succeeds.
+            Assert.All(answers.Take(ids.Count), r => Assert.Contains(r.StatusCode, new[] { HttpStatusCode.NoContent, HttpStatusCode.NotFound }));
+            Assert.All(answers.Skip(ids.Count), r => Assert.Equal(HttpStatusCode.NoContent, r.StatusCode));
+        }
         finally { foreach (var r in answers) r.Dispose(); }
 
         // Every one was taken back in the end, whichever came first.
