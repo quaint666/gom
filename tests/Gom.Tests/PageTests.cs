@@ -33,8 +33,10 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         var html = await (await factory.CreateClient().GetAsync(path)).Content.ReadAsStringAsync();
 
         Assert.Contains("<meta name=\"color-scheme\" content=\"light dark\">", html);
-        Assert.True(html.IndexOf("/theme-init.js", StringComparison.Ordinal) is var script && script > 0
-            && script < html.IndexOf("/css/gom.css", StringComparison.Ordinal), "theme-init.js must come before the stylesheet");
+        // The files may carry their fingerprint (theme-init.<hash>.js) once the site is built.
+        var script = System.Text.RegularExpressions.Regex.Match(html, @"/theme-init(\.[0-9a-f]{10})?\.js").Index;
+        var styles = System.Text.RegularExpressions.Regex.Match(html, @"/css/gom(\.[0-9a-f]{10})?\.css").Index;
+        Assert.True(script > 0 && styles > 0 && script < styles, "theme-init.js must come before the stylesheet");
         Assert.Contains("name=\"viewport\"", html);
     }
 
