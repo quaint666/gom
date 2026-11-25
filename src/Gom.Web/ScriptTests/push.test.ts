@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApi } from '../Scripts/api.js';
 import { mountSettings } from '../Scripts/pages/settings.js';
-import { createPusher, type Pusher, type PushSupport } from '../Scripts/push.js';
+import { createPusher, SUBSCRIBE_WAIT_MS, type Pusher, type PushSupport } from '../Scripts/push.js';
 import { fail, fakeApi, flush, ok, text } from './helpers.js';
 import swSource from '../wwwroot/sw.js?raw';
 import offlineSource from '../wwwroot/offline.js?raw';
@@ -72,7 +72,7 @@ describe('settings: notifications', () => {
   });
 
   it('says so and registers nothing when the person does not allow it, or the browser fails', async () => {
-    for (const [answer, words] of [['denied', 'chưa cho phép'], ['failed', 'Không bật được']] as const) {
+    for (const [answer, words] of [['denied', 'chưa cho phép'], ['failed', 'Không bật được'], ['no-service', 'không có dịch vụ thông báo đẩy']] as const) {
       const a = api();
       mountSettings(root, a, vi.fn(), undefined, fakePusher({ subscribe: async () => answer }));
       await flush();
@@ -136,7 +136,34 @@ describe('the device: what it can do', () => {
     navigator: { userAgent: ua, platform: 'Linux', maxTouchPoints: 0, serviceWorker: {}, ...extra },
     matchMedia: () => ({ matches: standalone }),
     PushManager: class {}, Notification: { permission: 'default' },
+    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms), clearTimeout: (id: number) => clearTimeout(id),
   }) as unknown as Window & typeof globalThis;
+
+  /** A browser that asks no questions, with this push manager's subscribe. */
+  const granted = (subscribe: () => Promise<unknown>) => ({
+    ...win('Mozilla/5.0 (Linux; Android 15)', { serviceWorker: { ready: Promise.resolve({ pushManager: { getSubscription: async () => null, subscribe } }) } }),
+    Notification: { permission: 'default', requestPermission: async () => 'granted' },
+  }) as unknown as Window & typeof globalThis;
+
+  it('gives up on a browser whose push service never answers (Helium, ungoogled-chromium) and says it has none', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = createPusher(granted(() => new Promise(() => undefined))).subscribe('AQID');
+      await vi.advanceTimersByTimeAsync(SUBSCRIBE_WAIT_MS - 1);
+      let settled = false;
+      void pending.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(await pending).toBe('no-service');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('calls Brave\'s "push service error" no service too, and any other refusal a failure', async () => {
+    const refused = (message: string) => createPusher(granted(async () => { throw new DOMException(message, 'AbortError'); })).subscribe('AQID');
+    expect(await refused('Registration failed - push service error')).toBe('no-service');
+    expect(await refused('Registration failed - permission denied')).toBe('failed');
+  });
 
   it('needs the Home Screen on an iPhone or iPad until opened from there', () => {
     expect(createPusher(win('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).support()).toBe('needs-home-screen');

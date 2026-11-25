@@ -2,7 +2,7 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
-import type { Pusher } from '../push.js';
+import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, Result, User } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
@@ -133,7 +133,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let viewerSync = false;
   let trayKey = 0;
   /** The banner that offers notifications: the server's key and the level to register with, while it is offered. */
-  let pushOffer: { key: string; level: PushLevel; busy: boolean; failed: boolean } | null = null;
+  let pushOffer: { key: string; level: PushLevel; busy: boolean; failed: boolean; noService?: boolean } | null = null;
   let infoOpen = ((): boolean => { try { return localStorage.getItem('gom-info') === '1'; } catch { return false; } })();
   const people = new Map<string, GroupMember[]>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
@@ -958,7 +958,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const pushBanner = () => pushOffer === null ? nothing : html`
     <div class="pushbar" data-push-banner>
       ${icons.bell()}
-      <span>${pushOffer.failed ? 'Không bật được thông báo trên trình duyệt này. Bạn có thể thử lại trong Cài đặt.' : 'Bật thông báo để biết khi có tin nhắn mới.'}</span>
+      <span>${pushOffer.noService ? NO_PUSH_SERVICE : pushOffer.failed ? 'Không bật được thông báo trên trình duyệt này. Bạn có thể thử lại trong Cài đặt.' : 'Bật thông báo để biết khi có tin nhắn mới.'}</span>
       ${pushOffer.failed ? nothing : html`<button class="btn small" type="button" data-push-yes ?disabled=${pushOffer.busy} @click=${() => void acceptPush()}>Bật</button>`}
       <button class="btn secondary small" type="button" data-push-later ?disabled=${pushOffer.busy} @click=${laterPush}>${pushOffer.failed ? 'Đóng' : 'Để sau'}</button>
     </div>`;
@@ -979,9 +979,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (pushOffer === null || p === undefined || pushOffer.busy) return;
     pushOffer.busy = true; update();
     const sub = await p.subscribe(pushOffer.key);
-    const result = sub === 'denied' || sub === 'failed' ? null : await api.setPush(sub, pushOffer.level);
+    const result = sub === 'denied' || sub === 'failed' || sub === 'no-service' ? null : await api.setPush(sub, pushOffer.level);
     if (sub === 'denied' || result?.ok) pushOffer = null;   // refused: the browser will not ask again, and Settings explains
-    else pushOffer = { ...pushOffer, busy: false, failed: true };
+    else if (sub === 'no-service') {
+      // It never can on this browser: said once, and not offered again here.
+      pushOffer = { ...pushOffer, busy: false, failed: true, noService: true };
+      try { localStorage.setItem(PUSH_LATER, '1'); } catch { /* it is just not remembered */ }
+    } else pushOffer = { ...pushOffer, busy: false, failed: true };
     update();
   }
 

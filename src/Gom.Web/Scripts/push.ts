@@ -13,8 +13,12 @@ export interface Pusher {
   support(): PushSupport;
   /** The browser's answer so far: not asked ('default'), allowed, or blocked (then only the browser's settings can change it). */
   permission(): NotificationPermission;
-  /** Asks for permission (it must run in the handler of a tap), then subscribes with the server's key. */
-  subscribe(key: string): Promise<DeviceSubscription | 'denied' | 'failed'>;
+  /**
+   * Asks for permission (it must run in the handler of a tap), then subscribes with the server's key. 'no-service': the browser has no
+   * push service to subscribe with (Helium and ungoogled-chromium removed Google's, and theirs never answers; Brave with Google's
+   * switched off says "push service error").
+   */
+  subscribe(key: string): Promise<DeviceSubscription | 'denied' | 'failed' | 'no-service'>;
   /** The subscription this browser has now, if any. */
   current(): Promise<DeviceSubscription | null>;
   unsubscribe(): Promise<void>;
@@ -33,6 +37,12 @@ const asDevice = (s: PushSubscription | null): DeviceSubscription | null => {
   const j = s?.toJSON();
   return j?.endpoint && j.keys?.['p256dh'] && j.keys['auth'] ? { endpoint: j.endpoint, keys: { p256dh: j.keys['p256dh'], auth: j.keys['auth'] } } : null;
 };
+
+/** Said when the browser has no push service of its own: nothing Gom can change, so it says which browsers can. */
+export const NO_PUSH_SERVICE = 'Trình duyệt này không có dịch vụ thông báo đẩy, nên Gom không gửi thông báo đến đây được. Một số trình duyệt dựa trên Chromium (như Helium) đã bỏ dịch vụ này; Chrome, Edge và Firefox đều nhận được.';
+
+/** How long a browser's push service gets to hand out a subscription. One with none never answers at all. */
+export const SUBSCRIBE_WAIT_MS = 20_000;
 
 /** The real one, on the page's own `window`. */
 export function createPusher(w: Window & typeof globalThis = window): Pusher {
@@ -56,8 +66,12 @@ export function createPusher(w: Window & typeof globalThis = window): Pusher {
         const old = await reg.pushManager.getSubscription();
         const oldKey = old?.options.applicationServerKey;
         if (old && !(oldKey && new Uint8Array(oldKey).every((b, i) => b === wanted[i]) && oldKey.byteLength === wanted.length)) await old.unsubscribe();
-        return asDevice(await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: wanted })) ?? 'failed';
-      } catch { return 'failed'; }
+        let wait = 0;
+        const silent = new Promise<'no-service'>((resolve) => { wait = w.setTimeout(() => resolve('no-service'), SUBSCRIBE_WAIT_MS); });
+        const made = await Promise.race([reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: wanted }), silent]);
+        w.clearTimeout(wait);
+        return made === 'no-service' ? made : asDevice(made) ?? 'failed';
+      } catch (e) { return /push service/i.test(String((e as { message?: unknown } | null)?.message ?? '')) ? 'no-service' : 'failed'; }
     },
     async current() {
       try { return asDevice(await (await registration())?.pushManager.getSubscription() ?? null); } catch { return null; }

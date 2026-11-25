@@ -3,7 +3,7 @@ import { live } from 'lit-html/directives/live.js';
 import type { Api, Failure, PushLevel, PushState, SessionInfo, User } from '../api.js';
 import { chosenScheme, chooseScheme, type Choice } from '../theme.js';
 import type { Installer } from '../install.js';
-import type { Pusher } from '../push.js';
+import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
 import { errorText } from '../text.js';
 
@@ -222,6 +222,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       const sub = await pusher.subscribe(push.key);
       if (sub === 'denied') pushStatus = 'Bạn chưa cho phép Gom gửi thông báo.';
       else if (sub === 'failed') pushStatus = 'Không bật được thông báo trên trình duyệt này.';
+      else if (sub === 'no-service') pushStatus = NO_PUSH_SERVICE;
       else {
         const result = await api.setPush(sub, push.level);
         if (result.ok) { push = { ...push, subscribed: true }; pushStatus = 'Đã bật thông báo.'; }

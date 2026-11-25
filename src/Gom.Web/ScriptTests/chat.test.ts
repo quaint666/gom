@@ -2191,6 +2191,21 @@ describe('chat: the offer to turn on notifications', () => {
     expect(text(bar()!)).toContain('Không bật được');
     expect(root.querySelector('[data-push-yes]')).toBeNull();
   });
+
+  it('says once that a browser without a push service (Helium) cannot get them, and does not offer them there again', async () => {
+    open(device({ subscribe: async () => 'no-service' }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-push-yes]')!.click();
+    await flush();
+    expect(text(bar()!)).toContain('không có dịch vụ thông báo đẩy');
+    expect(text(bar()!)).toContain('Helium');
+    expect(root.querySelector('[data-push-yes]')).toBeNull();
+
+    root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page on the same device
+    open(device({ subscribe: async () => 'no-service' }));
+    await flush();
+    expect(bar()).toBeNull();
+  });
 });
 
 describe('chat: deleting a message for yourself', () => {
