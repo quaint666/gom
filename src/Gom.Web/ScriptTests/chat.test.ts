@@ -3279,6 +3279,25 @@ describe('chat: pictures and files', () => {
       expect(current()).toBe('/api/attachments/p1');
     });
 
+    it('moves the strip at once on an arrow step, without a sliding animation, even where motion is allowed', async () => {
+      const motion = vi.fn(() => ({ matches: true }));
+      vi.stubGlobal('matchMedia', motion);
+      try {
+        open({ media: vi.fn(async () => ok({ items: [listed('p2', 2), listed('p1', 1)], hasMore: false })) }, [{ ...msg(1, 'minh'), attachments: [att('p1')] }, { ...msg(2, 'minh'), attachments: [att('p2')] }]);
+        await flush();
+        await click('[data-pic="p1"]');
+        const track = viewer()!.querySelector<HTMLElement>('[data-viewer-track]')!;
+        Object.defineProperty(track, 'clientWidth', { value: 400, configurable: true });
+        const slide = vi.fn();
+        track.scrollTo = slide as unknown as HTMLElement['scrollTo'];
+        track.scrollLeft = 0;
+        await click('[data-viewer-next]');
+        expect(current()).toBe('/api/attachments/p2');
+        expect(track.scrollLeft).toBe(400);
+        expect(slide).not.toHaveBeenCalled();
+      } finally { vi.unstubAllGlobals(); }
+    });
+
     it('closes when the browser closes the dialog (Escape or the Back gesture on a phone), and the conversation stays open', async () => {
       const h = open({}, [{ ...msg(1, 'minh'), attachments: [att('p1')] }]);
       await flush();
