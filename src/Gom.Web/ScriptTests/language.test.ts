@@ -98,6 +98,37 @@ describe('settings: colour', () => {
   });
 });
 
+describe('settings: background', () => {
+  const me = { id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false, language: 'vi' as const };
+  const tile = (code: string) => root.querySelector<HTMLInputElement>(`[data-pattern-choice] input[value="${code}"]`)!;
+
+  it('shows the nine, each drawn as the conversation would, remembers a chosen one and saves it; a refusal puts the old one back', async () => {
+    localStorage.clear();
+    const setPattern = vi.fn().mockResolvedValueOnce(ok(undefined)).mockResolvedValueOnce(fail('invalid_pattern', 400));
+    const a = fakeApi({ me: vi.fn(async () => ok(me)), sessions: vi.fn(async () => ok([])), pushState: vi.fn(async () => fail('unknown', 404)), setPattern });
+    mountSettings(root, a, vi.fn());
+    await flush();
+    expect(root.querySelectorAll('[data-pattern-choice] input')).toHaveLength(9);
+    expect(tile('plain').checked).toBe(true);
+    expect(root.querySelector('[data-pattern-choice] .backdrop[data-pattern="tiles"]')).not.toBeNull();
+    expect(text(root.querySelector('[data-pattern-choice]')!)).toContain('Gạch bông');
+
+    tile('clouds').checked = true;
+    tile('clouds').dispatchEvent(new Event('change'));
+    expect(localStorage.getItem('gom-pattern')).toBe('clouds');
+    await flush();
+    expect(setPattern).toHaveBeenCalledWith('clouds');
+
+    tile('grid').checked = true;
+    tile('grid').dispatchEvent(new Event('change'));
+    await flush();
+    expect(localStorage.getItem('gom-pattern')).toBe('clouds');
+    expect(tile('clouds').checked).toBe(true);
+    expect(text(root)).toContain('Gom chưa có hình nền này.');
+    localStorage.clear();
+  });
+});
+
 describe('the API: the person\'s colour', () => {
   it('tells the page the account\'s colour', async () => {
     const onPalette = vi.fn();

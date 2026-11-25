@@ -64,9 +64,59 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
         }
     }
 
+    [Fact]
+    public async Task Everyone_starts_with_no_background_and_one_they_choose_follows_them_while_an_unknown_one_is_refused()
+    {
+        var (user, cookie) = await app.Member();
+        async Task<string?> PatternOf(string c)
+        {
+            using var r = await app.Call(HttpMethod.Get, "/api/me", cookie: c);
+            return (await AppFixture.Json(r)).GetProperty("pattern").GetString();
+        }
+        Assert.Equal("plain", await PatternOf(cookie));
+        using (var r = await app.Call(HttpMethod.Put, "/api/me/pattern", new { pattern = "tiles" }, cookie)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        Assert.Equal("tiles", await PatternOf(await app.SignIn(user.GomId)));
+        foreach (var bad in new[] { "stars", "Tiles", "", null })
+        {
+            using var r = await app.Call(HttpMethod.Put, "/api/me/pattern", new { pattern = bad }, cookie);
+            Assert.Equal("invalid_pattern", (await AppFixture.Json(r)).GetProperty("error").GetString());
+        }
+        Assert.Equal("tiles", await PatternOf(cookie));
+    }
+
+    [Fact]
+    public async Task The_server_the_page_the_stylesheet_the_files_and_both_languages_know_the_same_backgrounds()
+    {
+        var page = PatternList().Match(Source("Scripts", "theme.ts"));
+        Assert.True(page.Success, "PATTERNS not found in theme.ts");
+        Assert.Equal(Appearance.Patterns, Quoted().Matches(page.Groups[1].Value).Select(m => m.Groups[1].Value));
+
+        var css = Source("wwwroot", "css", "gom.css");
+        Assert.Equal(Appearance.Patterns.Skip(1), PatternRule().Matches(css).Select(m => m.Groups[1].Value));   // plain has none
+        foreach (var code in Appearance.Patterns.Skip(1))
+        {
+            Assert.Contains($"url(\"/patterns/{code}.svg\")", css);
+            var svg = System.Xml.Linq.XElement.Parse(Source("wwwroot", "patterns", code + ".svg"));
+            Assert.NotNull(svg.Attribute("width"));   // the tile's size comes from the file
+            Assert.NotNull(svg.Attribute("height"));
+            using var r = await app.Call(HttpMethod.Get, $"/patterns/{code}.svg");
+            Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+            Assert.Equal("image/svg+xml", r.Content.Headers.ContentType!.MediaType);
+            Assert.Equal("public, max-age=604800", r.Headers.CacheControl!.ToString());
+        }
+
+        foreach (var table in new[] { "vi.ts", "en.ts" })
+        {
+            var names = PatternNames().Match(Source("Scripts", "strings", table));
+            Assert.True(names.Success, $"patterns not found in {table}");
+            Assert.Equal(Appearance.Patterns, NameKey().Matches(names.Groups[1].Value).Select(m => m.Groups[1].Value));
+        }
+    }
+
     /// <summary>
-    /// Every colour, light and dark: white on the button, links on the page, the tint's text on the tint, and the words and times on
-    /// your own bubble, all at least 4.5 to 1 (WCAG AA), worked out from the stylesheet itself.
+    /// Every colour, light and dark: white on the button, links on the page, the tint's text on the tint, the words and times on your
+    /// own bubble, and grey text (a day, a notice) where it crosses the background's pattern, all at least 4.5 to 1 (WCAG AA), worked
+    /// out from the stylesheet itself.
     /// </summary>
     [Fact]
     public void Every_colour_is_readable_in_light_and_in_dark()
@@ -93,6 +143,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
                     ("tint text on the tint", V(t, "--tint-text"), V(t, "--tint")),
                     ("words on your bubble", V(neutrals, "--text"), V(t, "--out")),
                     ("times on your bubble", V(neutrals, "--muted"), V(t, "--out")),
+                    ("grey text on the background's pattern", V(neutrals, "--muted"), V(t, "--pat")),
                 };
                 foreach (var (what, fore, back) in pairs)
                 {
@@ -132,6 +183,12 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
 
     [GeneratedRegex(@"export const PALETTES = \[([^\]]*)\]")]
     private static partial Regex PageList();
+    [GeneratedRegex(@"export const PATTERNS = \[([^\]]*)\]")]
+    private static partial Regex PatternList();
+    [GeneratedRegex(@"\.backdrop\[data-pattern=""([a-z]+)""\] \{ --pattern")]
+    private static partial Regex PatternRule();
+    [GeneratedRegex(@"patterns: \{([^}]*)\}")]
+    private static partial Regex PatternNames();
     [GeneratedRegex(@"'([a-z]+)'")]
     private static partial Regex Quoted();
     [GeneratedRegex(@":root\[data-palette=""([a-z]+)""\]")]

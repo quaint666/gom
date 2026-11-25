@@ -15,7 +15,7 @@ import { createPusher } from './push.js';
 import { mountSignIn } from './pages/signin.js';
 import { mountSignUp } from './pages/signup.js';
 import { language, pageTitle, rememberLanguage } from './say.js';
-import { PALETTE_STORAGE_KEY, applyPalette, applyScheme, isPalette, storedPalette, storedScheme, syncThemeColor } from './theme.js';
+import { PALETTE_STORAGE_KEY, applyPalette, applyScheme, isPalette, isPattern, rememberPattern, storedPalette, storedScheme, syncThemeColor } from './theme.js';
 import { showUpdateBar, watchForUpdate } from './update.js';
 
 const root = document.getElementById('app');
@@ -26,6 +26,8 @@ const api = createApi(undefined, undefined, {
   onLanguage: (chosen) => { rememberLanguage(chosen); location.reload(); },
   // The person's colour, when this device had another: drawn at once, and remembered for the next page.
   onPalette: (chosen) => { if (isPalette(chosen) && chosen !== storedPalette()) applyPalette(chosen); },
+  // The background is read by the chat page as it draws, which comes after this answer.
+  onPattern: (chosen) => { if (isPattern(chosen)) rememberPattern(chosen); },
 });
 syncThemeColor();
 document.documentElement.lang = language;

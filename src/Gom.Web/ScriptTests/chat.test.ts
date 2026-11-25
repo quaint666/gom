@@ -3470,6 +3470,17 @@ describe('chat: pictures and files', () => {
     } finally { vi.unstubAllGlobals(); }
   });
 
+  it('draws the background this device remembers behind the messages, under them', async () => {
+    localStorage.setItem('gom-pattern', 'lotus');
+    try {
+      open({}, [msg(1, 'minh')]);
+      await flush();
+      const backdrop = root.querySelector<HTMLElement>('.thread-pane .backdrop')!;
+      expect(backdrop.dataset['pattern']).toBe('lotus');
+      expect(backdrop.querySelector('.msgs [data-msg="id1"]')).not.toBeNull();
+    } finally { localStorage.removeItem('gom-pattern'); }
+  });
+
   it('warns about an app file on its card and asks before saving it; an ordinary file has neither', async () => {
     const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [att('f1', 'file', 'thiep_tet.APK'), att('f2', 'file', 'ghi chú.txt')] };
     open({}, [m]);

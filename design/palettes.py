@@ -43,17 +43,19 @@ def block(code, button):
     tint_text, tint_text_dark = mix(button, BLACK, .3), mix(button, WHITE, .72)
     out, out_dark = mix(button, WHITE, .83), mix(button, DARK_BG, .68)
     hover, hover_dark = mix(button, BLACK, .3), mix(button, WHITE, .08)
+    pattern, pattern_dark = mix(button, LIGHT_BG, .88), mix(button, DARK_BG, .80)
     pairs = {
         'white on the button': contrast(WHITE, button), 'link, light': contrast(button, LIGHT_BG), 'link, dark': contrast(link_dark, DARK_BG),
         'tint text, light': contrast(tint_text, tint), 'tint text, dark': contrast(tint_text_dark, tint_dark),
         'text on your bubble, light': contrast(TEXT, out), 'text on your bubble, dark': contrast(DARK_TEXT, out_dark),
         'times on your bubble, light': contrast(MUTED, out), 'times on your bubble, dark': contrast(DARK_MUTED, out_dark),
+        'grey text on the pattern, light': contrast(MUTED, pattern), 'grey text on the pattern, dark': contrast(DARK_MUTED, pattern_dark),
     }
     for name, ratio in pairs.items():
-        print(f'{name:28} {ratio:5.2f}{"" if ratio >= 4.5 else "  TOO LOW"}', file=sys.stderr)
+        print(f'{name:32} {ratio:5.2f}{"" if ratio >= 4.5 else "  TOO LOW"}', file=sys.stderr)
     return (f':root[data-palette="{code}"], [data-swatch="{code}"] {{ --btn: {button}; --btn-hover: light-dark({hover}, {hover_dark}); '
             f'--badge: {button}; --link: light-dark({button}, {link_dark}); --ring: light-dark({button}, {link_dark});\n'
-            f'  --tint: light-dark({tint}, {tint_dark}); --tint-text: light-dark({tint_text}, {tint_text_dark}); --out: light-dark({out}, {out_dark}); }}')
+            f'  --tint: light-dark({tint}, {tint_dark}); --tint-text: light-dark({tint_text}, {tint_text_dark}); --out: light-dark({out}, {out_dark}); --pat: light-dark({pattern}, {pattern_dark}); }}')
 
 
 if __name__ == '__main__':

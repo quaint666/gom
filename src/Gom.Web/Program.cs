@@ -112,11 +112,11 @@ if (proxyHops > 0) app.UseForwardedHeaders();
 app.UseMiddleware<SecurityHeaders>();
 app.UseStaticFiles(new StaticFileOptions
 {
-    // A fingerprinted file never changes under its name: kept for a year. Fonts and stickers never change under
+    // A fingerprinted file never changes under its name: kept for a year. Fonts, stickers and backgrounds never change under
     // one name either: a week. Every other file is checked with the server (ETag) on each use.
     OnPrepareResponse = c => c.Context.Response.Headers.CacheControl =
         Assets.IsFingerprinted(c.File.Name) ? "public, max-age=31536000, immutable"
-        : c.File.Name.EndsWith(".woff2", StringComparison.Ordinal) || c.Context.Request.Path.StartsWithSegments("/stickers") ? "public, max-age=604800" : "no-cache",
+        : c.File.Name.EndsWith(".woff2", StringComparison.Ordinal) || c.Context.Request.Path.StartsWithSegments("/stickers") || c.Context.Request.Path.StartsWithSegments("/patterns") ? "public, max-age=604800" : "no-cache",
 });
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(25) });
 app.UseMiddleware<OriginCheck>();

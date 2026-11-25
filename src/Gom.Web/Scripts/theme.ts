@@ -52,3 +52,21 @@ export function syncThemeColor(root: HTMLElement = document.documentElement): vo
 
 /** For the code that changes it, and for another tab that hears of the change. */
 export const PALETTE_STORAGE_KEY = PALETTE_KEY;
+
+/** The backgrounds behind the messages, in the order Settings shows them; "plain" has none. The codes are Chat/Appearance.cs's. */
+export const PATTERNS = ['plain', 'dots', 'tiles', 'waves', 'bamboo', 'clouds', 'grid', 'weave', 'lotus'] as const;
+export type Pattern = typeof PATTERNS[number];
+export const isPattern = (value: unknown): value is Pattern => typeof value === 'string' && (PATTERNS as readonly string[]).includes(value);
+
+const PATTERN_KEY = 'gom-pattern';
+
+/** The background this device last heard of; plain until then. */
+export function storedPattern(): Pattern {
+  try { const value = localStorage.getItem(PATTERN_KEY); if (isPattern(value)) return value; } catch { /* storage off */ }
+  return 'plain';
+}
+
+/** Remembers the background for this device's pages (the chat page draws it from here). */
+export function rememberPattern(pattern: Pattern): void {
+  try { localStorage.setItem(PATTERN_KEY, pattern); } catch { /* remembered for this page only */ }
+}

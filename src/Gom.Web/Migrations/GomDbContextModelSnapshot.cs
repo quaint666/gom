@@ -887,6 +887,14 @@ namespace Gom.Web.Migrations
                         .HasColumnType("text")
                         .HasColumnName("password_hash");
 
+                    b.Property<string>("Pattern")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("plain")
+                        .HasColumnName("pattern");
+
                     b.Property<DateTimeOffset?>("RefusedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("refused_at");

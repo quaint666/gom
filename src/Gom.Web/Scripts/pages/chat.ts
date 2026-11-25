@@ -12,6 +12,7 @@ import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
 import { isAppFile } from '../appfiles.js';
+import { storedPattern } from '../theme.js';
 import { limits } from '../limits.js';
 import { say } from '../say.js';
 import { mountWaiting } from './waiting.js';
@@ -904,9 +905,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${banner()}
         ${searching === null ? nothing : searchPanel(searching)}
         ${pinBar(t)}
+        <div class="backdrop" data-pattern=${storedPattern()}>
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>${say.chat.older}</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group'), tickOf(t, c)))}
+        </div>
         </div>
         ${menuOverlay(t)}
         ${viewerView()}

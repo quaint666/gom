@@ -53,6 +53,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             // Everyone who was here before languages existed reads Vietnamese: the database says so, not only the C# default.
             e.Property(x => x.Language).HasMaxLength(2).HasDefaultValue(ServerText.DefaultLanguage);
             e.Property(x => x.Palette).HasMaxLength(Chat.Appearance.CodeMaxLength).HasDefaultValue(Chat.Appearance.DefaultPalette);
+            e.Property(x => x.Pattern).HasMaxLength(Chat.Appearance.CodeMaxLength).HasDefaultValue(Chat.Appearance.DefaultPattern);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.DeletedBy).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.GomId).IsUnique();
             // At most one row with is_owner = true.

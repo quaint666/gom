@@ -135,6 +135,7 @@ export const vi = {
     notARequest: 'Tài khoản này không phải là yêu cầu tham gia.',
     invalidLanguage: 'Gom chưa có ngôn ngữ này.',
     invalidPalette: 'Gom chưa có màu này.',
+    invalidPattern: 'Gom chưa có hình nền này.',
     tooManyAttachments: (max: number) => `Mỗi tin nhắn có tối đa ${max} tệp.`,
   },
   settings: {
@@ -142,6 +143,9 @@ export const vi = {
     language: 'Ngôn ngữ',
     palette: 'Màu chủ đạo',
     paletteNote: 'Chỉ mình bạn thấy màu này, trên mọi thiết bị của bạn.',
+    pattern: 'Hình nền cuộc trò chuyện',
+    patternNote: 'Theo màu chủ đạo của bạn. Chỉ mình bạn thấy.',
+    patterns: { plain: 'Trơn', dots: 'Chấm bi', tiles: 'Gạch bông', waves: 'Sóng', bamboo: 'Lá tre', clouds: 'Mây', grid: 'Ô ly', weave: 'Đan tre', lotus: 'Hoa sen' },
     palettes: { sage: 'Xanh lá', sea: 'Biển', lotus: 'Sen', turmeric: 'Nghệ', lavender: 'Oải hương', graphite: 'Than chì', jade: 'Ngọc', indigo: 'Chàm', plum: 'Mận', lacquer: 'Son', coffee: 'Cà phê', moss: 'Rêu' },
     schemeSystem: 'Theo hệ thống',
     schemeLight: 'Sáng',

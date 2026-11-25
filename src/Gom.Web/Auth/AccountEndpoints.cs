@@ -11,6 +11,7 @@ public static class AccountEndpoints
     public sealed record PasswordRequest(string? Current, string? Password);
     public sealed record LanguageRequest(string? Language);
     public sealed record PaletteRequest(string? Palette);
+    public sealed record PatternRequest(string? Pattern);
 
     public static void MapAccount(this IEndpointRouteBuilder app)
     {
@@ -18,6 +19,7 @@ public static class AccountEndpoints
         app.MapPut("/api/me/password", ChangePassword).RequireAuthorization();
         app.MapPut("/api/me/language", ChangeLanguage).RequireAuthorization();
         app.MapPut("/api/me/palette", ChangePalette).RequireAuthorization();
+        app.MapPut("/api/me/pattern", ChangePattern).RequireAuthorization();
         app.MapDelete("/api/me", AccountDeletion.Delete).RequireAuthorization();
 
         var owner = app.MapGroup("/api/users").RequireAuthorization("Owner");
@@ -40,6 +42,15 @@ public static class AccountEndpoints
         if (request.Palette is not { } palette || !Chat.Appearance.Palettes.Contains(palette)) return Results.BadRequest(new { error = "invalid_palette" });
         var me = GomClaims.User(http.User);
         await db.Users.Where(u => u.Id == me).ExecuteUpdateAsync(s => s.SetProperty(u => u.Palette, palette), ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>The background behind the person's messages, on every device.</summary>
+    private static async Task<IResult> ChangePattern(PatternRequest request, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        if (request.Pattern is not { } pattern || !Chat.Appearance.Patterns.Contains(pattern)) return Results.BadRequest(new { error = "invalid_pattern" });
+        var me = GomClaims.User(http.User);
+        await db.Users.Where(u => u.Id == me).ExecuteUpdateAsync(s => s.SetProperty(u => u.Pattern, pattern), ct);
         return Results.NoContent();
     }
 

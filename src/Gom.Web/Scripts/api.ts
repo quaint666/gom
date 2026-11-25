@@ -12,7 +12,7 @@ const SERVER_CODE_LIST = [
   'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
   'invalid_invite', 'too_large', 'animated_too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'daily_upload_limit', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
   'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
-  'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette',
+  'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette', 'invalid_pattern',
 ] as const;
 
 /** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
@@ -26,7 +26,7 @@ export type Result<T> = { ok: true; data: T } | Failure;
 /** `avatar` is the id of the profile picture (at /api/avatars/{avatar}); none means the initials. */
 /** `standing`: a member, or someone who asked to join and is waiting ("pending") or was refused. */
 export type Standing = 'member' | 'pending' | 'refused';
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string }
 /** Someone asking to join, as the owner sees them. */
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 export interface SignUpBody { gomId: string; password: string; displayName: string; note: string }
@@ -186,6 +186,8 @@ export interface Api {
   setLanguage(language: Language): Promise<Result<void>>;
   /** The colour of the person's pages, for every device. */
   setPalette(palette: string): Promise<Result<void>>;
+  /** The background behind the person's messages, for every device. */
+  setPattern(pattern: string): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string, replyTo?: string, attachments?: string[]): Promise<Result<ChatMessage>>;
   /** Sends one sticker, the whole message (no words, no files). */
   sendSticker(conversation: string, clientId: string, sticker: string, replyTo?: string): Promise<Result<ChatMessage>>;
@@ -250,7 +252,7 @@ export const UPLOAD_STALL_MS = 60_000;
  * What the page does when the server says something about the whole page: `onPending`, this account is a request to join still
  * waiting (show the waiting screen); `onLanguage`, the person's language is not this page's (remember it and load the page again).
  */
-export interface ApiHooks { onPending?: () => void; onLanguage?: (chosen: Language) => void; onPalette?: (chosen: string) => void }
+export interface ApiHooks { onPending?: () => void; onLanguage?: (chosen: Language) => void; onPalette?: (chosen: string) => void; onPattern?: (chosen: string) => void }
 
 export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest(), hooks: ApiHooks = {}): Api {
   async function call<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Result<T>> {
@@ -309,6 +311,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       const result = await call<User>('GET', '/api/me');
       if (result.ok && result.data.language !== undefined && result.data.language !== language) hooks.onLanguage?.(result.data.language);
       if (result.ok && result.data.palette !== undefined) hooks.onPalette?.(result.data.palette);
+      if (result.ok && result.data.pattern !== undefined) hooks.onPattern?.(result.data.pattern);
       return result;
     },
     signIn: (gomId, password) => call('POST', '/api/session', { gomId, password }),
@@ -387,6 +390,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     setReceipts: (enabled) => call('PATCH', '/api/me/receipts', { enabled }),
     setLanguage: (chosen) => call('PUT', '/api/me/language', { language: chosen }),
     setPalette: (chosen) => call('PUT', '/api/me/palette', { palette: chosen }),
+    setPattern: (chosen) => call('PUT', '/api/me/pattern', { pattern: chosen }),
     recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
     media: (conversation, kind, before) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}`),

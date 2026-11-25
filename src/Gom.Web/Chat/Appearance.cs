@@ -11,6 +11,14 @@ public static class Appearance
     public static readonly IReadOnlyList<string> Palettes =
         ["sage", "sea", "lotus", "turmeric", "lavender", "graphite", "jade", "indigo", "plum", "lacquer", "coffee", "moss"];
 
+    public const string DefaultPattern = "plain";
+
+    /// <summary>
+    /// The backgrounds behind the messages. "plain" has none; each other is wwwroot/patterns/{code}.svg, drawn in the colour's own
+    /// pattern tone (<c>--pat</c>) through a mask, and named in both string tables; a test keeps them together.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Patterns = ["plain", "dots", "tiles", "waves", "bamboo", "clouds", "grid", "weave", "lotus"];
+
     /// <summary>The longest code, for the column.</summary>
     public const int CodeMaxLength = 16;
 }

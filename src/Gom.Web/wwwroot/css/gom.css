@@ -35,31 +35,32 @@
   --ring: light-dark(#3F6B57, #9EC3A5);
   --out: light-dark(#DCEBE1, #24382D);
   --badge: #3F6B57;
+  --pat: light-dark(#E1E4DD, #1B2621);
 }
 /* The person's colour (Settings › Giao diện): each block replaces the sage accent above; the neutrals stay. The codes are
    Chat/Appearance.cs's, and a test checks every block's contrast. Made with design/palettes.py; light, then dark, as above. */
 :root[data-palette="sea"], [data-swatch="sea"] { --btn: #2F5F8A; --btn-hover: light-dark(#214261, #406C93); --badge: #2F5F8A; --link: light-dark(#2F5F8A, #9DC2E6); --ring: light-dark(#2F5F8A, #9DC2E6);
-  --tint: light-dark(#E2ECF6, #1C2836); --tint-text: light-dark(#1E4466, #BCD6F0); --out: light-dark(#DCE8F3, #1F3346); }
+  --tint: light-dark(#E2ECF6, #1C2836); --tint-text: light-dark(#1E4466, #BCD6F0); --out: light-dark(#DCE8F3, #1F3346); --pat: light-dark(#DFE3E3, #18242B); }
 :root[data-palette="lotus"], [data-swatch="lotus"] { --btn: #A34867; --btn-hover: light-dark(#723248, #AA5773); --badge: #A34867; --link: light-dark(#A34867, #EDB3C6); --ring: light-dark(#A34867, #EDB3C6);
-  --tint: light-dark(#F7E6EC, #33212A); --tint-text: light-dark(#6E2742, #F2C6D4); --out: light-dark(#F5DFE6, #3E2530); }
+  --tint: light-dark(#F7E6EC, #33212A); --tint-text: light-dark(#6E2742, #F2C6D4); --out: light-dark(#F5DFE6, #3E2530); --pat: light-dark(#EDE0DF, #2F1F24); }
 :root[data-palette="turmeric"], [data-swatch="turmeric"] { --btn: #8A5A12; --btn-hover: light-dark(#613F0D, #936725); --badge: #8A5A12; --link: light-dark(#8A5A12, #E5C58A); --ring: light-dark(#8A5A12, #E5C58A);
-  --tint: light-dark(#F6EBD3, #302818); --tint-text: light-dark(#5E3D08, #EBD3A6); --out: light-dark(#F3E6CC, #3A2F1A); }
+  --tint: light-dark(#F6EBD3, #302818); --tint-text: light-dark(#5E3D08, #EBD3A6); --out: light-dark(#F3E6CC, #3A2F1A); --pat: light-dark(#EAE2D4, #2A2313); }
 :root[data-palette="lavender"], [data-swatch="lavender"] { --btn: #6A4F9E; --btn-hover: light-dark(#4A376F, #765DA6); --badge: #6A4F9E; --link: light-dark(#6A4F9E, #C9B8EE); --ring: light-dark(#6A4F9E, #C9B8EE);
-  --tint: light-dark(#ECE6F7, #272238); --tint-text: light-dark(#46327A, #D3C8EE); --out: light-dark(#E6DEF3, #2E2643); }
+  --tint: light-dark(#ECE6F7, #272238); --tint-text: light-dark(#46327A, #D3C8EE); --out: light-dark(#E6DEF3, #2E2643); --pat: light-dark(#E6E1E5, #24212F); }
 :root[data-palette="graphite"], [data-swatch="graphite"] { --btn: #4A535C; --btn-hover: light-dark(#343A40, #586169); --badge: #4A535C; --link: light-dark(#4A535C, #B8C2CC); --ring: light-dark(#4A535C, #B8C2CC);
-  --tint: light-dark(#E8EBEE, #22272C); --tint-text: light-dark(#2E363E, #D2D9E0); --out: light-dark(#E4E7EA, #2A3036); }
+  --tint: light-dark(#E8EBEE, #22272C); --tint-text: light-dark(#2E363E, #D2D9E0); --out: light-dark(#E4E7EA, #2A3036); --pat: light-dark(#E2E2DD, #1D2122); }
 :root[data-palette="jade"], [data-swatch="jade"] { --btn: #1E6B66; --btn-hover: light-dark(#154B47, #307772); --badge: #1E6B66; --link: light-dark(#1E6B66, #9ABCBA); --ring: light-dark(#1E6B66, #9ABCBA);
-  --tint: light-dark(#E2ECEB, #142624); --tint-text: light-dark(#154B47, #C0D6D4); --out: light-dark(#D9E6E5, #16312E); }
+  --tint: light-dark(#E2ECEB, #142624); --tint-text: light-dark(#154B47, #C0D6D4); --out: light-dark(#D9E6E5, #16312E); --pat: light-dark(#DDE4DF, #142624); }
 :root[data-palette="indigo"], [data-swatch="indigo"] { --btn: #3D4B94; --btn-hover: light-dark(#2B3468, #4D599D); --badge: #3D4B94; --link: light-dark(#3D4B94, #A8AECF); --ring: light-dark(#3D4B94, #A8AECF);
-  --tint: light-dark(#E6E8F1, #1B202D); --tint-text: light-dark(#2B3468, #C9CDE1); --out: light-dark(#DEE0ED, #20263C); }
+  --tint: light-dark(#E6E8F1, #1B202D); --tint-text: light-dark(#2B3468, #C9CDE1); --out: light-dark(#DEE0ED, #20263C); --pat: light-dark(#E1E1E4, #1B202D); }
 :root[data-palette="plum"], [data-swatch="plum"] { --btn: #7B3B6A; --btn-hover: light-dark(#56294A, #864B76); --badge: #7B3B6A; --link: light-dark(#7B3B6A, #C4A7BC); --ring: light-dark(#7B3B6A, #C4A7BC);
-  --tint: light-dark(#EEE6EC, #271D24); --tint-text: light-dark(#56294A, #DAC8D5); --out: light-dark(#E9DEE6, #34212F); }
+  --tint: light-dark(#EEE6EC, #271D24); --tint-text: light-dark(#56294A, #DAC8D5); --out: light-dark(#E9DEE6, #34212F); --pat: light-dark(#E8DFDF, #271D24); }
 :root[data-palette="lacquer"], [data-swatch="lacquer"] { --btn: #A63A2C; --btn-hover: light-dark(#74291F, #AD4A3D); --badge: #A63A2C; --link: light-dark(#A63A2C, #D7A6A0); --ring: light-dark(#A63A2C, #D7A6A0);
-  --tint: light-dark(#F3E5E4, #301C18); --tint-text: light-dark(#74291F, #E6C8C4); --out: light-dark(#F0DEDB, #41211B); }
+  --tint: light-dark(#F3E5E4, #301C18); --tint-text: light-dark(#74291F, #E6C8C4); --out: light-dark(#F0DEDB, #41211B); --pat: light-dark(#EDDFD8, #301C18); }
 :root[data-palette="coffee"], [data-swatch="coffee"] { --btn: #6E4B36; --btn-hover: light-dark(#4D3426, #7A5946); --badge: #6E4B36; --link: light-dark(#6E4B36, #BEAEA5); --ring: light-dark(#6E4B36, #BEAEA5);
-  --tint: light-dark(#ECE8E5, #24201A); --tint-text: light-dark(#4D3426, #D6CDC7); --out: light-dark(#E6E0DD, #2F261E); }
+  --tint: light-dark(#ECE8E5, #24201A); --tint-text: light-dark(#4D3426, #D6CDC7); --out: light-dark(#E6E0DD, #2F261E); --pat: light-dark(#E7E1D9, #24201A); }
 :root[data-palette="moss"], [data-swatch="moss"] { --btn: #56661F; --btn-hover: light-dark(#3C4716, #647231); --badge: #56661F; --link: light-dark(#56661F, #B3BA9A); --ring: light-dark(#56661F, #B3BA9A);
-  --tint: light-dark(#E9EBE2, #202515); --tint-text: light-dark(#3C4716, #D0D4C0); --out: light-dark(#E2E5D9, #282F17); }
+  --tint: light-dark(#E9EBE2, #202515); --tint-text: light-dark(#3C4716, #D0D4C0); --out: light-dark(#E2E5D9, #282F17); --pat: light-dark(#E4E4D6, #202515); }
 
 * { box-sizing: border-box; }
 body {
@@ -218,6 +219,19 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .th-title small { color: var(--muted); font-size: 13px; }
 button.th-title { display: block; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 button.th-title:hover b { text-decoration: underline; }
+/* The background behind the messages (Settings): a pattern from /patterns drawn in the colour's --pat through a mask, on a layer of
+   its own under the scrolling messages, so it never scrolls and never takes a press. Gone in forced colours, where it is decoration. */
+.backdrop { position: relative; flex: 1; min-block-size: 0; display: flex; flex-direction: column; }
+.backdrop:not([data-pattern="plain"])::before { content: ""; position: absolute; inset: 0; background-color: var(--pat); mask-image: var(--pattern); mask-repeat: repeat; pointer-events: none; }
+.backdrop[data-pattern="dots"] { --pattern: url("/patterns/dots.svg"); }
+.backdrop[data-pattern="tiles"] { --pattern: url("/patterns/tiles.svg"); }
+.backdrop[data-pattern="waves"] { --pattern: url("/patterns/waves.svg"); }
+.backdrop[data-pattern="bamboo"] { --pattern: url("/patterns/bamboo.svg"); }
+.backdrop[data-pattern="clouds"] { --pattern: url("/patterns/clouds.svg"); }
+.backdrop[data-pattern="grid"] { --pattern: url("/patterns/grid.svg"); }
+.backdrop[data-pattern="weave"] { --pattern: url("/patterns/weave.svg"); }
+.backdrop[data-pattern="lotus"] { --pattern: url("/patterns/lotus.svg"); }
+@media (forced-colors: active) { .backdrop::before { display: none; } }
 .msgs { position: relative; flex: 1; min-block-size: 0; overflow-y: auto; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 2px; overflow-anchor: none; }
 .msgs .more { align-self: center; margin-block-end: 8px; }
 .day { align-self: center; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 12px; margin-block: 6px 10px; }
@@ -507,6 +521,16 @@ a.mi { text-decoration: none; }
 .swatch:has(input:checked) { color: var(--text); font-weight: 600; }
 .swatch:has(input:checked) .dot { outline: 3px solid var(--btn); outline-offset: 2px; }
 .swatch:has(input:focus-visible) .dot { outline: 3px solid var(--ring); outline-offset: 4px; }
+/* The backgrounds in Settings: each tile is the same .backdrop the conversation draws. */
+.patterns { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.patterns legend { padding: 0; margin-block-end: 8px; }
+.patterns .hint { grid-column: 1 / -1; }
+.pattern-tile { position: relative; display: block; block-size: 76px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); cursor: pointer; }
+.pattern-tile input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
+.pattern-tile .backdrop { position: absolute; inset: 0; }
+.pattern-tile .name { position: absolute; inset-inline-start: 6px; inset-block-end: 6px; padding: 0 6px; border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; }
+.pattern-tile:has(input:checked) { outline: 3px solid var(--btn); outline-offset: 2px; }
+.pattern-tile:has(input:focus-visible) { outline: 3px solid var(--ring); outline-offset: 4px; }
 
 /* pressed states: a touch answers at once */
 .item:active, .mi:active, .brand:active, .person:is(a):active { background: var(--press); }

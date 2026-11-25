@@ -14,7 +14,7 @@ public static class AuthEndpoints
         app.MapDelete("/api/session", SignOut).RequireAuthorization("SignedIn");
         app.MapGet("/api/me", async (HttpContext c, GomDbContext db, Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions> uploads, CancellationToken ct) =>
         {
-            var row = await db.Users.Where(u => u.Id == GomClaims.User(c.User)).Select(u => new { u.AvatarId, u.Language, u.Palette }).SingleAsync(ct);
+            var row = await db.Users.Where(u => u.Id == GomClaims.User(c.User)).Select(u => new { u.AvatarId, u.Language, u.Palette, u.Pattern }).SingleAsync(ct);
             return Results.Ok(new
             {
             id = GomClaims.User(c.User),
@@ -29,6 +29,7 @@ public static class AuthEndpoints
             language = row.Language,
             // The colour of their pages: a page remembers it for the next one, so it is drawn in it from the first paint.
             palette = row.Palette,
+            pattern = row.Pattern,
             // "member", or for a request to join "pending" or "refused": the page then shows only its waiting screen.
             standing = c.User.FindFirst(GomClaims.Standing)?.Value ?? "member",
             });

@@ -133,6 +133,7 @@ export const en: Strings = {
     notARequest: 'This account is not a request to join.',
     invalidLanguage: 'Gom does not have this language.',
     invalidPalette: 'Gom does not have this colour.',
+    invalidPattern: 'Gom does not have this background.',
     tooManyAttachments: (max: number) => `A message can carry at most ${count(max, 'file', 'files')}.`,
   },
   settings: {
@@ -140,6 +141,9 @@ export const en: Strings = {
     language: 'Language',
     palette: 'Colour',
     paletteNote: 'Only you see this colour, on every device you use.',
+    pattern: 'Chat background',
+    patternNote: 'In your colour. Only you see it.',
+    patterns: { plain: 'Plain', dots: 'Dots', tiles: 'Cement tiles', waves: 'Waves', bamboo: 'Bamboo leaves', clouds: 'Clouds', grid: 'Squared paper', weave: 'Bamboo weave', lotus: 'Lotus' },
     palettes: { sage: 'Sage', sea: 'Sea', lotus: 'Lotus', turmeric: 'Turmeric', lavender: 'Lavender', graphite: 'Graphite', jade: 'Jade', indigo: 'Indigo', plum: 'Plum', lacquer: 'Lacquer', coffee: 'Coffee', moss: 'Moss' },
     schemeSystem: 'Follow the system',
     schemeLight: 'Light',
