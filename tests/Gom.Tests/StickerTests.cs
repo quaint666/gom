@@ -151,7 +151,12 @@ public class StickerTests(AppFixture app) : IClassFixture<AppFixture>
         var page = await File.ReadAllTextAsync(Path.Combine(dir!.FullName, "src", "Gom.Web", "Scripts", "stickers.ts"));
         // Every code inside the packs' list, up to its closing "];".
         var listed = Regex.Match(page, @"STICKER_PACKS: readonly StickerPack\[\] = \[(.*?)\n\];", RegexOptions.Singleline).Groups[1].Value;
-        var codes = Regex.Matches(listed, @"'([0-9a-f_]+)'").Select(m => m.Groups[1].Value).ToList();
+        var offered = Regex.Matches(listed, @"'([0-9a-f_]+)'").Select(m => m.Groups[1].Value).ToList();
+        var notOffered = Regex.Matches(Regex.Match(page, @"NOT_OFFERED: readonly string\[\] = \[(.*?)\n\];", RegexOptions.Singleline).Groups[1].Value, @"'([0-9a-f_]+)'")
+            .Select(m => m.Groups[1].Value).ToList();
+        Assert.True(Stickers.NotOffered.SetEquals(notOffered));
+        Assert.Empty(offered.Intersect(notOffered));
+        List<string> codes = [.. offered, .. notOffered];
         Assert.Equal(Stickers.Allowed.Count, codes.Count);
         Assert.True(Stickers.Allowed.SetEquals(codes));
 
@@ -163,6 +168,38 @@ public class StickerTests(AppFixture app) : IClassFixture<AppFixture>
             Assert.Equal("image/svg+xml", r.Content.Headers.ContentType?.MediaType);
             Assert.Equal("public, max-age=604800", r.Headers.CacheControl?.ToString());
         }
+    }
+
+    /// <summary>Noto Emoji's emoji_aliases.txt (commit 99701e0): each region it draws with another region's flag, and that region.</summary>
+    private static readonly (string Alias, string Target)[] NotoFlagAliases =
+    [
+        ("1f1e7_1f1fb", "1f1f3_1f1f4"), ("1f1e8_1f1f5", "1f1eb_1f1f7"), ("1f1e9_1f1ec", "1f1ee_1f1f4"), ("1f1ea_1f1e6", "1f1ea_1f1f8"),
+        ("1f1ed_1f1f2", "1f1e6_1f1fa"), ("1f1f2_1f1eb", "1f1eb_1f1f7"), ("1f1f8_1f1ef", "1f1f3_1f1f4"), ("1f1fa_1f1f2", "1f1fa_1f1f8"),
+    ];
+
+    [Fact]
+    public void No_two_offered_stickers_share_a_picture_and_each_alias_not_offered_is_its_target_s_picture()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
+        var stickers = Path.Combine(dir!.FullName, "src", "Gom.Web", "wwwroot", "stickers");
+        string Hash(string code) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(Path.Combine(stickers, code + ".svg"))));
+
+        var shared = Stickers.Allowed.Except(Stickers.NotOffered).GroupBy(Hash).Where(g => g.Count() > 1).Select(g => string.Join(" = ", g.Order()));
+        Assert.Empty(shared);
+        foreach (var (alias, target) in NotoFlagAliases)
+        {
+            Assert.True(Stickers.NotOffered.Contains(alias), alias);
+            Assert.False(Stickers.NotOffered.Contains(target), target);
+            Assert.Equal(Hash(target), Hash(alias));
+        }
+    }
+
+    [Fact]
+    public async Task A_flag_no_longer_offered_is_still_accepted_so_one_sent_before_still_draws()
+    {
+        var p = await NewPair();
+        Assert.Equal("1f1fa_1f1f2", (await Sticker(p, p.CA, "1f1fa_1f1f2")).GetProperty("sticker").GetString());
     }
 
     [Fact]
