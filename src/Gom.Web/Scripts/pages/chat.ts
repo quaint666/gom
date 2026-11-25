@@ -12,6 +12,7 @@ import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { errorText, formatSize } from '../text.js';
 import { STICKERS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
+import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -152,8 +153,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let muting: string | null = null;
   /** What is being passed on, while the person picks where to (at most FORWARD_MAX), with the search over the list and a note to send after it. */
   let forwarding: { body: string; attachments: Attachment[]; sticker: string | null; picked: string[]; q: string; note: string; busy: boolean } | null = null;
-  /** Whether the sticker panel under the composer is open. */
-  let stickersOpen = false;
+  /** The panel under the composer, open on its emoji or its sticker tab; the tab last used is remembered on this device. */
+  let picker: 'emoji' | 'stickers' | null = null;
+  /** The group of emoji shown: -1 is "Gần đây". */
+  let emojiGroup = recentEmoji().length > 0 ? -1 : 0;
 
   function idFromPath(): string | null { return CONVERSATION_PATH.exec(deps.nav.path())?.[1]?.toLowerCase() ?? null; }
   const chatOf = (id: string | null): Conversation | undefined => (id === null ? undefined : chats?.find((c) => c.id === id));
@@ -461,7 +464,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null, tick: Tick): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
-    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${m.sticker && !m.deleted ? 'sticker' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''}`;
+    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${m.sticker && !m.deleted ? 'sticker' : ''} ${!m.deleted && !m.sticker && !m.reply && !m.attachments?.length && onlyEmoji(m.body) ? 'jumbo' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
     const tools = hasMenu ? html`
@@ -818,35 +821,80 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             <button class="ib attach" type="button" data-attach aria-label="Đính kèm ảnh hoặc tệp" @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
             <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
               @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
-          ${t.editing === null ? html`<button class="ib stickers-btn" type="button" data-stickers aria-label="Nhãn dán" aria-expanded=${stickersOpen ? 'true' : 'false'}
-            @click=${toggleStickers}>${icons.smile()}</button>` : nothing}
+          ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label="Emoji và nhãn dán" aria-expanded=${picker !== null ? 'true' : 'false'}
+            @click=${togglePicker}>${icons.smile()}</button>` : nothing}
           <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
             .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}
-            @focus=${() => { if (stickersOpen) { stickersOpen = false; update(); } }}></textarea>
+            @focus=${() => { if (picker !== null) { picker = null; update(); } }}></textarea>
           <button class="send" type="submit" aria-label="Gửi" ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
         </form>
-        ${stickersOpen && t.editing === null ? stickerPanel(openId!) : nothing}
+        ${picker !== null && t.editing === null ? pickerPanel(openId!, picker) : nothing}
       </section>`;
   }
 
-  /** The stickers under the composer, the ones this device sent lately first. A tap sends one at once, as Zalo does. */
+  /** The panel under the composer, where the keyboard would be: a tab of emoji and a tab of stickers. */
+  const pickerPanel = (id: string, tab: 'emoji' | 'stickers') => html`
+    <div class="picker" data-picker
+      @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { picker = null; update(); root.querySelector<HTMLButtonElement>('[data-picker-toggle]')?.focus(); } }}>
+      <div class="picker-tabs" role="tablist" aria-label="Emoji và nhãn dán">
+        <button class="ptab" type="button" role="tab" data-tab="emoji" aria-selected=${tab === 'emoji' ? 'true' : 'false'} @click=${() => showTab('emoji')}>Emoji</button>
+        <button class="ptab" type="button" role="tab" data-tab="stickers" aria-selected=${tab === 'stickers' ? 'true' : 'false'} @click=${() => showTab('stickers')}>Nhãn dán</button>
+      </div>
+      ${tab === 'emoji' ? emojiPanel(id) : stickerPanel(id)}
+    </div>`;
+
+  /** The emoji, a group at a time (the ones used lately first, when there are some). A tap puts one where the cursor was. */
+  const emojiPanel = (id: string) => {
+    const recent = recentEmoji();
+    const group = emojiGroup === -1 && recent.length === 0 ? 0 : emojiGroup;
+    const shown = group === -1 ? recent : emojiOf(group);
+    const chooser = (index: number, face: string, name: string) => html`
+      <button class="egroup" type="button" data-emoji-group=${index} aria-label=${name} aria-pressed=${group === index ? 'true' : 'false'}
+        @click=${() => { emojiGroup = index; update(); }}>${face}</button>`;
+    return html`
+      <section class="emojis" role="tabpanel" aria-label="Emoji" data-emoji-panel>
+        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', 'Gần đây') : nothing}${EMOJI_GROUPS.map((g, i) => chooser(i, emojiOf(i)[0] ?? '', g.name))}</div>
+        <h3>${group === -1 ? 'Gần đây' : EMOJI_GROUPS[group]?.name}</h3>
+        <div class="e-grid">${shown.map((e) => html`<button class="e-pick" type="button" data-emoji=${e} aria-label=${e} @click=${() => insertEmoji(id, e)}>${e}</button>`)}</div>
+      </section>`;
+  };
+
+  /** The stickers, the ones this device sent lately first. A tap sends one at once, as Zalo does. */
   const stickerPanel = (id: string) => {
     const recent = recentStickers();
     const tile = (code: string) => html`<button class="stk-pick" type="button" data-send-sticker=${code} aria-label=${`Gửi nhãn dán ${stickerName(code)}`}
       @click=${() => void sendSticker(id, code)}><img src=${stickerUrl(code)} alt="" loading="lazy" width="56" height="56" draggable="false"></button>`;
     return html`
-      <section class="stickers" role="group" aria-label="Nhãn dán" data-sticker-panel
-        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { stickersOpen = false; update(); root.querySelector<HTMLButtonElement>('[data-stickers]')?.focus(); } }}>
+      <section class="stickers" role="tabpanel" aria-label="Nhãn dán" data-sticker-panel>
         ${recent.length === 0 ? nothing : html`<h3>Gần đây</h3><div class="stk-grid" data-recent-stickers>${recent.map(tile)}</div><h3>Tất cả</h3>`}
         <div class="stk-grid" data-all-stickers>${STICKERS.map(tile)}</div>
         <p class="credit">Nhãn dán: Noto Emoji của Google, giấy phép SIL Open Font License 1.1.</p>
       </section>`;
   };
 
-  /** Opens or closes the sticker panel. Opening it puts the keyboard away on a phone, so the panel takes its place. */
-  function toggleStickers(): void {
-    stickersOpen = !stickersOpen;
-    if (stickersOpen) root.querySelector<HTMLTextAreaElement>('.composer textarea')?.blur();
+  const PICKER_TAB = 'gom-picker-tab';
+
+  /** Opens or closes the panel, on the tab used last. Opening it puts the keyboard away on a phone, so the panel takes its place. */
+  function togglePicker(): void {
+    if (picker !== null) { picker = null; update(); return; }
+    picker = ((): 'emoji' | 'stickers' => { try { return localStorage.getItem(PICKER_TAB) === 'emoji' ? 'emoji' : 'stickers'; } catch { return 'stickers'; } })();
+    root.querySelector<HTMLTextAreaElement>('.composer textarea')?.blur();
+    update();
+  }
+
+  function showTab(tab: 'emoji' | 'stickers'): void {
+    picker = tab;
+    try { localStorage.setItem(PICKER_TAB, tab); } catch { /* just not remembered */ }
+    update();
+  }
+
+  /** Puts an emoji in the message field where the cursor was (it stays where it is after the field loses focus), without opening the keyboard. */
+  function insertEmoji(id: string, emoji: string): void {
+    const field = root.querySelector<HTMLTextAreaElement>('.composer textarea');
+    if (field === null) return;
+    field.setRangeText(emoji, field.selectionStart, field.selectionEnd, 'end');
+    threadOf(id).draft = field.value;
+    rememberEmoji(emoji);
     update();
   }
 
@@ -1014,7 +1062,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     t.jump = t.unreadAtOpen > 0;
     t.below = 0;
     leaving = false;
-    stickersOpen = false;
+    picker = null;
     update();
     deps.clearNotifications?.(id);
     if (!t.loaded) void loadHistory(id);
