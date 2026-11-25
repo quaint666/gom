@@ -960,8 +960,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function onDraft(e: Event): void {
     const field = e.target as HTMLTextAreaElement;
     if (openId !== null) threadOf(openId).draft = field.value;
-    field.style.height = 'auto';
-    field.style.height = `${Math.min(field.scrollHeight, 140)}px`;
   }
 
   function onKey(e: KeyboardEvent): void {
