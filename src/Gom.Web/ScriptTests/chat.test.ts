@@ -4061,7 +4061,7 @@ describe('chat: stickers', () => {
   const echo = () => vi.fn(async (conversation: string, clientId: string, code: string, replyTo?: string) =>
     ok({ ...sticker(9, 'mom', code), conversationId: conversation, id: `s-${clientId}`, clientId, ...(replyTo ? { reply: { id: replyTo, sender: null, snippet: null } } : {}) }));
   const panel = () => root.querySelector('[data-sticker-panel]');
-  const toggle = async () => { root.querySelector<HTMLButtonElement>('[data-stickers]')!.click(); await flush(); };
+  const toggle = async () => { root.querySelector<HTMLButtonElement>('[data-picker-toggle]')!.click(); await flush(); };
   const tap = async (code: string, where = '[data-all-stickers]') => { root.querySelector<HTMLButtonElement>(`${where} [data-send-sticker="${code}"]`)!.click(); await flush(); await flush(); };
 
   it('opens a panel of all 48 stickers from the smiley, with the credit, and closes it again', async () => {
@@ -4069,7 +4069,7 @@ describe('chat: stickers', () => {
     await flush();
     expect(panel()).toBeNull();
     await toggle();
-    expect(root.querySelector('[data-stickers]')!.getAttribute('aria-expanded')).toBe('true');
+    expect(root.querySelector('[data-picker-toggle]')!.getAttribute('aria-expanded')).toBe('true');
     expect(panel()!.querySelectorAll('[data-all-stickers] [data-send-sticker]')).toHaveLength(48);
     expect(root.querySelector('[data-send-sticker="1f602"]')!.getAttribute('aria-label')).toBe('Gửi nhãn dán 😂');
     expect(root.querySelector<HTMLImageElement>('[data-send-sticker="1f602"] img')!.getAttribute('src')).toBe('/stickers/1f602.svg');
@@ -4196,6 +4196,76 @@ describe('chat: stickers', () => {
     await flush();
     root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!.click(); await flush();
     root.querySelector<HTMLButtonElement>('button[data-edit]')!.click(); await flush();
-    expect(root.querySelector('[data-stickers]')).toBeNull();
+    expect(root.querySelector('[data-picker-toggle]')).toBeNull();
+  });
+});
+
+describe('chat: emoji', () => {
+  beforeEach(() => { try { localStorage.clear(); } catch { /* none */ } });
+  const open = (messages: ChatMessage[] = [msg(1, 'minh', 'chào mẹ')], extra: Record<string, unknown> = {}) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: messages.length })], history: { [C1]: messages }, api: extra });
+  const field = () => root.querySelector<HTMLTextAreaElement>('.composer textarea')!;
+  const toggle = async () => { root.querySelector<HTMLButtonElement>('[data-picker-toggle]')!.click(); await flush(); };
+  const tab = async (name: 'emoji' | 'stickers') => { root.querySelector<HTMLButtonElement>(`[data-tab="${name}"]`)!.click(); await flush(); };
+
+  it('opens on the sticker tab the first time, and on the tab used last after that', async () => {
+    open();
+    await flush();
+    await toggle();
+    expect(root.querySelector('[data-tab="stickers"]')!.getAttribute('aria-selected')).toBe('true');
+    expect(root.querySelector('[data-sticker-panel]')).not.toBeNull();
+    await tab('emoji');
+    expect(root.querySelector('[data-emoji-panel]')).not.toBeNull();
+    expect(root.querySelector('[data-sticker-panel]')).toBeNull();
+    await toggle();
+    await toggle();
+    expect(root.querySelector('[data-tab="emoji"]')!.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('puts an emoji where the cursor was, keeps the panel open, and sends it with the words', async () => {
+    const send = vi.fn(async (_c: string, clientId: string, body: string) => ok({ ...msg(2, 'mom', body), clientId }));
+    open(undefined, { send });
+    await flush();
+    compose('ab');
+    field().setSelectionRange(1, 1);
+    await toggle();
+    await tab('emoji');
+    root.querySelector<HTMLButtonElement>('[data-emoji="😀"]')!.click();
+    await flush();
+    expect(field().value).toBe('a😀b');
+    root.querySelector<HTMLButtonElement>('[data-emoji="😂"]')!.click();
+    await flush();
+    expect(field().value).toBe('a😀😂b');
+    expect(root.querySelector('[data-emoji-panel]')).not.toBeNull();
+    submitForm();
+    await flush();
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', 'a😀😂b', undefined);
+  });
+
+  it('shows one group at a time, and the ones used lately once there are some', async () => {
+    open();
+    await flush();
+    await toggle();
+    await tab('emoji');
+    expect(root.querySelector('[data-emoji-group="-1"]')).toBeNull();
+    expect(text(root.querySelector('[data-emoji-panel] h3')!)).toBe('Mặt cười');
+    root.querySelector<HTMLButtonElement>('[data-emoji-group="8"]')!.click();
+    await flush();
+    expect(root.querySelector('[data-emoji-group="8"]')!.getAttribute('aria-label')).toBe('Cờ');
+    expect(root.querySelector('[data-emoji="🇻🇳"]')).not.toBeNull();
+    expect(root.querySelector('[data-emoji="😀"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-emoji="🇻🇳"]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-emoji-group="-1"]')!.click();
+    await flush();
+    expect([...root.querySelectorAll('[data-emoji-panel] .e-grid [data-emoji]')].map((b) => b.getAttribute('data-emoji'))).toEqual(['🇻🇳']);
+  });
+
+  it('draws a message of one to three emoji large without a bubble, and anything more as usual', async () => {
+    open([msg(1, 'minh', '😂'), msg(2, 'minh', '❤️ ❤️ ❤️'), msg(3, 'minh', '😂😂😂😂'), msg(4, 'minh', 'ha 😂'), msg(5, 'minh', '123'),
+      { ...msg(6, 'minh', '👍'), reply: { id: 'id1', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: '😂' } }]);
+    await flush();
+    const jumbo = (id: string) => root.querySelector(`[data-msg="${id}"]`)!.classList.contains('jumbo');
+    expect([1, 2, 3, 4, 5, 6].map((n) => jumbo(`id${n}`))).toEqual([true, true, false, false, false, false]);
   });
 });
