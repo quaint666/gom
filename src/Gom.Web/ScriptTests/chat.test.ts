@@ -3653,7 +3653,7 @@ describe('chat: pictures and files', () => {
       const h = open({}, history);
       await flush();
       expect(h.api.history).toHaveBeenCalledTimes(1);
-      const trimmed = { ...msg(2, 'minh', ''), notice: { type: 'filesTrimmed' as const, target: null, before: '2026-01-01T00:00:00+07:00' } };
+      const trimmed = { ...msg(2, 'minh', ''), notice: { type: 'filesTrimmed' as const, target: null, before: new Date(2026, 0, 1, 12).toISOString() } };   // noon on 1 January where the test runs, so the day shown is the same in any time zone
       // What the server now says: the picture is a placeholder, and the notice is in the stream.
       history.splice(0, 1, { ...msg(1, 'minh', ''), attachments: [gone(att('p1'))] }, trimmed);
       h.handlers().event(C1, created(trimmed));
