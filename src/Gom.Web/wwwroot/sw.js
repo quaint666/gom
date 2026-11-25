@@ -5,8 +5,13 @@
 // stored copy is only the fallback: an update arrives as soon as there is a connection.
 const STATIC = 'gom-static-v1';
 const OFFLINE = '/offline.html';
-const KEPT = [OFFLINE, '/css/gom.css', '/icon.svg'];
-const isStatic = (url) => /^\/(js|css|fonts|icons)\//.test(url.pathname) || url.pathname === '/icon.svg' || url.pathname === '/offline.html';
+const KEPT = [OFFLINE, '/offline.js', '/css/gom.css', '/icon.svg'];
+const isStatic = (url) => /^\/(js|css|fonts|icons)\//.test(url.pathname) || ['/icon.svg', '/offline.html', '/offline.js'].includes(url.pathname);
+// A connection that hangs (Wi-Fi without internet) never fails, and an app opened from the Home Screen would show its splash
+// screen for as long as the browser waits. A page that has not come in this long gets the "no connection" page instead.
+const WAIT_MS = 8000;
+const KEPT_WAIT_MS = 3000;
+const giveUp = (ms) => new Promise((_, fail) => setTimeout(fail, ms));
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(STATIC).then((cache) => cache.addAll(KEPT)).then(() => self.skipWaiting()));
@@ -26,17 +31,18 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname === '/ws') return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(() => caches.match(OFFLINE)));
+    event.respondWith(Promise.race([fetch(request), giveUp(WAIT_MS)]).catch(() => caches.match(OFFLINE)));
     return;
   }
   if (isStatic(url)) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) { const copy = response.clone(); void caches.open(STATIC).then((cache) => cache.put(request, copy)); }
-          return response;
-        })
-        .catch(() => caches.match(request).then((hit) => hit ?? Response.error())));
+    const network = fetch(request).then((response) => {
+      if (response.ok) { const copy = response.clone(); void caches.open(STATIC).then((cache) => cache.put(request, copy)); }
+      return response;
+    });
+    // With a stored copy, a hanging network is not waited for long: the "no connection" page needs its styles to show at all.
+    event.respondWith(caches.match(request).then((kept) => (kept
+      ? Promise.race([network, giveUp(KEPT_WAIT_MS)]).catch(() => kept)
+      : network.catch(() => Response.error()))));
   }
 });
 

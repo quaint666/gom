@@ -60,7 +60,13 @@ public class InstallableTests(WebApplicationFactory<Program> factory) : IClassFi
         Assert.Equal("image/svg+xml", icon.Content.Headers.ContentType?.MediaType);
         using var offline = await client.GetAsync("/offline.html");
         Assert.Equal(HttpStatusCode.OK, offline.StatusCode);
-        Assert.Contains("Mất kết nối", await offline.Content.ReadAsStringAsync());
+        var page = await offline.Content.ReadAsStringAsync();
+        Assert.Contains("Mất kết nối", page);
+        // "Thử lại" loads the same address again through this script; the page policy allows only scripts of our own.
+        Assert.Contains("<script src=\"/offline.js\"></script>", page);
+        using var script = await client.GetAsync("/offline.js");
+        Assert.Equal(HttpStatusCode.OK, script.StatusCode);
+        Assert.Contains("location.reload()", await script.Content.ReadAsStringAsync());
     }
 
     [Fact]
