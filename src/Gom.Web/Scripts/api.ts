@@ -2,7 +2,7 @@ import type { DeviceSubscription } from './push.js';
 export type ErrorCode =
   | 'invalid_credentials' | 'too_many_attempts' | 'invalid_link' | 'id_taken' | 'invalid_gom_id' | 'password_too_short'
   | 'password_too_long' | 'password_too_common' | 'invalid_display_name' | 'missing_fields' | 'bad_origin'
-  | 'wrong_password' | 'cannot_disable_owner' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
+  | 'wrong_password' | 'cannot_disable_owner' | 'confirm_mismatch' | 'owner_cannot_delete' | 'account_deleted' | 'user_not_found' | 'cannot_add_self' | 'already_friends' | 'you_blocked_them'
   | 'not_friends' | 'cannot_chat_self' | 'empty_message' | 'message_too_long' | 'invalid_message' | 'too_many_messages'
   | 'invalid_client_id' | 'client_id_reused' | 'invalid_seq' | 'invalid_title' | 'no_members' | 'group_too_big' | 'already_member'
   | 'group_full' | 'not_a_group' | 'not_your_message' | 'not_allowed' | 'leader_must_hand_over' | 'invalid_role' | 'invalid_member' | 'use_leave' | 'invalid_reply' | 'invalid_query'
@@ -13,7 +13,7 @@ export type ErrorCode =
 
 const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
-  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner',
+  'password_too_long', 'password_too_common', 'invalid_display_name', 'missing_fields', 'bad_origin', 'wrong_password', 'cannot_disable_owner', 'confirm_mismatch', 'owner_cannot_delete', 'account_deleted',
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
   'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
@@ -33,7 +33,7 @@ export interface Invite {
   id: string; createdAt: string; expiresAt: string; uses: number; maxUses: number | null;
   status: 'active' | 'full' | 'revoked' | 'expired'; members: { gomId: string; displayName: string; usedAt: string }[];
 }
-export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; createdAt: string }
+export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; deleted?: boolean; createdAt: string }
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
 export interface JoinBody { gomId: string; password: string; displayName: string }
 
@@ -65,7 +65,7 @@ export interface LastMessage { seq: number; body: string; createdAt: string; sen
 export type PushLevel = 'name' | 'nothing';
 export interface PushState { key: string; subscribed: boolean; level: PushLevel }
 export interface Conversation {
-  id: string; kind: 'direct' | 'group'; title: string | null; peer: (Person & { id: string }) | null; lastSeq: number; lastReadSeq: number;
+  id: string; kind: 'direct' | 'group'; title: string | null; peer: (Person & { id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
   /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
   muted?: boolean; mutedUntil?: string | null;
@@ -77,6 +77,8 @@ export interface Conversation {
 export interface PersonCard {
   id: string; displayName: string; avatar?: string | null; gomId: string | null; friend: 'none' | 'sent' | 'received' | 'friends';
   commonGroups: { id: string; title: string | null; memberCount: number }[];
+  /** The account was deleted: nothing can be asked of it any more. */
+  deleted?: boolean;
 }
 /** Someone a member wants to add to a group that asks for approval, and who asked. */
 export interface JoinRequestRow { id: string; displayName: string; by: Sender; createdAt: string }
@@ -106,6 +108,8 @@ export interface Api {
   resetLink(gomId: string): Promise<Result<Issued>>;
   setNickname(displayName: string): Promise<Result<User>>;
   changePassword(current: string, password: string): Promise<Result<void>>;
+  /** Deletes your own account for good; `gomId` is what the person typed to confirm it. */
+  deleteAccount(gomId: string): Promise<Result<void>>;
   /** Makes this picture your profile picture (the server keeps a square from its middle); the answer is its id. */
   setAvatar(picture: Blob): Promise<Result<{ avatar: string }>>;
   removeAvatar(): Promise<Result<void>>;
@@ -234,6 +238,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
+    deleteAccount: (gomId) => call('DELETE', '/api/me', { gomId }),
     setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
     removeAvatar: () => call('DELETE', '/api/me/avatar'),
     pushState: () => call('GET', '/api/push'),

@@ -311,3 +311,70 @@ describe('api: the profile picture', () => {
     expect((fetchFn.mock.calls[1] as unknown as [string, RequestInit])[1].method).toBe('DELETE');
   });
 });
+
+describe('settings: deleting the account', () => {
+  const api = (extra = {}, who = me) => fakeApi({ me: vi.fn(async () => ok(who)), sessions: vi.fn(async () => ok([])), ...extra });
+  const button = () => root.querySelector<HTMLButtonElement>('[data-delete-button]')!;
+
+  it('sends DELETE /api/me with what was typed', async () => {
+    const fetchFn = vi.fn(async () => new Response(null, { status: 204 }));
+    await createApi(fetchFn).deleteAccount('mom');
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect([url, init.method, JSON.parse(init.body as string)]).toEqual(['/api/me', 'DELETE', { gomId: 'mom' }]);
+  });
+
+  it('is not offered to the owner', async () => {
+    mountSettings(root, api({}, { ...me, isOwner: true }), vi.fn());
+    await flush();
+    expect(root.querySelector('[data-delete-account]')).toBeNull();
+  });
+
+  it('says what it does, and can be pressed only once the Gom ID is typed (an @ and capitals do not matter)', async () => {
+    mountSettings(root, api(), vi.fn());
+    await flush();
+    const card = root.querySelector('[data-delete-account]')!;
+    expect(text(card)).toContain('Không thể hoàn tác');
+    expect(text(card)).toContain('Tài khoản đã xóa');
+    expect(button().disabled).toBe(true);
+    fill(root, '#delete-confirm', 'mo');
+    await flush();
+    expect(button().disabled).toBe(true);
+    fill(root, '#delete-confirm', ' @MOM ');
+    await flush();
+    expect(button().disabled).toBe(false);
+  });
+
+  it('deletes and goes to sign-in; a refusal is shown and nothing moves', async () => {
+    const go = vi.fn();
+    const deleteAccount = vi.fn(async () => ok(undefined));
+    mountSettings(root, api({ deleteAccount }), go);
+    await flush();
+    fill(root, '#delete-confirm', 'mom');
+    await flush();
+    root.querySelector('[data-delete-account]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(deleteAccount).toHaveBeenCalledWith('mom');
+    expect(go).toHaveBeenCalledWith('/sign-in');
+
+    const go2 = vi.fn();
+    mountSettings(root, api({ deleteAccount: vi.fn(async () => fail('confirm_mismatch', 400)) }), go2);
+    await flush();
+    fill(root, '#delete-confirm', 'mom');
+    await flush();
+    root.querySelector('[data-delete-account]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(go2).not.toHaveBeenCalled();
+    expect(text(root)).toContain(errorText(fail('confirm_mismatch', 400)));
+  });
+
+  it('shows a deleted member to the owner as such, with nothing to press', async () => {
+    const owner = { gomId: 'boss', displayName: 'Boss', isOwner: true };
+    mountOwner(root, fakeApi({ me: vi.fn(async () => ok(owner)), invites: vi.fn(async () => ok([])),
+      members: vi.fn(async () => ok([{ gomId: 'lan', displayName: 'Tài khoản đã xóa', isOwner: false, disabled: true, deleted: true, createdAt: '2026-11-01T00:00:00Z' }])) }), vi.fn(), 'https://gom.test');
+    await flush();
+    const row = [...root.querySelectorAll('li')].find((li) => text(li).includes('@lan'))!;
+    expect(text(row)).toContain('Đã xóa');
+    expect(text(row)).not.toContain('Đã khóa');
+    expect(row.querySelector('button')).toBeNull();
+  });
+});

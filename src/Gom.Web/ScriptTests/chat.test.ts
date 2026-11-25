@@ -4269,3 +4269,34 @@ describe('chat: emoji', () => {
     expect([1, 2, 3, 4, 5, 6].map((n) => jumbo(`id${n}`))).toEqual([true, true, false, false, false, false]);
   });
 });
+
+describe('chat: someone who deleted their account', () => {
+  const gone = chat(C1, 'Tài khoản đã xóa', { peer: { id: 'u-gone', gomId: 'lan', displayName: 'Tài khoản đã xóa', deleted: true }, lastSeq: 1 });
+
+  it('keeps the conversation to read, with a note where the composer was', async () => {
+    start({ path: `/c/${C1}`, chats: [gone], history: { [C1]: [msg(1, 'minh', 'tin cũ')] } });
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')).not.toBeNull();
+    expect(root.querySelector('form.composer')).toBeNull();
+    expect(text(root.querySelector('[data-peer-deleted]')!)).toContain('Tài khoản này đã bị xóa');
+    expect(text(root.querySelector('.th-title small')!)).toBe('Tài khoản đã bị xóa');
+  });
+
+  it('has a card that says so and offers nothing', async () => {
+    start({ path: `/c/${C1}`, chats: [gone], history: { [C1]: [] },
+      api: { person: vi.fn(async () => ok({ id: 'u-gone', displayName: 'Tài khoản đã xóa', gomId: null, friend: 'none', commonGroups: [], deleted: true })) } });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-peer-card]')!.click();
+    await flush(); await flush();
+    const card = root.querySelector('[data-person-card]')!;
+    expect(card.querySelector('[data-card-deleted]')).not.toBeNull();
+    expect(card.querySelector('.pcard-actions')).toBeNull();
+  });
+
+  it('still has the composer for everyone else', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [] } });
+    await flush();
+    expect(root.querySelector('form.composer')).not.toBeNull();
+    expect(root.querySelector('[data-peer-deleted]')).toBeNull();
+  });
+});

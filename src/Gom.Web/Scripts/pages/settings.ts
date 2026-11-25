@@ -32,6 +32,8 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let push: PushState | null = null;
   let pushStatus = '';
   let pushBusy = false;
+  /** What is typed to confirm deleting the account: the person's own Gom ID. */
+  let confirmDelete = '';
 
   const row = (s: SessionInfo) => html`
     <li class="li" data-session=${s.id}>
@@ -90,6 +92,21 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       </div>`;
   };
 
+  /** Deleting the account, for good: what it does, then the person's own Gom ID typed out before the button can be pressed. */
+  const deleteCard = (u: User) => {
+    const typed = confirmDelete.trim().replace(/^@/, '').toLowerCase();
+    return html`
+      <h2 class="section">Xóa tài khoản</h2>
+      <form class="card" data-delete-account @submit=${deleteAccount}>
+        <p class="hint">Bạn sẽ rời mọi nhóm, mất danh sách bạn bè và bị đăng xuất khỏi mọi thiết bị. Tin nhắn, ảnh và tệp bạn đã gửi vẫn còn
+          trong các cuộc trò chuyện, dưới tên "Tài khoản đã xóa". Không thể hoàn tác.</p>
+        <label for="delete-confirm">Nhập Gom ID của bạn (@${u.gomId}) để xác nhận</label>
+        <div class="input"><input id="delete-confirm" name="confirm" type="text" autocomplete="off" autocapitalize="none" spellcheck="false"
+          .value=${live(confirmDelete)} @input=${(e: Event) => { confirmDelete = (e.target as HTMLInputElement).value; update(); }}></div>
+        <button class="btn danger" type="submit" data-delete-button ?disabled=${busy || typed !== u.gomId}>Xóa tài khoản vĩnh viễn</button>
+      </form>`;
+  };
+
   const view = () => html`
     ${appBar({ title: 'Cài đặt', back: '/' })}
     <div class="page">
@@ -142,7 +159,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
         <h2 class="section">Thiết bị đang đăng nhập</h2>
         <ul class="list">${sessions.map(row)}</ul>
         <button class="btn secondary" type="button" data-signout @click=${signOut}>Đăng xuất</button>
-        ${user.isOwner ? html`<a class="btn secondary" href="/owner">Lời mời và thành viên</a>` : nothing}`}
+        ${user.isOwner ? html`<a class="btn secondary" href="/owner">Lời mời và thành viên</a>` : deleteCard(user)}`}
     </div>`;
   const update = () => render(view(), root);
 
@@ -260,6 +277,17 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     const result = await api.endSession(id);
     if (!result.ok) { error = result; update(); return; }
     await load();
+  }
+
+  async function deleteAccount(event: Event): Promise<void> {
+    event.preventDefault();
+    if (busy || user === null) return;
+    busy = true; error = null; update();
+    const result = await api.deleteAccount(confirmDelete.trim());
+    busy = false;
+    if (result.ok) { go('/sign-in'); return; }
+    error = result;
+    update();
   }
 
   async function signOut(): Promise<void> {

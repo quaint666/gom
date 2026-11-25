@@ -38,9 +38,9 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
 
   const memberRow = (m: Member) => html`
     <li class="li" data-member=${m.gomId}>
-      <div class="t"><b>${m.displayName}${m.isOwner ? html`<span class="tag">Chủ</span>` : nothing}${m.disabled ? html`<span class="tag">Đã khóa</span>` : nothing}</b><small>@${m.gomId}</small></div>
+      <div class="t"><b>${m.displayName}${m.isOwner ? html`<span class="tag">Chủ</span>` : nothing}${m.deleted ? html`<span class="tag">Đã xóa</span>` : m.disabled ? html`<span class="tag">Đã khóa</span>` : nothing}</b><small>@${m.gomId}</small></div>
       ${m.isOwner || m.disabled ? nothing : html`<button class="btn secondary small" type="button" @click=${() => makeReset(m.gomId)}>Tạo liên kết đặt lại mật khẩu</button>`}
-      ${m.isOwner ? nothing : m.disabled
+      ${m.isOwner || m.deleted ? nothing : m.disabled
         ? html`<button class="btn secondary small" type="button" data-enable @click=${() => setDisabled(m.gomId, false)}>Mở khóa</button>`
         : html`<button class="btn secondary small" type="button" data-disable @click=${() => setDisabled(m.gomId, true)}>Khóa tài khoản</button>`}
     </li>`;
