@@ -2078,6 +2078,65 @@ describe('chat: where reading starts', () => {
     await flush();
     expect(root.querySelector('[data-jump-bottom]')).toBeNull();
   });
+
+  describe('the arrow in the corner to the end of the conversation', () => {
+    const read = [withLast(msg(3, 'minh'), { lastReadSeq: 3, unread: 0 })];
+    const arrow = () => root.querySelector<HTMLButtonElement>('[data-to-end]');
+    /** jsdom has no layout: say how long the thread is, how much shows, and where it is scrolled to, and let the page see it scroll. */
+    const scrollTo = async (top: number) => {
+      const box = root.querySelector<HTMLElement>('.msgs')!;
+      Object.defineProperty(box, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(box, 'clientHeight', { value: 300, configurable: true });
+      Object.defineProperty(box, 'scrollTop', { value: top, configurable: true, writable: true });
+      box.dispatchEvent(new Event('scroll'));
+      await flush();
+      return box;
+    };
+
+    it('is not there while you are at the end', async () => {
+      start({ path: `/c/${C1}`, chats: read, history });
+      await flush();
+      expect(arrow()).toBeNull();
+      await scrollTo(650);   // 50 px from the end: still "at the end"
+      expect(arrow()).toBeNull();
+    });
+
+    it('appears when you read further up, with nothing new, and goes when you are back near the end', async () => {
+      start({ path: `/c/${C1}`, chats: read, history });
+      await flush();
+      await scrollTo(100);
+      expect(arrow()).not.toBeNull();
+      expect(arrow()!.getAttribute('aria-label')).toBe('Xuống tin mới nhất');
+      expect(root.querySelector('[data-jump-bottom]')).toBeNull();   // no count: nothing arrived
+      await scrollTo(650);
+      expect(arrow()).toBeNull();
+    });
+
+    it('takes you to the end when pressed, and goes', async () => {
+      start({ path: `/c/${C1}`, chats: read, history });
+      await flush();
+      const box = await scrollTo(100);
+      arrow()!.click();
+      await flush();
+      expect(box.scrollTop).toBe(1000);
+      expect(arrow()).toBeNull();
+    });
+
+    it('stays beside the count of new messages, and pressing it clears the count too', async () => {
+      const h = start({ path: `/c/${C1}`, chats: read, history });
+      await flush();
+      await scrollTo(100);
+      h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
+      await flush();
+      expect(arrow()).not.toBeNull();
+      expect(root.querySelector('[data-jump-bottom]')).not.toBeNull();
+      arrow()!.click();
+      await flush();
+      expect(root.querySelector('[data-jump-bottom]')).toBeNull();
+      expect(arrow()).toBeNull();
+    });
+
+  });
 });
 
 describe('chat: searching a conversation', () => {
