@@ -30,7 +30,13 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
 
         b.Entity<User>(e =>
         {
-            e.ToTable("users", t => t.HasCheckConstraint("ck_users_gom_id", $"gom_id ~ '{GomId.DatabasePattern}'"));
+            e.ToTable("users", t =>
+            {
+                t.HasCheckConstraint("ck_users_gom_id", $"gom_id ~ '{GomId.DatabasePattern}'");
+                // A deleted account is a disabled one, and never the owner.
+                t.HasCheckConstraint("ck_users_deleted", "deleted_at IS NULL OR (disabled_at IS NOT NULL AND NOT is_owner)");
+            });
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.DeletedBy).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.GomId).IsUnique();
             // At most one row with is_owner = true.
             e.HasIndex(x => x.IsOwner).IsUnique().HasFilter("is_owner");

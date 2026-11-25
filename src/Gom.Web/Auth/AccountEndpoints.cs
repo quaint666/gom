@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Gom.Web.Auth;
 
-/// <summary>Your own nickname and password, and the owner switching a member off and on.</summary>
+/// <summary>Your own nickname and password, deleting your account (<see cref="AccountDeletion"/>), and the owner switching a member off and on.</summary>
 public static class AccountEndpoints
 {
     public sealed record NicknameRequest(string? DisplayName);
@@ -14,6 +14,7 @@ public static class AccountEndpoints
     {
         app.MapPatch("/api/me", ChangeNickname).RequireAuthorization();
         app.MapPut("/api/me/password", ChangePassword).RequireAuthorization();
+        app.MapDelete("/api/me", AccountDeletion.Delete).RequireAuthorization();
 
         var owner = app.MapGroup("/api/users").RequireAuthorization("Owner");
         owner.MapPost("/{gomId}/disable", Disable);
@@ -100,7 +101,11 @@ public static class AccountEndpoints
     private static async Task<IResult> Enable(string gomId, GomDbContext db, CancellationToken ct)
     {
         var id = gomId.Trim().ToLowerInvariant();
-        var found = await db.Users.Where(u => u.GomId == id).ExecuteUpdateAsync(s => s.SetProperty(u => u.DisabledAt, (DateTimeOffset?)null), ct);
-        return found == 0 ? Results.NotFound() : Results.NoContent();
+        var user = await db.Users.Where(u => u.GomId == id).Select(u => new { u.Id, Deleted = u.DeletedAt != null }).SingleOrDefaultAsync(ct);
+        if (user is null) return Results.NotFound();
+        // A deleted account has no password and no name to come back to.
+        if (user.Deleted) return Results.Json(new { error = "account_deleted" }, statusCode: StatusCodes.Status409Conflict);
+        await db.Users.Where(u => u.Id == user.Id).ExecuteUpdateAsync(s => s.SetProperty(u => u.DisabledAt, (DateTimeOffset?)null), ct);
+        return Results.NoContent();
     }
 }

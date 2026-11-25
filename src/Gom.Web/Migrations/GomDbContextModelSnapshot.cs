@@ -788,6 +788,14 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
                     b.Property<DateTimeOffset?>("DisabledAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("disabled_at");
@@ -825,6 +833,9 @@ namespace Gom.Web.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_users_avatar_id");
 
+                    b.HasIndex("DeletedBy")
+                        .HasDatabaseName("ix_users_deleted_by");
+
                     b.HasIndex("GomId")
                         .IsUnique()
                         .HasDatabaseName("ix_users_gom_id");
@@ -836,6 +847,8 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("users", null, t =>
                         {
+                            t.HasCheckConstraint("ck_users_deleted", "deleted_at IS NULL OR (disabled_at IS NOT NULL AND NOT is_owner)");
+
                             t.HasCheckConstraint("ck_users_gom_id", "gom_id ~ '^[a-z0-9_]{3,20}$'");
                         });
                 });
@@ -1140,6 +1153,15 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_sessions_user_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.User", b =>
+                {
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_users_deleted_by");
                 });
 #pragma warning restore 612, 618
         }

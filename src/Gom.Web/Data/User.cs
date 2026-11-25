@@ -11,6 +11,9 @@ public class User
     public bool IsOwner { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DisabledAt { get; set; }
+    /// <summary>When the account was deleted (it is then disabled too, and emptied); and by whom: so far always the person themself.</summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+    public Guid? DeletedBy { get; set; }
     /// <summary>Whether others may see how far this person has read, and whether this person may see theirs. One switch, both ways.</summary>
     public bool ShareReadReceipts { get; set; } = true;
     /// <summary>
