@@ -550,6 +550,7 @@ select:focus-visible { outline-offset: 0; }
 .pcard .info-person .av { inline-size: 32px; block-size: 32px; font-size: 13px; }
 .info .ask { display: flex; flex-wrap: wrap; gap: 8px; }
 .info .ask p { flex-basis: 100%; margin: 0; }
+div.info-person { padding: 4px 6px; }
 button.info-person { inline-size: 100%; padding: 4px 6px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(--surface)); }
 .info-person small { margin-inline-start: auto; color: var(--muted); font-size: 12px; }
