@@ -4611,6 +4611,45 @@ describe('the menu of a conversation in the list', () => {
     expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C2, C1]);
   });
 
+  it('offers "Hoàn tác" after hiding, which shows it again', async () => {
+    const h = start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan')] });
+    await flush();
+    h.api.conversations.mockImplementation(async () => ok([chat(C1, 'Minh', { hidden: true }), chat(C2, 'Lan')]));
+    await openMenu(C1);
+    item('hide-chat')!.click();
+    await flush();
+    expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C2]);
+    expect(text(root.querySelector('[data-undo-hide]')!)).toContain('Đã ẩn cuộc trò chuyện');
+    h.api.conversations.mockImplementation(async () => ok([chat(C1, 'Minh'), chat(C2, 'Lan')]));
+    root.querySelector<HTMLButtonElement>('[data-undo]')!.click();
+    await flush();
+    expect(h.api.setHidden).toHaveBeenLastCalledWith(C1, false);
+    expect(root.querySelector('[data-undo-hide]')).toBeNull();
+    expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C1, C2]);
+  });
+
+  it('takes "Hoàn tác" away after a few seconds', async () => {
+    const h = start({ chats: [chat(C1, 'Minh')] });
+    await flush();
+    await openMenu(C1);
+    item('hide-chat')!.click();
+    await flush();
+    const offer = h.timers.filter((t) => t.ms === 5000 && t.live);
+    expect(offer).toHaveLength(1);
+    offer[0]!.fn();
+    await flush();
+    expect(root.querySelector('[data-undo-hide]')).toBeNull();
+  });
+
+  it('offers no "Hoàn tác" when hiding failed', async () => {
+    start({ chats: [chat(C1, 'Minh')], api: { setHidden: vi.fn(async () => fail('not_allowed', 403)) } });
+    await flush();
+    await openMenu(C1);
+    item('hide-chat')!.click();
+    await flush();
+    expect(root.querySelector('[data-undo-hide]')).toBeNull();
+  });
+
   it('finds a hidden conversation by search, under "Đã ẩn", and only while something is typed', async () => {
     start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { hidden: true }), chat(C3, 'Lâm', { hidden: true })] });
     await flush();
