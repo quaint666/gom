@@ -591,6 +591,15 @@ describe('chat: writing', () => {
     expect(root.querySelector('button.send')!.getAttribute('aria-label')).toBe('Gửi');
   });
 
+  it('leaves the field\'s height to the stylesheet, so it shrinks back once a long message is sent', async () => {
+    open();
+    await flush();
+    compose('một\nhai\nba\nbốn');
+    submitForm();
+    await flush();
+    expect(root.querySelector<HTMLTextAreaElement>('textarea')!.style.height).toBe('');
+  });
+
   it('sends what you typed, shows it at once as being sent, then as sent', async () => {
     let finish: (r: ReturnType<typeof ok>) => void = () => undefined;
     const send = vi.fn(() => new Promise((resolve) => { finish = resolve as never; }));

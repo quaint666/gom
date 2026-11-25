@@ -4,6 +4,7 @@ import { mountSettings } from '../Scripts/pages/settings.js';
 import { createPusher, type Pusher, type PushSupport } from '../Scripts/push.js';
 import { fail, fakeApi, flush, ok, text } from './helpers.js';
 import swSource from '../wwwroot/sw.js?raw';
+import offlineSource from '../wwwroot/offline.js?raw';
 
 let root: HTMLElement;
 beforeEach(() => { root = document.createElement('div'); document.body.replaceChildren(root); });
@@ -172,7 +173,7 @@ describe('the device: what it can do', () => {
 });
 
 /** The service worker, run in a sandbox of its own with a pretend `self`. */
-function worker(windows: Array<{ url: string; focus: () => Promise<unknown>; navigate?: (u: string) => Promise<unknown> }> = []) {
+function worker(windows: Array<{ url: string; focus: () => Promise<unknown>; navigate?: (u: string) => Promise<unknown> }> = [], fetchFn: (r: unknown) => Promise<unknown> = async () => new Response(''), kept: string[] = []) {
   const listeners: Record<string, (e: unknown) => void> = {};
   const shown: Array<{ title: string; options: Record<string, unknown> }> = [];
   const openWindow = vi.fn(async () => null);
@@ -182,13 +183,23 @@ function worker(windows: Array<{ url: string; focus: () => Promise<unknown>; nav
     registration: { showNotification: async (title: string, options: Record<string, unknown>) => { shown.push({ title, options }); } },
     clients: { matchAll: async () => windows, openWindow, claim: async () => undefined },
   };
-  new Function('self', 'caches', swSource)(self, {});
+  const caches = {
+    match: async (key: string | { url: string }) => (typeof key === 'string' ? `kept ${key}` : kept.includes(key.url) ? `kept ${key.url}` : undefined),
+    open: async () => ({ put: async () => undefined }),
+  };
+  new Function('self', 'caches', 'fetch', swSource)(self, caches, fetchFn);
   const fire = async (type: string, event: Record<string, unknown>) => {
     let done: Promise<unknown> = Promise.resolve();
     listeners[type]!({ ...event, waitUntil: (p: Promise<unknown>) => { done = p; } });
     await done;
   };
-  return { fire, shown, openWindow };
+  /** A fetch event: what the worker answers with, or undefined when it leaves the request to the browser. */
+  const answer = (request: { url: string; mode: string; method?: string }) => {
+    let given: Promise<unknown> | undefined;
+    listeners['fetch']!({ request: { method: 'GET', ...request }, respondWith: (p: Promise<unknown>) => { given = p; } });
+    return given;
+  };
+  return { fire, shown, openWindow, answer };
 }
 
 describe('service worker: notifications', () => {
@@ -223,5 +234,75 @@ describe('service worker: notifications', () => {
     const none = worker([]);
     await none.fire('notificationclick', { notification: { close: vi.fn(), data: { url: `/c/${C}` } } });
     expect(none.openWindow).toHaveBeenCalledWith(`https://gom.test/c/${C}`);
+  });
+});
+
+describe('service worker: no connection', () => {
+  const PAGE = { url: 'https://gom.test/c/abc', mode: 'navigate' };
+
+  it('gives the page when it comes in, and the "no connection" page when the network fails', async () => {
+    const page = new Response('the page');
+    expect(await worker([], async () => page).answer(PAGE)).toBe(page);
+    expect(await worker([], async () => { throw new TypeError('offline'); }).answer(PAGE)).toBe('kept /offline.html');
+  });
+
+  it('stops waiting for a page that hangs, and gives the "no connection" page after 8 seconds', async () => {
+    vi.useFakeTimers();
+    try {
+      let settled: unknown = 'waiting';
+      void worker([], () => new Promise(() => undefined)).answer(PAGE)!.then((r) => { settled = r; });
+      await vi.advanceTimersByTimeAsync(7900);
+      expect(settled).toBe('waiting');
+      await vi.advanceTimersByTimeAsync(200);
+      expect(settled).toBe('kept /offline.html');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('gives a stored copy of a file after 3 seconds of a hanging network, and keeps waiting for a file it has no copy of', async () => {
+    vi.useFakeTimers();
+    try {
+      const CSS = 'https://gom.test/css/gom.css';
+      const w = worker([], () => new Promise(() => undefined), [CSS]);
+      const got: Record<string, unknown> = { kept: 'waiting', new: 'waiting' };
+      void w.answer({ url: CSS, mode: 'no-cors' })!.then((r) => { got['kept'] = r; });
+      void w.answer({ url: 'https://gom.test/js/main.abc123.js', mode: 'no-cors' })!.then((r) => { got['new'] = r; });
+      await vi.advanceTimersByTimeAsync(2900);
+      expect(got).toEqual({ kept: 'waiting', new: 'waiting' });
+      await vi.advanceTimersByTimeAsync(200);
+      expect(got).toEqual({ kept: `kept ${CSS}`, new: 'waiting' });
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(got['new']).toBe('waiting');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('gives the network\'s file when it comes in, and a stored copy when the network fails', async () => {
+    const CSS = 'https://gom.test/css/gom.css';
+    const fresh = new Response('fresh');
+    expect(await worker([], async () => fresh, [CSS]).answer({ url: CSS, mode: 'no-cors' })).toBe(fresh);
+    expect(await worker([], async () => { throw new TypeError('offline'); }, [CSS]).answer({ url: CSS, mode: 'no-cors' })).toBe(`kept ${CSS}`);
+  });
+});
+
+describe('the "no connection" page', () => {
+  function run() {
+    document.body.innerHTML = '<a href="/" data-retry>Thử lại</a>';
+    const listeners: Record<string, () => void> = {};
+    const location = { reload: vi.fn() };
+    new Function('document', 'location', 'addEventListener', offlineSource)(document, location, (type: string, fn: () => void) => { listeners[type] = fn; });
+    return { location, listeners };
+  }
+
+  it('tries the same address again, not the home page, when "Thử lại" is tapped', () => {
+    const { location } = run();
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    document.querySelector('[data-retry]')!.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(location.reload).toHaveBeenCalledOnce();
+  });
+
+  it('tries again by itself when the device is back online', () => {
+    const { location, listeners } = run();
+    listeners['online']!();
+    expect(location.reload).toHaveBeenCalledOnce();
   });
 });

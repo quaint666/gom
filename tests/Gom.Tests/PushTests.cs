@@ -340,7 +340,7 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
 
         Assert.Equal("aes128gcm", sent.Headers["Content-Encoding"]);
         Assert.Equal("high", sent.Headers["Urgency"]);
-        Assert.Equal("86400", sent.Headers["TTL"]);
+        Assert.Equal("2419200", sent.Headers["TTL"]);
         Assert.Equal(Base64Url.EncodeToString(p.Chat.ToByteArray()), sent.Headers["Topic"]);
         Assert.EndsWith($"k={PushFixture.Keys.Public}", sent.Headers["Authorization"]);
 
