@@ -434,6 +434,11 @@ namespace Gom.Web.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("seq");
 
+                    b.Property<string>("Sticker")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("sticker");
+
                     b.HasKey("Id")
                         .HasName("pk_messages");
 
@@ -458,6 +463,8 @@ namespace Gom.Web.Migrations
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_messages_seq", "seq > 0");
+
+                            t.HasCheckConstraint("ck_messages_sticker", "sticker IS NULL OR (body = '' AND notice IS NULL)");
                         });
                 });
 
