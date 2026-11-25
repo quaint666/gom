@@ -459,8 +459,8 @@ namespace Gom.Web.Migrations
                         .HasColumnName("seq");
 
                     b.Property<string>("Sticker")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)")
                         .HasColumnName("sticker");
 
                     b.HasKey("Id")

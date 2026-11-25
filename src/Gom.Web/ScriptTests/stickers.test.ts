@@ -4,10 +4,10 @@ import { STICKER_PACKS, STICKERS, recentStickers, rememberSticker, stickerName }
 describe('stickers', () => {
   beforeEach(() => localStorage.clear());
 
-  it('are 110 in six named packs, each once', () => {
-    expect(STICKERS).toHaveLength(110);
-    expect(new Set(STICKERS).size).toBe(110);
-    expect(STICKER_PACKS.map((p) => p.name)).toEqual(['Cảm xúc', 'Cử chỉ', 'Yêu thương', 'Động vật', 'Đồ ăn', 'Lễ hội']);
+  it('are 379 in seven named packs, each once', () => {
+    expect(STICKERS).toHaveLength(379);
+    expect(new Set(STICKERS).size).toBe(379);
+    expect(STICKER_PACKS.map((p) => p.name)).toEqual(['Cảm xúc', 'Cử chỉ', 'Yêu thương', 'Động vật', 'Đồ ăn', 'Lễ hội', 'Cờ']);
     for (const p of STICKER_PACKS) expect(p.codes.length, p.name).toBeGreaterThan(0);
   });
 
@@ -22,6 +22,15 @@ describe('stickers', () => {
   it('are named by the emoji they show', () => {
     expect(stickerName('1f602')).toBe('😂');
     expect(stickerName('2764')).toBe('❤');
+    expect(stickerName('1f1fb_1f1f3')).toBe('🇻🇳');
+  });
+
+  it('have every flag of the emoji list, Việt Nam first, and England\'s fits the database column (48)', () => {
+    const flags = STICKER_PACKS.find((p) => p.name === 'Cờ')!.codes;
+    expect(flags).toHaveLength(269);
+    expect(flags[0]).toBe('1f1fb_1f1f3');
+    expect(flags).toContain('1f3f4_e0067_e0062_e0065_e006e_e0067_e007f');
+    expect(Math.max(...STICKERS.map((c) => c.length))).toBeLessThanOrEqual(48);
   });
 
   it('remember at most 8 sent last, newest first, and ignore anything else found in storage', () => {
