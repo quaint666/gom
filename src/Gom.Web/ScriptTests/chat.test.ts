@@ -1737,6 +1737,21 @@ describe('chat: passing a message on', () => {
     expect([...root.querySelectorAll('[data-forward-pick]')].map((b) => b.getAttribute('data-forward-pick'))).toEqual([C1, C2]);
   });
 
+  it('finds a hidden conversation by search, and one ticked stays in view when the search is cleared', async () => {
+    const C3 = '33333333-3333-4333-8333-333333333333';
+    start({ path: `/c/${C1}`, chats: [...chats, chat(C3, 'Bà', { hidden: true })], history: { [C1]: [msg(1, 'minh', 'Tối nay ăn gì?')] } });
+    await flush();
+    await pick('id1');
+    fill(root, '[data-forward-search]', 'bà');
+    await flush();
+    expect([...root.querySelectorAll('[data-hidden-list] [data-forward-pick]')].map((b) => b.getAttribute('data-forward-pick'))).toEqual([C3]);
+    expect(text(root.querySelector('[data-forward-panel] [data-hidden-label]')!)).toBe('Đã ẩn');
+    tick(C3);
+    fill(root, '[data-forward-search]', '');
+    await flush();
+    expect(root.querySelector<HTMLInputElement>(`[data-forward-pick="${C3}"]`)!.checked).toBe(true);
+  });
+
   it('sends the words to the chosen conversation as a new message with no answer attached, and says so', async () => {
     const send = echo.mockClear();
     open({ send });
@@ -4602,6 +4617,63 @@ describe('the menu of a conversation in the list', () => {
     h.handlers().event(C2, created(msg(3, 'minh', 'Mẹ ơi', at(11), C2)));
     await flush();
     expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C2, C1]);
+  });
+
+  it('finds a hidden conversation by search, under "Đã ẩn", and only while something is typed', async () => {
+    start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { hidden: true }), chat(C3, 'Lâm', { hidden: true })] });
+    await flush();
+    expect(root.querySelector('[data-hidden-label]')).toBeNull();
+    fill(root, 'input[name="filter"]', 'lan');
+    await flush();
+    expect(text(root.querySelector('[data-hidden-label]')!)).toBe('Đã ẩn');
+    expect([...root.querySelectorAll('[data-hidden-list] [data-chat]')].map((r) => r.getAttribute('data-chat'))).toEqual([C2]);
+    expect(root.querySelector('[data-no-match]')).toBeNull();
+    fill(root, 'input[name="filter"]', 'zzz');
+    await flush();
+    expect(root.querySelector('[data-no-match]')).not.toBeNull();
+  });
+
+  it('opening a hidden conversation found by search brings it back to the list, here and on the server', async () => {
+    const h = start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { hidden: true })], history: { [C2]: [msg(1, 'minh', 'xin chào', at(10), C2)] } });
+    await flush();
+    fill(root, 'input[name="filter"]', 'lan');
+    await flush();
+    root.querySelector<HTMLElement>(`[data-hidden-list] [data-chat="${C2}"]`)!.click();
+    await flush(); await flush();
+    expect(h.api.setHidden).toHaveBeenCalledWith(C2, false);
+    expect(text(root)).toContain('xin chào');
+    fill(root, 'input[name="filter"]', '');
+    await flush();
+    expect(rows().map((r) => r.getAttribute('data-chat'))).toContain(C2);
+    expect(root.querySelector('[data-hidden-label]')).toBeNull();
+  });
+
+  it('opening a hidden conversation by its address brings it back too (the card and Back go the same way)', async () => {
+    const h = start({ path: `/c/${C2}`, chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { hidden: true })], history: { [C2]: [msg(1, 'minh', 'xin chào', at(10), C2)] } });
+    await flush(); await flush();
+    expect(h.api.setHidden).toHaveBeenCalledWith(C2, false);
+    expect(text(root)).not.toContain('Không tìm thấy cuộc trò chuyện này.');
+    expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C1, C2]);
+  });
+
+  it('says it is not found, and unhides nothing, for a conversation you are not in', async () => {
+    const h = start({ path: `/c/${C3}`, chats: [chat(C1, 'Minh')] });
+    await flush(); await flush();
+    expect(text(root)).toContain('Không tìm thấy cuộc trò chuyện này.');
+    expect(h.api.setHidden).not.toHaveBeenCalled();
+  });
+
+  it('offers "Bỏ ẩn" in the menu of a hidden one found by search', async () => {
+    const h = start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { hidden: true })] });
+    await flush();
+    fill(root, 'input[name="filter"]', 'lan');
+    await flush();
+    await openMenu(C2);
+    expect(item('hide-chat')).toBeNull();
+    item('unhide-chat')!.click();
+    await flush();
+    expect(h.api.setHidden).toHaveBeenCalledWith(C2, false);
+    expect(h.api.conversations).toHaveBeenCalledTimes(2);
   });
 
   it('shows the empty list when every conversation is hidden', async () => {
