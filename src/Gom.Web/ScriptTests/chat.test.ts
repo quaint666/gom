@@ -3817,3 +3817,27 @@ describe('chat: the side panel of a group', () => {
     expect(text(root)).toContain('Trưởng nhóm cần chuyển quyền');
   });
 });
+
+describe('chat: profile pictures', () => {
+  it('shows the picture of the other person of a 1:1 conversation in the list and the header', async () => {
+    start({ path: `/c/${C2}`, chats: [chat(C2, 'Minh', { peer: { id: 'u-minh', gomId: 'minh', displayName: 'Minh', avatar: 'av-minh' } })], history: { [C2]: [] } });
+    await flush();
+    expect(root.querySelector(`[data-chat="${C2}"] .av img`)!.getAttribute('src')).toBe('/api/avatars/av-minh');
+    expect(root.querySelector('.th-head .av img')!.getAttribute('src')).toBe('/api/avatars/av-minh');
+  });
+
+  it("shows a group member's picture beside their messages, from the group's member list", async () => {
+    const groupMembers = vi.fn(async () => ok([{ id: 'u-minh', displayName: 'Minh', avatar: 'av-minh', isMe: false, isFriend: true, gomId: 'minh', request: 'none', role: 'member' }]));
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Nhà', { kind: 'group', peer: null, memberCount: 2, lastSeq: 1 })], history: { [C1]: [msg(1, 'minh', 'chào')] }, api: { groupMembers } });
+    await flush(); await flush();
+    expect(groupMembers).toHaveBeenCalledWith(C1);
+    expect(root.querySelector('[data-msg="id1"] .av img')!.getAttribute('src')).toBe('/api/avatars/av-minh');
+  });
+
+  it('shows the initials when there is no picture', async () => {
+    start({ path: `/c/${C2}`, chats: [chat(C2, 'Minh')], history: { [C2]: [] } });
+    await flush();
+    expect(root.querySelector(`[data-chat="${C2}"] .av img`)).toBeNull();
+    expect(root.querySelector(`[data-chat="${C2}"] .av`)!.textContent).toBe('M');
+  });
+});

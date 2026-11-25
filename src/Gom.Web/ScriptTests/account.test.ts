@@ -217,3 +217,97 @@ describe('settings: profile and appearance', () => {
     expect(radio('system').checked).toBe(false);
   });
 });
+
+describe('settings: the profile picture', () => {
+  const withPicture = (avatar: string | null, uploads = true, extra: Record<string, unknown> = {}) =>
+    fakeApi({ me: vi.fn(async () => ok({ ...me, uploads, avatar })), sessions: vi.fn(async () => ok([])), ...extra });
+  const photo = () => new File([new Uint8Array([0xff, 0xd8, 0xff, 1, 2, 3])], 'me.jpg', { type: 'image/jpeg' });
+  const choose = async () => {
+    const input = root.querySelector<HTMLInputElement>('[data-avatar-file]')!;
+    Object.defineProperty(input, 'files', { value: [photo()], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    for (let i = 0; i < 5 && root.querySelector('[data-avatar-preview]') === null; i++) await new Promise((r) => setTimeout(r, 10));
+  };
+
+  it('shows your picture in the profile card instead of the initials', async () => {
+    mountSettings(root, withPicture('a1'), vi.fn());
+    await flush();
+    expect(root.querySelector('[data-profile] .av img')!.getAttribute('src')).toBe('/api/avatars/a1');
+  });
+
+  it('previews a chosen photo as it will be kept, and saves it only when asked', async () => {
+    const setAvatar = vi.fn(async () => ok({ avatar: 'a2' }));
+    mountSettings(root, withPicture(null, true, { setAvatar }), vi.fn());
+    await flush();
+    await choose();
+    expect(root.querySelector('[data-avatar-preview]')!.getAttribute('src')).toMatch(/^data:image\/jpeg;base64,/);
+    expect(setAvatar).not.toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>('[data-avatar-save]')!.click();
+    await flush();
+    expect(setAvatar).toHaveBeenCalledWith(expect.objectContaining({ name: 'me.jpg' }));
+    expect(root.querySelector('[data-profile] .av img')!.getAttribute('src')).toBe('/api/avatars/a2');
+    expect(root.querySelector('[data-avatar-preview]')).toBeNull();
+    expect(text(root.querySelector('[data-avatar-status]')!)).toBe('Đã lưu ảnh.');
+  });
+
+  it('forgets a chosen photo on "Hủy"', async () => {
+    const setAvatar = vi.fn(async () => ok({ avatar: 'a2' }));
+    mountSettings(root, withPicture(null, true, { setAvatar }), vi.fn());
+    await flush();
+    await choose();
+    root.querySelector<HTMLButtonElement>('[data-avatar-cancel]')!.click();
+    await flush();
+    expect(root.querySelector('[data-avatar-preview]')).toBeNull();
+    expect(setAvatar).not.toHaveBeenCalled();
+  });
+
+  it('says why a photo was refused', async () => {
+    mountSettings(root, withPicture(null, true, { setAvatar: vi.fn(async () => fail('invalid_image', 422)) }), vi.fn());
+    await flush();
+    await choose();
+    root.querySelector<HTMLButtonElement>('[data-avatar-save]')!.click();
+    await flush();
+    expect(text(root.querySelector('[data-avatar-status]')!)).toBe(errorText(fail('invalid_image', 422)));
+  });
+
+  it('goes back to the initials', async () => {
+    const a = withPicture('a1');
+    mountSettings(root, a, vi.fn());
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-avatar-remove]')!.click();
+    await flush();
+    expect(a.removeAvatar).toHaveBeenCalled();
+    expect(root.querySelector('[data-profile] .av img')).toBeNull();
+    expect(root.querySelector('[data-profile] .av')!.textContent).toBe('M');
+    expect(root.querySelector('[data-avatar-remove]')).toBeNull();
+  });
+
+  it('offers nothing when the server takes no pictures', async () => {
+    mountSettings(root, withPicture(null, false), vi.fn());
+    await flush();
+    expect(root.querySelector('[data-avatar]')).toBeNull();
+  });
+
+  it('keeps the picture when the name is changed', async () => {
+    mountSettings(root, withPicture('a1', true, { setNickname: vi.fn(async () => ok({ ...me, displayName: 'Chị Hai' })) }), vi.fn());
+    await flush();
+    fill(root, '#display-name', 'Chị Hai');
+    root.querySelector('form[data-nickname]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(root.querySelector('[data-profile] .av img')!.getAttribute('src')).toBe('/api/avatars/a1');
+  });
+});
+
+describe('api: the profile picture', () => {
+  it('sends the photo itself with PUT /api/me/avatar, and removes it with DELETE', async () => {
+    const fetchFn = vi.fn(async (_u: string, init?: RequestInit) => init?.method === 'DELETE' ? new Response(null, { status: 204 }) : json({ avatar: 'a9' }));
+    const api = createApi(fetchFn as unknown as typeof fetch);
+    const picture = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' });
+    expect(await api.setAvatar(picture)).toEqual({ ok: true, data: { avatar: 'a9' } });
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect([url, init.method, init.body]).toEqual(['/api/me/avatar', 'PUT', picture]);
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/octet-stream');
+    expect(await api.removeAvatar()).toEqual({ ok: true, data: undefined });
+    expect((fetchFn.mock.calls[1] as unknown as [string, RequestInit])[1].method).toBe('DELETE');
+  });
+});

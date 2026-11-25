@@ -7,7 +7,7 @@ import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
-import { errorBox } from '../ui.js';
+import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { errorText, formatSize } from '../text.js';
 
@@ -164,7 +164,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- drawing
 
-  const avatar = (name: string): TemplateResult => html`<div class="av a${avatarTone(name)}" aria-hidden="true">${initials(name)}</div>`;
+  /** A round badge: the picture when there is one, else the initials. `size` is '' (48 px), 'sm' or 'xl'. */
+  const avatar = (name: string, picture?: string | null, size: '' | 'sm' | 'xl' = ''): TemplateResult =>
+    html`<div class="av a${avatarTone(name)} ${size} ${picture ? 'pic' : ''}" aria-hidden="true">${picture
+      ? html`<img src=${avatarUrl(picture)} alt="" loading="lazy" decoding="async">` : initials(name)}</div>`;
+  /** The picture of someone in a group, from its member list (asked for when the group opens). */
+  const memberPicture = (conversation: string, userId: string): string | null | undefined => people.get(conversation)?.find((m) => m.id === userId)?.avatar;
 
   function preview(c: Conversation): string {
     const last = c.lastMessage;
@@ -177,7 +182,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const row = (c: Conversation) => html`
     <li><a class="item ${c.unread > 0 ? 'unread' : ''} ${c.id === openId ? 'active' : ''}" href="/c/${c.id}" data-chat=${c.id}
       aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}>
-      ${avatar(c.title ?? '?')}
+      ${avatar(c.title ?? '?', c.peer?.avatar)}
       <div class="im">
         <div class="l1"><span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv">${preview(c)}</span>
@@ -455,7 +460,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
         ${item.mine ? tools : nothing}
-        ${others ? (item.last ? html`<div class="av sm a${avatarTone(m.sender.displayName)}" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
+        ${others ? (item.last ? avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm') : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
           @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? 'Đã xem' : 'Đã gửi'}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
@@ -554,7 +559,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             return html`<li><label class="fwd-row">
               <input type="checkbox" data-forward-pick=${c.id} .checked=${on} ?disabled=${f.busy || (!on && full)}
                 @change=${(e: Event) => { const yes = (e.target as HTMLInputElement).checked; f.picked = yes ? [...f.picked.filter((x) => x !== c.id), c.id] : f.picked.filter((x) => x !== c.id); update(); }}>
-              ${avatar(c.title ?? '?')}<span>${c.title ?? '…'}</span></label></li>`;
+              ${avatar(c.title ?? '?', c.peer?.avatar)}<span>${c.title ?? '…'}</span></label></li>`;
           })}</ul>`}
         ${full ? html`<p class="hint" data-forward-full>Chọn tối đa ${FORWARD_MAX} cuộc trò chuyện mỗi lần.</p>` : nothing}
         <textarea class="fwd-note" rows="2" aria-label="Lời nhắn kèm theo" placeholder="Nhập lời nhắn (không bắt buộc)" maxlength="4000" data-forward-note
@@ -640,7 +645,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const infoPanel = (c: Conversation, t: Thread) => html`
     <aside class="info" aria-label="Thông tin cuộc trò chuyện" data-info-panel>
       <div class="info-top">
-        <div class="av xl a${avatarTone(c.title ?? '?')}" aria-hidden="true">${initials(c.title ?? '?')}</div>
+        ${avatar(c.title ?? '?', c.peer?.avatar, 'xl')}
         <h2>${c.title ?? '…'}</h2>
         <small>${c.kind === 'group' ? `${c.memberCount ?? 0} thành viên` : c.peer ? peerLine(c) : ''}</small>
       </div>
@@ -657,7 +662,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${c.kind !== 'group' ? nothing : html`
         <h3>Thành viên</h3>
         <ul class="info-list">${(people.get(c.id) ?? []).map((m) => {
-          const inside = html`<div class="av sm a${avatarTone(m.displayName)}" aria-hidden="true">${initials(m.displayName)}</div>
+          const inside = html`${avatar(m.displayName, m.avatar, 'sm')}
             <span>${m.displayName}${m.isMe ? ' (bạn)' : ''}</span>${m.role === 'leader' ? html`<span class="tag">Nhóm trưởng</span>` : m.role === 'deputy' ? html`<span class="tag">Phó nhóm</span>` : nothing}`;
           return html`<li data-info-member=${m.id}>${m.isMe ? html`<div class="info-person">${inside}</div>`
             : html`<button class="info-person" type="button" data-open-card=${m.id} @click=${() => openCard(m.id)}>${inside}</button>`}</li>`;
@@ -709,7 +714,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="pcard-head"><button class="ib" type="button" data-close-card aria-label="Đóng" @click=${close}>${icons.close()}</button></div>
         ${p === null ? (k.error === null ? html`<p class="hint" role="status">Đang tải…</p>` : errorBox(k.error)) : html`
           <div class="pcard-top">
-            <div class="av xl a${avatarTone(name)}" aria-hidden="true">${initials(name)}</div>
+            ${avatar(name, p.avatar, 'xl')}
             <h2 id="pcard-name">${name}</h2>
             ${p.gomId === null ? nothing : html`<small>@${p.gomId}</small>`}
           </div>
@@ -754,7 +759,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
           <a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a>
-          ${avatar(c?.title ?? '?')}
+          ${avatar(c?.title ?? '?', c?.peer?.avatar)}
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${`Xem thông tin ${c.title ?? ''}`} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
             : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>`}
@@ -925,7 +930,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     // A 1:1 conversation says under the name how many groups you share: that comes from the person's card.
     if (c?.peer && !cards.has(c.peer.id)) void loadCard(c.peer.id);
     else markRead(id);
-    if (infoOpen) { void loadPeople(id); void loadMedia(id, 'image'); void loadMedia(id, 'file'); }
+    if (infoOpen) { void loadMedia(id, 'image'); void loadMedia(id, 'file'); }
+    // A group's members are asked for when it opens: the side panel lists them, and the thread shows their pictures.
+    void loadPeople(id);
   }
 
   // ---- loading

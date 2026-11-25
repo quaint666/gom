@@ -35,7 +35,7 @@ export function mountNewGroup(root: HTMLElement, api: Api, go: (path: string) =>
             ${friends.map((f, i) => !matches(`${f.displayName} ${f.gomId}`, query) ? nothing : html`
               <div class="pick"><input type="checkbox" id="pick-${i}" value=${f.gomId} .checked=${live(picked.has(f.gomId))}
                 @change=${(e: Event) => { toggle(f.gomId, (e.target as HTMLInputElement).checked); update(); }}>
-                <label for="pick-${i}">${avatar(f.displayName, true)}<span><b>${f.displayName}</b> <small>@${f.gomId}</small></span></label></div>`)}
+                <label for="pick-${i}">${avatar(f.displayName, true, false, f.avatar)}<span><b>${f.displayName}</b> <small>@${f.gomId}</small></span></label></div>`)}
             ${friends.every((f) => !matches(`${f.displayName} ${f.gomId}`, query)) ? html`<p class="hint" data-no-match>Không tìm thấy ai khớp với từ khóa.</p>` : nothing}
           </fieldset>
           <button class="btn" type="submit" ?disabled=${busy}>Tạo nhóm</button>

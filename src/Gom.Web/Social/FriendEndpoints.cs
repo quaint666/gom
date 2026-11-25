@@ -41,15 +41,15 @@ public static class FriendEndpoints
             join u in db.Users on (f.UserLow == me ? f.UserHigh : f.UserLow) equals u.Id
             where u.DisabledAt == null
             orderby u.DisplayName, u.GomId
-            select new { f.Status, f.RequestedBy, f.CreatedAt, u.GomId, u.DisplayName, OtherId = u.Id }).ToListAsync(ct);
+            select new { f.Status, f.RequestedBy, f.CreatedAt, u.GomId, u.DisplayName, u.AvatarId, OtherId = u.Id }).ToListAsync(ct);
 
         return Results.Ok(new
         {
-            friends = rows.Where(r => r.Status == FriendStatus.Accepted).Select(r => new { gomId = r.GomId, displayName = r.DisplayName }),
+            friends = rows.Where(r => r.Status == FriendStatus.Accepted).Select(r => new { gomId = r.GomId, displayName = r.DisplayName, avatar = r.AvatarId }),
             incoming = rows.Where(r => r.Status == FriendStatus.Pending && r.RequestedBy != me)
-                .Select(r => new { gomId = r.GomId, displayName = r.DisplayName, createdAt = r.CreatedAt }),
+                .Select(r => new { gomId = r.GomId, displayName = r.DisplayName, avatar = r.AvatarId, createdAt = r.CreatedAt }),
             outgoing = rows.Where(r => r.Status == FriendStatus.Pending && r.RequestedBy == me)
-                .Select(r => new { gomId = r.GomId, displayName = r.DisplayName, createdAt = r.CreatedAt }),
+                .Select(r => new { gomId = r.GomId, displayName = r.DisplayName, avatar = r.AvatarId, createdAt = r.CreatedAt }),
         });
     }
 

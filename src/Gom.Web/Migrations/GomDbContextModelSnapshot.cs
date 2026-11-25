@@ -715,6 +715,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -751,6 +755,10 @@ namespace Gom.Web.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_users");
+
+                    b.HasIndex("AvatarId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_avatar_id");
 
                     b.HasIndex("GomId")
                         .IsUnique()

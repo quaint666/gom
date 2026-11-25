@@ -106,6 +106,7 @@ app.MapGroups();
 app.MapPeople();
 app.MapMessages();
 app.MapAttachments();
+app.MapAvatars();
 app.MapReceipts();
 app.MapSocket();
 

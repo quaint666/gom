@@ -23,7 +23,8 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
 export interface Failure { ok: false; status: number; error: ErrorCode; retryAfter?: number }
 export type Result<T> = { ok: true; data: T } | Failure;
 
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean }
+/** `avatar` is the id of the profile picture (at /api/avatars/{avatar}); none means the initials. */
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null }
 export interface SessionInfo { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }
 /** A link the owner gives out. It works for `maxUses` people (any number when null) until it expires or is revoked. */
 export interface Invite {
@@ -34,7 +35,7 @@ export interface Member { gomId: string; displayName: string; isOwner: boolean; 
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
 export interface JoinBody { gomId: string; password: string; displayName: string }
 
-export interface Person { gomId: string; displayName: string }
+export interface Person { gomId: string; displayName: string; avatar?: string | null }
 export interface FriendRequest extends Person { createdAt: string }
 export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; outgoing: FriendRequest[] }
 /** Who wrote a message: a name and an opaque id. The Gom ID is shown to friends only, so it is not here. */
@@ -65,7 +66,7 @@ export interface Conversation {
  * you are both in (most recently active first).
  */
 export interface PersonCard {
-  id: string; displayName: string; gomId: string | null; friend: 'none' | 'sent' | 'received' | 'friends';
+  id: string; displayName: string; avatar?: string | null; gomId: string | null; friend: 'none' | 'sent' | 'received' | 'friends';
   commonGroups: { id: string; title: string | null; memberCount: number }[];
 }
 /** Someone a member wants to add to a group that asks for approval, and who asked. */
@@ -74,7 +75,7 @@ export interface JoinRequestRow { id: string; displayName: string; by: Sender; c
 export interface BanRow { id: string; displayName: string; createdAt: string }
 /** A member of a group. The Gom ID is there only for you and your friends. */
 export interface GroupMember {
-  id: string; displayName: string; isMe: boolean; isFriend: boolean; gomId: string | null; request: 'none' | 'sent' | 'received';
+  id: string; displayName: string; avatar?: string | null; isMe: boolean; isFriend: boolean; gomId: string | null; request: 'none' | 'sent' | 'received';
   role: 'leader' | 'deputy' | 'member';
 }
 
@@ -96,6 +97,9 @@ export interface Api {
   resetLink(gomId: string): Promise<Result<Issued>>;
   setNickname(displayName: string): Promise<Result<User>>;
   changePassword(current: string, password: string): Promise<Result<void>>;
+  /** Makes this picture your profile picture (the server keeps a square from its middle); the answer is its id. */
+  setAvatar(picture: Blob): Promise<Result<{ avatar: string }>>;
+  removeAvatar(): Promise<Result<void>>;
   disableMember(gomId: string): Promise<Result<void>>;
   enableMember(gomId: string): Promise<Result<void>>;
   friends(): Promise<Result<FriendLists>>;
@@ -160,7 +164,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       response = await fetchFn(path, {
         method,
         credentials: 'same-origin',
-        ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+        ...(body === undefined ? {} : body instanceof Blob ? { headers: { 'Content-Type': 'application/octet-stream' }, body }
+          : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
       });
     } catch {
       return { ok: false, status: 0, error: 'network' };
@@ -213,6 +218,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
+    setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
+    removeAvatar: () => call('DELETE', '/api/me/avatar'),
     disableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/disable`),
     enableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/enable`),
     friends: () => call('GET', '/api/friends'),

@@ -36,6 +36,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.Property(x => x.DisplayName).HasMaxLength(60);
             // On for everyone who was here before the switch existed, too: the database says so, not only the C# default.
             e.Property(x => x.ShareReadReceipts).HasDefaultValue(true);
+            // A picture is fetched by its own id: each belongs to one person.
+            e.HasIndex(x => x.AvatarId).IsUnique();
         });
 
         b.Entity<Session>(e =>
