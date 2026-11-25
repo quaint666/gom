@@ -117,8 +117,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    * it yet): then the viewer steps only through that message's pictures.
    */
   let viewer: { conversation: string; attachmentId: string; local: string | null } | null = null;
-  /** After the next draw, move the viewer's strip to the current picture: at once (on opening, or when pictures came in front) or smoothly (a step). */
-  let viewerSync: ScrollBehavior | null = null;
+  /** After the next draw, move the viewer's strip to the current picture, at once: on opening, on a step, or when pictures came in front. */
+  let viewerSync = false;
   let trayKey = 0;
   let infoOpen = ((): boolean => { try { return localStorage.getItem('gom-info') === '1'; } catch { return false; } })();
   const people = new Map<string, GroupMember[]>();
@@ -317,14 +317,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** Opens the viewer on a picture. A sent one is looked up in the conversation's list, so the viewer can go on to the other messages' pictures. */
   function openViewer(conversation: string, attachmentId: string, local: string | null): void {
     viewer = { conversation, attachmentId, local };
-    viewerSync = 'instant';
+    viewerSync = true;
     update();
     if (local === null) void findInList(conversation, attachmentId);
   }
 
   function closeViewer(): void {
     viewer = null;
-    viewerSync = null;
+    viewerSync = false;
     update();
   }
 
@@ -356,7 +356,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const next = slides[i + by];
     if (next === undefined) return;
     v.attachmentId = next.attachment.id;
-    viewerSync = 'smooth';
+    viewerSync = true;
     update();
   }
 
@@ -623,7 +623,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       list.hasMore = result.data.hasMore;
       list.loaded = true;
       // Older pictures come in front of the one the viewer shows: the strip is moved so the same picture stays in view.
-      if (kind === 'image' && viewer?.conversation === id && viewerSync === null) viewerSync = 'instant';
+      if (kind === 'image' && viewer?.conversation === id) viewerSync = true;
     }
     update();
   }
@@ -860,12 +860,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (typeof d.showModal === 'function') d.showModal(); else d.setAttribute('open', '');
     }
     const track = root.querySelector<HTMLElement>('[data-viewer-track]');
-    if (viewer === null || viewerSync === null || track === null || track.clientWidth <= 0) return;
+    if (viewer === null || !viewerSync || track === null || track.clientWidth <= 0) return;
     const i = slidesOf(viewer).findIndex((s) => s.attachment.id === viewer!.attachmentId);
     const left = Math.max(0, i) * track.clientWidth;
-    if (viewerSync === 'smooth' && typeof track.scrollTo === 'function' && matchMedia?.('(prefers-reduced-motion: no-preference)').matches) track.scrollTo({ left, behavior: 'smooth' });
-    else track.scrollLeft = left;
-    viewerSync = null;
+    track.scrollLeft = left;
+    viewerSync = false;
   }
 
   // ---- the person's actions
@@ -1008,7 +1007,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (c === undefined) { if (chats !== null) void refreshList(); return; }
 
     // A message taken back leaves the viewer (if its picture was the one shown, the viewer is gone); the others keep their place.
-    if (event.kind === 'deleted' && viewer?.conversation === conversation) viewerSync ??= 'instant';
+    if (event.kind === 'deleted' && viewer?.conversation === conversation) viewerSync = true;
 
     // The side panel's list follows: a new message's pictures and files join it, a message taken back leaves it, changed words follow.
     const lists = mediaLists.get(conversation);
@@ -1434,7 +1433,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Takes a message out of this device's view: it goes from the thread, and the list is asked again (the preview may have changed). */
   function drop(conversation: string, messageId: string): void {
-    if (viewer?.conversation === conversation) viewerSync ??= 'instant';
+    if (viewer?.conversation === conversation) viewerSync = true;
     const lists = mediaLists.get(conversation);
     if (lists !== undefined) for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.filter((i) => i.messageId !== messageId);
     const t = threads.get(conversation);
