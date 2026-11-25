@@ -328,6 +328,46 @@ describe('chat: live updates', () => {
     expect(h.api.markRead).toHaveBeenLastCalledWith(C1, 2);
   });
 
+  describe('when the server says to slow down', () => {
+    const waits = (h: Harness) => h.timers.filter((t) => t.live);
+
+    it('asks again about that conversation after a moment, from where this device is', async () => {
+      const h = start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh'), msg(2, 'minh')] } });
+      await flush();
+      h.live.sync.mockClear();
+      h.handlers().slow(C1);
+      expect(h.live.sync).not.toHaveBeenCalled();     // not at once
+      expect(waits(h).at(-1)!.ms).toBe(1000);
+      waits(h).at(-1)!.fn();
+      expect(h.live.sync).toHaveBeenCalledTimes(1);
+      expect(h.live.sync).toHaveBeenCalledWith(C1, 2);
+    });
+
+    it('waits once however many times it is told, and can be told again after asking', async () => {
+      const h = start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh')] } });
+      await flush();
+      h.live.sync.mockClear();
+      const before = waits(h).length;
+      h.handlers().slow(C1); h.handlers().slow(C1); h.handlers().slow(C1);
+      expect(waits(h).length).toBe(before + 1);
+      waits(h).at(-1)!.fn();
+      expect(h.live.sync).toHaveBeenCalledTimes(1);
+      h.handlers().slow(C1);
+      expect(waits(h).length).toBe(before + 1);        // the first wait is spent; this is a new one
+      waits(h).at(-1)!.fn();
+      expect(h.live.sync).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not ask for a conversation this device has not opened', async () => {
+      const h = start({ path: `/c/${C1}`, chats, history: { [C1]: [msg(1, 'minh')] } });
+      await flush();
+      h.live.sync.mockClear();
+      h.handlers().slow(C2);
+      waits(h).at(-1)!.fn();
+      expect(h.live.sync).not.toHaveBeenCalled();
+    });
+  });
+
   it('lets a message from someone else rise in once, and not the ones already there', async () => {
     vi.useFakeTimers();
     try {

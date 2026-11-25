@@ -23,6 +23,8 @@ export interface LiveHandlers {
   pins(conversation: string): void;
   /** You deleted this message for yourself, on another device: drop it here too. */
   hidden(conversation: string, message: string): void;
+  /** The server turned away a request to catch up (too many too fast): ask again about this conversation in a moment. */
+  slow(conversation: string): void;
   /** The session ended: stop trying and go to sign-in. */
   ended(): void;
   /** Another window took this one's place: stop trying (or two windows would take turns forever). */
@@ -95,7 +97,7 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
     s.onmessage = (e) => {
       if (socket !== s) return;
       lastFrameAt = deps.now();
-      let frame: { t?: unknown; c?: unknown; u?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown; m?: unknown };
+      let frame: { t?: unknown; c?: unknown; u?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown; m?: unknown; error?: unknown };
       try { frame = JSON.parse(e.data) as typeof frame; } catch { return; }
       if (typeof frame !== 'object' || frame === null) return;
       if (frame.t === 'ready') { ready = true; attempt = 0; handlers.state(true); }
@@ -104,6 +106,7 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
       else if (frame.t === 'read' && typeof frame.c === 'string' && typeof frame.u === 'string' && typeof frame.seq === 'number') handlers.read(frame.c, frame.u, frame.seq);
       else if (frame.t === 'pins' && typeof frame.c === 'string') handlers.pins(frame.c);
       else if (frame.t === 'hidden' && typeof frame.c === 'string' && typeof frame.m === 'string') handlers.hidden(frame.c, frame.m);
+      else if (frame.t === 'error' && frame.error === 'slow_down' && typeof frame.c === 'string') handlers.slow(frame.c);
       else if (frame.t === 'events' && typeof frame.c === 'string' && Array.isArray(frame.events)) handlers.events(frame.c, frame.events as ChatEvent[], frame.hasMore === true);
     };
     s.onclose = (e) => {

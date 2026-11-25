@@ -29,6 +29,8 @@ export interface OutboxItem { conversation: string; clientId: string; body: stri
 
 /** How many pictures and files one message may carry (the server's limit is the same by default). */
 const MAX_ATTACHMENTS = 10;
+/** How long to wait before asking again after the server said "slow down". */
+const SLOW_RETRY_MS = 1000;
 /** How many uploads go up at the same time. */
 const UPLOADS_AT_ONCE = 2;
 
@@ -113,6 +115,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const people = new Map<string, GroupMember[]>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
   let found: string | null = null;
+  /** Conversations whose catch-up the server turned away and that are waiting to ask again. */
+  const slowWaiting = new Set<string>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
   /** The message being passed on, while the person picks where to. */
@@ -1242,6 +1246,16 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       for (const e of events) apply(conversation, e);
       const last = events[events.length - 1];
       if (hasMore && last !== undefined) live?.sync(conversation, last.seq);
+    },
+    slow(conversation) {
+      // Too many catch-up requests too fast: wait a moment and ask again from where this device really is (one wait per conversation).
+      if (slowWaiting.has(conversation)) return;
+      slowWaiting.add(conversation);
+      deps.timer.set(() => {
+        slowWaiting.delete(conversation);
+        const t = threads.get(conversation);
+        if (t?.loaded) live?.sync(conversation, t.cursor);
+      }, SLOW_RETRY_MS);
     },
     ended: () => go('/sign-in'),
     replaced() { notice = 'Gom đang mở ở nơi khác nên kết nối ở đây đã ngắt. Hãy tải lại trang để kết nối lại.'; update(); },

@@ -21,6 +21,12 @@ public sealed class ChatOptions
     public int MaxBadFrames { get; set; } = 5;
     /// <summary>How often a socket is sent a small "still here" message, in seconds. Anything in the path that cuts idle connections sees traffic, and the page can tell a dead connection from a quiet one.</summary>
     public int HeartbeatSeconds { get; set; } = 25;
+    /// <summary>How many "sync" requests (a device asking for what it missed) one socket may make in a quick burst. A catch-up page is 200 events, so this is plenty.</summary>
+    public int SyncBurst { get; set; } = 10;
+    /// <summary>After the burst, how many more per second. A request over the limit is answered with "slow_down" and the page asks again a moment later.</summary>
+    public double SyncPerSecond { get; set; } = 2;
+    /// <summary>Requests turned away in a row before the socket is closed (1013); a request that is let through starts the count again. A page that waits as told never gets near this.</summary>
+    public int MaxSlowSyncs { get; set; } = 5;
     /// <summary>How many messages may be pinned in one conversation.</summary>
     public int MaxPins { get; set; } = 3;
 }
