@@ -44,8 +44,8 @@ export interface FriendLists { friends: Person[]; incoming: FriendRequest[]; out
 export interface Sender { id: string; displayName: string }
 /** One emoji on a message and the members who chose it. */
 export interface Reaction { emoji: string; users: Sender[] }
-/** The quote above an answer. With no sender and no snippet, the quoted message is not there for this reader. */
-export interface Reply { id: string; sender: Sender | null; snippet: string | null }
+/** The quote above an answer. With no sender and no snippet, the quoted message is not there for this reader. A quoted sticker comes as its code. */
+export interface Reply { id: string; sender: Sender | null; snippet: string | null; sticker?: string | null }
 /** A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb. */
 export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null }
 /** One picture or file in the side panel's list, with the message it belongs to. */
@@ -54,11 +54,13 @@ export interface MediaItem { attachment: Attachment; messageId: string; seq: num
 /** What the page behind the first address in a message says about itself. The picture, if any, is at /api/attachments/{imageId}/thumb. */
 /** A line in a group's thread that says what happened (who was added or taken out, who left, a new name): not something anyone wrote. */
 export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed'; target?: Sender | null; title?: string | null }
-export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null }
+export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
+  /** Set when the message is one sticker (its code): then it has no words and no files. */
+  sticker?: string | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
-export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'file' | null }
+export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'file' | null; sticker?: string | null }
 /** How much a notification on this device says: who and where, or only "Tin nhắn mới". */
 export type PushLevel = 'name' | 'nothing';
 export interface PushState { key: string; subscribed: boolean; level: PushLevel }
@@ -130,6 +132,8 @@ export interface Api {
   reads(conversation: string): Promise<Result<{ enabled: boolean; reads: { userId: string; seq: number }[] }>>;
   setReceipts(enabled: boolean): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string, replyTo?: string, attachments?: string[]): Promise<Result<ChatMessage>>;
+  /** Sends one sticker, the whole message (no words, no files). */
+  sendSticker(conversation: string, clientId: string, sticker: string, replyTo?: string): Promise<Result<ChatMessage>>;
   /** The pictures ("image") or files ("file") of a conversation, newest first; `before` is the seq of the last item of the page you have. */
   media(conversation: string, kind: 'image' | 'file', before?: number): Promise<Result<{ items: MediaItem[]; hasMore: boolean }>>;
   /** Copies a picture or file you may see into another conversation as a new upload of yours (not yet in a message): this is how it is forwarded. */
@@ -249,6 +253,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
     history: (conversation, before) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}`),
     send: (conversation, clientId, body, replyTo, attachments) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body, replyTo, ...(attachments && attachments.length > 0 ? { attachments } : {}) }),
+    sendSticker: (conversation, clientId, sticker, replyTo) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, sticker, replyTo }),
     createGroup: (title, members) => call('POST', '/api/conversations/group', { title, members }),
     groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
     person: (userId) => call('GET', `/api/people/${enc(userId)}`),

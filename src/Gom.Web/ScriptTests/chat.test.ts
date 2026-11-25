@@ -4052,3 +4052,150 @@ describe('chat: profile pictures', () => {
     expect(root.querySelector(`[data-chat="${C2}"] .av`)!.textContent).toBe('M');
   });
 });
+
+describe('chat: stickers', () => {
+  beforeEach(() => { try { localStorage.clear(); } catch { /* none */ } });
+  const sticker = (seq: number, from: 'mom' | 'minh', code: string): ChatMessage => ({ ...msg(seq, from, ''), sticker: code });
+  const open = (extra: Record<string, unknown> = {}, messages: ChatMessage[] = [msg(1, 'minh', 'chào mẹ')], chats = [chat(C1, 'Minh', { lastSeq: messages.length }), chat(C2, 'Lan')]) =>
+    start({ path: `/c/${C1}`, chats, history: { [C1]: messages }, api: extra });
+  const echo = () => vi.fn(async (conversation: string, clientId: string, code: string, replyTo?: string) =>
+    ok({ ...sticker(9, 'mom', code), conversationId: conversation, id: `s-${clientId}`, clientId, ...(replyTo ? { reply: { id: replyTo, sender: null, snippet: null } } : {}) }));
+  const panel = () => root.querySelector('[data-sticker-panel]');
+  const toggle = async () => { root.querySelector<HTMLButtonElement>('[data-stickers]')!.click(); await flush(); };
+  const tap = async (code: string, where = '[data-all-stickers]') => { root.querySelector<HTMLButtonElement>(`${where} [data-send-sticker="${code}"]`)!.click(); await flush(); await flush(); };
+
+  it('opens a panel of all 48 stickers from the smiley, with the credit, and closes it again', async () => {
+    open();
+    await flush();
+    expect(panel()).toBeNull();
+    await toggle();
+    expect(root.querySelector('[data-stickers]')!.getAttribute('aria-expanded')).toBe('true');
+    expect(panel()!.querySelectorAll('[data-all-stickers] [data-send-sticker]')).toHaveLength(48);
+    expect(root.querySelector('[data-send-sticker="1f602"]')!.getAttribute('aria-label')).toBe('Gửi nhãn dán 😂');
+    expect(root.querySelector<HTMLImageElement>('[data-send-sticker="1f602"] img')!.getAttribute('src')).toBe('/stickers/1f602.svg');
+    expect(text(panel()!)).toContain('Noto Emoji của Google');
+    await toggle();
+    expect(panel()).toBeNull();
+  });
+
+  it('sends a sticker at once with a tap, shows it as a picture while it goes, and keeps the panel open', async () => {
+    let finish: (r: unknown) => void = () => undefined;
+    const sendSticker = vi.fn((_c: string, clientId: string, code: string) => new Promise((resolve) => { finish = () => resolve(ok({ ...sticker(2, 'mom', code), clientId })); }));
+    open({ sendSticker });
+    await flush();
+    await toggle();
+    await tap('1f602');
+    expect(sendSticker).toHaveBeenCalledWith(C1, 'new-1', '1f602', undefined);
+    const pending = root.querySelector('[data-msg="new-1"]')!;
+    expect(pending.getAttribute('data-state')).toBe('sending');
+    expect(pending.classList.contains('sticker')).toBe(true);
+    expect(pending.querySelector<HTMLImageElement>('img.stk')!.getAttribute('src')).toBe('/stickers/1f602.svg');
+    expect(panel()).not.toBeNull();
+    finish(undefined);
+    await flush();
+    expect(root.querySelector('[data-msg="id2"] img.stk')).not.toBeNull();
+  });
+
+  it('puts the stickers sent last at the top of the panel, newest first, on this device', async () => {
+    open({ sendSticker: echo() });
+    await flush();
+    await toggle();
+    expect(root.querySelector('[data-recent-stickers]')).toBeNull();
+    await tap('1f602');
+    await tap('2764');
+    await tap('1f602');
+    const recent = [...root.querySelectorAll('[data-recent-stickers] [data-send-sticker]')].map((b) => b.getAttribute('data-send-sticker'));
+    expect(recent).toEqual(['1f602', '2764']);
+    expect(text(panel()!)).toContain('Gần đây');
+  });
+
+  it('closes the panel when the message field is used, or on Escape', async () => {
+    open();
+    await flush();
+    await toggle();
+    root.querySelector<HTMLTextAreaElement>('.composer textarea')!.dispatchEvent(new FocusEvent('focus'));
+    await flush();
+    expect(panel()).toBeNull();
+    await toggle();
+    panel()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(panel()).toBeNull();
+  });
+
+  it('shows a sticker it received as a picture without a bubble, with no copy or edit in its menu', async () => {
+    open({}, [sticker(1, 'mom', '1f44d')]);
+    await flush();
+    const row = root.querySelector('[data-msg="id1"]')!;
+    expect(row.classList.contains('sticker')).toBe(true);
+    expect(row.querySelector('img.stk')!.getAttribute('alt')).toBe('Nhãn dán 👍');
+    expect(row.querySelector('.txt')).toBeNull();
+    row.querySelector<HTMLButtonElement>('button[data-menu]')!.click();
+    await flush();
+    expect(root.querySelector('[data-copy]')).toBeNull();
+    expect(root.querySelector('[data-edit]')).toBeNull();
+    expect(root.querySelector('[data-forward]')).not.toBeNull();
+    expect(root.querySelector('[data-recall]')).not.toBeNull();
+  });
+
+  it('answers a sticker: the bar and the quote say "Nhãn dán", and a sticker can be the answer', async () => {
+    const sendSticker = echo();
+    open({ sendSticker }, [sticker(1, 'minh', '1f382'), { ...msg(2, 'mom', 'cảm ơn'), reply: { id: 'id1', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: '', sticker: '1f382' } }]);
+    await flush();
+    const quote = root.querySelector('[data-msg="id2"] [data-quote]')!;
+    expect(text(quote)).toContain('Nhãn dán');
+    expect(quote.querySelector('img')!.getAttribute('src')).toBe('/stickers/1f382.svg');
+
+    root.querySelector<HTMLButtonElement>('[data-msg="id1"] [data-quick-reply]')!.click();
+    await flush();
+    expect(text(root.querySelector('[data-replybar]')!)).toContain('Nhãn dán');
+    await toggle();
+    await tap('1f44d');
+    expect(sendSticker).toHaveBeenCalledWith(C1, 'new-1', '1f44d', 'id1');
+    expect(root.querySelector('[data-replybar]')).toBeNull();
+  });
+
+  it('says "Đã gửi một nhãn dán" in the list for a sticker', async () => {
+    const last = sticker(1, 'minh', '1f602');
+    start({ chats: [withLast(last, { lastMessage: { seq: 1, body: '', createdAt: last.createdAt, sender: last.sender, sticker: '1f602' } })] });
+    await flush();
+    expect(text(root.querySelector(`[data-chat="${C1}"] .pv`)!)).toBe('Đã gửi một nhãn dán');
+  });
+
+  it('passes a sticker on as a sticker', async () => {
+    const sendSticker = echo();
+    const send = vi.fn();
+    open({ sendSticker, send }, [sticker(1, 'minh', '1f389')]);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!.click(); await flush();
+    root.querySelector<HTMLButtonElement>('button[data-forward]')!.click(); await flush();
+    expect(root.querySelector('[data-forward-panel] img.fw-stk')!.getAttribute('src')).toBe('/stickers/1f389.svg');
+    const box = root.querySelector<HTMLInputElement>(`[data-forward-pick="${C2}"]`)!;
+    box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-forward-send]')!.click();
+    await flush(); await flush();
+    expect(sendSticker).toHaveBeenCalledWith(C2, expect.any(String), '1f389', undefined);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('keeps a sticker that could not go in the outbox, and sends it as a sticker after a reload', async () => {
+    const h = open({ sendSticker: vi.fn(async () => fail('network', 0)) });
+    await flush();
+    await toggle();
+    await tap('1f62d');
+    expect(h.outbox.items).toEqual([{ conversation: C1, clientId: 'new-1', body: '', createdAt: NOW.toISOString(), sticker: '1f62d' }]);
+
+    const again = vi.fn(async (_c: string, clientId: string, code: string) => ok({ ...sticker(2, 'mom', code), clientId }));
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], outbox: h.outbox.items, api: { sendSticker: again } });
+    await flush(); await flush();
+    expect(again).toHaveBeenCalledWith(C1, 'new-1', '1f62d', undefined);
+  });
+
+  it('offers no stickers while a message is being edited', async () => {
+    open({}, [msg(1, 'mom', 'sửa tôi')]);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!.click(); await flush();
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click(); await flush();
+    expect(root.querySelector('[data-stickers]')).toBeNull();
+  });
+});
