@@ -1,6 +1,7 @@
 // Gom's service worker. It does two small things: it shows a "no connection" page when a page cannot be fetched, and it keeps
 // the scripts, styles, fonts and icons so the app opens faster. It never touches /api or the socket, and never stores a page,
-// so nothing of what people wrote is kept here. Files are not fingerprinted, so they are fetched from the network first and the
+// so nothing of what people wrote is kept here. Pages load fingerprinted copies of the script and the styles (a new version has a
+// new name); fonts, icons and the plain names are not fingerprinted. Either way a file is fetched from the network first and the
 // stored copy is only the fallback: an update arrives as soon as there is a connection.
 const STATIC = 'gom-static-v1';
 const OFFLINE = '/offline.html';

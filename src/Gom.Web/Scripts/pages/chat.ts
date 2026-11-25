@@ -2,7 +2,7 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, Reply, User } from '../api.js';
+import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, Reply, User } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
@@ -128,6 +128,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const slowWaiting = new Set<string>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
+  /**
+   * Someone's card, opened from a member of a group, a sender's name or a 1:1 conversation's header. `asking` is the question
+   * before unfriending or blocking.
+   */
+  let card: { userId: string; data: PersonCard | null; error: Failure | null; asking: 'unfriend' | 'block' | null; busy: boolean } | null = null;
+  /** What each card said last: the "N nhóm chung" under a 1:1 conversation's name comes from here. */
+  const cards = new Map<string, PersonCard>();
+  /** The question before leaving a group from the side panel. */
+  let leaving = false;
   /** What is being passed on, while the person picks where to (at most FORWARD_MAX), with the search over the list and a note to send after it. */
   let forwarding: { body: string; attachments: Attachment[]; picked: string[]; q: string; note: string; busy: boolean } | null = null;
 
@@ -448,7 +457,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? html`<div class="av sm a${avatarTone(m.sender.displayName)}" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
-          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
+          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? 'Đã xem' : 'Đã gửi'}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${!item.mine ? tools : nothing}
       </div>
@@ -633,7 +642,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <div class="info-top">
         <div class="av xl a${avatarTone(c.title ?? '?')}" aria-hidden="true">${initials(c.title ?? '?')}</div>
         <h2>${c.title ?? '…'}</h2>
-        <small>${c.kind === 'group' ? `${c.memberCount ?? 0} thành viên` : c.peer ? `@${c.peer.gomId}` : ''}</small>
+        <small>${c.kind === 'group' ? `${c.memberCount ?? 0} thành viên` : c.peer ? peerLine(c) : ''}</small>
       </div>
       <div class="info-actions">
         <button class="btn secondary small" type="button" data-info-search @click=${() => { searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} Tìm tin nhắn</button>
@@ -647,11 +656,88 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${media(c.id)}
       ${c.kind !== 'group' ? nothing : html`
         <h3>Thành viên</h3>
-        <ul class="info-list">${(people.get(c.id) ?? []).map((m) => html`<li class="info-person" data-info-member=${m.id}>
-          <div class="av sm a${avatarTone(m.displayName)}" aria-hidden="true">${initials(m.displayName)}</div>
-          <span>${m.displayName}${m.isMe ? ' (bạn)' : ''}</span>${m.role === 'leader' ? html`<span class="tag">Nhóm trưởng</span>` : m.role === 'deputy' ? html`<span class="tag">Phó nhóm</span>` : nothing}</li>`)}</ul>
-        <a class="btn secondary small" href="/groups/${c.id}">Quản lý nhóm</a>`}
+        <ul class="info-list">${(people.get(c.id) ?? []).map((m) => {
+          const inside = html`<div class="av sm a${avatarTone(m.displayName)}" aria-hidden="true">${initials(m.displayName)}</div>
+            <span>${m.displayName}${m.isMe ? ' (bạn)' : ''}</span>${m.role === 'leader' ? html`<span class="tag">Nhóm trưởng</span>` : m.role === 'deputy' ? html`<span class="tag">Phó nhóm</span>` : nothing}`;
+          return html`<li data-info-member=${m.id}>${m.isMe ? html`<div class="info-person">${inside}</div>`
+            : html`<button class="info-person" type="button" data-open-card=${m.id} @click=${() => openCard(m.id)}>${inside}</button>`}</li>`;
+        })}</ul>
+        <div class="info-actions">
+          <a class="btn secondary small" href="/groups/${c.id}#add" data-info-add>${icons.users()} Thêm thành viên</a>
+          <a class="btn secondary small" href="/groups/${c.id}">Quản lý nhóm</a>
+          ${leaveView(c)}
+        </div>`}
     </aside>`;
+
+  /** Under a 1:1 conversation's name: their Gom ID, and how many groups you share once their card has been fetched. */
+  function peerLine(c: Conversation): string {
+    const shared = c.peer === null ? undefined : cards.get(c.peer.id)?.commonGroups.length;
+    return [`@${c.peer?.gomId ?? ''}`, shared ? `${shared} nhóm chung` : ''].filter((x) => x !== '').join(' · ');
+  }
+
+  /**
+   * Leaving the group from the side panel, after a question. The leader of a group with others in it hands over first (on the
+   * group's page); a leader alone in it ends the group by leaving, and the question says so.
+   */
+  function leaveView(c: Conversation): TemplateResult {
+    const members = people.get(c.id);
+    const mine = members?.find((m) => m.isMe);
+    if (mine?.role === 'leader' && (members?.length ?? 0) > 1) return html`
+      <button class="btn secondary small" type="button" disabled data-info-leave>Rời nhóm</button>
+      <p class="hint" data-info-leader-note>Chuyển quyền trưởng nhóm cho người khác trước khi rời nhóm.</p>`;
+    if (!leaving) return html`<button class="btn secondary small danger-text" type="button" data-info-leave @click=${() => { leaving = true; update(); }}>Rời nhóm</button>`;
+    return html`
+      <div class="ask" role="group" aria-labelledby="leave-q" data-info-leave-ask>
+        <p id="leave-q"><b>Rời nhóm này?</b>${mine?.role === 'leader' ? html`<br><span class="hint">Bạn là người cuối cùng: nhóm sẽ bị xóa.</span>` : nothing}</p>
+        <button class="btn small" type="button" data-info-leave-yes @click=${() => void leaveGroup(c.id)}>Rời nhóm</button>
+        <button class="btn secondary small" type="button" data-info-leave-no @click=${() => { leaving = false; update(); }}>Ở lại</button>
+      </div>`;
+  }
+
+  /** Someone's card: who they are to you, what you can do, and the groups you are both in. */
+  const cardView = () => {
+    if (card === null) return nothing;
+    const k = card;
+    const p = k.data;
+    const name = p?.displayName ?? '';
+    // A friend request to someone who is not a friend goes through a group you are both in (an id alone is no way to find people).
+    const via = p?.commonGroups[0]?.id ?? null;
+    const close = () => { card = null; update(); };
+    return html`
+      <dialog class="pcard" aria-labelledby="pcard-name" data-person-card data-modal @close=${close}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
+        <div class="pcard-head"><button class="ib" type="button" data-close-card aria-label="Đóng" @click=${close}>${icons.close()}</button></div>
+        ${p === null ? (k.error === null ? html`<p class="hint" role="status">Đang tải…</p>` : errorBox(k.error)) : html`
+          <div class="pcard-top">
+            <div class="av xl a${avatarTone(name)}" aria-hidden="true">${initials(name)}</div>
+            <h2 id="pcard-name">${name}</h2>
+            ${p.gomId === null ? nothing : html`<small>@${p.gomId}</small>`}
+          </div>
+          ${k.error === null ? nothing : errorBox(k.error)}
+          ${k.asking !== null ? html`
+            <div class="ask" role="group" aria-labelledby="card-q" data-card-ask>
+              <p id="card-q"><b>${k.asking === 'unfriend' ? `Xóa bạn với ${name}?` : `Chặn ${name}?`}</b><br>
+                <span class="hint">${k.asking === 'unfriend' ? 'Hai người vẫn đọc được tin nhắn cũ, nhưng không nhắn thêm được cho đến khi kết bạn lại.'
+                  : `${name} sẽ không còn là bạn của bạn và không gửi được lời mời cho bạn. Bạn có thể bỏ chặn sau.`}</span></p>
+              <button class="btn small" type="button" data-card-yes ?disabled=${k.busy} @click=${() => void cardAction(k.asking === 'unfriend' ? () => api.unfriend(p.gomId!) : () => api.block(p.gomId!))}>${k.asking === 'unfriend' ? 'Xóa bạn' : 'Chặn'}</button>
+              <button class="btn secondary small" type="button" data-card-no @click=${() => { k.asking = null; update(); }}>Không</button>
+            </div>` : html`
+            <div class="pcard-actions">
+              ${p.friend === 'friends' && p.gomId !== null ? html`<button class="btn small" type="button" data-card-message ?disabled=${k.busy} @click=${() => void messageFrom(p.gomId!)}>Nhắn tin</button>` : nothing}
+              ${p.friend === 'sent' ? html`<span class="tag" data-card-sent>Đã gửi lời mời kết bạn</span>` : nothing}
+              ${(p.friend === 'none' || p.friend === 'received') && via !== null ? html`<button class="btn small" type="button" data-card-befriend ?disabled=${k.busy}
+                @click=${() => void cardAction(() => api.askMember(via, p.id))}>${p.friend === 'received' ? 'Chấp nhận kết bạn' : 'Kết bạn'}</button>` : nothing}
+              ${p.friend === 'friends' && p.gomId !== null ? html`
+                <button class="btn secondary small" type="button" data-card-unfriend @click=${() => { k.asking = 'unfriend'; update(); }}>Xóa bạn</button>
+                <button class="btn secondary small danger-text" type="button" data-card-block @click=${() => { k.asking = 'block'; update(); }}>Chặn</button>` : nothing}
+            </div>`}
+          ${p.commonGroups.length === 0 ? nothing : html`
+            <h3>Nhóm chung (${p.commonGroups.length})</h3>
+            <ul class="info-list" data-card-groups>${p.commonGroups.map((g) => html`<li>
+              <button class="info-person" type="button" data-card-group=${g.id} @click=${() => { card = null; open(g.id); }}>
+                ${avatar(g.title ?? '?')}<span>${g.title ?? '…'}</span><small>${g.memberCount} thành viên</small></button></li>`)}</ul>`}`}
+      </dialog>`;
+  };
 
   function threadPane(): TemplateResult {
     const c = chatOf(openId);
@@ -669,7 +755,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <header class="th-head">
           <a class="ib back" href="/" aria-label="Quay lại" @click=${onBack}>${icons.back()}</a>
           ${avatar(c?.title ?? '?')}
-          <div class="th-title"><b>${c?.title ?? '…'}</b>${c?.peer ? html`<small>@${c.peer.gomId}</small>` : nothing}${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>
+          ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${`Xem thông tin ${c.title ?? ''}`} @click=${() => openCard(c.peer!.id)}>
+              <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
+            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${c.memberCount ?? 0} thành viên</small>` : nothing}</div>`}
           ${c === undefined ? nothing : html`<button class="ib" type="button" data-search aria-label="Tìm trong cuộc trò chuyện" aria-expanded=${searching ? 'true' : 'false'}
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
           <button class="ib" type="button" data-mute aria-pressed=${c.muted ? 'true' : 'false'}
@@ -689,6 +777,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${t.stick ? nothing : html`<button class="toend" type="button" data-to-end aria-label="Xuống tin mới nhất" @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}</button>`}
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${t.below} tin mới</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
+        ${cardView()}
         ${t.editing === null ? nothing : html`
           <div class="replybar" data-editbar>
             <div class="rb-text"><b>Đang chỉnh sửa tin nhắn</b></div>
@@ -830,8 +919,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     t.stick = true;
     t.jump = t.unreadAtOpen > 0;
     t.below = 0;
+    leaving = false;
     update();
     if (!t.loaded) void loadHistory(id);
+    // A 1:1 conversation says under the name how many groups you share: that comes from the person's card.
+    if (c?.peer && !cards.has(c.peer.id)) void loadCard(c.peer.id);
     else markRead(id);
     if (infoOpen) { void loadPeople(id); void loadMedia(id, 'image'); void loadMedia(id, 'file'); }
   }
@@ -1186,6 +1278,79 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (note === '' || passed.kind === 'failed') return passed;
     const said = await outcome(queue(note, []));
     return said.kind === 'sent' ? passed : said;
+  }
+
+  // ---- someone's card
+
+  /** Opens the card of this person, showing what was fetched before while it asks again. */
+  function openCard(userId: string): void {
+    menu = null;
+    card = { userId, data: cards.get(userId) ?? null, error: null, asking: null, busy: false };
+    update();
+    void loadCard(userId);
+  }
+
+  /** Fetches a card, keeps it for the 1:1 header, and shows it if that card is still the one open. Quietly does nothing more on a failure when no card is open. */
+  async function loadCard(userId: string): Promise<void> {
+    const result = await api.person(userId);
+    if (result.ok) {
+      cards.set(userId, result.data);
+      if (card?.userId === userId) { card.data = result.data; card.error = null; }
+    } else if (result.error === 'unauthorized') { go('/sign-in'); return; }
+    else if (card?.userId === userId) card.error = result;
+    update();
+  }
+
+  /** A friend request, unfriending or blocking from the card: then the card, the group's members and the list are asked again. */
+  async function cardAction(call: () => Promise<{ ok: true } | Failure>): Promise<void> {
+    const k = card;
+    if (k === null || k.busy) return;
+    k.busy = true;
+    update();
+    const result = await call();
+    k.busy = false;
+    k.asking = null;
+    if (!result.ok) {
+      if (result.error === 'unauthorized') { go('/sign-in'); return; }
+      k.error = result;
+      update();
+      return;
+    }
+    k.error = null;
+    for (const id of people.keys()) people.delete(id);
+    if (openId !== null) void loadPeople(openId);
+    void refreshList();
+    await loadCard(k.userId);
+  }
+
+  /** "Nhắn tin" on a friend's card: their 1:1 conversation, made if it is not there yet. */
+  async function messageFrom(gomId: string): Promise<void> {
+    const k = card;
+    if (k === null) return;
+    k.busy = true;
+    update();
+    const result = await api.openDirect(gomId);
+    k.busy = false;
+    if (!result.ok) {
+      if (result.error === 'unauthorized') { go('/sign-in'); return; }
+      k.error = result;
+      update();
+      return;
+    }
+    card = null;
+    if (chatOf(result.data.id) === undefined) await refreshList();
+    open(result.data.id);
+  }
+
+  async function leaveGroup(id: string): Promise<void> {
+    const result = await api.leaveGroup(id);
+    leaving = false;
+    if (!result.ok) { handleFailure(result); return; }
+    chats = (chats ?? []).filter((c) => c.id !== id);
+    deps.nav.push('/');
+    openId = null;
+    update();
+    void refreshList();
   }
 
   // ---- searching

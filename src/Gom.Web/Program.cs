@@ -103,6 +103,7 @@ app.MapAccount();
 app.MapFriends();
 app.MapConversations();
 app.MapGroups();
+app.MapPeople();
 app.MapMessages();
 app.MapAttachments();
 app.MapReceipts();

@@ -112,7 +112,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
         <ul class="list">${members.map(memberRow)}</ul>
 
         ${addable().length === 0 ? nothing : html`
-          <h2 class="section">Thêm thành viên</h2>
+          <h2 class="section" id="add">Thêm thành viên</h2>
           <ul class="list">${addable().map((f) => html`
             <li class="li" data-addable=${f.gomId}>
               <div class="t"><b>${f.displayName}</b><small>@${f.gomId}</small></div>
