@@ -26,11 +26,43 @@ public class SignInThrottleTests
     private readonly FakeClock _clock = new();
     private SignInThrottle New(int maxEntries = 10_000) => new(_clock, maxEntries);
 
+    /// <summary>One wrong password, as the app makes it: wait out any wait, then begin (which counts it).</summary>
+    private void Fail(SignInThrottle t, string ip, string gomId)
+    {
+        _clock.Advance(t.Wait(ip, gomId));
+        Assert.Equal(TimeSpan.Zero, t.Begin(ip, gomId));
+    }
+
+    [Fact]
+    public void Attempts_sent_together_meet_the_wait_too_because_each_is_counted_before_it_is_checked()
+    {
+        var t = New();
+        var let = Enumerable.Range(0, 30).Count(_ => t.Begin("1.1.1.1", "me") == TimeSpan.Zero);
+        Assert.Equal(3, let);
+    }
+
+    [Fact]
+    public void An_attempt_that_was_never_checked_does_not_count()
+    {
+        var t = New();
+        for (var i = 0; i < 3; i++) { t.Begin("1.1.1.1", "me"); t.Undo("1.1.1.1", "me"); }
+        Assert.Equal(TimeSpan.Zero, t.Wait("1.1.1.1", "me"));
+    }
+
+    [Fact]
+    public void Right_passwords_from_one_address_never_slow_it()
+    {
+        // A family behind one address, each signing in.
+        var t = New();
+        for (var i = 0; i < 10; i++) { Assert.Equal(TimeSpan.Zero, t.Begin("1.1.1.1", "person" + i)); t.Succeeded("1.1.1.1", "person" + i); }
+        Assert.Equal(TimeSpan.Zero, t.Wait("1.1.1.1", "someone"));
+    }
+
     [Fact]
     public void The_first_failures_are_free()
     {
         var t = New();
-        for (var i = 0; i < 2; i++) t.Failed("1.1.1.1", "me");
+        for (var i = 0; i < 2; i++) Fail(t, "1.1.1.1", "me");
         Assert.Equal(TimeSpan.Zero, t.Wait("1.1.1.1", "me"));
     }
 
@@ -38,11 +70,11 @@ public class SignInThrottleTests
     public void After_three_failures_the_wait_doubles_each_time()
     {
         var t = New();
-        for (var i = 0; i < 3; i++) t.Failed("1.1.1.1", "me");
+        for (var i = 0; i < 3; i++) Fail(t, "1.1.1.1", "me");
         Assert.Equal(TimeSpan.FromSeconds(1), t.Wait("1.1.1.1", "me"));
-        t.Failed("1.1.1.1", "me");
+        Fail(t, "1.1.1.1", "me");
         Assert.Equal(TimeSpan.FromSeconds(2), t.Wait("1.1.1.1", "me"));
-        t.Failed("1.1.1.1", "me");
+        Fail(t, "1.1.1.1", "me");
         Assert.Equal(TimeSpan.FromSeconds(4), t.Wait("1.1.1.1", "me"));
     }
 
@@ -50,7 +82,7 @@ public class SignInThrottleTests
     public void The_wait_counts_down_and_is_never_longer_than_a_minute()
     {
         var t = New();
-        for (var i = 0; i < 30; i++) t.Failed("1.1.1.1", "me");
+        for (var i = 0; i < 30; i++) Fail(t, "1.1.1.1", "me");
         Assert.Equal(TimeSpan.FromSeconds(60), t.Wait("1.1.1.1", "me"));
         _clock.Advance(TimeSpan.FromSeconds(45));
         Assert.Equal(TimeSpan.FromSeconds(15), t.Wait("1.1.1.1", "me"));
@@ -62,7 +94,7 @@ public class SignInThrottleTests
     public void One_address_trying_many_IDs_is_slowed_whatever_the_ID()
     {
         var t = New();
-        for (var i = 0; i < 3; i++) t.Failed("1.1.1.1", "id" + i);
+        for (var i = 0; i < 3; i++) Fail(t, "1.1.1.1", "id" + i);
         Assert.True(t.Wait("1.1.1.1", "a_new_id") > TimeSpan.Zero);
         Assert.Equal(TimeSpan.Zero, t.Wait("2.2.2.2", "a_new_id"));
     }
@@ -71,7 +103,7 @@ public class SignInThrottleTests
     public void Many_addresses_trying_one_ID_are_slowed_for_that_ID_whatever_the_address()
     {
         var t = New();
-        for (var i = 0; i < 3; i++) t.Failed("9.9.9." + i, "victim");
+        for (var i = 0; i < 3; i++) Fail(t, "9.9.9." + i, "victim");
         Assert.True(t.Wait("5.5.5.5", "victim") > TimeSpan.Zero);
         Assert.Equal(TimeSpan.Zero, t.Wait("5.5.5.5", "someone_else"));
     }
@@ -81,8 +113,8 @@ public class SignInThrottleTests
     {
         // Otherwise an attacker could reset their own address by signing in to an account of their own.
         var t = New();
-        for (var i = 0; i < 4; i++) t.Failed("1.1.1.1", "me");
-        t.Succeeded("me");
+        for (var i = 0; i < 4; i++) Fail(t, "1.1.1.1", "me");
+        t.Succeeded("1.1.1.1", "me");
         Assert.Equal(TimeSpan.Zero, t.Wait("2.2.2.2", "me"));
         Assert.True(t.Wait("1.1.1.1", "me") > TimeSpan.Zero);
     }
@@ -91,10 +123,10 @@ public class SignInThrottleTests
     public void Failures_are_forgotten_after_15_quiet_minutes()
     {
         var t = New();
-        for (var i = 0; i < 6; i++) t.Failed("1.1.1.1", "me");
+        for (var i = 0; i < 6; i++) Fail(t, "1.1.1.1", "me");
         _clock.Advance(TimeSpan.FromMinutes(16));
         Assert.Equal(TimeSpan.Zero, t.Wait("1.1.1.1", "me"));
-        t.Failed("1.1.1.1", "me");
+        Fail(t, "1.1.1.1", "me");
         Assert.Equal(TimeSpan.Zero, t.Wait("1.1.1.1", "me")); // counting starts again from one
     }
 
@@ -102,7 +134,7 @@ public class SignInThrottleTests
     public void Memory_stays_bounded_when_an_attacker_invents_IDs()
     {
         var t = New(maxEntries: 100);
-        for (var i = 0; i < 1_000; i++) t.Failed("1.1.1.1", "made_up_" + i);
+        for (var i = 0; i < 1_000; i++) Fail(t, "10.0." + i, "made_up_" + i);
         Assert.True(t.EntryCount <= 200, $"{t.EntryCount} entries");
     }
 }

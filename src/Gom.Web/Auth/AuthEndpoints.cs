@@ -37,7 +37,7 @@ public static class AuthEndpoints
         var gomId = request.GomId.Trim().ToLowerInvariant();
         var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
-        var wait = throttle.Wait(ip, gomId);
+        var wait = throttle.Begin(ip, gomId);
         if (wait > TimeSpan.Zero)
         {
             http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString();
@@ -54,15 +54,13 @@ public static class AuthEndpoints
             if (user is null) { passwords.BurnTime(password); return PasswordCheck.Wrong; }
             return passwords.Verify(user.PasswordHash, password);
         });
-        if (check is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        if (check is null) { throttle.Undo(ip, gomId); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
 
+        // A wrong password was counted by Begin already.
         if (user is null || user.DisabledAt is not null || check == PasswordCheck.Wrong)
-        {
-            throttle.Failed(ip, gomId);
             return Results.Json(new { error = "invalid_credentials" }, statusCode: StatusCodes.Status401Unauthorized);
-        }
 
-        throttle.Succeeded(gomId);
+        throttle.Succeeded(ip, gomId);
 
         if (check == PasswordCheck.OkRehash)
         {

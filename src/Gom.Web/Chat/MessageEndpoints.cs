@@ -199,6 +199,9 @@ public static class MessageEndpoints
         List<Guid> files;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
+            // The conversation row first, as every other change to a message takes it (edit, react, pin, trims): locked in the other
+            // order, a recall and an edit of one message at the same moment deadlocked, and one of them was a 500.
+            await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
             // Erase first, and only if it is still there: of several recalls at once exactly one gets 1 here.
             var erased = await db.Messages.Where(m => m.Id == messageId && m.DeletedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(m => m.DeletedAt, (DateTimeOffset?)now).SetProperty(m => m.Body, "").SetProperty(m => m.Sticker, (string?)null), ct);

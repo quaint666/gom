@@ -40,7 +40,7 @@ public static class AccountEndpoints
         // A stolen session must not be a free way to guess the password.
         var gomId = http.User.FindFirst(GomClaims.GomId)!.Value;
         var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var wait = throttle.Wait(ip, gomId);
+        var wait = throttle.Begin(ip, gomId);
         if (wait > TimeSpan.Zero)
         {
             http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString();
@@ -51,12 +51,10 @@ public static class AccountEndpoints
         var stored = await db.Users.Where(u => u.Id == me).Select(u => u.PasswordHash).SingleAsync(ct);
         var current = request.Current;
         var check = await limiter.RunAsync(() => passwords.Verify(stored, current));
-        if (check is null) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-        if (check == PasswordCheck.Wrong)
-        {
-            throttle.Failed(ip, gomId);
-            return Results.BadRequest(new { error = "wrong_password" });
-        }
+        if (check is null) { throttle.Undo(ip, gomId); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+        // A wrong password was counted by Begin already; a right one takes its count back.
+        if (check == PasswordCheck.Wrong) return Results.BadRequest(new { error = "wrong_password" });
+        throttle.Succeeded(ip, gomId);
 
         var problem = PasswordPolicy.Check(request.Password);
         if (problem != PasswordProblem.None) return Results.BadRequest(new
@@ -78,7 +76,6 @@ public static class AccountEndpoints
         await tx.CommitAsync(ct);
 
         sockets.CloseUser(me, here);
-        throttle.Succeeded(gomId);
         return Results.NoContent();
     }
 
