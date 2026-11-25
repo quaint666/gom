@@ -9,7 +9,7 @@ public sealed record NoticeDto(string Type, MessageEndpoints.PersonDto? Target, 
 
 /// <summary>
 /// Notices: the lines in a group's thread that say who was added, who was taken out, who left, and what the group was renamed to;
-/// and, in any conversation, that the owner trimmed old pictures and files (naming nobody).
+/// and, in any conversation, that the owner trimmed old pictures and files, or old messages (naming nobody).
 /// A notice takes its place in the stream like a message (so a device that was away gets it from sync, and everyone sees the same
 /// order) but it is not something anyone wrote: it cannot be answered, taken back, edited, pinned, reacted to or searched, does not
 /// count as unread, and is not the "last message" in the list.
@@ -18,12 +18,12 @@ public static class Notices
 {
     private static string Name(NoticeKind kind) => kind switch
     {
-        NoticeKind.Added => "added", NoticeKind.Removed => "removed", NoticeKind.Left => "left", NoticeKind.FilesTrimmed => "filesTrimmed", _ => "renamed",
+        NoticeKind.Added => "added", NoticeKind.Removed => "removed", NoticeKind.Left => "left", NoticeKind.FilesTrimmed => "filesTrimmed", NoticeKind.MessagesTrimmed => "messagesTrimmed", _ => "renamed",
     };
 
     private static NoticeDto Dto(NoticeKind kind, MessageEndpoints.PersonDto? target, string body) => new(Name(kind), target,
         kind == NoticeKind.Renamed ? body : null,
-        kind == NoticeKind.FilesTrimmed ? DateTimeOffset.Parse(body, System.Globalization.CultureInfo.InvariantCulture) : null);
+        kind is NoticeKind.FilesTrimmed or NoticeKind.MessagesTrimmed ? DateTimeOffset.Parse(body, System.Globalization.CultureInfo.InvariantCulture) : null);
 
     /// <summary>
     /// Writes a notice into the stream. <paramref name="text"/> is the new name of a rename, the date of a trim, else empty. Call it inside the transaction that made the change, with the conversation locked. Returns what

@@ -48,6 +48,8 @@ export interface Storage {
 export interface TrimRule { before: string; kind: 'all' | 'image' | 'file'; where: string; minBytes: number | null }
 /** What a trim would remove (a preview) or removed. */
 export interface TrimResult { pictures: Totals; files: Totals; conversations: number }
+/** What a message trim would remove or removed: the messages people wrote, and the pictures and files they carried. */
+export interface MessageTrimResult extends TrimResult { messages: number }
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
 export interface JoinBody { gomId: string; password: string; displayName: string }
 
@@ -71,9 +73,9 @@ export interface MediaItem { attachment: Attachment; messageId: string; seq: num
 /** What the page behind the first address in a message says about itself. The picture, if any, is at /api/attachments/{imageId}/thumb. */
 /**
  * A line in a thread that says what happened (who was added or taken out, who left, a new name; or, in any conversation, that the
- * owner trimmed pictures and files sent before `before`): not something anyone wrote.
+ * owner trimmed pictures and files, or messages, sent before `before`): not something anyone wrote.
  */
-export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed'; target?: Sender | null; title?: string | null; before?: string | null }
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed'; target?: Sender | null; title?: string | null; before?: string | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
   /** Set when the message is one sticker (its code): then it has no words and no files. */
   sticker?: string | null }
@@ -131,6 +133,9 @@ export interface Api {
   trimPreview(rule: TrimRule): Promise<Result<TrimResult>>;
   /** Removes for good what the rule covers; `confirm` is what the owner typed ("Delete"). */
   trimFiles(rule: TrimRule, confirm: string): Promise<Result<TrimResult>>;
+  /** Messages sent before `before`, in `where` ('all', 'direct' or a group's id). */
+  trimMessagesPreview(rule: { before: string; where: string }): Promise<Result<MessageTrimResult>>;
+  trimMessages(rule: { before: string; where: string }, confirm: string): Promise<Result<MessageTrimResult>>;
   resetLink(gomId: string): Promise<Result<Issued>>;
   setNickname(displayName: string): Promise<Result<User>>;
   changePassword(current: string, password: string): Promise<Result<void>>;
@@ -265,6 +270,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     deleteEmptyGroup: (id) => call('DELETE', `/api/owner/groups/${enc(id)}`),
     trimPreview: (rule) => call('POST', '/api/owner/trim/files/preview', rule),
     trimFiles: (rule, confirm) => call('POST', '/api/owner/trim/files', { ...rule, confirm }),
+    trimMessagesPreview: (rule) => call('POST', '/api/owner/trim/messages/preview', rule),
+    trimMessages: (rule, confirm) => call('POST', '/api/owner/trim/messages', { ...rule, confirm }),
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),

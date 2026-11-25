@@ -155,7 +155,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("messages", t =>
             {
                 t.HasCheckConstraint("ck_messages_seq", "seq > 0");
-                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5)");
+                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6)");
                 t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
                 t.HasCheckConstraint("ck_messages_sticker", "sticker IS NULL OR (body = '' AND notice IS NULL)");
             });
@@ -167,8 +167,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.NoticeTargetId).OnDelete(DeleteBehavior.Restrict);
-            // NoAction, not Restrict: ending a group deletes a message and its answers in one statement, and Restrict checks row by row.
-            e.HasOne<Message>().WithMany().HasForeignKey(x => x.ReplyToId).OnDelete(DeleteBehavior.NoAction);
+            // ReplyToId is deliberately not a key: trimming old messages keeps newer answers to them (see Message.ReplyToId).
         });
 
         b.Entity<MessageEvent>(e =>

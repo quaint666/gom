@@ -150,6 +150,48 @@ describe('storage page', () => {
     });
   });
 
+  describe('trimming messages', () => {
+    const result = { messages: 347, pictures: { count: 120, bytes: 400 * MB }, files: { count: 3, bytes: 10 * MB }, conversations: 5 };
+    const set = (selector: string, value: string) => {
+      const el = root.querySelector<HTMLInputElement | HTMLSelectElement>(selector)!;
+      el.value = value;
+      el.dispatchEvent(new Event(el instanceof HTMLSelectElement || el.type !== 'text' ? 'change' : 'input', { bubbles: true }));
+    };
+    const click = async (selector: string) => { root.querySelector<HTMLButtonElement>(selector)!.click(); await flush(); };
+
+    it('previews, then trims only after Delete is typed exactly, and says what went', async () => {
+      const a = api({ trimMessagesPreview: vi.fn(async () => ok(result)), trimMessages: vi.fn(async () => ok(result)) });
+      mountStorage(root, a, vi.fn());
+      await flush();
+      expect(root.querySelector<HTMLButtonElement>('[data-mtrim-preview]')!.disabled).toBe(true);
+      set('#mtrim-day', '2026-01-01'); await flush();
+      set('#mtrim-where', 'direct'); await flush();
+      await click('[data-mtrim-preview]');
+      const rule = { before: new Date('2026-01-01T00:00').toISOString(), where: 'direct' };
+      expect(a.trimMessagesPreview).toHaveBeenCalledWith(rule);
+      expect(text(root.querySelector('[data-mtrim-summary]')!)).toBe('Sẽ xóa vĩnh viễn 347 tin nhắn, kèm 120 ảnh (400 MB) và 3 tệp (10 MB), trong 5 cuộc trò chuyện.');
+      const go = () => root.querySelector<HTMLButtonElement>('[data-mtrim-confirm]')!;
+      set('#mtrim-confirm', 'delete'); await flush();
+      expect(go().disabled).toBe(true);
+      set('#mtrim-confirm', 'Delete'); await flush();
+      await click('[data-mtrim-confirm]');
+      expect(a.trimMessages).toHaveBeenCalledWith(rule, 'Delete');
+      expect(text(root.querySelector('[data-mtrim-done]')!)).toBe('Đã xóa 347 tin nhắn, kèm 120 ảnh (400 MB) và 3 tệp (10 MB), trong 5 cuộc trò chuyện.');
+      expect(a.trimFiles).not.toHaveBeenCalled();
+    });
+
+    it('drops the preview when a choice changes, and says so when nothing matches', async () => {
+      const none = { messages: 0, pictures: { count: 0, bytes: 0 }, files: { count: 0, bytes: 0 }, conversations: 0 };
+      mountStorage(root, api({ trimMessagesPreview: vi.fn(async () => ok(none)) }), vi.fn());
+      await flush();
+      set('#mtrim-day', '2026-01-01'); await flush();
+      await click('[data-mtrim-preview]');
+      expect(text(root.querySelector('[data-mtrim-none]')!)).toBe('Không có tin nhắn nào khớp.');
+      set('#mtrim-where', 'g1'); await flush();
+      expect(root.querySelector('[data-mtrim-none]')).toBeNull();
+    });
+  });
+
   it('writes sizes up to gigabytes', () => {
     expect(formatSize(512)).toBe('512 B');
     expect(formatSize(3 * MB)).toBe('3 MB');

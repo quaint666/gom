@@ -43,13 +43,16 @@ public static class FileTrim
             case "file": kind = AttachmentKind.File; break;
             default: return null;
         }
-        Guid? group = null;
-        if (r.Where is not ("all" or "direct"))
-        {
-            if (!Guid.TryParse(r.Where, out var g) || !await db.Conversations.AnyAsync(c => c.Id == g && c.Kind == ConversationKind.Group, ct)) return null;
-            group = g;
-        }
-        return new Rule(before, kind, r.Where!, group, r.MinBytes ?? 0);
+        var (ok, group) = await ReadPlace(db, r.Where, ct);
+        return ok ? new Rule(before, kind, r.Where!, group, r.MinBytes ?? 0) : null;
+    }
+
+    /// <summary>Where a trim may reach: "all", "direct" (every one-to-one chat, never one alone), or a group's id. Shared with <see cref="MessageTrim"/>.</summary>
+    internal static async Task<(bool Ok, Guid? Group)> ReadPlace(GomDbContext db, string? where, CancellationToken ct)
+    {
+        if (where is "all" or "direct") return (true, null);
+        if (!Guid.TryParse(where, out var g) || !await db.Conversations.AnyAsync(c => c.Id == g && c.Kind == ConversationKind.Group, ct)) return (false, null);
+        return (true, g);
     }
 
     /// <summary>The sent, not yet trimmed pictures and files the rule covers. "Sent before" is the time of the message they are in.</summary>

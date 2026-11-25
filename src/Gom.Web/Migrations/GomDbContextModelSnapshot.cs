@@ -449,9 +449,6 @@ namespace Gom.Web.Migrations
                     b.HasIndex("NoticeTargetId")
                         .HasDatabaseName("ix_messages_notice_target_id");
 
-                    b.HasIndex("ReplyToId")
-                        .HasDatabaseName("ix_messages_reply_to_id");
-
                     b.HasIndex("ConversationId", "Seq")
                         .IsUnique()
                         .HasDatabaseName("ix_messages_conversation_id_seq");
@@ -462,7 +459,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 
@@ -1027,12 +1024,6 @@ namespace Gom.Web.Migrations
                         .HasForeignKey("NoticeTargetId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_messages_notice_target_id");
-
-                    b.HasOne("Gom.Web.Data.Message", null)
-                        .WithMany()
-                        .HasForeignKey("ReplyToId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .HasConstraintName("fk_messages_reply_to_id");
 
                     b.HasOne("Gom.Web.Data.User", null)
                         .WithMany()

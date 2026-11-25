@@ -136,5 +136,6 @@ export function noticeText(m: ChatMessage, me: string): string {
     case 'renamed': return `${who} đã đổi tên nhóm thành "${notice.title ?? ''}"`;
     // The owner did it, but it is not about anyone: no name.
     case 'filesTrimmed': return `Ảnh và tệp gửi trước ${notice.before ? dayFormat.format(new Date(notice.before)) : ''} đã được dọn`;
+    case 'messagesTrimmed': return `Tin nhắn gửi trước ${notice.before ? dayFormat.format(new Date(notice.before)) : ''} đã được dọn`;
   }
 }
