@@ -139,7 +139,9 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
                 t.HasCheckConstraint("ck_conversation_members_read", "last_read_seq >= 0");
                 t.HasCheckConstraint("ck_conversation_members_joined", "joined_seq >= 0");
                 t.HasCheckConstraint("ck_conversation_members_role", "role IN (0, 1, 2)");
+                t.HasCheckConstraint("ck_conversation_members_cleared", "cleared_seq >= 0");
             });
+            e.Property(x => x.MarkedUnread).HasDefaultValue(false);
             e.HasKey(x => new { x.ConversationId, x.UserId });
             e.HasIndex(x => x.UserId);
             e.Property(x => x.Role).HasDefaultValue(GroupRole.Member);

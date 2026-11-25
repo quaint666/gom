@@ -204,6 +204,14 @@ namespace Gom.Web.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
+                    b.Property<long>("ClearedSeq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("cleared_seq");
+
+                    b.Property<long?>("HiddenSeq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("hidden_seq");
+
                     b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("joined_at");
@@ -216,6 +224,12 @@ namespace Gom.Web.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("last_read_seq");
 
+                    b.Property<bool>("MarkedUnread")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("marked_unread");
+
                     b.Property<bool>("Muted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -225,6 +239,10 @@ namespace Gom.Web.Migrations
                     b.Property<DateTimeOffset?>("MutedUntil")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("muted_until");
+
+                    b.Property<DateTimeOffset?>("PinnedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("pinned_at");
 
                     b.Property<int>("Role")
                         .ValueGeneratedOnAdd()
@@ -245,6 +263,8 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("conversation_members", null, t =>
                         {
+                            t.HasCheckConstraint("ck_conversation_members_cleared", "cleared_seq >= 0");
+
                             t.HasCheckConstraint("ck_conversation_members_joined", "joined_seq >= 0");
 
                             t.HasCheckConstraint("ck_conversation_members_read", "last_read_seq >= 0");

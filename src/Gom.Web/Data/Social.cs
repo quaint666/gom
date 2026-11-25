@@ -67,6 +67,14 @@ public class ConversationMember
     public bool Muted { get; set; }
     /// <summary>Muted for a while instead: quiet until this time, then loud again by itself. Never set together with <see cref="Muted"/>.</summary>
     public DateTimeOffset? MutedUntil { get; set; }
+    /// <summary>Pinned to the top of this person's list, the latest pin first. Theirs alone.</summary>
+    public DateTimeOffset? PinnedAt { get; set; }
+    /// <summary>This person marked it unread to come back to it. Their read position does not move (others would see it go back); reading clears it.</summary>
+    public bool MarkedUnread { get; set; }
+    /// <summary>Hidden from this person's list until something newer than this number is said. Theirs alone.</summary>
+    public long? HiddenSeq { get; set; }
+    /// <summary>This person deleted the conversation for themself up to here: like <see cref="JoinedSeq"/>, they see only what comes after.</summary>
+    public long ClearedSeq { get; set; }
 }
 
 /// <summary>The materialized state of one message. The event stream (<see cref="MessageEvent"/>) is what clients follow.</summary>

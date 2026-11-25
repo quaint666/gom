@@ -78,7 +78,7 @@ public static class MessageEndpoints
 
         // A retry of something already stored gets the stored message back, whatever else has changed since.
         var existing = await FindExisting(db, me, clientId, ct);
-        if (existing is not null) return await Same(db, existing, id, sender, access.JoinedSeq, ct);
+        if (existing is not null) return await Same(db, existing, id, sender, access.SeesAfter, ct);
 
         // A sticker is the whole message: no words and no files with it.
         if (request.Sticker is not null && (!Stickers.Allowed.Contains(request.Sticker) || !string.IsNullOrWhiteSpace(request.Body) || request.Attachments is { Count: > 0 }))
@@ -97,7 +97,7 @@ public static class MessageEndpoints
         long? parentSeq = null;
         if (request.ReplyTo is { } parentId)
         {
-            parentSeq = await db.Messages.Where(m => m.Id == parentId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null)
+            parentSeq = await db.Messages.Where(m => m.Id == parentId && m.ConversationId == id && m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null)
                 .Select(m => (long?)m.Seq).SingleOrDefaultAsync(ct);
             if (parentSeq is null) return Error(StatusCodes.Status400BadRequest, "invalid_reply");
         }
@@ -133,7 +133,7 @@ public static class MessageEndpoints
                 await tx.RollbackAsync(ct);
                 db.ChangeTracker.Clear();
                 var winner = await FindExisting(db, me, clientId, ct);
-                return winner is null ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable) : await Same(db, winner, id, sender, access.JoinedSeq, ct);
+                return winner is null ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable) : await Same(db, winner, id, sender, access.SeesAfter, ct);
             }
 
             // The uploads join the message in the order chosen. Of two messages that name the same upload, one takes it and the other is refused.
@@ -145,13 +145,13 @@ public static class MessageEndpoints
                 if (taken == 0) { await tx.RollbackAsync(ct); return Error(StatusCodes.Status400BadRequest, "invalid_attachment"); }
             }
 
-            await db.Members.Where(m => m.ConversationId == id && m.UserId == me && m.LastReadSeq < seq)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.LastReadSeq, seq), ct);
+            await db.Members.Where(m => m.ConversationId == id && m.UserId == me && (m.LastReadSeq < seq || m.MarkedUnread))
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.LastReadSeq, m => m.LastReadSeq < seq ? seq : m.LastReadSeq).SetProperty(m => m.MarkedUnread, false), ct);
             await tx.CommitAsync(ct);
         }
 
         // Only now is it sent: the live delivery and the answer both follow the commit.
-        var reply = (await Replies.For(db, [message], me, access.JoinedSeq, ct)).GetValueOrDefault(message.Id);
+        var reply = (await Replies.For(db, [message], me, access.SeesAfter, ct)).GetValueOrDefault(message.Id);
         var dto = ToDto(message, sender, reply, null, (await MessageAttachments.For(db, [message.Id], ct)).GetValueOrDefault(message.Id));
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
@@ -163,9 +163,9 @@ public static class MessageEndpoints
     private static Task<Message?> FindExisting(GomDbContext db, Guid sender, Guid clientId, CancellationToken ct) =>
         db.Messages.AsNoTracking().Where(m => m.SenderId == sender && m.ClientId == clientId).SingleOrDefaultAsync(ct);
 
-    private static async Task<IResult> Same(GomDbContext db, Message existing, Guid conversation, PersonDto sender, long joinedSeq, CancellationToken ct) =>
+    private static async Task<IResult> Same(GomDbContext db, Message existing, Guid conversation, PersonDto sender, long seesAfter, CancellationToken ct) =>
         existing.ConversationId == conversation
-            ? Results.Ok(ToDto(existing, sender, (await Replies.For(db, [existing], sender.Id, joinedSeq, ct)).GetValueOrDefault(existing.Id), null,
+            ? Results.Ok(ToDto(existing, sender, (await Replies.For(db, [existing], sender.Id, seesAfter, ct)).GetValueOrDefault(existing.Id), null,
                 (await MessageAttachments.For(db, [existing.Id], ct)).GetValueOrDefault(existing.Id)))
             : Error(StatusCodes.Status409Conflict, "client_id_reused");
 
@@ -189,7 +189,7 @@ public static class MessageEndpoints
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
 
-        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.Notice == null).SingleOrDefaultAsync(ct);
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.SeesAfter && m.Notice == null).SingleOrDefaultAsync(ct);
         if (found is null) return Results.NotFound();
         if (found.SenderId != me) return Error(StatusCodes.Status403Forbidden, "not_your_message");
 
@@ -246,7 +246,7 @@ public static class MessageEndpoints
         var pattern = "%" + text.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
         var rows = await (
             from m in db.Messages.AsNoTracking()
-            where m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null
+            where m.ConversationId == id && m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
                 && EF.Functions.ILike(EF.Functions.Unaccent(m.Body), EF.Functions.Unaccent(pattern), "\\")
             orderby m.Seq descending
@@ -269,7 +269,7 @@ public static class MessageEndpoints
             from p in db.Pins.AsNoTracking()
             where p.ConversationId == id
             join m in db.Messages on p.MessageId equals m.Id
-            where m.Seq > access.JoinedSeq && m.DeletedAt == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
+            where m.Seq > access.SeesAfter && m.DeletedAt == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
             join u in db.Users on m.SenderId equals u.Id
             orderby p.CreatedAt descending
             select new { Message = m, u.Id, u.DisplayName }).ToListAsync(ct);
@@ -283,7 +283,7 @@ public static class MessageEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
-        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null
+        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct)) return Results.NotFound();
         if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
 
@@ -323,7 +323,7 @@ public static class MessageEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
-        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null).SingleOrDefaultAsync(ct);
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null).SingleOrDefaultAsync(ct);
         if (found is null) return Results.NotFound();
         if (found.SenderId != me) return Error(StatusCodes.Status403Forbidden, "not_your_message");
         if (found.Sticker is not null) return Error(StatusCodes.Status400BadRequest, "not_editable");   // a sticker has no words to change
@@ -407,7 +407,7 @@ public static class MessageEndpoints
     {
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return (Results.NotFound(), null);
-        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null
+        var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null
             && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)).SingleOrDefaultAsync(ct);
         if (found is null) return (Results.NotFound(), null);
         if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return (Error(StatusCodes.Status403Forbidden, "not_friends"), null);
@@ -436,7 +436,7 @@ public static class MessageEndpoints
         {
             // The quote as the actor sees it; readers who joined after the quoted message get it emptied by the delivery.
             parentSeq = await db.Messages.Where(m => m.Id == parent).Select(m => (long?)m.Seq).SingleOrDefaultAsync(ct);
-            var joined = await db.Members.Where(m => m.ConversationId == current.ConversationId && m.UserId == actor).Select(m => m.JoinedSeq).SingleOrDefaultAsync(ct);
+            var joined = await db.Members.Where(m => m.ConversationId == current.ConversationId && m.UserId == actor).Select(m => m.JoinedSeq > m.ClearedSeq ? m.JoinedSeq : m.ClearedSeq).SingleOrDefaultAsync(ct);
             reply = (await Replies.For(db, [current], actor, joined, ct)).GetValueOrDefault(current.Id);
         }
         var files = await MessageAttachments.For(db, [current.Id], ct);
@@ -455,7 +455,7 @@ public static class MessageEndpoints
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
         // Only what this person can see: "not yours to see" and "no such message" look the same.
-        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.Notice == null, ct)) return Results.NotFound();
+        if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.SeesAfter && m.Notice == null, ct)) return Results.NotFound();
 
         var now = clock.GetUtcNow();
         await db.Database.ExecuteSqlAsync($"INSERT INTO message_hides (user_id, message_id, created_at) VALUES ({me}, {messageId}, {now}) ON CONFLICT DO NOTHING", ct);
@@ -474,14 +474,14 @@ public static class MessageEndpoints
         var take = int.TryParse(limit, out var n) ? Math.Clamp(n, 1, 100) : 50;
         var rows = await (
             from m in db.Messages.AsNoTracking()
-            where m.ConversationId == id && m.Seq > access.JoinedSeq && (before == null || m.Seq < before)
+            where m.ConversationId == id && m.Seq > access.SeesAfter && (before == null || m.Seq < before)
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
             orderby m.Seq descending
             join u in db.Users on m.SenderId equals u.Id
             select new { Message = m, u.Id, u.DisplayName }).Take(take + 1).ToListAsync(ct);
 
         var page = rows.Take(take).ToList();
-        var replies = await Replies.For(db, page.Select(r => r.Message), me, access.JoinedSeq, ct);
+        var replies = await Replies.For(db, page.Select(r => r.Message), me, access.SeesAfter, ct);
         var reactions = await Reactions.For(db, id, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         var withFiles = await MessageAttachments.For(db, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         return Results.Ok(new
@@ -507,6 +507,9 @@ public static class MessageEndpoints
         var moved = await db.Members.Where(m => m.ConversationId == id && m.UserId == me && m.LastReadSeq < target)
             .ExecuteUpdateAsync(s => s.SetProperty(m => m.LastReadSeq, target), ct);
         if (moved > 0) await live.ReadChangedAsync(db, id, me, target);   // only when it actually moved
+        // Opening it is reading it: a "mark as unread" is done with, on every device.
+        if (await db.Members.Where(m => m.ConversationId == id && m.UserId == me && m.MarkedUnread).ExecuteUpdateAsync(s => s.SetProperty(m => m.MarkedUnread, false), ct) > 0)
+            live.ConversationsChanged([me]);
         return Results.NoContent();
     }
 }

@@ -59,7 +59,7 @@ public static class AttachmentEndpoints
             from a in db.Attachments.AsNoTracking()
             where a.ConversationId == id && a.Kind == wanted && a.RemovedAt == null
             join m in db.Messages on a.MessageId equals m.Id
-            where m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null && (before == null || m.Seq < before)
+            where m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null && (before == null || m.Seq < before)
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
             join u in db.Users on m.SenderId equals u.Id
             select new { Attachment = a, m.Seq, m.CreatedAt, m.Body, SenderId = u.Id, u.DisplayName };
@@ -129,7 +129,7 @@ public static class AttachmentEndpoints
         var access = await Access.Of(db, a.ConversationId, me, ct);
         if (access is null || a.MessageId is null && a.UploaderId != me) return false;
         return a.MessageId is not { } messageId
-            || await db.Messages.AnyAsync(m => m.Id == messageId && m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct);
+            || await db.Messages.AnyAsync(m => m.Id == messageId && m.Seq > access.SeesAfter && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct);
     }
 
     private static async Task<IResult> Upload(Guid id, string? name, HttpContext http, GomDbContext db, TimeProvider clock, IServiceProvider services,

@@ -149,19 +149,19 @@ public static class SocketEndpoint
         // Membership on every ask: "not a member" and "no such conversation" look the same.
         var access = await Access.Of(db, conversation, me, ct);
         if (access is null) return Frames.Error("not_found", conversation);
-        var floor = Math.Max(after, access.JoinedSeq);   // never what was said before they joined
+        var floor = Math.Max(after, access.SeesAfter);   // never what was said before they joined
 
         var rows = await (
             from e in db.Events.AsNoTracking()
             where e.ConversationId == conversation && e.Seq > floor
             orderby e.Seq
             join m in db.Messages on e.MessageId equals m.Id
-            where m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
+            where m.Seq > access.SeesAfter && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
             join u in db.Users on m.SenderId equals u.Id
             select new { e.Seq, e.Kind, Message = m, u.Id, u.DisplayName }).Take(SyncPage + 1).ToListAsync(ct);
 
         var page = rows.Take(SyncPage).ToList();
-        var replies = await Replies.For(db, page.Select(r => r.Message), me, access.JoinedSeq, ct);
+        var replies = await Replies.For(db, page.Select(r => r.Message), me, access.SeesAfter, ct);
         var reactions = await Reactions.For(db, conversation, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         var withFiles = await MessageAttachments.For(db, page.Where(r => r.Message.DeletedAt == null).Select(r => r.Message.Id), ct);
         var events = page.Select(r => new EventDto(r.Seq, r.Kind.ToString().ToLowerInvariant(),

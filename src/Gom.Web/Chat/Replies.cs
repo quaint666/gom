@@ -14,11 +14,11 @@ public static class Replies
     public const int SnippetChars = 100;
 
     /// <summary>
-    /// The quote of each reply among these messages, for a reader who joined at <paramref name="readerJoinedSeq"/>. A quoted
+    /// The quote of each reply among these messages, for a reader who sees only what came after <paramref name="readerSeesAfter"/> (they joined, or deleted the conversation for themself, then). A quoted
     /// message from before they joined, taken back, or deleted by the reader for themself, shows nothing of its words or its writer.
     /// Two queries, however many replies.
     /// </summary>
-    public static async Task<Dictionary<Guid, ReplyDto>> For(GomDbContext db, IEnumerable<Message> messages, Guid reader, long readerJoinedSeq, CancellationToken ct)
+    public static async Task<Dictionary<Guid, ReplyDto>> For(GomDbContext db, IEnumerable<Message> messages, Guid reader, long readerSeesAfter, CancellationToken ct)
     {
         var replies = messages.Where(m => m.ReplyToId is not null && m.DeletedAt is null).ToList();
         if (replies.Count == 0) return [];
@@ -32,7 +32,7 @@ public static class Replies
         return replies.ToDictionary(m => m.Id, m =>
         {
             var id = m.ReplyToId!.Value;
-            if (!parents.TryGetValue(id, out var p) || p.DeletedAt is not null || p.Seq <= readerJoinedSeq || mine.Contains(id)) return Hidden(id);
+            if (!parents.TryGetValue(id, out var p) || p.DeletedAt is not null || p.Seq <= readerSeesAfter || mine.Contains(id)) return Hidden(id);
             return new ReplyDto(id, p.Sender, Snippet(p.Body), p.Sticker);
         });
     }

@@ -10,6 +10,7 @@ public static class ConversationEndpoints
 {
     public sealed record OpenRequest(string? GomId);
     public sealed record MuteRequest(bool? Muted, DateTimeOffset? Until);
+    public sealed record SwitchRequest(bool? On);
 
     /// <summary>The list carries only the start of the last message; history has the whole of it.</summary>
     private const int PreviewChars = 200;
@@ -23,6 +24,79 @@ public static class ConversationEndpoints
         api.MapGet("", List);
         api.MapPost("/direct", OpenDirect);
         api.MapPut("/{id:guid}/mute", SetMute);
+        api.MapPut("/{id:guid}/pinned", SetPinned);
+        api.MapPut("/{id:guid}/unread", SetUnread);
+        api.MapPut("/{id:guid}/hidden", SetHidden);
+        api.MapPost("/{id:guid}/clear", Clear);
+    }
+
+    // ---- this person's own handling of a conversation in their list (the "..." menu); nobody else sees any of it
+
+    private static IResult InvalidSwitch() => Results.Json(new { error = "invalid_setting" }, statusCode: StatusCodes.Status400BadRequest);
+
+    /// <summary>Pins it to the top of this person's list (a few at most), or takes the pin away. Pinning again changes nothing.</summary>
+    private static async Task<IResult> SetPinned(Guid id, SwitchRequest request, HttpContext http, GomDbContext db, TimeProvider clock,
+        Chat.Live.LiveDelivery live, Microsoft.Extensions.Options.IOptions<Chat.ChatOptions> options, CancellationToken ct)
+    {
+        if (request.On is not { } on) return InvalidSwitch();
+        var me = GomClaims.User(http.User);
+        var row = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).Select(m => new { m.PinnedAt }).SingleOrDefaultAsync(ct);
+        if (row is null) return Results.NotFound();
+        if (on == (row.PinnedAt is not null)) return Results.NoContent();
+        if (on && await db.Members.CountAsync(m => m.UserId == me && m.PinnedAt != null, ct) >= options.Value.MaxPinnedConversations)
+            return Results.Json(new { error = "pin_limit" }, statusCode: StatusCodes.Status409Conflict);
+        DateTimeOffset? at = on ? clock.GetUtcNow() : null;
+        await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s.SetProperty(m => m.PinnedAt, at), ct);
+        live.ConversationsChanged([me]);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Marks it unread, to come back to, or clears that mark. The read position does not move: others who see how far you have read would
+    /// see it go back. Reading the conversation clears the mark too.
+    /// </summary>
+    private static async Task<IResult> SetUnread(Guid id, SwitchRequest request, HttpContext http, GomDbContext db, Chat.Live.LiveDelivery live, CancellationToken ct)
+    {
+        if (request.On is not { } on) return InvalidSwitch();
+        var me = GomClaims.User(http.User);
+        var changed = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s.SetProperty(m => m.MarkedUnread, on), ct);
+        if (changed == 0) return Results.NotFound();
+        live.ConversationsChanged([me]);
+        return Results.NoContent();
+    }
+
+    /// <summary>Hides it from this person's list until something new is said in it, or shows it again. The conversation itself is untouched.</summary>
+    private static async Task<IResult> SetHidden(Guid id, SwitchRequest request, HttpContext http, GomDbContext db, Chat.Live.LiveDelivery live, CancellationToken ct)
+    {
+        if (request.On is not { } on) return InvalidSwitch();
+        var me = GomClaims.User(http.User);
+        var newest = await db.Conversations.Where(c => c.Id == id).Select(c => (long?)c.LastSeq).SingleOrDefaultAsync(ct);
+        long? hidden = on ? newest : null;
+        var changed = newest is null ? 0 : await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s.SetProperty(m => m.HiddenSeq, hidden), ct);
+        if (changed == 0) return Results.NotFound();
+        live.ConversationsChanged([me]);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Deletes the conversation for this person only: everything said so far is gone for them (as if they had joined now), and it leaves
+    /// their list until something new is said. Everyone else keeps it all. They stay in the conversation, and nothing reads as unread.
+    /// </summary>
+    private static async Task<IResult> Clear(Guid id, HttpContext http, GomDbContext db, Chat.Live.LiveDelivery live, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var newest = await db.Conversations.Where(c => c.Id == id).Select(c => (long?)c.LastSeq).SingleOrDefaultAsync(ct);
+        if (newest is not { } upTo) return Results.NotFound();
+        var changed = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s
+            .SetProperty(m => m.ClearedSeq, m => m.ClearedSeq > upTo ? m.ClearedSeq : upTo)
+            .SetProperty(m => m.LastReadSeq, m => m.LastReadSeq > upTo ? m.LastReadSeq : upTo)
+            .SetProperty(m => m.HiddenSeq, (long?)upTo)
+            .SetProperty(m => m.MarkedUnread, false)
+            .SetProperty(m => m.PinnedAt, (DateTimeOffset?)null), ct);
+        if (changed == 0) return Results.NotFound();
+        live.ConversationCleared(me, id, upTo);
+        live.ConversationsChanged([me]);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> OpenDirect(OpenRequest request, HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
@@ -94,11 +168,11 @@ public static class ConversationEndpoints
             orderby (c.LastMessageAt ?? c.CreatedAt) descending
             select new
             {
-                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, m.LastReadSeq, m.Muted, m.MutedUntil,
+                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, m.LastReadSeq, m.Muted, m.MutedUntil, m.PinnedAt, m.MarkedUnread, m.HiddenSeq,
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new { u.Id, u.GomId, u.DisplayName, u.AvatarId, Deleted = u.DeletedAt != null }).FirstOrDefault(),
-                Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).OrderByDescending(x => x.Seq)
+                Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq && x.Seq > m.ClearedSeq && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).OrderByDescending(x => x.Seq)
                     .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
                     {
                         x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.Sticker, x.CreatedAt, Deleted = x.DeletedAt != null, SenderId = u.Id, u.DisplayName,
@@ -107,7 +181,10 @@ public static class ConversationEndpoints
                 Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)),
             }).ToListAsync(ct);
 
-        return Results.Ok(rows.Select(r => new
+        // Hidden until something is said after it was hidden (a notice does not bring it back); pinned ones first, the latest pin on top.
+        var shown = rows.Where(r => r.HiddenSeq is not { } h || (r.Last is not null && r.Last.Seq > h))
+            .OrderByDescending(r => r.PinnedAt.HasValue).ThenByDescending(r => r.PinnedAt).ToList();
+        return Results.Ok(shown.Select(r => new
         {
             id = r.Id,
             kind = r.Kind.ToString().ToLowerInvariant(),
@@ -120,6 +197,8 @@ public static class ConversationEndpoints
             muted = r.Muted || r.MutedUntil > now,
             mutedUntil = r.MutedUntil > now ? r.MutedUntil : null,
             joinApproval = r.Kind == ConversationKind.Group && r.JoinApproval,
+            pinned = r.PinnedAt is not null,
+            markedUnread = r.MarkedUnread,
             lastMessage = r.Last is null ? null : new
             {
                 seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt, deleted = r.Last.Deleted,

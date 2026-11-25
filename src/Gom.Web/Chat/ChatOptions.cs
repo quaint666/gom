@@ -29,4 +29,6 @@ public sealed class ChatOptions
     public int MaxSlowSyncs { get; set; } = 5;
     /// <summary>How many messages may be pinned in one conversation.</summary>
     public int MaxPins { get; set; } = 3;
+    /// <summary>How many conversations one person may pin to the top of their list.</summary>
+    public int MaxPinnedConversations { get; set; } = 5;
 }
