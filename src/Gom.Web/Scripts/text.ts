@@ -55,6 +55,8 @@ export function errorText(failure: Failure): string {
     case 'empty_upload': return 'Tệp này trống.';
     case 'invalid_attachment': return 'Không đính kèm được tệp này. Hãy gỡ nó ra và chọn lại.';
     case 'too_many_attachments': return 'Mỗi tin nhắn có tối đa 10 tệp.';
+    case 'invalid_endpoint': return 'Trình duyệt này dùng dịch vụ thông báo mà Gom chưa hỗ trợ.';
+    case 'invalid_keys': return 'Trình duyệt gửi thông tin thông báo không hợp lệ.';
     case 'network': return 'Không kết nối được. Kiểm tra mạng rồi thử lại.';
     case 'server': return 'Gom đang gặp sự cố. Hãy thử lại sau ít phút.';
     default: return 'Có lỗi xảy ra. Hãy thử lại.';

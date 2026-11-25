@@ -176,6 +176,9 @@ public class PushCryptoTests
 
     [Theory]
     [InlineData("https://fcm.googleapis.com/fcm/send/x", true)]
+    [InlineData("https://jmt17.google.com/fcm/send/x", true)]
+    [InlineData("https://evil-jmt17.google.com/fcm/send/x", false)]
+    [InlineData("https://jmt17.google.com.evil.test/x", false)]
     [InlineData("https://updates.push.services.mozilla.com/wpush/v2/x", true)]
     [InlineData("https://web.push.apple.com/x", true)]
     [InlineData("https://wns2-db5p.notify.windows.com/w/?token=x", true)]
@@ -245,6 +248,19 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
     {
         await using var db = app.Db.NewContext();
         await change(db);
+    }
+
+    [Fact]
+    public void The_push_service_addresses_never_reach_the_log()
+    {
+        // The address of a push is the device's token: the HTTP client's own request lines must stay out of an ordinary log.
+        var logs = app.Factory.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>();
+        foreach (var category in new[] { "System.Net.Http.HttpClient.push.ClientHandler", "System.Net.Http.HttpClient.push.LogicalHandler" })
+        {
+            var log = logs.CreateLogger(category);
+            Assert.False(log.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Information));
+            Assert.True(log.IsEnabled(Microsoft.Extensions.Logging.LogLevel.Warning));
+        }
     }
 
     [Fact]

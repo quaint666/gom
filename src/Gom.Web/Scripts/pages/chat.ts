@@ -2,7 +2,8 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, Reply, User } from '../api.js';
+import type { Pusher } from '../push.js';
+import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, User } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
@@ -25,7 +26,12 @@ export interface ChatDeps {
   outbox(gomId: string): { load(): OutboxItem[]; save(items: OutboxItem[]): void };
   /** Closes this device's notifications of a conversation once it is on screen. */
   clearNotifications?(conversation: string): void;
+  /** This device's notifications, for the one-time "turn them on" banner. */
+  pusher?: Pusher;
 }
+
+/** Remembered per device (browser storage) once "Để sau" is tapped: the banner does not come back there. */
+const PUSH_LATER = 'gom-push-later';
 
 export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply; attachments?: Attachment[] }
 
@@ -122,6 +128,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** After the next draw, move the viewer's strip to the current picture, at once: on opening, on a step, or when pictures came in front. */
   let viewerSync = false;
   let trayKey = 0;
+  /** The banner that offers notifications: the server's key and the level to register with, while it is offered. */
+  let pushOffer: { key: string; level: PushLevel; busy: boolean; failed: boolean } | null = null;
   let infoOpen = ((): boolean => { try { return localStorage.getItem('gom-info') === '1'; } catch { return false; } })();
   const people = new Map<string, GroupMember[]>();
   let searching: { q: string; results: ChatMessage[] | null; asked: string; ticket: number } | null = null;
@@ -827,6 +835,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
               .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); }}
               @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; update(); } }}></div>`}
         ${banner()}
+        ${pushBanner()}
         ${errorBox(error)}
         ${notice === '' ? nothing : html`<p class="note" role="status">${notice}</p>`}
         ${me === null || chats === null ? nothing : chats.length === 0 ? empty() : visibleChats().length === 0 ? html`<p class="hint nomatch" data-no-match>Không tìm thấy cuộc trò chuyện nào.</p>` : html`<ul class="items">${repeat(visibleChats(), (c) => c.id, row)}</ul>`}
@@ -834,6 +843,53 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${threadPane()}
       ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
     </div>`;
+
+  /** Once per device: turn notifications on from here (the browser asks in the tap itself), or not now. */
+  const pushBanner = () => pushOffer === null ? nothing : html`
+    <div class="pushbar" data-push-banner>
+      ${icons.bell()}
+      <span>${pushOffer.failed ? 'Không bật được thông báo trên trình duyệt này. Bạn có thể thử lại trong Cài đặt.' : 'Bật thông báo để biết khi có tin nhắn mới.'}</span>
+      ${pushOffer.failed ? nothing : html`<button class="btn small" type="button" data-push-yes ?disabled=${pushOffer.busy} @click=${() => void acceptPush()}>Bật</button>`}
+      <button class="btn secondary small" type="button" data-push-later ?disabled=${pushOffer.busy} @click=${laterPush}>${pushOffer.failed ? 'Đóng' : 'Để sau'}</button>
+    </div>`;
+
+  /** Offered only where it can work: push on at the server, this device not registered, the browser able and not blocking Gom. */
+  async function offerPush(): Promise<void> {
+    const p = deps.pusher;
+    if (p === undefined || p.support() !== 'ok' || p.permission() === 'denied') return;
+    try { if (localStorage.getItem(PUSH_LATER) === '1') return; } catch { /* no storage: offer it */ }
+    const state = await api.pushState();
+    if (!state.ok || state.data.subscribed) return;
+    pushOffer = { key: state.data.key, level: state.data.level, busy: false, failed: false };
+    update();
+  }
+
+  async function acceptPush(): Promise<void> {
+    const p = deps.pusher;
+    if (pushOffer === null || p === undefined || pushOffer.busy) return;
+    pushOffer.busy = true; update();
+    const sub = await p.subscribe(pushOffer.key);
+    const result = sub === 'denied' || sub === 'failed' ? null : await api.setPush(sub, pushOffer.level);
+    if (sub === 'denied' || result?.ok) pushOffer = null;   // refused: the browser will not ask again, and Settings explains
+    else pushOffer = { ...pushOffer, busy: false, failed: true };
+    update();
+  }
+
+  function laterPush(): void {
+    pushOffer = null;
+    try { localStorage.setItem(PUSH_LATER, '1'); } catch { /* it is just not remembered */ }
+    update();
+  }
+
+  /**
+   * Scrolls the message list, and only it, so that `el` is at its top or in its middle (as far as the list can go). Not
+   * scrollIntoView: when the list cannot scroll that far (the first unread message near the end), that also scrolls the page
+   * around it, and the header goes off the top of the screen.
+   */
+  function scrollWithin(box: HTMLElement, el: HTMLElement, where: 'start' | 'center'): void {
+    const offset = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    box.scrollTop = Math.max(0, where === 'start' ? offset : offset - (box.clientHeight - el.offsetHeight) / 2);
+  }
 
   function update(): void {
     render(view(), root);
@@ -846,7 +902,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (t.jump) {
       // The first unread message is where reading starts. It can be drawn only once the history is here.
       const divider = after.querySelector<HTMLElement>('.newdiv');
-      if (divider !== null) { t.jump = false; t.stick = false; divider.scrollIntoView?.({ block: 'start' }); return; }
+      if (divider !== null) { t.jump = false; t.stick = false; scrollWithin(after, divider, 'start'); return; }
       if (t.loaded) t.jump = false;   // the first unread one is further back than what was loaded: read from the end
     }
     if (t.stick) after.scrollTop = after.scrollHeight;
@@ -1428,7 +1484,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     for (let pages = 0; !t.messages.some((x) => x.id === m.id) && t.hasMore && pages < 40; pages++) await loadOlder(id);
     found = m.id;
     update();
-    root.querySelector<HTMLElement>(`[data-msg="${m.id}"]`)?.scrollIntoView?.({ block: 'center' });
+    const box = root.querySelector<HTMLElement>('.msgs');
+    const row = root.querySelector<HTMLElement>(`[data-msg="${m.id}"]`);
+    if (box !== null && row !== null) scrollWithin(box, row, 'center');
     deps.timer.set(() => { if (found === m.id) { found = null; update(); } }, 2500);
   }
 
@@ -1723,5 +1781,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     await refreshList();
     restoreOutbox();
     if (openId !== null) show(openId);
+    void offerPush();
   });
 }

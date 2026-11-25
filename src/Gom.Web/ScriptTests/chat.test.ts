@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { avatarTone, clock } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
+import type { Pusher, PushSupport } from '../Scripts/push.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
 import { mountChat, type ChatDeps, type OutboxItem } from '../Scripts/pages/chat.js';
 import { fail, fakeApi, fill, flush, ok, text } from './helpers.js';
@@ -39,7 +40,7 @@ interface Harness {
   notes: ReturnType<typeof vi.fn>;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown> } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(me)),
@@ -80,12 +81,39 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     coarsePointer: () => coarse.value,
     visible: () => visible.value,
     clearNotifications: notes,
+    ...(opts.pusher ? { pusher: opts.pusher } : {}),
   };
   mountChat(root, api, go, deps);
   return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes };
 }
 
 const rows = () => [...root.querySelectorAll<HTMLElement>('[data-chat]')];
+
+/**
+ * jsdom has no layout: here each element of the page is 10 px below the one before it, so where the thread was scrolled to can
+ * be read back. Also counts scrollIntoView, which must not be used (it scrolls the page as well as the thread).
+ */
+function fakeLayout() {
+  const original = Element.prototype.getBoundingClientRect;
+  const proto = Element.prototype as unknown as { scrollIntoView?: unknown };
+  const originalInto = proto.scrollIntoView;
+  const top = (e: Element) => [...document.querySelectorAll('*')].indexOf(e) * 10;
+  // As on screen: what is inside the thread moves up as far as the thread is scrolled.
+  const shown = (e: Element) => { const box = e.parentElement?.closest<HTMLElement>('.msgs'); return top(e) - (box?.scrollTop ?? 0); };
+  let intoView = 0;
+  Element.prototype.getBoundingClientRect = function (this: Element) { const y = shown(this); return { top: y, bottom: y, left: 0, right: 0, width: 0, height: 0, x: 0, y, toJSON: () => ({}) } as DOMRect; };
+  proto.scrollIntoView = () => { intoView++; };
+  return {
+    restore() { Element.prototype.getBoundingClientRect = original; proto.scrollIntoView = originalInto; },
+    intoView: () => intoView,
+    /** The message or divider now at the top of the thread, if one is. */
+    landed(): Element | null {
+      const box = root.querySelector<HTMLElement>('.msgs');
+      if (box === null || box.scrollTop === 0) return null;
+      return [...box.querySelectorAll('.newdiv, [data-msg]')].find((e) => top(e) - top(box) === box.scrollTop) ?? null;
+    },
+  };
+}
 const bubbles = () => [...root.querySelectorAll<HTMLElement>('[data-msg]')];
 const compose = (value: string) => fill(root, 'textarea[name="message"]', value);
 const submitForm = () => root.querySelector('form.composer')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -2085,6 +2113,76 @@ describe('chat: notifications on this device', () => {
   });
 });
 
+describe('chat: the offer to turn on notifications', () => {
+  const SUB = { endpoint: 'https://fcm.googleapis.com/fcm/send/x', keys: { p256dh: 'k', auth: 'a' } };
+  const device = (over: { support?: PushSupport; permission?: NotificationPermission; subscribe?: Pusher['subscribe'] } = {}) => ({
+    support: vi.fn(() => over.support ?? 'ok'), permission: vi.fn(() => over.permission ?? 'default'),
+    subscribe: vi.fn(over.subscribe ?? (async () => SUB)), current: vi.fn(async () => SUB), unsubscribe: vi.fn(async () => undefined), clear: vi.fn(),
+  });
+  const offered = (subscribed = false) => vi.fn(async () => ok({ key: 'SERVERKEY', subscribed, level: 'name' as const }));
+  const open = (pusher: Pusher | undefined, api: Record<string, unknown> = { pushState: offered() }) => start({ path: '/', chats: [chat(C1, 'Minh')], api, ...(pusher ? { pusher } : {}) });
+  const bar = () => root.querySelector('[data-push-banner]');
+  beforeEach(() => { try { localStorage.removeItem('gom-push-later'); } catch { /* none */ } });
+
+  it('offers it on a device that can have it, and turns it on from the tap', async () => {
+    const p = device();
+    const h = open(p);
+    await flush();
+    expect(text(bar()!)).toContain('Bật thông báo');
+    root.querySelector<HTMLButtonElement>('[data-push-yes]')!.click();
+    await flush();
+    expect(p.subscribe).toHaveBeenCalledWith('SERVERKEY');
+    expect(h.api.setPush).toHaveBeenCalledWith(SUB, 'name');
+    expect(bar()).toBeNull();
+  });
+
+  it('"Để sau" hides it on this device for good', async () => {
+    open(device());
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-push-later]')!.click();
+    await flush();
+    expect(bar()).toBeNull();
+    root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
+    open(device());
+    await flush();
+    expect(bar()).toBeNull();
+  });
+
+  it('is not offered where it cannot work or is already on', async () => {
+    for (const [p, api] of [
+      [undefined, { pushState: offered() }],
+      [device({ support: 'unsupported' }), { pushState: offered() }],
+      [device({ support: 'needs-home-screen' }), { pushState: offered() }],
+      [device({ permission: 'denied' }), { pushState: offered() }],
+      [device(), { pushState: offered(true) }],
+      [device(), { pushState: vi.fn(async () => fail('unknown', 404)) }],
+    ] as const) {
+      root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
+      open(p as Pusher | undefined, api);
+      await flush();
+      expect(bar()).toBeNull();
+    }
+  });
+
+  it('goes away when the person says no to the browser, and says so when the browser fails', async () => {
+    const no = device({ subscribe: async () => 'denied' });
+    const h = open(no);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-push-yes]')!.click();
+    await flush();
+    expect(bar()).toBeNull();
+    expect(h.api.setPush).not.toHaveBeenCalled();
+
+    root = document.createElement('div'); document.body.replaceChildren(root);   // a fresh page
+    open(device({ subscribe: async () => 'failed' }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-push-yes]')!.click();
+    await flush();
+    expect(text(bar()!)).toContain('Không bật được');
+    expect(root.querySelector('[data-push-yes]')).toBeNull();
+  });
+});
+
 describe('chat: deleting a message for yourself', () => {
   const messages = [msg(1, 'minh', 'của Minh'), msg(2, 'mom', 'của mẹ')];
   const open = (extra: Record<string, unknown> = {}) => start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: messages }, api: extra });
@@ -2188,33 +2286,34 @@ describe('chat: deleting a message for yourself', () => {
 });
 
 describe('chat: where reading starts', () => {
-  const scrolled: Element[] = [];
-  beforeEach(() => {
-    scrolled.length = 0;
-    (Element.prototype as unknown as { scrollIntoView: (o?: unknown) => void }).scrollIntoView = function (this: Element) { scrolled.push(this); };
-  });
+  let layout: ReturnType<typeof fakeLayout>;
+  beforeEach(() => { layout = fakeLayout(); });
+  afterEach(() => layout.restore());
   const history = { [C1]: [msg(1, 'mom'), msg(2, 'minh'), msg(3, 'minh')] };
   const unreadChats = [withLast(msg(3, 'minh'), { lastReadSeq: 1, unread: 2 }), chat(C2, 'Lan')];
 
   it('scrolls to the first unread message when a conversation with unread messages is opened', async () => {
     start({ path: `/c/${C1}`, chats: unreadChats, history });
     await flush();
-    expect(scrolled).toHaveLength(1);
-    expect(scrolled[0]!.classList.contains('newdiv')).toBe(true);
+    expect(layout.landed()?.classList.contains('newdiv')).toBe(true);
+    expect(layout.intoView()).toBe(0);   // never scrollIntoView: it moves the page too, and the header goes off screen
   });
 
   it('does not scroll to a divider when nothing is unread', async () => {
     start({ path: `/c/${C1}`, chats: [withLast(msg(3, 'minh'), { lastReadSeq: 3, unread: 0 })], history });
     await flush();
-    expect(scrolled).toHaveLength(0);
+    expect(layout.landed()).toBeNull();
   });
 
   it('jumps once, and a new message afterwards does not drag you back to the divider', async () => {
     const h = start({ path: `/c/${C1}`, chats: unreadChats, history });
     await flush();
+    expect(layout.landed()?.classList.contains('newdiv')).toBe(true);
+    const box = root.querySelector<HTMLElement>('.msgs')!;
+    box.scrollTop = 7;   // the person has moved on from there
     h.handlers().event(C1, created(msg(4, 'minh', 'mới')));
     await flush();
-    expect(scrolled).toHaveLength(1);
+    expect(box.scrollTop).toBe(7);
   });
 
   it('also jumps when you open a conversation you had already loaded', async () => {
@@ -2222,7 +2321,7 @@ describe('chat: where reading starts', () => {
     await flush();
     root.querySelectorAll<HTMLAnchorElement>('a[data-chat]')[0]!.click();
     await flush();
-    expect(scrolled).toHaveLength(1);
+    expect(layout.landed()?.classList.contains('newdiv')).toBe(true);
     expect(h.nav.push).toHaveBeenCalledWith(`/c/${C1}`);
   });
 
@@ -2329,11 +2428,9 @@ describe('chat: where reading starts', () => {
 });
 
 describe('chat: searching a conversation', () => {
-  const scrolled: Element[] = [];
-  beforeEach(() => {
-    scrolled.length = 0;
-    (Element.prototype as unknown as { scrollIntoView: (o?: unknown) => void }).scrollIntoView = function (this: Element) { scrolled.push(this); };
-  });
+  let layout: ReturnType<typeof fakeLayout>;
+  beforeEach(() => { layout = fakeLayout(); });
+  afterEach(() => layout.restore());
   const messages = [msg(1, 'minh', 'Tối nay ăn phở'), msg(2, 'mom', 'ok')];
   const hit = (m: ChatMessage): ChatMessage => m;
   const open = (extra: Record<string, unknown> = {}) => start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: messages }, api: extra });
@@ -2428,11 +2525,11 @@ describe('chat: searching a conversation', () => {
     await flush();
     await toggle();
     await ask('phở');
-    scrolled.length = 0;
     root.querySelector<HTMLButtonElement>('[data-result="id1"]')!.click();
     await flush();
     expect(root.querySelector('.searchbar')).toBeNull();
-    expect(scrolled.some((e) => e.getAttribute('data-msg') === 'id1')).toBe(true);
+    expect(layout.landed()?.getAttribute('data-msg')).toBe('id1');
+    expect(layout.intoView()).toBe(0);
     expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
     h.timers[h.timers.length - 1]!.fn();
     await flush();
@@ -2467,11 +2564,9 @@ describe('chat: searching a conversation', () => {
 });
 
 describe('chat: pinned messages', () => {
-  const scrolled: Element[] = [];
-  beforeEach(() => {
-    scrolled.length = 0;
-    (Element.prototype as unknown as { scrollIntoView: (o?: unknown) => void }).scrollIntoView = function (this: Element) { scrolled.push(this); };
-  });
+  let layout: ReturnType<typeof fakeLayout>;
+  beforeEach(() => { layout = fakeLayout(); });
+  afterEach(() => layout.restore());
   const messages = [msg(1, 'minh', 'quy tắc nhà'), msg(2, 'mom', 'tin của mẹ'), msg(3, 'minh', 'địa chỉ mới')];
   const open = (extra: Record<string, unknown> = {}) => start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 3 })], history: { [C1]: messages }, api: extra });
   const menuOf = async (id: string) => { root.querySelector(`[data-msg="${id}"] button[data-menu]`)!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await flush(); };
@@ -2563,10 +2658,11 @@ describe('chat: pinned messages', () => {
   it('takes you to the pinned message and marks it for a moment', async () => {
     open({ pins: vi.fn(async () => ok({ pins: [messages[0]!] })) });
     await flush();
-    scrolled.length = 0;
+    root.querySelector<HTMLElement>('.msgs')!.scrollTop = 500;   // read further down: the jump is from here
     root.querySelector<HTMLButtonElement>('[data-pin-top]')!.click();
     await flush();
-    expect(scrolled.some((e) => e.getAttribute('data-msg') === 'id1')).toBe(true);
+    expect(layout.landed()?.getAttribute('data-msg')).toBe('id1');
+    expect(layout.intoView()).toBe(0);
     expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
   });
 
