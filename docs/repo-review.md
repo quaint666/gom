@@ -56,12 +56,19 @@ the owner approves. Then fix in small batches, one branch and pull request each,
     before it is in a message, then members who were in the conversation when it was said and did not hide it); a file's
     bytes deleted only after its row's commit; the cleanup of uploads nobody sent.
 12. **Notifications.** The RFC 8291 encryption against the RFC's worked example; a notification never carries the words;
-    who is pushed (not the sender, not muted, not removed, no live socket); a 404 or 410 deletes the subscription; a slow
-    push service never delays a send; only known push hosts are accepted.
+    who is pushed (not the sender, not muted, not removed, not someone who joined or cleared after it; a device with Gom open
+    is pushed too, by H's choice); a 404 or 410 deletes the subscription; a slow push service never delays a send; only
+    known push hosts are accepted; a browser with no push service (Helium) gets words, not a switch that never finishes.
 13. **Owner tools and deletion.** Deleting your own account (what stays, what goes, the leader handing over); the storage
     view never naming who talks to whom in one-to-one chats; trims: the preview equals what is removed, "Delete" typed
     exactly, a notice in each conversation, trimmed files never fetched or forwarded again, answers to trimmed messages
     kept.
+14. **The conversation menu.** Each switch is one person's own (nobody else's list changes); "delete for me" hides
+    everything before it everywhere that person can reach a message (history, sync, search, pins, media, quotes,
+    reactions, recall, live updates, files); a mark unread never moves the read position; pinned order; the "⋯" only on
+    the open row and under a mouse; the one-second press, and the click that ends it.
+15. **Stickers.** The page's packs, the server's list and the files agree; no sticker ever offered is dropped (sent ones
+    must still draw); each SVG is upstream's, with no script or outside reference.
 
 **Deployment items** (keep listing until fixed): forwarded headers (`ForwardedHeaders__Hops` matches the proxies in
 front; checked live on 2026-11-25), reverse proxy WebSocket upgrade, the proxy's request body limit for files,
@@ -74,8 +81,17 @@ the uploads backup copied as a mirror.
 - Probe the published build (`dotnet publish -c Release`), not `dotnet run`: GET, HEAD, POST and PUT on each important
   address, once with `Accept-Encoding: gzip, br`; the WebSocket with a wrong Origin, no cookie, binary and oversized
   frames.
-- Test real browsers: Chromium over CDP with a private profile; Firefox and WebKit as far as the machine allows. Say
-  which were not run. Never `pkill` a browser: stop the PIDs you started.
+- Test real browsers: Chromium over CDP with a private profile; Firefox over WebDriver BiDi (`--remote-debugging-port`,
+  then `ws://…/session`); WebKit through WebKitWebDriver with MiniBrowser. Say which were not run. Never `pkill`, by any
+  name: `pkill -f` matched the shell running it in the second review. Stop the PIDs you started.
+- WebKit keeps no `Secure` cookie over plain http, even on localhost, so the session cookie never sticks: serve the
+  published build on HTTPS too (`dotnet dev-certs https -ep <scratch>/dev.pfx`, `Kestrel__Certificates__Default__Path`)
+  and let the WebDriver session accept it (`acceptInsecureCerts`). MiniBrowser has no headless mode: run
+  WebKitWebDriver under `xvfb-run -a` with `LIBGL_ALWAYS_SOFTWARE=1`, in its own process group.
+- Headless Firefox reports no hover device, so it takes the phone path of every `(hover: hover) and (pointer: fine)`
+  rule; say so rather than reading it as a bug.
+- Races need several requests at once (8 to 30), from the published build and in a test: the second review found a
+  deadlock (recall against edit) and a sign-in slowdown that a burst walked past only that way.
 - Support claims come from data (`npm pack web-features`), not memory.
 - Mark every claim `[verified]` (seen in real output this session), `[inferred]` or `[stated]`. Say plainly what was not checked.
 
@@ -87,3 +103,26 @@ the uploads backup copied as a mirror.
    value, CSS, docs, deployment.
 4. **Decisions for the owner:** anything that deletes content, changes an address, or changes how the project runs.
 5. **Good habits** the project does not have yet.
+
+## Found in the second review (2026-11-25): confirm they stay fixed
+
+Run by the assistant with H on the code after #89, with Peekbox's prompt alongside. Score 7.5/10: the core rules held
+(numbering under a lock, fan-out after commit, membership on delivery, re-encoded pictures); the defects were in
+hand-made requests and requests at the same moment. Each fix has a test, named in brackets.
+
+- A NUL in a search, the sign-in ID or any body naming a Gom ID reached PostgreSQL: a 500 (`HandMadeRequestTests`).
+- `limit=abc` on history was a quiet 50 (`HandMadeRequestTests`; `MessageTests` had pinned the old 50).
+- Recall locked the message before the conversation; with an edit at the same moment, 15 of 15 pairs deadlocked
+  (`RaceTests`).
+- The sign-in slowdown counted after the hash: 30 guesses at once had 18 checked (`RaceTests`, `SignInThrottleTests`).
+- The upload cleaner deleted files before its rows and could delete an upload a send had just taken (`RaceTests`).
+- A request to someone who blocked you said "pending" but stored nothing, so the block could be seen (`FriendTests`).
+- The conversation list gave a one-to-one chat's Gom ID to ex-friends (`ConversationTests`).
+- No time limit on the page's requests or uploads, and a socket outlived a session that ran out (`api.test.ts`,
+  `SocketSessionTests`).
+- Two server error codes had their own words but reached the page as "unknown" (`api.test.ts`).
+- Asked for during the review and built: the conversation menu (#91, #92), quieter menus (#97), sticker packs (#98),
+  and words for a browser with no push service (#99).
+- Left, as H decided: HSTS is the proxy's (not checked here); the local .NET runtime (10.0.13) is behind the image's
+  (10.0.15), a machine package for H to update.
+

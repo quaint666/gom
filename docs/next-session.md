@@ -1,25 +1,25 @@
 # Next session: where things stand and what comes next
 
-Written 2026-11-25, at the end of the session that built PRs #79 to #88. It replaces the plan of 2026-11-24, which is now
-built (Web Push, mute durations, stickers instead of GIFs, account deletion). Claims are marked **[verified]** (seen in
+Written 2026-11-25, at the end of the session that ran the second whole-repository review and opened PRs #90 to #100. It
+keeps the work queue agreed after #88 (section 2), which is unchanged. Claims are marked **[verified]** (seen in
 the code or real output), **[stated]** (someone said so; who is given), or **[inferred]** (reasoned, not tried).
 
 ## 1. Where things stand
 
-- Merged, and in production by H on 2026-11-25 **[stated: H]**:
-  - #79: the chat fills the screen on a phone (header and composer always reachable), the message field shrinks back,
-    an offline page instead of an endless load, notifications kept by the push service for 28 days.
-  - #80 to #82: 48 still stickers (Noto Emoji, SIL OFL 1.1) and an emoji tab; one to three emoji alone are drawn large.
-  - #83 and #84: deleting your own account (what you said stays, under "Tài khoản đã xóa").
-  - #85, #86, #88: the owner's storage page; deleting a group nobody is in; trimming old pictures and files (a
-    placeholder stays) and old messages (newer answers stay). #87 made a page test independent of the time zone.
-- Checked on H's phone: pop-up notifications (after turning on "Hiển thị dạng cửa sổ pop-up" in the site's Android
-  notification category), the storage page, the full-height chat **[stated: H]**.
-- Backups **[stated: operations]**: both copies of the uploads folder are now mirrors, guarded against a missing or
-  empty source, so deletions and trims leave the backups; the restore check skips rows with `removed_at`. Database dumps
-  and machine snapshots keep deleted data until they age out, about a week at most.
-- The forwarded-header chain in production works: forged `X-Forwarded-For` entries are ignored and two networks are seen
-  as two addresses **[verified: H's run of the check script, 2026-11-25]**.
+- **Open, to merge in this order** (each is based on the one before, so each diff shows only its own change):
+  - #90 the emoji and sticker button inside the message field;
+  - #91, #92 the conversation menu (server, page): pin, mark unread, mute, make a group with, hide, delete for me. **#91
+    has a migration: take a backup dump before deploying it.**
+  - #93 to #96 the second review's fixes: hand-made requests (NUL, unbound values, the page's error codes), races
+    (recall against edit, sign-in bursts, the upload cleaner), privacy (a block that could be detected, Gom IDs for
+    ex-friends), time limits (requests, stalled uploads, sockets whose session ran out);
+  - #97 quieter menus (the row's "⋯" only on the open row and under a mouse, a one-second press, outside closes the
+    picker); #98 110 stickers in six packs; #99 a browser with no push service gets words, not a spinner; #100 these docs.
+- Every PR: all page and server tests pass (741 and 837 at #99), and each new test was checked by breaking the code on
+  purpose **[verified]**. The menus, composer and picker were looked at in Chromium 157, Firefox 160 and WebKit 2.54
+  **[verified]**.
+- Earlier work (#79 to #89) is merged and in production **[stated: H]**. The forwarded-header chain was checked live on
+  2026-11-25 **[verified: H's run]**. Backups mirror the uploads folder **[stated: operations]**.
 - Peekbox production is on hold until it has a real payment method **[stated: H]**.
 
 ## 2. Work queue (agreed order)
@@ -44,7 +44,7 @@ Each is discussed first (design, decisions, what cannot be verified), then built
    encrypted at rest) and `routes/admin-auth.ts` (a code used once per step, recovery codes, an attempt lock)
    **[stated: the Bloomy session]**.
 
-Later: a load test at the 256 MB limit with several people uploading; a whole-repository review (`docs/repo-review.md`).
+Later: a load test at the 256 MB limit with several people uploading; the next whole-repository review (`docs/repo-review.md`) at the end of the queue.
 
 ## 3. Known limits
 
@@ -55,10 +55,19 @@ Later: a load test at the 256 MB limit with several people uploading; a whole-re
 - The `TrimMessages` migration's `Down` cannot restore the reply key once a trim has left an answer to a removed message.
 - Notifications on Android pop up only after the site's notification category is set to show pop-ups; browsers create
   it at the default level **[stated: Chromium's behaviour, as researched on 2026-11-25]**.
+- Notifications cannot work in a browser without a push service of its own: Helium and ungoogled-chromium removed
+  Google's and have none (imputnet/helium#927 asks for Mozilla's). Gom says so after 20 seconds **[stated: Helium's issue
+  tracker]**.
+- After "delete for me" on a conversation, pins and reactions of the old messages stay for everyone else; they are only
+  hidden for that person, as everything before the clear is.
+- A request to someone who blocked you waits for good unless they unblock; then it shows to them like any other.
 
 ## 4. Not verified yet
 
+- A real long press on a phone (the row menu's one second, and that Android shows no link menu of its own); headless
+  Firefox has no hover, so Firefox's mouse path (the "⋯" under the pointer) was not seen either.
+- Helium itself: the fix follows its issue tracker and fakes in tests; neither Helium nor Brave is installed here.
+- The 62 new stickers on an iPhone, and on a slow phone line (the largest are about 60 KB).
 - The storage page and the trim placeholders in Firefox and Safari (only Chromium-based browsers were used).
 - A trim on a large history: one statement per conversation is enough at family size **[inferred]**; not measured.
-- That a picture still in a browser's one-day cache after a trim does not reappear: the page shows the placeholder, but
-  the cached copy itself was not looked at.
+- That a picture still in a browser's one-day cache after a trim does not reappear.
