@@ -21,7 +21,7 @@ const created = (m: ChatMessage): ChatEvent => ({ seq: m.seq, kind: 'created', m
 const recalled = (m: ChatMessage, eventSeq: number): ChatEvent => ({ seq: eventSeq, kind: 'deleted', message: { ...m, body: '', deleted: true } });
 
 const chat = (id: string, name: string, extra: Partial<Conversation> = {}): Conversation => ({
-  id, kind: 'direct', title: name, peer: { gomId: name.toLowerCase(), displayName: name }, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, ...extra,
+  id, kind: 'direct', title: name, peer: { id: `u-${name.toLowerCase()}`, gomId: name.toLowerCase(), displayName: name }, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, ...extra,
 });
 const withLast = (m: ChatMessage, extra: Partial<Conversation> = {}) =>
   chat(m.conversationId, m.sender.displayName, { lastSeq: m.seq, lastMessage: { seq: m.seq, body: m.body, createdAt: m.createdAt, sender: m.sender }, ...extra });
@@ -141,7 +141,7 @@ describe('chat: the list', () => {
   });
 
   it('says "Bạn:" before a message you wrote yourself', async () => {
-    start({ chats: [withLast(msg(1, 'mom', 'Mẹ nhắn', at(12)), { peer: { gomId: 'minh', displayName: 'Minh' }, title: 'Minh' })] });
+    start({ chats: [withLast(msg(1, 'mom', 'Mẹ nhắn', at(12)), { peer: { id: 'u-minh', gomId: 'minh', displayName: 'Minh' }, title: 'Minh' })] });
     await flush();
     expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Bạn: Mẹ nhắn');
   });
@@ -1345,7 +1345,7 @@ describe('chat: taking a message back', () => {
 
   it('does not move a conversation to the top because a message in it was taken back', async () => {
     const old = msg(1, 'minh', 'cũ', at(9), C2);
-    const h = start({ chats: [withLast(msg(3, 'minh', 'mới', at(11))), withLast(old, { id: C2, title: 'Lan', peer: { gomId: 'lan', displayName: 'Lan' } })] });
+    const h = start({ chats: [withLast(msg(3, 'minh', 'mới', at(11))), withLast(old, { id: C2, title: 'Lan', peer: { id: 'u-lan', gomId: 'lan', displayName: 'Lan' } })] });
     await flush();
     h.handlers().event(C2, recalled(old, 2));
     await flush();
@@ -3641,5 +3641,179 @@ describe('chat: the account menu', () => {
     const signOut = root.querySelector('[data-signout]')!;
     expect(signOut.querySelector('svg.i path')).not.toBeNull();
     expect(text(signOut)).toBe('Đăng xuất');
+  });
+});
+
+describe("chat: someone's card", () => {
+  const G = C1;
+  const group = chat(G, 'Nhà', { kind: 'group', peer: null, memberCount: 3, lastSeq: 1 });
+  const member = (id: string, displayName: string, extra: Partial<import('../Scripts/api.js').GroupMember> = {}) =>
+    ({ id, displayName, isMe: false, isFriend: false, gomId: null, request: 'none' as const, role: 'member' as const, ...extra });
+  const cardOf = (extra: Partial<import('../Scripts/api.js').PersonCard> = {}) =>
+    ({ id: 'u-minh', displayName: 'Minh', gomId: null, friend: 'none' as const, commonGroups: [{ id: G, title: 'Nhà', memberCount: 3 }], ...extra });
+  const card = () => root.querySelector<HTMLElement>('[data-person-card]');
+  const click = async (selector: string) => { root.querySelector<HTMLElement>(selector)!.click(); await flush(); await flush(); };
+  const inGroup = (api: Record<string, unknown> = {}) => start({ path: `/c/${G}`, chats: [group, chat(C2, 'Lan')], history: { [G]: [msg(1, 'minh', 'chào')] }, api });
+
+  it("opens from a sender's name in a group, without their Gom ID, and asks to be friends through that group", async () => {
+    let state: 'none' | 'sent' = 'none';
+    const person = vi.fn(async () => ok(cardOf({ friend: state })));
+    const askMember = vi.fn(async () => { state = 'sent'; return ok({ status: 'pending' }); });
+    inGroup({ person, askMember });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    expect(person).toHaveBeenCalledWith('u-minh');
+    expect(card()!.tagName).toBe('DIALOG');
+    expect(text(card()!)).toContain('Minh');
+    expect(text(card()!)).not.toContain('@');
+    await click('[data-card-befriend]');
+    expect(askMember).toHaveBeenCalledWith(G, 'u-minh');
+    expect(card()!.querySelector('[data-card-sent]')).not.toBeNull();
+    expect(card()!.querySelector('[data-card-befriend]')).toBeNull();
+  });
+
+  it('offers to accept a request they sent', async () => {
+    inGroup({ person: vi.fn(async () => ok(cardOf({ friend: 'received' }))) });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    expect(text(card()!.querySelector('[data-card-befriend]')!)).toBe('Chấp nhận kết bạn');
+  });
+
+  it('opens from a member of the side panel, but not for yourself', async () => {
+    localStorage.setItem('gom-info', '1');
+    try {
+      const person = vi.fn(async () => ok(cardOf()));
+      inGroup({ person, groupMembers: vi.fn(async () => ok([member('u-mom', 'Mẹ', { isMe: true, role: 'leader' }), member('u-minh', 'Minh')])) });
+      await flush();
+      expect(root.querySelector('[data-open-card="u-mom"]')).toBeNull();
+      await click('[data-open-card="u-minh"]');
+      expect(person).toHaveBeenCalledWith('u-minh');
+      expect(card()).not.toBeNull();
+    } finally { localStorage.removeItem('gom-info'); }
+  });
+
+  it("a friend's card has their Gom ID, and \"Nhắn tin\" opens your 1:1 conversation", async () => {
+    const h = inGroup({ person: vi.fn(async () => ok(cardOf({ gomId: 'minh', friend: 'friends' }))), openDirect: vi.fn(async () => ok({ id: C2 })) });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    expect(text(card()!)).toContain('@minh');
+    await click('[data-card-message]');
+    expect(h.api.openDirect).toHaveBeenCalledWith('minh');
+    expect(h.nav.path).toBe(`/c/${C2}`);
+    expect(card()).toBeNull();
+  });
+
+  it('asks before unfriending, and does nothing on "Không"', async () => {
+    const h = inGroup({ person: vi.fn(async () => ok(cardOf({ gomId: 'minh', friend: 'friends' }))) });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    await click('[data-card-unfriend]');
+    expect(text(card()!.querySelector('[data-card-ask]')!)).toContain('Xóa bạn với Minh?');
+    await click('[data-card-no]');
+    expect(h.api.unfriend).not.toHaveBeenCalled();
+    await click('[data-card-unfriend]');
+    await click('[data-card-yes]');
+    expect(h.api.unfriend).toHaveBeenCalledWith('minh');
+  });
+
+  it('asks before blocking', async () => {
+    const h = inGroup({ person: vi.fn(async () => ok(cardOf({ gomId: 'minh', friend: 'friends' }))) });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    await click('[data-card-block]');
+    expect(text(card()!.querySelector('[data-card-ask]')!)).toContain('Chặn Minh?');
+    await click('[data-card-yes]');
+    expect(h.api.block).toHaveBeenCalledWith('minh');
+  });
+
+  it('offers no unfriending or blocking to someone who is not a friend', async () => {
+    inGroup({ person: vi.fn(async () => ok(cardOf())) });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    expect(card()!.querySelector('[data-card-unfriend]')).toBeNull();
+    expect(card()!.querySelector('[data-card-block]')).toBeNull();
+    expect(card()!.querySelector('[data-card-message]')).toBeNull();
+  });
+
+  it('lists the groups you share, and one opens that group', async () => {
+    const h = start({ path: `/c/${C2}`, chats: [group, chat(C2, 'Minh')], history: { [C2]: [msg(1, 'minh', 'chào', at(10, 1), C2)], [G]: [] },
+      api: { person: vi.fn(async () => ok(cardOf({ gomId: 'minh', friend: 'friends' }))) } });
+    await flush();
+    await click('[data-peer-card]');
+    expect(text(card()!)).toContain('Nhóm chung (1)');
+    await click(`[data-card-group="${G}"]`);
+    expect(card()).toBeNull();
+    expect(h.nav.path).toBe(`/c/${G}`);
+  });
+
+  it("a 1:1 conversation's header says how many groups you share", async () => {
+    const person = vi.fn(async () => ok(cardOf({ gomId: 'minh', friend: 'friends', commonGroups: [{ id: G, title: 'Nhà', memberCount: 3 }, { id: 'g2', title: 'Lớp', memberCount: 9 }] })));
+    start({ path: `/c/${C2}`, chats: [chat(C2, 'Minh')], history: { [C2]: [] }, api: { person } });
+    await flush(); await flush();
+    expect(person).toHaveBeenCalledWith('u-minh');
+    expect(text(root.querySelector('[data-peer-card]')!)).toContain('@minh · 2 nhóm chung');
+  });
+
+  it('says so when the card cannot be had, and closes when the browser closes the dialog', async () => {
+    inGroup({ person: vi.fn(async () => fail('unknown', 404)) });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    expect(card()!.querySelector('.err, [role="alert"]')).not.toBeNull();
+    card()!.dispatchEvent(new Event('close'));
+    await flush();
+    expect(card()).toBeNull();
+  });
+});
+
+describe('chat: the side panel of a group', () => {
+  const G = C1;
+  const group = chat(G, 'Nhà', { kind: 'group', peer: null, memberCount: 2 });
+  const me_ = { id: 'u-mom', displayName: 'Mẹ', isMe: true, isFriend: false, gomId: 'mom', request: 'none' as const };
+  const minh = { id: 'u-minh', displayName: 'Minh', isMe: false, isFriend: true, gomId: 'minh', request: 'none' as const, role: 'member' as const };
+  const openPanel = (role: 'leader' | 'member', api: Record<string, unknown> = {}) => {
+    localStorage.setItem('gom-info', '1');
+    let left = false;
+    return start({ path: `/c/${G}`, history: { [G]: [] }, api: {
+      groupMembers: vi.fn(async () => ok([{ ...me_, role }, minh])),
+      conversations: vi.fn(async () => ok(left ? [chat(C2, 'Lan')] : [structuredClone(group), chat(C2, 'Lan')])),
+      leaveGroup: vi.fn(async () => { left = true; return ok(undefined); }),
+      ...api } });
+  };
+  afterEach(() => localStorage.removeItem('gom-info'));
+  const click = async (selector: string) => { root.querySelector<HTMLElement>(selector)!.click(); await flush(); await flush(); };
+
+  it('links to adding members on the group page', async () => {
+    openPanel('member');
+    await flush();
+    expect(root.querySelector('[data-info-add]')!.getAttribute('href')).toBe(`/groups/${G}#add`);
+  });
+
+  it('leaves after a question, and goes back to the list', async () => {
+    const h = openPanel('member');
+    await flush();
+    await click('[data-info-leave]');
+    expect(h.api.leaveGroup).not.toHaveBeenCalled();
+    await click('[data-info-leave-no]');
+    expect(root.querySelector('[data-info-leave-ask]')).toBeNull();
+    await click('[data-info-leave]');
+    await click('[data-info-leave-yes]');
+    expect(h.api.leaveGroup).toHaveBeenCalledWith(G);
+    expect(h.nav.path).toBe('/');
+    expect(root.querySelector(`[data-chat="${G}"]`)).toBeNull();
+  });
+
+  it('tells the leader of a group with others in it to hand over first', async () => {
+    openPanel('leader');
+    await flush();
+    expect(root.querySelector<HTMLButtonElement>('[data-info-leave]')!.disabled).toBe(true);
+    expect(root.querySelector('[data-info-leader-note]')).not.toBeNull();
+  });
+
+  it('says why when leaving is refused', async () => {
+    openPanel('member', { leaveGroup: vi.fn(async () => fail('leader_must_hand_over', 409)) });
+    await flush();
+    await click('[data-info-leave]');
+    await click('[data-info-leave-yes]');
+    expect(text(root)).toContain('Trưởng nhóm cần chuyển quyền');
   });
 });

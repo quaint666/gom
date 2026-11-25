@@ -148,6 +148,8 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .th-title { flex: 1; min-inline-size: 0; }
 .th-title b { display: block; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .th-title small { color: var(--muted); font-size: 13px; }
+button.th-title { display: block; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+button.th-title:hover b { text-decoration: underline; }
 .msgs { position: relative; flex: 1; min-block-size: 0; overflow-y: auto; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 2px; overflow-anchor: none; }
 .msgs .more { align-self: center; margin-block-end: 8px; }
 .day { align-self: center; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 12px; margin-block: 6px 10px; }
@@ -199,7 +201,8 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .mrow { gap: 8px; align-items: flex-end; }
 .av.sm { inline-size: 32px; block-size: 32px; font-size: 12px; }
 .sp { inline-size: 32px; flex: none; }
-.sender { font-size: 13px; font-weight: 600; margin-block-end: 1px; }
+.sender { display: block; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; font-weight: 600; margin-block-end: 1px; cursor: pointer; text-align: start; }
+.sender:hover { text-decoration: underline; }
 .picks { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .pick { display: flex; align-items: center; gap: 12px; min-block-size: 48px; padding-inline: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .pick input { inline-size: 22px; block-size: 22px; accent-color: var(--btn); flex: none; }
@@ -529,3 +532,28 @@ select:focus-visible { outline-offset: 0; }
 /* The bar that says a new version is there: over the top of whatever page is open. */
 .updatebar { position: fixed; z-index: 40; inset-block-start: max(8px, env(safe-area-inset-top)); inset-inline: 12px; margin-inline: auto; max-inline-size: 420px; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--tint); color: var(--tint-text); font-size: 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25); }
 .updatebar span { flex: 1; }
+
+/* someone's card: a dialog over the page, a sheet from the bottom on a phone */
+.pcard { inline-size: min(380px, calc(100vw - 32px)); max-block-size: min(640px, calc(100dvh - 32px)); padding: 0 16px 16px; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface); color: var(--text); overscroll-behavior: contain; }
+.pcard::backdrop { background: rgb(0 0 0 / .45); overflow: hidden; overscroll-behavior: contain; }
+.pcard-head { display: flex; justify-content: flex-end; padding-block-start: 8px; }
+.pcard-top { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.pcard-top h2 { margin: 6px 0 0; font-size: 19px; overflow-wrap: anywhere; }
+.pcard-top small { color: var(--muted); }
+.pcard-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-block: 14px 6px; }
+.pcard h3 { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pcard .ask { margin-block-start: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.pcard .ask p { flex-basis: 100%; margin: 0; }
+.pcard .info-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pcard .info-person { display: flex; align-items: center; gap: 10px; min-block-size: 44px; }
+.pcard .info-person .av { inline-size: 32px; block-size: 32px; font-size: 13px; }
+.info .ask { display: flex; flex-wrap: wrap; gap: 8px; }
+.info .ask p { flex-basis: 100%; margin: 0; }
+button.info-person { inline-size: 100%; padding: 4px 6px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(--surface)); }
+.info-person small { margin-inline-start: auto; color: var(--muted); font-size: 12px; }
+.danger-text { color: var(--err-text); }
+@media (max-width: 640px) {
+  .pcard { inline-size: 100vw; max-inline-size: 100vw; margin: auto 0 0; border-radius: 14px 14px 0 0; border-inline: 0; border-block-end: 0; }
+}

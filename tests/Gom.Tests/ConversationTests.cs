@@ -155,6 +155,7 @@ public class ConversationTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal("direct", chat.GetProperty("kind").GetString());
         Assert.Equal("Bé Ba", chat.GetProperty("title").GetString());
         Assert.Equal(b.GomId, chat.GetProperty("peer").GetProperty("gomId").GetString());
+        Assert.Equal(b.Id, chat.GetProperty("peer").GetProperty("id").GetGuid());   // the card of the person opens from it
         Assert.Equal(0, chat.GetProperty("lastSeq").GetInt64());
         Assert.Equal(0, chat.GetProperty("lastReadSeq").GetInt64());
         Assert.Equal(2, (await List(cb)).Length);
