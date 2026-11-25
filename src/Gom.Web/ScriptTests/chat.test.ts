@@ -1730,6 +1730,13 @@ describe('chat: passing a message on', () => {
     expect(root.querySelector('.menu')).toBeNull();
   });
 
+  it('leaves hidden conversations out of the choices', async () => {
+    start({ path: `/c/${C1}`, chats: [...chats, chat('33333333-3333-4333-8333-333333333333', 'Bà', { hidden: true })], history: { [C1]: [msg(1, 'minh', 'Tối nay ăn gì?')] } });
+    await flush();
+    await pick('id1');
+    expect([...root.querySelectorAll('[data-forward-pick]')].map((b) => b.getAttribute('data-forward-pick'))).toEqual([C1, C2]);
+  });
+
   it('sends the words to the chosen conversation as a new message with no answer attached, and says so', async () => {
     const send = echo.mockClear();
     open({ send });
@@ -4583,6 +4590,25 @@ describe('the menu of a conversation in the list', () => {
     expect(h.api.setHidden).toHaveBeenCalledWith(C1, true);
     expect(h.nav.push).toHaveBeenCalledWith('/');
     expect(root.querySelector('form.composer')).toBeNull();
+  });
+
+  it('keeps a conversation the server marks hidden out of the list, and something new said in it brings it back', async () => {
+    const h = start({ chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { hidden: true, lastSeq: 1 })] });
+    await flush();
+    expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C1]);
+    h.handlers().event(C2, created({ ...msg(2, 'minh', '', at(11), C2), notice: { type: 'left', target: null } }));
+    await flush();
+    expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C1]);   // a notice does not bring it back
+    h.handlers().event(C2, created(msg(3, 'minh', 'Mẹ ơi', at(11), C2)));
+    await flush();
+    expect(rows().map((r) => r.getAttribute('data-chat'))).toEqual([C2, C1]);
+  });
+
+  it('shows the empty list when every conversation is hidden', async () => {
+    start({ chats: [chat(C1, 'Minh', { hidden: true })] });
+    await flush();
+    expect(rows()).toHaveLength(0);
+    expect(text(root)).toContain('Chưa có cuộc trò chuyện nào');
   });
 
   it('asks before deleting a conversation for you, and a no changes nothing', async () => {
