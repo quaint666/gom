@@ -37,6 +37,8 @@ Calm and quiet: a chat is mostly text and photos, so the colour is one sage gree
 | Error | background `#3A1F1B`, text and border `#F4B8AF` |
 | Warning (reconnecting) | background `#3A3118`, text `#EBD3A6`, border `#6B5A2A` |
 
+Each person may choose one of twelve colours in Settings (since 2026-11-26): sage stays the default, and the others are Biển, Sen, Nghệ, Oải hương, Than chì, Ngọc, Chàm, Mận, Son, Cà phê and Rêu. A colour replaces only the accent (button, links, focus ring, badge, the tint, your own bubbles); the cream and charcoal neutrals stay, so the look is still one hue at a time. Each is a block at the top of `gom.css`, every text pair is at least 4.5 to 1 (a server test computes it from the stylesheet), and `design/palettes.py` makes a new one from a single button colour. The installed app's icon and splash screen stay sage.
+
 No pure black anywhere. The image viewer is `#0E100F` in both themes, on purpose. A dim layer behind dialogs and menus is `rgba(20,26,22,.45)` in light and `rgba(0,0,0,.6)` in dark.
 
 Avatars and sender names are neutral on purpose (only the first avatar tint is sage): the amber, lilac and rose of the first draft were dropped so the colour stays one hue. In a busy group, names then differ by avatar initials, not by colour.

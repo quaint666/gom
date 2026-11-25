@@ -10,12 +10,14 @@ public static class AccountEndpoints
     public sealed record NicknameRequest(string? DisplayName);
     public sealed record PasswordRequest(string? Current, string? Password);
     public sealed record LanguageRequest(string? Language);
+    public sealed record PaletteRequest(string? Palette);
 
     public static void MapAccount(this IEndpointRouteBuilder app)
     {
         app.MapPatch("/api/me", ChangeNickname).RequireAuthorization();
         app.MapPut("/api/me/password", ChangePassword).RequireAuthorization();
         app.MapPut("/api/me/language", ChangeLanguage).RequireAuthorization();
+        app.MapPut("/api/me/palette", ChangePalette).RequireAuthorization();
         app.MapDelete("/api/me", AccountDeletion.Delete).RequireAuthorization();
 
         var owner = app.MapGroup("/api/users").RequireAuthorization("Owner");
@@ -29,6 +31,15 @@ public static class AccountEndpoints
         if (request.Language is not { } language || !ServerText.Languages.Contains(language)) return Results.BadRequest(new { error = "invalid_language" });
         var me = GomClaims.User(http.User);
         await db.Users.Where(u => u.Id == me).ExecuteUpdateAsync(s => s.SetProperty(u => u.Language, language), ct);
+        return Results.NoContent();
+    }
+
+    /// <summary>The colour of the person's pages, on every device.</summary>
+    private static async Task<IResult> ChangePalette(PaletteRequest request, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        if (request.Palette is not { } palette || !Chat.Appearance.Palettes.Contains(palette)) return Results.BadRequest(new { error = "invalid_palette" });
+        var me = GomClaims.User(http.User);
+        await db.Users.Where(u => u.Id == me).ExecuteUpdateAsync(s => s.SetProperty(u => u.Palette, palette), ct);
         return Results.NoContent();
     }
 

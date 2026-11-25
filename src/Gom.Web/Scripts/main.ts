@@ -15,7 +15,7 @@ import { createPusher } from './push.js';
 import { mountSignIn } from './pages/signin.js';
 import { mountSignUp } from './pages/signup.js';
 import { language, pageTitle, rememberLanguage } from './say.js';
-import { applyScheme, storedScheme } from './theme.js';
+import { PALETTE_STORAGE_KEY, applyPalette, applyScheme, isPalette, storedPalette, storedScheme, syncThemeColor } from './theme.js';
 import { showUpdateBar, watchForUpdate } from './update.js';
 
 const root = document.getElementById('app');
@@ -24,7 +24,10 @@ const root = document.getElementById('app');
 const api = createApi(undefined, undefined, {
   onPending: () => { if (location.pathname !== '/') location.assign('/'); },
   onLanguage: (chosen) => { rememberLanguage(chosen); location.reload(); },
+  // The person's colour, when this device had another: drawn at once, and remembered for the next page.
+  onPalette: (chosen) => { if (isPalette(chosen) && chosen !== storedPalette()) applyPalette(chosen); },
 });
+syncThemeColor();
 document.documentElement.lang = language;
 document.title = pageTitle(document.body.dataset['page'] ?? '');
 // The browser offers to install the app once, early: listen on every page so the settings page can use it.
@@ -34,7 +37,10 @@ const go = (path: string): void => location.assign(path);
 const token = decodeURIComponent(location.pathname.split('/')[2] ?? '');
 
 // Another tab changed the colour scheme: follow it.
-addEventListener('storage', (e) => { if (e.key === 'color-scheme') applyScheme(storedScheme()); });
+addEventListener('storage', (e) => {
+  if (e.key === 'color-scheme') applyScheme(storedScheme());
+  if (e.key === PALETTE_STORAGE_KEY) applyPalette(storedPalette());
+});
 
 const pusher = createPusher();
 const chatDeps = (): ChatDeps => ({

@@ -23,6 +23,8 @@ public class User
     public Guid? AvatarId { get; set; }
     /// <summary>The language of the pages and of the notifications this person gets: "vi" or "en".</summary>
     public string Language { get; set; } = ServerText.DefaultLanguage;
+    /// <summary>The colour of their pages, on every device (a code from <see cref="Chat.Appearance.Palettes"/>).</summary>
+    public string Palette { get; set; } = Chat.Appearance.DefaultPalette;
     /// <summary>
     /// Set while this account is a request to join (signed up on its own, waiting for the owner); null for a member. A request can
     /// sign in but do nothing else until the owner approves it.

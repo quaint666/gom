@@ -80,6 +80,7 @@ export function errorText(failure: Failure): string {
     case 'pending_approval': return say.errors.pendingApproval;
     case 'not_a_request': return say.errors.notARequest;
     case 'invalid_language': return say.errors.invalidLanguage;
+    case 'invalid_palette': return say.errors.invalidPalette;
     case 'invalid_endpoint': return say.errors.invalidEndpoint;
     case 'invalid_keys': return say.errors.invalidKeys;
     case 'network': return say.errors.network;

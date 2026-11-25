@@ -874,6 +874,14 @@ namespace Gom.Web.Migrations
                         .HasDefaultValue("vi")
                         .HasColumnName("language");
 
+                    b.Property<string>("Palette")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("sage")
+                        .HasColumnName("palette");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text")

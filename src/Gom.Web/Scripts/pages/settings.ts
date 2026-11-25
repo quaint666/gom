@@ -1,7 +1,7 @@
 import { html, nothing, render } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
 import type { Api, Failure, PushLevel, PushState, SessionInfo, User } from '../api.js';
-import { chosenScheme, chooseScheme, type Choice } from '../theme.js';
+import { PALETTES, applyPalette, chosenScheme, chooseScheme, storedPalette, type Choice, type Palette } from '../theme.js';
 import type { Installer } from '../install.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
@@ -26,6 +26,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let receiptsStatus = '';
   let busy = false;
   let scheme: Choice = chosenScheme();
+  let palette: Palette = storedPalette();
   let installStatus = '';
   /** A picture chosen for the profile, not saved yet: the file, and what the preview shows (read as a data: address, which the page's rules allow). */
   let picked: { file: File; preview: string } | null = null;
@@ -140,6 +141,13 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
               @change=${() => { scheme = value; chooseScheme(value); update(); }}>
               <label for=${`scheme-${value}`}>${label}</label></div>`)}
         </fieldset>
+        <fieldset class="swatches" data-palette-choice aria-describedby="palette-note">
+          <legend class="hint">${say.settings.palette}</legend>
+          ${PALETTES.map((value) => html`
+            <label class="swatch"><input type="radio" name="palette" value=${value} .checked=${live(palette === value)} ?disabled=${busy}
+              @change=${() => void choosePalette(value)}><span class="dot" data-swatch=${value} aria-hidden="true"></span><span>${say.settings.palettes[value]}</span></label>`)}
+          <p class="hint" id="palette-note">${say.settings.paletteNote}</p>
+        </fieldset>
         <fieldset class="choices" data-language>
           <legend class="hint">${say.settings.language}</legend>
           ${LANGUAGES.map(([value, label]) => html`
@@ -175,6 +183,15 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     const result = await api.sessions();
     if (result.ok) sessions = result.data; else error = result;
     update();
+  }
+
+  /** The person's colour: drawn at once, then saved with their account; put back, with the reason, if the server says no. */
+  async function choosePalette(chosen: Palette): Promise<void> {
+    const before = palette;
+    palette = chosen; error = null; applyPalette(chosen); update();
+    const result = await api.setPalette(chosen);
+    if (result.ok) return;
+    palette = before; applyPalette(before); error = result; update();
   }
 
   /** The person's language for every device: saved with their account, then this page again in it. */
