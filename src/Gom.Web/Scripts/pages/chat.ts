@@ -23,6 +23,8 @@ export interface ChatDeps {
   timer: { set(fn: () => void, ms: number): number; clear(id: number): void };
   /** Messages written but not yet delivered, kept for this person across a reload. */
   outbox(gomId: string): { load(): OutboxItem[]; save(items: OutboxItem[]): void };
+  /** Closes this device's notifications of a conversation once it is on screen. */
+  clearNotifications?(conversation: string): void;
 }
 
 export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply; attachments?: Attachment[] }
@@ -929,6 +931,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     t.below = 0;
     leaving = false;
     update();
+    deps.clearNotifications?.(id);
     if (!t.loaded) void loadHistory(id);
     // A 1:1 conversation says under the name how many groups you share: that comes from the person's card.
     if (c?.peer && !cards.has(c.peer.id)) void loadCard(c.peer.id);
@@ -1705,7 +1708,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (!deps.visible()) return;
     live?.retryNow();
     retryAll();
-    if (openId !== null) markRead(openId);
+    if (openId !== null) { markRead(openId); deps.clearNotifications?.(openId); }
   });
 
   addEventListener('online', () => { live?.retryNow(); retryAll(); });

@@ -1,15 +1,16 @@
 import { html, nothing, render } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
-import type { Api, Failure, SessionInfo, User } from '../api.js';
+import type { Api, Failure, PushLevel, PushState, SessionInfo, User } from '../api.js';
 import { chosenScheme, chooseScheme, type Choice } from '../theme.js';
 import type { Installer } from '../install.js';
+import type { Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
 import { errorText } from '../text.js';
 
 /** The choices for the colour scheme, in the order shown. */
 const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', 'Theo hệ thống'], ['light', 'Sáng'], ['dark', 'Tối']];
 
-export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer): void {
+export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer, pusher?: Pusher): void {
   let user: User | null = null;
   let sessions: SessionInfo[] = [];
   let error: Failure | null = null;
@@ -27,6 +28,10 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   /** A picture chosen for the profile, not saved yet: the file, and what the preview shows (read as a data: address, which the page's rules allow). */
   let picked: { file: File; preview: string } | null = null;
   let pictureStatus = '';
+  /** Notifications on this server (null: off, or not known yet), and on this device. */
+  let push: PushState | null = null;
+  let pushStatus = '';
+  let pushBusy = false;
 
   const row = (s: SessionInfo) => html`
     <li class="li" data-session=${s.id}>
@@ -60,6 +65,31 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       <p class="hint" role="status" data-avatar-status>${pictureStatus}</p>
     </div>`;
 
+  /** Notifications for this device: a switch, how much they say, or why this device cannot have them. */
+  const pushCard = (p: PushState) => {
+    const support = pusher?.support() ?? 'unsupported';
+    return html`
+      <h2 class="section">Thông báo</h2>
+      <div class="card" data-push>
+        ${support === 'needs-home-screen' ? html`<p class="hint" data-push-home>Trên iPhone và iPad, thông báo chỉ đến khi Gom ở trên Màn hình chính: bấm nút Chia sẻ, chọn "Thêm vào MH chính", mở Gom từ biểu tượng đó rồi bật thông báo ở đây.</p>`
+          : support === 'unsupported' ? html`<p class="hint" data-push-unsupported>Trình duyệt này không nhận được thông báo.</p>`
+          : !p.subscribed && pusher!.permission() === 'denied' ? html`<p class="hint" data-push-blocked>Thông báo của Gom đang bị chặn trên trình duyệt này. Hãy cho phép thông báo trong phần cài đặt trang của trình duyệt, rồi quay lại đây.</p>`
+          : html`
+            <div class="pick"><input type="checkbox" id="push-on" data-push-switch .checked=${live(p.subscribed)} ?disabled=${pushBusy}
+              @change=${(e: Event) => void setPushOn((e.target as HTMLInputElement).checked)}>
+              <label for="push-on">Nhận thông báo tin nhắn mới trên thiết bị này</label></div>
+            ${p.subscribed ? html`
+              <fieldset class="choices" data-push-level>
+                <legend class="hint">Thông báo hiện:</legend>
+                ${([['name', 'Tên người gửi và cuộc trò chuyện'], ['nothing', 'Chỉ "Tin nhắn mới"']] as const).map(([value, label]) => html`
+                  <div class="choice"><input type="radio" name="push-level" id=${`push-${value}`} value=${value} .checked=${live(p.level === value)} ?disabled=${pushBusy}
+                    @change=${() => void setPushLevel(value)}><label for=${`push-${value}`}>${label}</label></div>`)}
+              </fieldset>` : nothing}
+            <p class="hint">Thông báo không bao giờ hiện nội dung tin nhắn.</p>`}
+        <p class="hint" role="status" data-push-status>${pushStatus}</p>
+      </div>`;
+  };
+
   const view = () => html`
     ${appBar({ title: 'Cài đặt', back: '/' })}
     <div class="page">
@@ -83,6 +113,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
             <p class="hint">Thêm Gom vào màn hình chính để mở như một ứng dụng, không cần mở trình duyệt.</p>
             <button class="btn" type="button" data-install-button @click=${installApp}>Cài đặt Gom</button>
           </div>` : installStatus === '' ? nothing : html`<p class="hint" role="status" data-install-status>${installStatus}</p>`}
+        ${push === null ? nothing : pushCard(push)}
         <h2 class="section">Giao diện</h2>
         <fieldset class="choices" data-scheme>
           <legend class="sr-only">Màu giao diện</legend>
@@ -166,6 +197,44 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     update();
   }
 
+  /** On: ask the browser (this runs in the tap, as iPhones require), then tell the server. Off: both forget this device. */
+  async function setPushOn(on: boolean): Promise<void> {
+    if (push === null || pusher === undefined || pushBusy) return;
+    pushBusy = true; pushStatus = ''; update();
+    if (on) {
+      const sub = await pusher.subscribe(push.key);
+      if (sub === 'denied') pushStatus = 'Bạn chưa cho phép Gom gửi thông báo.';
+      else if (sub === 'failed') pushStatus = 'Không bật được thông báo trên trình duyệt này.';
+      else {
+        const result = await api.setPush(sub, push.level);
+        if (result.ok) { push = { ...push, subscribed: true }; pushStatus = 'Đã bật thông báo.'; }
+        else if (result.error === 'unauthorized') { go('/sign-in'); return; }
+        else pushStatus = errorText(result);
+      }
+    } else {
+      await pusher.unsubscribe();
+      const result = await api.removePush();
+      if (result.ok) { push = { ...push, subscribed: false }; pushStatus = 'Đã tắt thông báo.'; }
+      else if (result.error === 'unauthorized') { go('/sign-in'); return; }
+      else pushStatus = errorText(result);
+    }
+    pushBusy = false;
+    update();
+  }
+
+  async function setPushLevel(level: PushLevel): Promise<void> {
+    if (push === null || pusher === undefined || pushBusy) return;
+    pushBusy = true; pushStatus = ''; update();
+    const sub = await pusher.current();
+    const result = sub === null ? null : await api.setPush(sub, level);
+    pushBusy = false;
+    if (result?.ok) { push = { ...push, level }; pushStatus = 'Đã lưu.'; }
+    else if (result === null) { push = { ...push, subscribed: false }; pushStatus = 'Thiết bị này không còn nhận thông báo. Hãy bật lại.'; }
+    else if (result.error === 'unauthorized') { go('/sign-in'); return; }
+    else pushStatus = errorText(result);
+    update();
+  }
+
   async function saveNickname(event: Event): Promise<void> {
     event.preventDefault();
     if (busy) return;
@@ -208,6 +277,8 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     user = result.data;
     nickname = result.data.displayName;
     receipts = result.data.readReceipts !== false;
+    const state = await api.pushState();
+    if (state.ok) push = state.data;
     await load();
   });
 }
