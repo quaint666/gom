@@ -4,10 +4,10 @@ import { STICKER_PACKS, STICKERS, recentStickers, rememberSticker, stickerName }
 describe('stickers', () => {
   beforeEach(() => localStorage.clear());
 
-  it('are 379 in seven named packs, each once', () => {
-    expect(STICKERS).toHaveLength(379);
-    expect(new Set(STICKERS).size).toBe(379);
-    expect(STICKER_PACKS.map((p) => p.name)).toEqual(['Cảm xúc', 'Cử chỉ', 'Yêu thương', 'Động vật', 'Đồ ăn', 'Lễ hội', 'Cờ']);
+  it('are 445 in eleven named packs, each once, with the flags last', () => {
+    expect(STICKERS).toHaveLength(445);
+    expect(new Set(STICKERS).size).toBe(445);
+    expect(STICKER_PACKS.map((p) => p.name)).toEqual(['Cảm xúc', 'Cử chỉ', 'Yêu thương', 'Động vật', 'Đồ ăn', 'Lễ hội', 'Thời tiết', 'Du lịch', 'Thể thao', 'Học tập', 'Cờ']);
     for (const p of STICKER_PACKS) expect(p.codes.length, p.name).toBeGreaterThan(0);
   });
 
