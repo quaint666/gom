@@ -835,6 +835,16 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${openId !== null && infoOpen && chatOf(openId) !== undefined ? infoPanel(chatOf(openId)!, threadOf(openId)) : nothing}
     </div>`;
 
+  /**
+   * Scrolls the message list, and only it, so that `el` is at its top or in its middle (as far as the list can go). Not
+   * scrollIntoView: when the list cannot scroll that far (the first unread message near the end), that also scrolls the page
+   * around it, and the header goes off the top of the screen.
+   */
+  function scrollWithin(box: HTMLElement, el: HTMLElement, where: 'start' | 'center'): void {
+    const offset = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    box.scrollTop = Math.max(0, where === 'start' ? offset : offset - (box.clientHeight - el.offsetHeight) / 2);
+  }
+
   function update(): void {
     render(view(), root);
     placeMenu();
@@ -846,7 +856,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (t.jump) {
       // The first unread message is where reading starts. It can be drawn only once the history is here.
       const divider = after.querySelector<HTMLElement>('.newdiv');
-      if (divider !== null) { t.jump = false; t.stick = false; divider.scrollIntoView?.({ block: 'start' }); return; }
+      if (divider !== null) { t.jump = false; t.stick = false; scrollWithin(after, divider, 'start'); return; }
       if (t.loaded) t.jump = false;   // the first unread one is further back than what was loaded: read from the end
     }
     if (t.stick) after.scrollTop = after.scrollHeight;
@@ -1428,7 +1438,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     for (let pages = 0; !t.messages.some((x) => x.id === m.id) && t.hasMore && pages < 40; pages++) await loadOlder(id);
     found = m.id;
     update();
-    root.querySelector<HTMLElement>(`[data-msg="${m.id}"]`)?.scrollIntoView?.({ block: 'center' });
+    const box = root.querySelector<HTMLElement>('.msgs');
+    const row = root.querySelector<HTMLElement>(`[data-msg="${m.id}"]`);
+    if (box !== null && row !== null) scrollWithin(box, row, 'center');
     deps.timer.set(() => { if (found === m.id) { found = null; update(); } }, 2500);
   }
 
