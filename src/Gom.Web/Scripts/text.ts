@@ -2,8 +2,8 @@ import type { Failure } from './api.js';
 import { limits } from './limits.js';
 import { say } from './say.js';
 
-/** A number as Vietnamese writes it: 4.000, 1,2. */
-const number = (n: number): string => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(n);
+/** A number as the page's language writes it: 4.000 and 1,2 in Vietnamese. */
+const number = (n: number): string => new Intl.NumberFormat(say.locale, { maximumFractionDigits: 1 }).format(n);
 
 /** The sentence for a failure, from the table. The sign-in sentence never says whether the ID exists. */
 export function errorText(failure: Failure): string {
@@ -77,6 +77,7 @@ export function errorText(failure: Failure): string {
     case 'sign_up_full': return say.errors.signUpFull;
     case 'pending_approval': return say.errors.pendingApproval;
     case 'not_a_request': return say.errors.notARequest;
+    case 'invalid_language': return say.errors.invalidLanguage;
     case 'invalid_endpoint': return say.errors.invalidEndpoint;
     case 'invalid_keys': return say.errors.invalidKeys;
     case 'network': return say.errors.network;

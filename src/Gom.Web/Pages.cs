@@ -7,13 +7,13 @@ using Gom.Web.Uploads;
 namespace Gom.Web;
 
 /// <summary>
-/// The pages. Every page is the same small HTML shell (wwwroot/pages/shell.html); the server fills in its title, which script
+/// The pages. Every page is the same small HTML shell (wwwroot/pages/shell.html); the server fills in which script
 /// to run (<c>data-page</c>, read by /js/main.js) and the limits the server holds (<c>data-limits</c>), so a page never types a
 /// number the server decides. The files a page loads are then named by their fingerprinted copies (see <see cref="Assets"/>).
 /// </summary>
 public static class Pages
 {
-    /// <summary>An address and the script for it; its title comes from <see cref="ServerText.PageTitles"/>.</summary>
+    /// <summary>An address and the script for it. Its title is set by the script, in the page's language ("Gom" until then).</summary>
     public sealed record Page(string Route, string Name);
 
     public static readonly IReadOnlyList<Page> All =
@@ -60,8 +60,7 @@ public static class Pages
     });
 
     /// <summary>The shell made into one page, each value escaped for HTML text or a quoted attribute.</summary>
-    public static string Render(string shell, Page page, string limits, ServerText text) => shell
-        .Replace("{title}", Escape(text.PageTitles.TryGetValue(page.Name, out var title) ? $"{title} · Gom" : "Gom"), StringComparison.Ordinal)
+    public static string Render(string shell, Page page, string limits) => shell
         .Replace("{page}", Escape(page.Name), StringComparison.Ordinal)
         .Replace("{limits}", Escape(limits), StringComparison.Ordinal);
 

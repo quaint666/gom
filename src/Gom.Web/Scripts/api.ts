@@ -1,5 +1,5 @@
 import type { DeviceSubscription } from './push.js';
-import { say } from './say.js';
+import { language, say, type Language } from './say.js';
 /** The error codes the server sends, each once. A code missing here would reach the page as 'unknown' and lose its own words. */
 const SERVER_CODE_LIST = [
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
@@ -12,7 +12,7 @@ const SERVER_CODE_LIST = [
   'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
   'invalid_invite', 'too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
   'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
-  'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request',
+  'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language',
 ] as const;
 
 /** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
@@ -26,7 +26,7 @@ export type Result<T> = { ok: true; data: T } | Failure;
 /** `avatar` is the id of the profile picture (at /api/avatars/{avatar}); none means the initials. */
 /** `standing`: a member, or someone who asked to join and is waiting ("pending") or was refused. */
 export type Standing = 'member' | 'pending' | 'refused';
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language }
 /** Someone asking to join, as the owner sees them. */
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 export interface SignUpBody { gomId: string; password: string; displayName: string; note: string }
@@ -182,6 +182,8 @@ export interface Api {
   /** How far the other members have read. Empty, with `enabled: false`, when you have hidden yours. */
   reads(conversation: string): Promise<Result<{ enabled: boolean; reads: { userId: string; seq: number }[] }>>;
   setReceipts(enabled: boolean): Promise<Result<void>>;
+  /** The person's language, for every device and their notifications. */
+  setLanguage(language: Language): Promise<Result<void>>;
   send(conversation: string, clientId: string, body: string, replyTo?: string, attachments?: string[]): Promise<Result<ChatMessage>>;
   /** Sends one sticker, the whole message (no words, no files). */
   sendSticker(conversation: string, clientId: string, sticker: string, replyTo?: string): Promise<Result<ChatMessage>>;
@@ -242,8 +244,13 @@ const SLOW_REQUEST_TIMEOUT_MS = 300_000;
 /** An upload is given up when no byte has gone for this long (a large file on a slow line takes minutes, but it keeps moving). */
 export const UPLOAD_STALL_MS = 60_000;
 
-/** `onPending`: called when the server refuses because this account is a request to join still waiting (the page then shows the waiting screen). */
-export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest(), onPending?: () => void): Api {
+/**
+ * What the page does when the server says something about the whole page: `onPending`, this account is a request to join still
+ * waiting (show the waiting screen); `onLanguage`, the person's language is not this page's (remember it and load the page again).
+ */
+export interface ApiHooks { onPending?: () => void; onLanguage?: (chosen: Language) => void }
+
+export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest(), hooks: ApiHooks = {}): Api {
   async function call<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Result<T>> {
     let response: Response;
     try {
@@ -262,7 +269,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       try { return { ok: true, data: (await response.json()) as T }; } catch { return { ok: false, status: response.status, error: 'server' }; }
     }
     const failed = await failure(response);
-    if (failed.error === 'pending_approval') onPending?.();
+    if (failed.error === 'pending_approval') hooks.onPending?.();
     return failed;
   }
 
@@ -296,7 +303,11 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
   const enc = encodeURIComponent;
   return {
     upload,
-    me: () => call('GET', '/api/me'),
+    me: async () => {
+      const result = await call<User>('GET', '/api/me');
+      if (result.ok && result.data.language !== undefined && result.data.language !== language) hooks.onLanguage?.(result.data.language);
+      return result;
+    },
     signIn: (gomId, password) => call('POST', '/api/session', { gomId, password }),
     signOut: () => call('DELETE', '/api/session'),
     peekInvite: (token) => call('GET', `/api/join/${enc(token)}`),
@@ -371,6 +382,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     askMember: (conversation, userId) => call('POST', `/api/conversations/${enc(conversation)}/members/${enc(userId)}/friend-request`),
     reads: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/reads`),
     setReceipts: (enabled) => call('PATCH', '/api/me/receipts', { enabled }),
+    setLanguage: (chosen) => call('PUT', '/api/me/language', { language: chosen }),
     recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
     media: (conversation, kind, before) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}`),

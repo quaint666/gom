@@ -26,15 +26,14 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         Assert.Contains("<html lang=\"vi\">", html);
     }
 
+    /// <summary>The title is the page's to set, in its language (the script's string tables); until then every page is "Gom".</summary>
     [Theory]
-    [InlineData("/", "Gom")]
-    [InlineData("/sign-in", "Đăng nhập · Gom")]
-    [InlineData("/owner", "Lời mời và thành viên · Gom")]
-    [InlineData("/owner/storage", "Dung lượng · Gom")]
-    public async Task Each_page_has_its_own_title(string path, string title)
+    [MemberData(nameof(Pages))]
+    public async Task Every_page_starts_titled_Gom(string path, string page)
     {
+        _ = page;
         var html = await (await factory.CreateClient().GetAsync(path)).Content.ReadAsStringAsync();
-        Assert.Contains($"<title>{title}</title>", html);
+        Assert.Contains("<title>Gom</title>", html);
     }
 
     private static async Task<JsonElement> LimitsOf(HttpClient client, string path)

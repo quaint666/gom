@@ -1,3 +1,6 @@
+// The pages' words: these tests read the Vietnamese ones (jsdom's browser says English).
+localStorage.setItem('gom-language', 'vi');
+
 // jsdom has no matchMedia. Tests that care about the system colour scheme set `matches` themselves.
 if (typeof window.matchMedia !== 'function') {
   window.matchMedia = (query: string): MediaQueryList => ({

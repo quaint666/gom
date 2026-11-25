@@ -14,8 +14,8 @@ the code or real output), **[stated]** (someone said so; who is given), or **[in
 
 ## 2. Work queue (agreed order)
 
-Each is discussed first (design, decisions, what cannot be verified), then built. Items 1 to 7 were agreed on
-2026-11-25 and opened as stacked pull requests; their decisions are in `docs/decisions.md`.
+Each is discussed first (design, decisions, what cannot be verified), then built. Items 1 to 6 were agreed on
+2026-11-25 and opened as stacked pull requests #111 to #118 (merge in that order); their decisions are in `docs/decisions.md`.
 
 1. **One source per value**: one page shell, the server's limits in `data-limits`.
 2. **Every piece of text in one table** (two pull requests), words unchanged; tests keep their literal Vietnamese.

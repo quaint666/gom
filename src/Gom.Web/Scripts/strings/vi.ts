@@ -3,6 +3,22 @@
  * function. Another language is a file of the same shape (`Strings`), so a missing line is a build error.
  */
 export const vi = {
+  /** Dates and numbers are written as this locale writes them. */
+  locale: 'vi-VN',
+  /** Each page's title before " · Gom", by its script's name; a page not listed is just "Gom". */
+  titles: {
+    signin: 'Đăng nhập', join: 'Lời mời', signup: 'Xin tham gia', reset: 'Đặt lại mật khẩu', settings: 'Cài đặt', friends: 'Bạn bè',
+    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng',
+  },
+  /** The emoji panel's groups (emoji-data.ts) and the sticker packs (stickers.ts), by key. */
+  emojiGroups: {
+    smileys: 'Mặt cười', people: 'Con người', nature: 'Động vật và thiên nhiên', food: 'Đồ ăn và thức uống', travel: 'Du lịch và địa điểm',
+    activities: 'Hoạt động', objects: 'Đồ vật', symbols: 'Biểu tượng', flags: 'Cờ',
+  },
+  stickerPacks: {
+    feelings: 'Cảm xúc', gestures: 'Cử chỉ', love: 'Yêu thương', animals: 'Động vật', food: 'Đồ ăn', festivals: 'Lễ hội', weather: 'Thời tiết',
+    travel: 'Du lịch', sports: 'Thể thao', school: 'Học tập', flags: 'Cờ',
+  },
   common: {
     you: 'Bạn',
     close: 'Đóng',
@@ -115,10 +131,12 @@ export const vi = {
     signUpFull: 'Gom đang không nhận yêu cầu mới. Hãy thử lại sau.',
     pendingApproval: 'Tài khoản của bạn đang chờ chủ Gom duyệt.',
     notARequest: 'Tài khoản này không phải là yêu cầu tham gia.',
+    invalidLanguage: 'Gom chưa có ngôn ngữ này.',
     tooManyAttachments: (max: number) => `Mỗi tin nhắn có tối đa ${max} tệp.`,
   },
   settings: {
     title: 'Cài đặt',
+    language: 'Ngôn ngữ',
     schemeSystem: 'Theo hệ thống',
     schemeLight: 'Sáng',
     schemeDark: 'Tối',

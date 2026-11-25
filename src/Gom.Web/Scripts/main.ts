@@ -14,12 +14,19 @@ import { mountStorage } from './pages/storage.js';
 import { createPusher } from './push.js';
 import { mountSignIn } from './pages/signin.js';
 import { mountSignUp } from './pages/signup.js';
+import { language, pageTitle, rememberLanguage } from './say.js';
 import { applyScheme, storedScheme } from './theme.js';
 import { showUpdateBar, watchForUpdate } from './update.js';
 
 const root = document.getElementById('app');
 // A request to join that is still waiting is sent home, where the chat page shows its waiting screen.
-const api = createApi(undefined, undefined, () => { if (location.pathname !== '/') location.assign('/'); });
+// The person's language, when it is not this page's, is remembered and the page loaded again in it.
+const api = createApi(undefined, undefined, {
+  onPending: () => { if (location.pathname !== '/') location.assign('/'); },
+  onLanguage: (chosen) => { rememberLanguage(chosen); location.reload(); },
+});
+document.documentElement.lang = language;
+document.title = pageTitle(document.body.dataset['page'] ?? '');
 // The browser offers to install the app once, early: listen on every page so the settings page can use it.
 const installer = createInstaller(window);
 const go = (path: string): void => location.assign(path);

@@ -9,16 +9,27 @@ public static class AccountEndpoints
 {
     public sealed record NicknameRequest(string? DisplayName);
     public sealed record PasswordRequest(string? Current, string? Password);
+    public sealed record LanguageRequest(string? Language);
 
     public static void MapAccount(this IEndpointRouteBuilder app)
     {
         app.MapPatch("/api/me", ChangeNickname).RequireAuthorization();
         app.MapPut("/api/me/password", ChangePassword).RequireAuthorization();
+        app.MapPut("/api/me/language", ChangeLanguage).RequireAuthorization();
         app.MapDelete("/api/me", AccountDeletion.Delete).RequireAuthorization();
 
         var owner = app.MapGroup("/api/users").RequireAuthorization("Owner");
         owner.MapPost("/{gomId}/disable", Disable);
         owner.MapPost("/{gomId}/enable", Enable);
+    }
+
+    /// <summary>The person's language, for their pages on every device and for what their notifications say.</summary>
+    private static async Task<IResult> ChangeLanguage(LanguageRequest request, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        if (request.Language is not { } language || !ServerText.Languages.Contains(language)) return Results.BadRequest(new { error = "invalid_language" });
+        var me = GomClaims.User(http.User);
+        await db.Users.Where(u => u.Id == me).ExecuteUpdateAsync(s => s.SetProperty(u => u.Language, language), ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> ChangeNickname(NicknameRequest request, HttpContext http, GomDbContext db, CancellationToken ct)

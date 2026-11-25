@@ -5,6 +5,7 @@ import type { Pusher, PushSupport } from '../Scripts/push.js';
 import type { LiveControl, LiveHandlers } from '../Scripts/chat/live.js';
 import { mountChat, type ChatDeps, type OutboxItem } from '../Scripts/pages/chat.js';
 import { STICKER_PACKS, STICKERS } from '../Scripts/stickers.js';
+import { vi as vietnamese } from '../Scripts/strings/vi.js';
 import { fail, fakeApi, fill, flush, ok, text } from './helpers.js';
 
 let root: HTMLElement;
@@ -4209,7 +4210,7 @@ describe('chat: stickers', () => {
     await toggle();
     expect(root.querySelector('[data-picker-toggle]')!.getAttribute('aria-expanded')).toBe('true');
     const buttons = [...panel()!.querySelectorAll('[data-sticker-pack]')];
-    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(STICKER_PACKS.map((p) => p.name));
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(STICKER_PACKS.map((p) => vietnamese.stickerPacks[p.key]));
     expect(buttons[0]!.getAttribute('aria-pressed')).toBe('true');
     expect(shown()).toEqual(STICKER_PACKS[0]!.codes);
     expect(text(panel()!)).toContain('Cảm xúc');
@@ -4263,8 +4264,8 @@ describe('chat: stickers', () => {
     await toggle();
     for (const [i, p] of STICKER_PACKS.entries()) {
       await pack(i);
-      expect(shown(), p.name).toEqual(p.codes);
-      expect(text(panel()!.querySelector('h3')!)).toBe(p.name);
+      expect(shown(), p.key).toEqual(p.codes);
+      expect(text(panel()!.querySelector('h3')!)).toBe(vietnamese.stickerPacks[p.key]);
     }
     expect(STICKER_PACKS.flatMap((p) => p.codes)).toEqual(STICKERS);
   });

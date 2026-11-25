@@ -862,6 +862,14 @@ namespace Gom.Web.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_owner");
 
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasDefaultValue("vi")
+                        .HasColumnName("language");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text")
@@ -914,6 +922,8 @@ namespace Gom.Web.Migrations
                             t.HasCheckConstraint("ck_users_deleted", "deleted_at IS NULL OR (disabled_at IS NOT NULL AND NOT is_owner)");
 
                             t.HasCheckConstraint("ck_users_gom_id", "gom_id ~ '^[a-z0-9_]{3,20}$'");
+
+                            t.HasCheckConstraint("ck_users_language", "language IN ('vi', 'en')");
 
                             t.HasCheckConstraint("ck_users_refused", "refused_at IS NULL OR requested_at IS NOT NULL");
 

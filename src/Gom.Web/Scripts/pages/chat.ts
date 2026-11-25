@@ -937,8 +937,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @click=${() => { emojiGroup = index; update(); }}>${face}</button>`;
     return html`
       <section class="emojis" role="tabpanel" aria-label="Emoji" data-emoji-panel>
-        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${EMOJI_GROUPS.map((g, i) => chooser(i, emojiOf(i)[0] ?? '', g.name))}</div>
-        <h3>${group === -1 ? say.common.recent : EMOJI_GROUPS[group]?.name}</h3>
+        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${EMOJI_GROUPS.map((g, i) => chooser(i, emojiOf(i)[0] ?? '', say.emojiGroups[g.key]))}</div>
+        <h3>${group === -1 ? say.common.recent : say.emojiGroups[EMOJI_GROUPS[group]!.key]}</h3>
         <div class="e-grid">${shown.map((e) => html`<button class="e-pick" type="button" data-emoji=${e} aria-label=${e} @click=${() => insertEmoji(id, e)}>${e}</button>`)}</div>
       </section>`;
   };
@@ -959,8 +959,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       <section class="stickers" role="tabpanel" aria-label=${say.common.sticker} data-sticker-panel>
         <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${STICKER_PACKS.map((p, i) =>
-          chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, p.name))}</div>
-        <h3>${pack === -1 ? say.common.recent : STICKER_PACKS[pack]?.name}</h3>
+          chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, say.stickerPacks[p.key]))}</div>
+        <h3>${pack === -1 ? say.common.recent : say.stickerPacks[STICKER_PACKS[pack]!.key]}</h3>
         <div class="stk-grid" data-shown-stickers>${shown.map(tile)}</div>
         <p class="credit">${say.chat.stickerCredit}</p>
       </section>`;

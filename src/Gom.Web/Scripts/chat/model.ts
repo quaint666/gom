@@ -122,7 +122,7 @@ export function buildThread(
   return items;
 }
 
-const dayFormat = new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const dayFormat = new Intl.DateTimeFormat(say.locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 /** A notice in words, from the point of view of whoever reads it ("Bạn" and "bạn" for yourself). */
 export function noticeText(m: ChatMessage, me: string): string {

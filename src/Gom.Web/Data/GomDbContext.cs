@@ -46,9 +46,12 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
                 // A request to join is never the owner; it is refused only while it is a request.
                 t.HasCheckConstraint("ck_users_request", "requested_at IS NULL OR NOT is_owner");
                 t.HasCheckConstraint("ck_users_refused", "refused_at IS NULL OR requested_at IS NOT NULL");
+                t.HasCheckConstraint("ck_users_language", "language IN ('vi', 'en')");
             });
             e.Property(x => x.RequestNote).HasMaxLength(Auth.SignUpEndpoints.NoteMaxLength * 4);   // text elements; a flag is up to 4 UTF-16 units
             e.HasIndex(x => x.RequestedAt).HasFilter("requested_at IS NOT NULL");
+            // Everyone who was here before languages existed reads Vietnamese: the database says so, not only the C# default.
+            e.Property(x => x.Language).HasMaxLength(2).HasDefaultValue(ServerText.DefaultLanguage);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.DeletedBy).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.GomId).IsUnique();
             // At most one row with is_owner = true.
