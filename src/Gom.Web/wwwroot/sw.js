@@ -59,7 +59,8 @@ self.addEventListener('push', (event) => {
   const tag = conversation || 'gom';
   const title = typeof note.title === 'string' && note.title ? note.title : 'Gom';
   const body = typeof note.body === 'string' && note.body ? note.body : 'Tin nhắn mới';
-  const url = /^[0-9a-f-]{36}$/i.test(conversation) ? `/c/${conversation}` : '/';
+  // Only a conversation id, or the owner's page (someone asked to join), is ever made into an address.
+  const url = /^[0-9a-f-]{36}$/i.test(conversation) ? `/c/${conversation}` : note.open === 'owner' ? '/owner' : '/';
   const data = message ? { url, m: message } : { url };
   if (note.recalled === true) {
     // A message was taken back. Its notification, if still shown, now says so, without a sound. A newer notification of the

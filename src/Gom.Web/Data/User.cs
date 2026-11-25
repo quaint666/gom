@@ -21,6 +21,23 @@ public class User
     /// good). Null shows the initials.
     /// </summary>
     public Guid? AvatarId { get; set; }
+    /// <summary>
+    /// Set while this account is a request to join (signed up on its own, waiting for the owner); null for a member. A request can
+    /// sign in but do nothing else until the owner approves it.
+    /// </summary>
+    public DateTimeOffset? RequestedAt { get; set; }
+    /// <summary>When the owner said no to the request (it stays, so the person is told and the owner can change their mind).</summary>
+    public DateTimeOffset? RefusedAt { get; set; }
+    /// <summary>What the person said about who they are, for the owner.</summary>
+    public string? RequestNote { get; set; }
+}
+
+/// <summary>The site's own switches, changed by the owner while it runs: one row.</summary>
+public class SiteSettings
+{
+    public int Id { get; set; } = 1;
+    /// <summary>Whether anyone may ask to join (sign up and wait for approval). Invites work either way.</summary>
+    public bool OpenSignUp { get; set; }
 }
 
 public class Session

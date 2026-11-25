@@ -55,6 +55,7 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GomDbContext>();
         var now = clock.GetUtcNow();
+        if (job.JoinRequest) { await TellOwnerAsync(db, job, now, ct); return; }
         var chat = await db.Conversations.AsNoTracking().Where(c => c.Id == job.ConversationId).Select(c => new { c.Kind, c.Title }).SingleOrDefaultAsync(ct);
         if (chat is null) return;
 
@@ -76,30 +77,54 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         var topic = Base64Url.EncodeToString(job.ConversationId.ToByteArray());   // 22 characters: RFC 8030 allows up to 32
         foreach (var d in devices)
         {
-            var payload = job.Recalled ? new { c = job.ConversationId, m = job.MessageId, title, body = ServerText.Vi.Recalled, recalled = true }
+            object payload = job.Recalled ? new { c = job.ConversationId, m = job.MessageId, title, body = ServerText.Vi.Recalled, recalled = true }
                 : d.Level == PushLevel.Nothing ? new { c = job.ConversationId, m = job.MessageId, title = "Gom", body = ServerText.Vi.NewMessage, recalled = false }
                 : new { c = job.ConversationId, m = job.MessageId, title, body = d.Level == PushLevel.Words ? withWords : body, recalled = false };
-            try
+            await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, payload, job.Recalled ? "normal" : "high", topic, now, ct);
+        }
+    }
+
+    /// <summary>Someone asked to join: the owner's devices are told, at their level ("nothing" names nobody); a tap opens the owner's page.</summary>
+    private async Task TellOwnerAsync(GomDbContext db, PushJob job, DateTimeOffset now, CancellationToken ct)
+    {
+        var devices = await (
+            from u in db.Users
+            where u.IsOwner && u.DisabledAt == null
+            join s in db.Sessions on u.Id equals s.UserId
+            where s.RevokedAt == null && s.ExpiresAt > now
+            join p in db.PushSubscriptions on s.Id equals p.SessionId
+            select new { p.Id, p.Endpoint, p.P256dh, p.Auth, p.Level }).AsNoTracking().ToListAsync(ct);
+        foreach (var d in devices)
+        {
+            var body = d.Level == PushLevel.Nothing ? ServerText.Vi.JoinRequestUnnamed : ServerText.Vi.JoinRequest(job.SenderName);
+            await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, new { c = "", title = "Gom", body, open = "owner" }, "normal", "join-requests", now, ct);
+        }
+    }
+
+    /// <summary>Encrypts and hands one notification to one device's push service; forgets a device its service says is gone.</summary>
+    private async Task SendAsync(GomDbContext db, Guid id, string endpoint, byte[] p256dh, byte[] auth, object payload, string urgency, string topic,
+        DateTimeOffset now, CancellationToken ct)
+    {
+        try
+        {
+            var encrypted = WebPushCrypto.Encrypt(p256dh, auth, JsonSerializer.SerializeToUtf8Bytes(payload));
+            var headers = new Dictionary<string, string>
             {
-                var encrypted = WebPushCrypto.Encrypt(d.P256dh, d.Auth, JsonSerializer.SerializeToUtf8Bytes(payload));
-                var headers = new Dictionary<string, string>
-                {
-                    ["TTL"] = _o.TtlSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    ["Urgency"] = job.Recalled ? "normal" : "high",
-                    ["Topic"] = topic,
-                    ["Content-Encoding"] = "aes128gcm",
-                    ["Authorization"] = WebPushCrypto.VapidHeader(d.Endpoint, _o.Subject, _o.PublicKey, _o.PrivateKey, now),
-                };
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(TimeSpan.FromSeconds(_o.TimeoutSeconds));
-                var status = await transport.SendAsync(d.Endpoint, headers, encrypted, timeout.Token);
-                if (status is 404 or 410) await db.PushSubscriptions.Where(p => p.Id == d.Id).ExecuteDeleteAsync(ct);
-                else if (status is < 200 or >= 300) log.LogWarning("push service {Host} answered {Status}", new Uri(d.Endpoint).Host, status);
-            }
-            catch (Exception e) when (!ct.IsCancellationRequested)
-            {
-                log.LogWarning("push to {Host} failed: {Error}", new Uri(d.Endpoint).Host, e.GetType().Name);
-            }
+                ["TTL"] = _o.TtlSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["Urgency"] = urgency,
+                ["Topic"] = topic,
+                ["Content-Encoding"] = "aes128gcm",
+                ["Authorization"] = WebPushCrypto.VapidHeader(endpoint, _o.Subject, _o.PublicKey, _o.PrivateKey, now),
+            };
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(_o.TimeoutSeconds));
+            var status = await transport.SendAsync(endpoint, headers, encrypted, timeout.Token);
+            if (status is 404 or 410) await db.PushSubscriptions.Where(p => p.Id == id).ExecuteDeleteAsync(ct);
+            else if (status is < 200 or >= 300) log.LogWarning("push service {Host} answered {Status}", new Uri(endpoint).Host, status);
+        }
+        catch (Exception e) when (!ct.IsCancellationRequested)
+        {
+            log.LogWarning("push to {Host} failed: {Error}", new Uri(endpoint).Host, e.GetType().Name);
         }
     }
 

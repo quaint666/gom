@@ -569,4 +569,19 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
         Assert.Equal(Base64Url.EncodeToString(p.Chat.ToByteArray()), sent.Headers["Topic"]);   // replaces the message's push if it is still waiting
         Assert.Single(app.Push.To(name.Endpoint));   // the recall is that device's only job after the message, and it skipped it
     }
+
+    [Fact]
+    public async Task The_owner_hears_of_a_request_to_join_and_the_tap_opens_the_owner_s_page()
+    {
+        var (_, owner) = await app.Owner();
+        using var phone = new FakeBrowser();
+        await Subscribe(owner, phone, "name");
+        using (var open = await app.Call(HttpMethod.Put, "/api/sign-up-open", new { open = true }, owner)) Assert.Equal(HttpStatusCode.NoContent, open.StatusCode);
+        using var r = await app.Call(HttpMethod.Post, "/api/sign-up", new { gomId = "bi_" + Guid.NewGuid().ToString("N")[..8], password = AppFixture.Password, displayName = "Bi", note = "Con của cô Lan" });
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var note = phone.Read((await app.Push.Next(phone.Endpoint)).Body);
+        Assert.Equal("Bi xin tham gia Gom", note.GetProperty("body").GetString());
+        Assert.Equal("owner", note.GetProperty("open").GetString());
+        Assert.DoesNotContain("Con của cô Lan", note.ToString());   // the note stays on the owner's page
+    }
 }
