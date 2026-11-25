@@ -516,17 +516,32 @@ a.mi { text-decoration: none; }
 @media (min-width: 1200px) {
   .info-btn { display: inline-grid; }
   .chat[data-infostate="open"] { grid-template-columns: 64px 340px minmax(0, 1fr) 300px; }
-  .info { display: flex; flex-direction: column; gap: 12px; padding: 20px 16px; overflow-y: auto; background: var(--surface); border-inline-start: 1px solid var(--border); }
-  .info-top { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
-  .info-top small { color: var(--muted); }
-  .info-actions { display: flex; flex-direction: column; gap: 6px; }
-  .info-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-  .info-actions .btn .i { inline-size: 16px; block-size: 16px; }
-  .info h3 { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-  .info-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  .info-person { display: flex; align-items: center; gap: 10px; min-block-size: 40px; }
-  .info-person .av { inline-size: 32px; block-size: 32px; font-size: 13px; }
-  .info-person .tag { margin-inline-start: auto; }
+  .info { display: flex; border-inline-start: 1px solid var(--border); }
+}
+/* What is inside the panel, beside a thread on a wide screen or as its own page on a phone. */
+.info { flex-direction: column; gap: 12px; padding: 20px 16px; overflow-y: auto; background: var(--surface); }
+.info-top { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.info-top small { color: var(--muted); }
+.info-actions { display: flex; flex-direction: column; gap: 6px; }
+.info-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.info-actions .btn .i { inline-size: 16px; block-size: 16px; }
+.info h3 { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.info-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.info-person { display: flex; align-items: center; gap: 10px; min-block-size: 40px; }
+.info-person .av { inline-size: 32px; block-size: 32px; font-size: 13px; }
+.info-person .tag { margin-inline-start: auto; }
+/* A phone: the conversation's information is a page of its own, over the thread, opened from the header. Search, mute and the
+   group's page live there instead of in the header, which keeps room for a call button. */
+.info-sheet { position: fixed; inset: 0; z-index: 15; display: flex; flex-direction: column; background: var(--surface); }
+.info-sheet .info { display: flex; flex: 1; }
+.info-sheet .th-head b { font-size: 17px; }
+.info-foot { display: flex; flex-direction: column; gap: 6px; padding-block-start: 8px; border-block-start: 1px solid var(--border); }
+.info-foot .btn { display: inline-flex; align-items: center; justify-content: flex-start; gap: 10px; }
+.info-foot .btn .i { inline-size: 18px; block-size: 18px; }
+.th-head .wide { display: none; }
+@media (min-width: 900px) {
+  .info-sheet, .info-page-btn { display: none; }
+  .th-head .wide { display: inline-grid; }
 }
 .ib[aria-pressed="true"].info-btn { color: var(--link); }
 .letter { margin: 12px 4px 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
@@ -642,7 +657,7 @@ div.info-person { padding: 4px 6px; }
 button.info-person { inline-size: 100%; padding: 4px 6px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(--surface)); }
 .info-person small { margin-inline-start: auto; color: var(--muted); font-size: 12px; }
-.danger-text { color: var(--err-text); }
+.danger-text, .btn.danger-text { color: var(--err-text); }
 /* muting: for how long, in the same dialog shape as a card */
 .mutes .pcard-head { justify-content: space-between; align-items: center; }
 .mutes h2 { margin: 0; font-size: 17px; }

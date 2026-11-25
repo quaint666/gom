@@ -32,7 +32,7 @@ interface Harness {
   api: ReturnType<typeof fakeApi>;
   handlers: () => LiveHandlers;
   live: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; sync: ReturnType<typeof vi.fn>; retryNow: ReturnType<typeof vi.fn> };
-  nav: { path: string; push: ReturnType<typeof vi.fn>; pop: () => void };
+  nav: { path: string; push: ReturnType<typeof vi.fn>; replace: ReturnType<typeof vi.fn>; back: ReturnType<typeof vi.fn<() => void>>; pop: () => void; history: string[] };
   go: ReturnType<typeof vi.fn>;
   visible: { value: boolean };
   coarse: { value: boolean };
@@ -53,9 +53,13 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
   let captured: LiveHandlers | null = null;
   const live = { start: vi.fn(), stop: vi.fn(), sync: vi.fn(), retryNow: vi.fn() };
   let popCallback: () => void = () => undefined;
+  // Like the browser's history: the path is location.pathname (no #part), and going back fires the pop handler.
   const nav = {
     path: opts.path ?? '/',
-    push: vi.fn((p: string) => { nav.path = p; }),
+    history: [opts.path ?? '/'],
+    push: vi.fn((p: string) => { nav.history.push(p); nav.path = p.split('#')[0]!; }),
+    replace: vi.fn((p: string) => { nav.history[nav.history.length - 1] = p; nav.path = p.split('#')[0]!; }),
+    back: vi.fn(() => { nav.history.pop(); nav.path = (nav.history.at(-1) ?? '/').split('#')[0]!; popCallback(); }),
     pop: () => popCallback(),
   };
   const notes = vi.fn();
@@ -76,7 +80,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     },
     outbox: () => ({ load: () => outbox.items.map((i) => ({ ...i })), save: (items) => { outbox.items = items.map((i) => ({ ...i })); outbox.saves++; } }),
     live: (h) => { captured = h; return live as unknown as LiveControl; },
-    nav: { path: () => nav.path, push: nav.push, onPop: (cb) => { popCallback = cb; } },
+    nav: { path: () => nav.path, push: nav.push, replace: nav.replace, back: nav.back, onPop: (cb) => { popCallback = cb; } },
     now: () => NOW,
     newId: () => `new-${++n}`,
     coarsePointer: () => coarse.value,
@@ -4833,5 +4837,102 @@ describe('quieter menus', () => {
     root.querySelector('.msgs')!.dispatchEvent(pointer('pointerdown'));
     await flush();
     expect(root.querySelector('[data-picker]')).toBeNull();
+  });
+});
+
+describe('chat: the information page on a phone', () => {
+  const G = '33333333-3333-4333-8333-333333333333';
+  const minhCard = { id: 'u-minh', displayName: 'Minh', gomId: 'minh', friend: 'friends' as const, commonGroups: [] };
+  const open = async (h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] }, api: { person: vi.fn(async () => ok(minhCard)) } })) => {
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-info-page-open]')!.click();
+    await flush();
+    return h;
+  };
+  const page = () => root.querySelector<HTMLElement>('[data-info-page]');
+
+  it('keeps room in the header: search, mute and the group\'s page are marked for wide screens only, and an info button opens the page', async () => {
+    start({ path: `/c/${G}`, chats: [{ id: G, kind: 'group', title: 'Nhà', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 2 }], api: { groupMembers: vi.fn(async () => ok([])) } });
+    await flush();
+    const head = root.querySelector('.th-head')!;
+    expect(head.querySelector('[data-search]')!.classList.contains('wide')).toBe(true);
+    expect(head.querySelector('[data-mute]')!.classList.contains('wide')).toBe(true);
+    expect(head.querySelector(`a[href="/groups/${G}"]`)!.classList.contains('wide')).toBe(true);
+    expect(head.querySelector('[data-info-page-open]')).not.toBeNull();
+  });
+
+  it('opens as a step in the history, shows search and mute, and the back button steps back to the thread', async () => {
+    const h = await open();
+    expect(page()).not.toBeNull();
+    expect(text(page()!)).toContain('Thông tin');
+    expect(text(page()!)).toContain('Minh');
+    expect(page()!.querySelector('[data-info-search]')).not.toBeNull();
+    expect(page()!.querySelector('[data-info-mute]')).not.toBeNull();
+    expect(h.nav.push).toHaveBeenLastCalledWith(`/c/${C1}#info`);
+    page()!.querySelector<HTMLButtonElement>('[data-info-page-close]')!.click();
+    await flush();
+    expect(h.nav.back).toHaveBeenCalledOnce();
+    expect(page()).toBeNull();
+    expect(root.querySelector('.msgs')).not.toBeNull();
+  });
+
+  it('closes on the back gesture too', async () => {
+    const h = await open();
+    h.nav.back();
+    await flush();
+    expect(page()).toBeNull();
+    expect(h.nav.path).toBe(`/c/${C1}`);
+  });
+
+  it('searching from the page closes it and opens the search in the thread, without leaving a step to come back to', async () => {
+    const h = await open();
+    page()!.querySelector<HTMLButtonElement>('[data-info-search]')!.click();
+    await flush();
+    expect(page()).toBeNull();
+    expect(root.querySelector('.searchbar input')).not.toBeNull();
+    expect(h.nav.history).toEqual([`/c/${C1}`, `/c/${C1}`]);   // the page's step became the conversation again
+  });
+
+  it('hides the conversation from its foot, back to the list with the undo', async () => {
+    const h = await open();
+    page()!.querySelector<HTMLButtonElement>('[data-info-hide]')!.click();
+    await flush();
+    expect(h.api.setHidden).toHaveBeenCalledWith(C1, true);
+    expect(page()).toBeNull();
+    expect(root.querySelector('[data-undo-hide]')).not.toBeNull();
+  });
+
+  it('clears the conversation only after its question, and Hủy keeps it', async () => {
+    const h = await open();
+    page()!.querySelector<HTMLButtonElement>('[data-info-clear]')!.click();
+    await flush();
+    expect(text(page()!.querySelector('[data-info-clear-ask]')!)).toContain('Xóa toàn bộ tin nhắn của cuộc trò chuyện này ở phía bạn?');
+    page()!.querySelector<HTMLButtonElement>('[data-info-clear-no]')!.click();
+    await flush();
+    expect(h.api.clearConversation).not.toHaveBeenCalled();
+    page()!.querySelector<HTMLButtonElement>('[data-info-clear]')!.click();
+    await flush();
+    page()!.querySelector<HTMLButtonElement>('[data-info-clear-yes]')!.click();
+    await flush();
+    expect(h.api.clearConversation).toHaveBeenCalledWith(C1);
+    expect(page()).toBeNull();
+  });
+
+  it('blocks through the person\'s card, which asks first', async () => {
+    await open();
+    page()!.querySelector<HTMLButtonElement>('[data-info-block]')!.click();
+    await flush(); await flush();
+    const card = root.querySelector<HTMLElement>('[data-person-card]')!;
+    expect(text(card)).toContain('Chặn Minh?');
+  });
+
+  it('offers no block in a group, where leaving is the way out', async () => {
+    start({ path: `/c/${G}`, chats: [{ id: G, kind: 'group', title: 'Nhà', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 2 }], api: { groupMembers: vi.fn(async () => ok([])) } });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-info-page-open]')!.click();
+    await flush();
+    expect(page()!.querySelector('[data-info-block]')).toBeNull();
+    expect(page()!.querySelector('[data-info-hide]')).not.toBeNull();
+    expect(page()!.querySelector('[data-info-leave]')).not.toBeNull();
   });
 });

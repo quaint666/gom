@@ -463,6 +463,7 @@ export const vi = {
     forwardFailed: (name: string) => `Chưa chuyển tiếp được đến ${name}.`,
     // the side panel and the person's card
     info: 'Thông tin cuộc trò chuyện',
+    infoTitle: 'Thông tin',
     picturesHeading: 'Ảnh',
     filesHeading: 'Tệp',
     mutedUntil: (when: string) => `Đã tắt thông báo đến ${when}`,
