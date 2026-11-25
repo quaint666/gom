@@ -10,8 +10,8 @@ namespace Gom.Web.Uploads;
 /// <summary>Uploading a picture or a file to a conversation, and fetching it again. Putting it in a message is a separate step.</summary>
 public static class AttachmentEndpoints
 {
-    /// <summary>What an upload turned into, as the browser sees it.</summary>
-    public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height);
+    /// <summary>What an upload turned into, as the browser sees it. <see cref="Removed"/>: the owner trimmed it; only a placeholder is shown.</summary>
+    public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height, bool Removed = false);
 
     /// <summary>Which picture or file to copy into another conversation.</summary>
     public sealed record CopyRequest(Guid? From);
@@ -27,7 +27,7 @@ public static class AttachmentEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    public static AttachmentDto ToDto(Attachment a) => new(a.Id, a.Kind == AttachmentKind.Image ? "image" : "file", a.Name, a.Size, a.Width, a.Height);
+    public static AttachmentDto ToDto(Attachment a) => new(a.Id, a.Kind == AttachmentKind.Image ? "image" : "file", a.Name, a.Size, a.Width, a.Height, a.RemovedAt != null);
 
     public static void MapAttachments(this IEndpointRouteBuilder app)
     {
@@ -57,7 +57,7 @@ public static class AttachmentEndpoints
 
         var visible =
             from a in db.Attachments.AsNoTracking()
-            where a.ConversationId == id && a.Kind == wanted
+            where a.ConversationId == id && a.Kind == wanted && a.RemovedAt == null
             join m in db.Messages on a.MessageId equals m.Id
             where m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null && (before == null || m.Seq < before)
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
@@ -96,7 +96,7 @@ public static class AttachmentEndpoints
 
         // Only what is in a message this person may fetch: "not yours to see" and "not there" look the same.
         var source = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == from, ct);
-        if (source is null || source.MessageId is null || source.Kind is not (AttachmentKind.Image or AttachmentKind.File) || !await MayFetch(db, source, me, ct)) return Results.NotFound();
+        if (source is null || source.MessageId is null || source.RemovedAt is not null || source.Kind is not (AttachmentKind.Image or AttachmentKind.File) || !await MayFetch(db, source, me, ct)) return Results.NotFound();
 
         var copy = new Attachment
         {
@@ -234,8 +234,8 @@ public static class AttachmentEndpoints
     {
         var me = GomClaims.User(http.User);
         var a = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
-        // "Not yours to see" and "not there" look the same. Before it is in a message, only the uploader sees it.
-        if (a is null) return Results.NotFound();
+        // "Not yours to see" and "not there" look the same. Before it is in a message, only the uploader sees it. A trimmed one is gone.
+        if (a is null || a.RemovedAt is not null) return Results.NotFound();
         if (!await MayFetch(db, a, me, ct)) return Results.NotFound();
         var picture = a.Kind == AttachmentKind.Image;
         if (thumb && !picture) return Results.NotFound();

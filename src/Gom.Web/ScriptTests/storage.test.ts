@@ -85,6 +85,71 @@ describe('storage page', () => {
     expect(text(root)).toContain('Nhóm này vẫn còn thành viên.');
   });
 
+  describe('trimming pictures and files', () => {
+    const preview = { pictures: { count: 120, bytes: 400 * MB }, files: { count: 3, bytes: 10 * MB }, conversations: 5 };
+    const set = (selector: string, value: string) => {
+      const el = root.querySelector<HTMLInputElement | HTMLSelectElement>(selector)!;
+      el.value = value;
+      el.dispatchEvent(new Event(el instanceof HTMLSelectElement || el.type !== 'text' ? 'change' : 'input', { bubbles: true }));
+    };
+    const click = async (selector: string) => { root.querySelector<HTMLButtonElement>(selector)!.click(); await flush(); };
+
+    it('previews the chosen rule, then trims only after Delete is typed exactly', async () => {
+      const a = api({ trimPreview: vi.fn(async () => ok(preview)), trimFiles: vi.fn(async () => ok(preview)) });
+      mountStorage(root, a, vi.fn());
+      await flush();
+      expect(root.querySelector<HTMLButtonElement>('[data-trim-preview]')!.disabled).toBe(true);   // no date yet
+      set('#trim-day', '2026-01-01'); await flush();
+      set('#trim-kind', 'image'); await flush();
+      set('#trim-where', 'g1'); await flush();
+      set('#trim-min', '1.5'); await flush();
+      await click('[data-trim-preview]');
+
+      const rule = { before: new Date('2026-01-01T00:00').toISOString(), kind: 'image', where: 'g1', minBytes: Math.round(1.5 * MB) };
+      expect(a.trimPreview).toHaveBeenCalledWith(rule);
+      expect(text(root.querySelector('[data-trim-summary]')!)).toBe('Sẽ xóa vĩnh viễn 120 ảnh (400 MB) và 3 tệp (10 MB) trong 5 cuộc trò chuyện.');
+
+      const go = () => root.querySelector<HTMLButtonElement>('[data-trim-confirm]')!;
+      expect(go().disabled).toBe(true);
+      for (const typed of ['delete', 'Delete ', 'Xóa']) { set('#trim-confirm', typed); await flush(); expect(go().disabled).toBe(true); }
+      set('#trim-confirm', 'Delete'); await flush();
+      expect(go().disabled).toBe(false);
+      await click('[data-trim-confirm]');
+      expect(a.trimFiles).toHaveBeenCalledWith(rule, 'Delete');
+      expect(text(root.querySelector('[data-trim-done]')!)).toBe('Đã xóa 120 ảnh (400 MB) và 3 tệp (10 MB) trong 5 cuộc trò chuyện.');
+      expect(root.querySelector('[data-trim-confirm]')).toBeNull();
+      expect(a.storage).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops the preview when a choice changes, so what is confirmed is what was previewed', async () => {
+      mountStorage(root, api({ trimPreview: vi.fn(async () => ok(preview)) }), vi.fn());
+      await flush();
+      set('#trim-day', '2026-01-01'); await flush();
+      await click('[data-trim-preview]');
+      set('#trim-confirm', 'Delete'); await flush();
+      set('#trim-kind', 'file'); await flush();
+      expect(root.querySelector('[data-trim-summary]')).toBeNull();
+      expect(root.querySelector('[data-trim-confirm]')).toBeNull();
+    });
+
+    it('says so when nothing matches, and offers no delete', async () => {
+      const none = { pictures: { count: 0, bytes: 0 }, files: { count: 0, bytes: 0 }, conversations: 0 };
+      mountStorage(root, api({ trimPreview: vi.fn(async () => ok(none)) }), vi.fn());
+      await flush();
+      set('#trim-day', '2026-01-01'); await flush();
+      await click('[data-trim-preview]');
+      expect(text(root.querySelector('[data-trim-none]')!)).toBe('Không có ảnh hay tệp nào khớp.');
+      expect(root.querySelector('[data-trim-confirm]')).toBeNull();
+    });
+
+    it('offers every group, and one-to-one chats only together', async () => {
+      mountStorage(root, api(), vi.fn());
+      await flush();
+      const options = [...root.querySelectorAll<HTMLOptionElement>('#trim-where option')].map((o) => [o.value, text(o)]);
+      expect(options).toEqual([['all', 'Mọi cuộc trò chuyện'], ['direct', 'Mọi trò chuyện 1-1'], ['g1', 'Nhóm: Nhà mình'], ['g2', 'Nhóm: Bỏ trống']]);
+    });
+  });
+
   it('writes sizes up to gigabytes', () => {
     expect(formatSize(512)).toBe('512 B');
     expect(formatSize(3 * MB)).toBe('3 MB');

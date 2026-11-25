@@ -155,7 +155,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("messages", t =>
             {
                 t.HasCheckConstraint("ck_messages_seq", "seq > 0");
-                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4)");
+                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5)");
                 t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
                 t.HasCheckConstraint("ck_messages_sticker", "sticker IS NULL OR (body = '' AND notice IS NULL)");
             });

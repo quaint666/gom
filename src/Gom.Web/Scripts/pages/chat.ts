@@ -240,6 +240,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const mine = m.sender.id === me?.id;
     const close = () => { menu = null; update(); };
     const pinned = t.pins.some((p) => p.id === m.id);
+    // What can still be passed on or saved: a trimmed picture or file cannot.
+    const kept = (m.attachments ?? []).filter((a) => !a.removed);
     return html`
       <div class="scrim" data-scrim @click=${close}></div>
       <div class="menu ${mine ? 'mine' : ''}" role="menu" aria-label="Tùy chọn tin nhắn" @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') close(); }}>
@@ -256,8 +258,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${menuItem('reply', icons.reply(), 'Trả lời', () => startReply(m))}
         ${m.sticker ? nothing : menuItem('copy', icons.copy(), 'Sao chép', () => void copyText(m))}
         ${pinned ? menuItem('unpin', icons.pin(), 'Bỏ ghim', () => void setPin(m, false)) : menuItem('pin', icons.pin(), 'Ghim', () => void setPin(m, true))}
-        ${menuItem('forward', icons.forward(), 'Chuyển tiếp', () => { menu = null; startForward(m.body, m.attachments ?? [], m.sticker ?? null); })}
-        ${m.attachments?.length === 1 ? saveItem(m.attachments[0]!) : nothing}
+        ${m.body === '' && !m.sticker && kept.length === 0 ? nothing : menuItem('forward', icons.forward(), 'Chuyển tiếp', () => { menu = null; startForward(m.body, kept, m.sticker ?? null); })}
+        ${m.attachments?.length === 1 && kept.length === 1 ? saveItem(kept[0]!) : nothing}
         ${mine && !m.sticker ? menuItem('edit', icons.pencil(), 'Chỉnh sửa', () => startEdit(m)) : nothing}
         ${menuItem('hide', icons.trash(), 'Xóa với tôi', () => { menu = { id: m.id, confirming: false, hide: true }; update(); })}
         ${mine ? menuItem('recall', icons.undo(), 'Thu hồi', () => { menu = { id: m.id, confirming: true }; update(); }, true) : nothing}
@@ -302,10 +304,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const pictures = all.filter((a) => a.kind === 'image');
     const files = all.filter((a) => a.kind === 'file');
     return html`
-      ${pictures.length === 0 ? nothing : html`<div class=${`pics n${Math.min(pictures.length, 5)}`} data-pics>${pictures.map((a, i) => html`
+      ${pictures.length === 0 ? nothing : html`<div class=${`pics n${Math.min(pictures.length, 5)}`} data-pics>${pictures.map((a, i) => a.removed
+        // Trimmed by the owner: the place stays, saying so; nothing to open.
+        ? html`<div class="pic removed" data-pic-removed=${a.id}><span>Ảnh không còn khả dụng</span></div>`
+        : html`
         <button class="pic" type="button" data-pic=${a.id} aria-label=${`Xem ảnh ${i + 1} trên ${pictures.length}`} @click=${() => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id)}>
           <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}
-      ${files.map((a) => html`
+      ${files.map((a) => a.removed
+        ? html`<div class="filecard removed" data-file-removed=${a.id}>${icons.file()}<span class="fi"><b>Tệp không còn khả dụng</b><small>${a.name}</small></span></div>`
+        : html`
         <a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-file=${a.id}>${icons.file()}
           <span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span>${icons.download()}</a>`)}`;
   };
@@ -327,7 +334,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const t = threadOf(v.conversation);
     const m = [...t.messages, ...t.pending].find((x) => v.local !== null ? x.id === v.local : x.attachments?.some((a) => a.id === v.attachmentId));
     if (m === undefined) return [];
-    return (m.attachments ?? []).filter((a) => a.kind === 'image')
+    return (m.attachments ?? []).filter((a) => a.kind === 'image' && !a.removed)
       .map((a) => ({ attachment: a, messageId: m.id, sender: m.sender, body: m.body, createdAt: m.createdAt, sent: m.seq > 0 }));
   }
 
@@ -1198,6 +1205,23 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     }
     update();
     if (conversation === openId) markRead(conversation);
+    if (event.kind === 'created' && message.notice?.type === 'filesTrimmed') afterTrim(conversation);
+  }
+
+  /**
+   * The owner trimmed old pictures and files here. The notice does not say which, so what this page holds of the conversation is
+   * asked for again: the thread from its newest page, and the side panel's lists. The viewer closes; its picture may be gone.
+   */
+  function afterTrim(id: string): void {
+    mediaLists.delete(id);
+    if (viewer?.conversation === id) closeViewer();
+    const t = threads.get(id);
+    if (t?.loaded) {
+      t.messages = []; t.hasMore = false; t.loaded = false;
+      if (id === openId) void loadHistory(id);
+    }
+    if (id === openId && infoOpen) { void loadMedia(id, 'image'); void loadMedia(id, 'file'); }
+    update();
   }
 
   // ---- who has read

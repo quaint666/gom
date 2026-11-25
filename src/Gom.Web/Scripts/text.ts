@@ -20,6 +20,8 @@ export function errorText(failure: Failure): string {
     case 'owner_cannot_delete': return 'Chủ Gom không thể xóa tài khoản của mình.';
     case 'account_deleted': return 'Tài khoản này đã bị xóa.';
     case 'group_not_empty': return 'Nhóm này vẫn còn thành viên.';
+    case 'invalid_trim': return 'Hãy chọn một ngày trong quá khứ và kiểm tra lại các lựa chọn.';
+    case 'trim_not_confirmed': return 'Hãy gõ đúng chữ Delete để xác nhận.';
     case 'user_not_found': return 'Không tìm thấy ai có Gom ID này. Hãy kiểm tra lại.';
     case 'cannot_add_self': return 'Đây là Gom ID của chính bạn.';
     case 'already_friends': return 'Hai bạn đã là bạn bè.';

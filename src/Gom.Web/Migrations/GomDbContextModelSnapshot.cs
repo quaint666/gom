@@ -66,6 +66,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("position");
 
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("removed_at");
+
                     b.Property<long>("Size")
                         .HasColumnType("bigint")
                         .HasColumnName("size");
@@ -458,7 +462,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 

@@ -1,20 +1,32 @@
 import { html, nothing, render } from 'lit-html';
-import type { Api, Failure, GroupUse, PersonUse, Storage } from '../api.js';
+import type { Api, Failure, GroupUse, PersonUse, Storage, TrimResult, TrimRule } from '../api.js';
 import { formatSize } from '../text.js';
 import { appBar, errorBox } from '../ui.js';
 
 /** "3 ảnh và tệp · 1,2 MB" */
 const sent = (files: number, bytes: number): string => `${files} ảnh và tệp · ${formatSize(bytes)}`;
 
+/** The word the owner types to trim; the server checks the same. */
+const CONFIRM = 'Delete';
+
+/** "2026-01-31" for a date input, in this device's time. */
+const isoDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** "3 ảnh (1,2 MB) và 1 tệp (12 MB)" */
+const counted = (r: TrimResult): string => `${r.pictures.count} ảnh (${formatSize(r.pictures.bytes)}) và ${r.files.count} tệp (${formatSize(r.files.bytes)})`;
+
 /**
  * The owner's storage page: the disk, the database, pictures and files by group, one-to-one chats only together, and by person.
- * A group nobody is in (its last member deleted their account) can be deleted here, after a second tap.
+ * A group nobody is in (its last member deleted their account) can be deleted here, after a second tap. Old pictures and files can
+ * be trimmed: a preview first, then "Delete" typed; gone for good, backups included.
  */
 export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => void): void {
   let storage: Storage | null = null;
   let error: Failure | null = null;
   let confirming: string | null = null;
   let busy = false;
+  /** The trim form. Changing any choice drops the preview, so what is confirmed is always what was previewed. */
+  let trim = { day: '', kind: 'all' as TrimRule['kind'], where: 'all', minMb: '', preview: null as TrimResult | null, typed: '', busy: false, done: '' };
 
   const line = (label: string, value: string, key: string) => html`<li class="li" data-total=${key}><div class="t"><b>${label}</b><small>${value}</small></div></li>`;
 
@@ -50,7 +62,46 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
     <ul class="list">${line(`${s.direct.conversations} cuộc trò chuyện`, `${s.direct.messages} tin nhắn · ${sent(s.direct.files, s.direct.bytes)}`, 'direct')}</ul>
     <p class="hint">Tính gộp, không ghi ai trò chuyện với ai.</p>
     <h2 class="section">Theo người gửi</h2>
-    ${s.people.length === 0 ? html`<p class="hint" data-no-person>Chưa ai gửi ảnh hay tệp.</p>` : html`<ul class="list">${s.people.map(personRow)}</ul>`}`;
+    ${s.people.length === 0 ? html`<p class="hint" data-no-person>Chưa ai gửi ảnh hay tệp.</p>` : html`<ul class="list">${s.people.map(personRow)}</ul>`}
+    ${trimCard(s)}`;
+
+  const rule = (): TrimRule => ({
+    before: new Date(`${trim.day}T00:00`).toISOString(), kind: trim.kind, where: trim.where,
+    minBytes: trim.minMb.trim() === '' ? null : Math.round(Number(trim.minMb) * 1024 * 1024),
+  });
+  const choose = (change: Partial<typeof trim>) => { trim = { ...trim, ...change, preview: null, typed: '', done: '' }; update(); };
+  const total = (r: TrimResult) => r.pictures.count + r.files.count;
+
+  const trimCard = (s: Storage) => html`
+    <h2 class="section">Dọn ảnh và tệp</h2>
+    <div class="card" data-trim>
+      <div class="field"><label for="trim-day">Gửi trước ngày</label>
+        <input id="trim-day" name="trim-day" type="date" max=${isoDay(new Date())} .value=${trim.day} @change=${(e: Event) => choose({ day: (e.target as HTMLInputElement).value })}></div>
+      <div class="field"><label for="trim-kind">Loại</label>
+        <select id="trim-kind" name="trim-kind" @change=${(e: Event) => choose({ kind: (e.target as HTMLSelectElement).value as TrimRule['kind'] })}>
+          <option value="all" ?selected=${trim.kind === 'all'}>Ảnh và tệp</option>
+          <option value="image" ?selected=${trim.kind === 'image'}>Chỉ ảnh</option>
+          <option value="file" ?selected=${trim.kind === 'file'}>Chỉ tệp</option></select></div>
+      <div class="field"><label for="trim-where">Ở đâu</label>
+        <select id="trim-where" name="trim-where" @change=${(e: Event) => choose({ where: (e.target as HTMLSelectElement).value })}>
+          <option value="all" ?selected=${trim.where === 'all'}>Mọi cuộc trò chuyện</option>
+          <option value="direct" ?selected=${trim.where === 'direct'}>Mọi trò chuyện 1-1</option>
+          ${s.groups.map((g) => html`<option value=${g.id} ?selected=${trim.where === g.id}>Nhóm: ${g.title ?? 'Nhóm'}</option>`)}</select></div>
+      <div class="field"><label for="trim-min">Chỉ khi lớn hơn (MB)</label>
+        <input id="trim-min" name="trim-min" type="number" min="0" step="0.1" inputmode="decimal" placeholder="Mọi kích thước" .value=${trim.minMb}
+          @change=${(e: Event) => choose({ minMb: (e.target as HTMLInputElement).value })}></div>
+      <button class="btn secondary" type="button" data-trim-preview ?disabled=${trim.day === '' || trim.busy} @click=${() => void preview()}>Xem trước</button>
+      ${trim.preview === null ? nothing : total(trim.preview) === 0
+        ? html`<p class="hint" data-trim-none>Không có ảnh hay tệp nào khớp.</p>`
+        : html`
+          <p data-trim-summary>Sẽ xóa vĩnh viễn ${counted(trim.preview)} trong ${trim.preview.conversations} cuộc trò chuyện.</p>
+          <p class="hint">Không thể hoàn tác, kể cả trong bản sao lưu. Tin nhắn vẫn còn, kèm dòng "không còn khả dụng"; mỗi cuộc trò chuyện có một dòng thông báo.</p>
+          <div class="field"><label for="trim-confirm">Gõ ${CONFIRM} để xác nhận</label>
+            <input id="trim-confirm" name="trim-confirm" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" .value=${trim.typed}
+              @input=${(e: Event) => { trim.typed = (e.target as HTMLInputElement).value; update(); }}></div>
+          <button class="btn danger" type="button" data-trim-confirm ?disabled=${trim.typed !== CONFIRM || trim.busy} @click=${() => void runTrim()}>Xóa vĩnh viễn</button>`}
+      ${trim.done === '' ? nothing : html`<p class="hint" role="status" data-trim-done>${trim.done}</p>`}
+    </div>`;
 
   const view = () => html`
     ${appBar({ title: 'Dung lượng', back: '/settings' })}
@@ -64,6 +115,24 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
     const result = await api.storage();
     if (result.ok) storage = result.data; else error = result;
     update();
+  }
+
+  async function preview(): Promise<void> {
+    trim.busy = true; update();
+    const result = await api.trimPreview(rule());
+    trim.busy = false;
+    if (result.ok) { trim.preview = result.data; error = null; } else error = result;
+    update();
+  }
+
+  async function runTrim(): Promise<void> {
+    trim.busy = true; update();
+    const result = await api.trimFiles(rule(), trim.typed);
+    trim.busy = false;
+    if (!result.ok) { error = result; update(); return; }
+    trim = { ...trim, preview: null, typed: '', done: `Đã xóa ${counted(result.data)} trong ${result.data.conversations} cuộc trò chuyện.` };
+    error = null;
+    await load();
   }
 
   async function remove(id: string): Promise<void> {

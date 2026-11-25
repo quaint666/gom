@@ -3603,6 +3603,75 @@ describe('chat: pictures and files', () => {
     });
   });
 
+  describe('pictures and files the owner trimmed', () => {
+    const gone = (a: Attachment): Attachment => ({ ...a, removed: true });
+    const menuOf = async (id: string) => { root.querySelector<HTMLButtonElement>(`[data-msg="${id}"] button[data-menu]`)!.click(); await flush(); };
+
+    it('shows a placeholder in their place, with nothing to open or download', async () => {
+      open({}, [{ ...msg(1, 'minh', ''), attachments: [gone(att('p1')), att('p2'), gone(att('f1', 'file', 'bảng.xlsx'))] }]);
+      await flush();
+      const bubble = root.querySelector('[data-msg="id1"] .bub')!;
+      expect(text(bubble.querySelector('[data-pic-removed="p1"]')!)).toBe('Ảnh không còn khả dụng');
+      expect(bubble.querySelector('[data-pic="p1"], img[src*="p1"]')).toBeNull();
+      expect(bubble.querySelector('[data-pic="p2"]')).not.toBeNull();
+      const file = bubble.querySelector('[data-file-removed="f1"]')!;
+      expect(text(file)).toContain('Tệp không còn khả dụng');
+      expect(text(file)).toContain('bảng.xlsx');
+      expect(file.tagName).toBe('DIV');
+      expect(bubble.querySelector('a[href="/api/attachments/f1"]')).toBeNull();
+    });
+
+    it('offers neither saving nor passing on a message whose only file is gone, but passes on the words and the rest', async () => {
+      const h = open({ conversations: vi.fn(async () => ok([chat(C1, 'Minh', { lastSeq: 2 }), chat(C2, 'Lan')])) }, [
+        { ...msg(1, 'minh', ''), attachments: [gone(att('f1', 'file'))] },
+        { ...msg(2, 'minh', 'xem nè'), attachments: [gone(att('p1')), att('p2')] },
+      ]);
+      await flush();
+      await menuOf('id1');
+      expect(root.querySelector('[data-save]')).toBeNull();
+      expect(root.querySelector('[data-forward]')).toBeNull();
+      root.querySelector<HTMLButtonElement>('.close-menu')!.click();
+      await flush();
+      await menuOf('id2');
+      root.querySelector<HTMLButtonElement>('button[data-forward]')!.click();
+      await flush();
+      expect(text(root.querySelector('[data-forward-panel]')!)).toContain('1 ảnh');
+      expect(text(root.querySelector('[data-forward-panel]')!)).not.toContain('2 ảnh');
+      expect(h.api.copyAttachment).not.toHaveBeenCalled();
+    });
+
+    it('leaves a trimmed picture out of the viewer', async () => {
+      open({}, [{ ...msg(1, 'minh', ''), attachments: [att('p1'), gone(att('p2')), att('p3')] }]);
+      await flush();
+      root.querySelector<HTMLButtonElement>('[data-pic="p1"]')!.click();
+      await flush(); await flush();
+      expect(text(root.querySelector('[data-viewer] [data-viewer-count]')!)).toBe('1 / 2');
+    });
+
+    it('asks for the thread and the side lists again when a trim notice arrives, and says what was trimmed', async () => {
+      const history: ChatMessage[] = [{ ...msg(1, 'minh', ''), attachments: [att('p1')] }];
+      const h = open({}, history);
+      await flush();
+      expect(h.api.history).toHaveBeenCalledTimes(1);
+      const trimmed = { ...msg(2, 'minh', ''), notice: { type: 'filesTrimmed' as const, target: null, before: '2026-01-01T00:00:00+07:00' } };
+      // What the server now says: the picture is a placeholder, and the notice is in the stream.
+      history.splice(0, 1, { ...msg(1, 'minh', ''), attachments: [gone(att('p1'))] }, trimmed);
+      h.handlers().event(C1, created(trimmed));
+      await flush();
+      expect(h.api.history).toHaveBeenCalledTimes(2);
+      expect(text(root.querySelector('[data-notice]')!)).toBe('Ảnh và tệp gửi trước 01/01/2026 đã được dọn');
+      expect(root.querySelector('[data-pic-removed="p1"]')).not.toBeNull();
+    });
+
+    it('does not ask again for a notice of another kind', async () => {
+      const h = open({}, [msg(1, 'minh')]);
+      await flush();
+      h.handlers().event(C1, created({ ...msg(2, 'minh', ''), notice: { type: 'left', target: null } }));
+      await flush();
+      expect(h.api.history).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('shows the pictures it has sent while the message is still going, and keeps them in the outbox across a reload', async () => {
     const send = vi.fn(() => new Promise(() => undefined));
     const h = open({ upload: vi.fn(async () => ok(att('p1'))), send });
