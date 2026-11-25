@@ -1,48 +1,44 @@
 # Next session: where things stand and what comes next
 
-Written 2026-11-25, at the end of the session that ran the second whole-repository review and opened PRs #90 to #100. It
-keeps the work queue agreed after #88 (section 2), which is unchanged. Claims are marked **[verified]** (seen in
+Written 2026-11-25, after the session that opened PRs #90 to #100, and brought up to date the same day after #109, when
+voice calls were put first (section 2). Claims are marked **[verified]** (seen in
 the code or real output), **[stated]** (someone said so; who is given), or **[inferred]** (reasoned, not tried).
 
 ## 1. Where things stand
 
-- **Open, to merge in this order** (each is based on the one before, so each diff shows only its own change):
-  - #90 the emoji and sticker button inside the message field;
-  - #91, #92 the conversation menu (server, page): pin, mark unread, mute, make a group with, hide, delete for me. **#91
-    has a migration: take a backup dump before deploying it.**
-  - #93 to #96 the second review's fixes: hand-made requests (NUL, unbound values, the page's error codes), races
-    (recall against edit, sign-in bursts, the upload cleaner), privacy (a block that could be detected, Gom IDs for
-    ex-friends), time limits (requests, stalled uploads, sockets whose session ran out);
-  - #97 quieter menus (the row's "⋯" only on the open row and under a mouse, a one-second press, outside closes the
-    picker); #98 110 stickers in six packs; #99 a browser with no push service gets words, not a spinner; #100 these docs.
-- Every PR: all page and server tests pass (741 and 837 at #99), and each new test was checked by breaking the code on
-  purpose **[verified]**. The menus, composer and picker were looked at in Chromium 157, Firefox 160 and WebKit 2.54
-  **[verified]**.
-- Earlier work (#79 to #89) is merged and in production **[stated: H]**. The forwarded-header chain was checked live on
-  2026-11-25 **[verified: H's run]**. Backups mirror the uploads folder **[stated: operations]**.
-- Peekbox production is on hold until it has a real payment method **[stated: H]**.
+- Everything up to #109 is merged and deployed, with no errors reported so far [stated: H, 2026-11-25]. Since #100:
+  hidden conversations can be found and reopened (#102 to #104), a live sticker's preview (#105), the stickers'
+  licence is Apache 2.0 (#106), a "Cờ" pack and four theme packs (#107, #108; #107 has a migration widening
+  `messages.sticker` to 48), and 13 flags left out of the panel (#109): 432 stickers in eleven packs.
+- H has a Google Play developer account (personal) [stated: H, 2026-11-25].
 
 ## 2. Work queue (agreed order)
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
-1. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
+1. **Voice calls**, everything else waits. The plan, the 42 decisions, the Cloudflare and Android facts, what H does
+   and the PR order are in **`docs/voice-calls.md`**; read it first. Next step: its PR 1 (mockups and the `/privacy`
+   page), shown to H before it is built.
+2. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
    with the link or text ready, then asks which conversation. Gom-only: Peekbox and Bloomy already call
    `navigator.share` **[stated: their sessions, 2026-11-25]**. Works only where Gom is installed **[inferred]**; to check
    against current docs before designing (GET or POST, text and links only or files too).
-2. **A webhook that posts into a group.** A secret link per group posts plain text as a labelled bot. What operations
+3. **A webhook that posts into a group.** A secret link per group posts plain text as a labelled bot. What operations
    asked for: a plain-text POST, safe to send twice, a fast 2xx even when nobody is online, a rate limit per secret, and
    a secret that can be replaced without changing the group. Operations would use it only beside their own alerts (a
    digest of deploy results and a daily "all quiet" line), never instead, since Gom runs on a machine it would report
    on. Bloomy would send a new paid order, a delivery cut-off coming up, and a review to approve, beside its email
    **[stated: those sessions]**.
-3. **Link cards.** Only for https addresses on a list in configuration (the shops' own sites), with a timeout, a size
+4. **Link cards.** Only for https addresses on a list in configuration (the shops' own sites), with a timeout, a size
    limit and a stored copy; title, picture and description, no price (a campaign price would go stale). Operations'
    check of what the container can reach on the host's own network comes first **[stated: operations]**.
    Link previews for any address were built once and removed in #61; their worker is in the git history.
-4. **Two-step sign-in for the owner (TOTP).** Bloomy's design is the reference: `totp.ts` (the maths, the secret
+5. **Two-step sign-in for the owner (TOTP).** Bloomy's design is the reference: `totp.ts` (the maths, the secret
    encrypted at rest) and `routes/admin-auth.ts` (a code used once per step, recovery codes, an attempt lock)
    **[stated: the Bloomy session]**.
+
+Not being built [H, 2026-11-25]: "request to join" (open sign-up approved by the owner), and a cache for reads or
+message search (measure first if anything ever feels slow; a trigram index is the first step for search).
 
 Later: a load test at the 256 MB limit with several people uploading; the next whole-repository review (`docs/repo-review.md`) at the end of the queue.
 
