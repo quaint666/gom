@@ -33,6 +33,10 @@ const MAX_ATTACHMENTS = 10;
 const SLOW_RETRY_MS = 1000;
 /** How many uploads go up at the same time. */
 const UPLOADS_AT_ONCE = 2;
+/** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
+const FORWARD_MAX = 5;
+/** The browser says when a scroll has come to rest; where it does not, a pause in scrolling stands in for it. */
+const SCROLL_END = typeof window !== 'undefined' && 'onscrollend' in window;
 
 /** One picture or file chosen for the next message: it goes up at once, and joins the message when that is sent. */
 interface TrayItem { key: number; name: string; file: File | null; state: 'waiting' | 'uploading' | 'done' | 'failed'; progress: number; attachment?: Attachment; error?: Failure }
@@ -108,8 +112,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const fresh = new Set<string>();
   /** The gear menu in the side rail, and the info panel beside a thread (its open or closed state is remembered on this device). */
   let gearOpen = false;
-  /** The picture shown large: which message, and which of its pictures. */
-  let viewer: { messageId: string; index: number } | null = null;
+  /**
+   * The picture shown large, in which conversation. `local` is the message, for a picture still being sent (the server does not list
+   * it yet): then the viewer steps only through that message's pictures.
+   */
+  let viewer: { conversation: string; attachmentId: string; local: string | null } | null = null;
+  /** After the next draw, move the viewer's strip to the current picture: at once (on opening, or when pictures came in front) or smoothly (a step). */
+  let viewerSync: ScrollBehavior | null = null;
   let trayKey = 0;
   let infoOpen = ((): boolean => { try { return localStorage.getItem('gom-info') === '1'; } catch { return false; } })();
   const people = new Map<string, GroupMember[]>();
@@ -119,8 +128,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const slowWaiting = new Set<string>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
-  /** The message being passed on, while the person picks where to. */
-  let forwarding: Shown | null = null;
+  /** What is being passed on, while the person picks where to (at most FORWARD_MAX), with the search over the list and a note to send after it. */
+  let forwarding: { body: string; attachments: Attachment[]; picked: string[]; q: string; note: string; busy: boolean } | null = null;
 
   function idFromPath(): string | null { return CONVERSATION_PATH.exec(deps.nav.path())?.[1]?.toLowerCase() ?? null; }
   const chatOf = (id: string | null): Conversation | undefined => (id === null ? undefined : chats?.find((c) => c.id === id));
@@ -215,7 +224,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${menuItem('reply', icons.reply(), 'Trả lời', () => startReply(m))}
         ${menuItem('copy', icons.copy(), 'Sao chép', () => void copyText(m))}
         ${pinned ? menuItem('unpin', icons.pin(), 'Bỏ ghim', () => void setPin(m, false)) : menuItem('pin', icons.pin(), 'Ghim', () => void setPin(m, true))}
-        ${menuItem('forward', icons.forward(), 'Chuyển tiếp', () => { menu = null; forwarding = m; update(); })}
+        ${menuItem('forward', icons.forward(), 'Chuyển tiếp', () => { menu = null; startForward(m.body, m.attachments ?? []); })}
+        ${m.attachments?.length === 1 ? saveItem(m.attachments[0]!) : nothing}
         ${mine ? menuItem('edit', icons.pencil(), 'Chỉnh sửa', () => startEdit(m)) : nothing}
         ${menuItem('hide', icons.trash(), 'Xóa với tôi', () => { menu = { id: m.id, confirming: false, hide: true }; update(); })}
         ${mine ? menuItem('recall', icons.undo(), 'Thu hồi', () => { menu = { id: m.id, confirming: true }; update(); }, true) : nothing}
@@ -223,6 +233,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <button class="btn secondary small close-menu" type="button" data-cancel-recall @click=${close}>Đóng</button>`}
       </div>`;
   };
+
+  /**
+   * "Lưu về máy" for a message with one picture or file: a link that downloads it. The menu closes a moment later, once the click
+   * has started the download (taking the link away during the click could stop it). Several at once are left to the viewer and
+   * the file cards: browsers ask before letting a page download more than one file.
+   */
+  const saveItem = (a: Attachment): TemplateResult => html`
+    <a class="mi" role="menuitem" href=${`/api/attachments/${a.id}`} download=${a.name} data-save
+      @click=${() => { window.setTimeout(() => { menu = null; update(); }, 0); }}>${icons.download()}<span>Lưu về máy</span></a>`;
 
   /** The reactions under a message: each emoji with how many chose it; yours is marked, and tapping a chip is choosing it or taking yours back. */
   const chips = (m: Shown) => m.deleted || !m.reactions || m.reactions.length === 0 ? nothing : html`
@@ -251,7 +270,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const files = all.filter((a) => a.kind === 'file');
     return html`
       ${pictures.length === 0 ? nothing : html`<div class=${`pics n${Math.min(pictures.length, 5)}`} data-pics>${pictures.map((a, i) => html`
-        <button class="pic" type="button" data-pic=${a.id} aria-label=${`Xem ảnh ${i + 1} trên ${pictures.length}`} @click=${() => { viewer = { messageId: m.id, index: i }; update(); root.querySelector<HTMLElement>('.viewer')?.focus(); }}>
+        <button class="pic" type="button" data-pic=${a.id} aria-label=${`Xem ảnh ${i + 1} trên ${pictures.length}`} @click=${() => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id)}>
           <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}
       ${files.map((a) => html`
         <a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-file=${a.id}>${icons.file()}
@@ -259,26 +278,140 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   };
 
   /** The big picture, with the others of its message one step away. Escape or a click outside closes it. */
+  /** One picture in the viewer, with the message it came in. */
+  interface Slide { attachment: Attachment; messageId: string; sender: { id: string; displayName: string }; body: string; createdAt: string; sent: boolean }
+
+  /**
+   * The pictures the viewer steps through, oldest first: all of the conversation's that the side panel's list has (the list grows
+   * as older pages are asked for), or, for a picture the list does not have (yet), only the pictures of its own message.
+   */
+  function slidesOf(v: NonNullable<typeof viewer>): Slide[] {
+    const items = mediaOf(v.conversation).image.items;
+    if (v.local === null && items.some((i) => i.attachment.id === v.attachmentId)) {
+      // The list is newest message first; a stable sort keeps the sender's order inside one message.
+      return [...items].sort((a, b) => a.seq - b.seq).map((i) => ({ attachment: i.attachment, messageId: i.messageId, sender: i.sender, body: i.body, createdAt: i.createdAt, sent: true }));
+    }
+    const t = threadOf(v.conversation);
+    const m = [...t.messages, ...t.pending].find((x) => v.local !== null ? x.id === v.local : x.attachments?.some((a) => a.id === v.attachmentId));
+    if (m === undefined) return [];
+    return (m.attachments ?? []).filter((a) => a.kind === 'image')
+      .map((a) => ({ attachment: a, messageId: m.id, sender: m.sender, body: m.body, createdAt: m.createdAt, sent: m.seq > 0 }));
+  }
+
+  /** Opens the viewer on a picture. A sent one is looked up in the conversation's list, so the viewer can go on to the other messages' pictures. */
+  function openViewer(conversation: string, attachmentId: string, local: string | null): void {
+    viewer = { conversation, attachmentId, local };
+    viewerSync = 'instant';
+    update();
+    if (local === null) void findInList(conversation, attachmentId);
+  }
+
+  function closeViewer(): void {
+    viewer = null;
+    viewerSync = null;
+    update();
+  }
+
+  /** Asks for pages of the conversation's pictures until this one is among them (or there are no more). Until then the viewer shows its message only. */
+  async function findInList(conversation: string, attachmentId: string): Promise<void> {
+    const list = mediaOf(conversation).image;
+    if (!list.loaded) await loadMedia(conversation, 'image');
+    for (let pages = 0; pages < 40 && list.hasMore && !list.items.some((i) => i.attachment.id === attachmentId); pages++) {
+      if (viewer?.attachmentId !== attachmentId) return;
+      const before = list.items.length;
+      await loadMedia(conversation, 'image', true);
+      if (list.items.length === before) return;   // failed, or another load was running: stay on the message's own pictures
+    }
+  }
+
+  /** Moves the viewer one picture back (-1) or on (1). At the oldest picture with older ones on the server, they are asked for first. */
+  async function stepViewer(by: -1 | 1): Promise<void> {
+    if (viewer === null) return;
+    const v = viewer;
+    let slides = slidesOf(v);
+    let i = slides.findIndex((s) => s.attachment.id === v.attachmentId);
+    const list = mediaOf(v.conversation).image;
+    if (by < 0 && i === 0 && v.local === null && list.hasMore && slides.length === list.items.length) {
+      await loadMedia(v.conversation, 'image', true);
+      if (viewer !== v) return;
+      slides = slidesOf(v);
+      i = slides.findIndex((s) => s.attachment.id === v.attachmentId);
+    }
+    const next = slides[i + by];
+    if (next === undefined) return;
+    v.attachmentId = next.attachment.id;
+    viewerSync = 'smooth';
+    update();
+  }
+
+  /** Where the strip of pictures came to rest after a swipe: that picture is the current one. Near the oldest, older ones are asked for. */
+  function onViewerSettle(track: HTMLElement): void {
+    const v = viewer;
+    if (v === null || track.clientWidth <= 0) return;
+    const slides = slidesOf(v);
+    const s = slides[Math.round(track.scrollLeft / track.clientWidth)];
+    if (s !== undefined && s.attachment.id !== v.attachmentId) { v.attachmentId = s.attachment.id; update(); }
+    const list = mediaOf(v.conversation).image;
+    if (v.local === null && slides[0]?.attachment.id === v.attachmentId && list.hasMore && slides.length === list.items.length) void loadMedia(v.conversation, 'image', true);
+  }
+
+  let settleTimer: number | null = null;
+  /** Where "scrollend" is missing, a pause in scrolling stands in for it. */
+  function onViewerScroll(track: HTMLElement): void {
+    if (settleTimer !== null) deps.timer.clear(settleTimer);
+    settleTimer = deps.timer.set(() => { settleTimer = null; onViewerSettle(track); }, 150);
+  }
+
+  /** The time a picture was sent, as the viewer says it: "22:22" today, "22:22 Hôm qua" or "22:22 3/12" before. */
+  const sentAt = (iso: string): string => { const day = listTime(iso, deps.now()); return day === clock(iso) ? day : `${clock(iso)} ${day}`; };
+
+  /**
+   * The picture shown large, over everything: a modal dialog, so Escape, and the Back gesture on a phone, close it instead of
+   * leaving the conversation. The pictures sit in a strip that the browser scrolls and snaps one at a time (a swipe on a phone);
+   * the arrows and the arrow keys step too.
+   */
   const viewerView = () => {
-    if (viewer === null || openId === null) return nothing;
-    const message = threadOf(openId).messages.find((x) => x.id === viewer!.messageId) ?? threadOf(openId).pending.find((x) => x.id === viewer!.messageId);
-    const pictures = (message?.attachments ?? []).filter((a) => a.kind === 'image');
-    const current = pictures[viewer.index];
-    if (current === undefined) return nothing;
-    const step = (by: number) => { viewer = { messageId: viewer!.messageId, index: (viewer!.index + by + pictures.length) % pictures.length }; update(); };
+    if (viewer === null || openId === null || viewer.conversation !== openId) return nothing;
+    const v = viewer;
+    const slides = slidesOf(v);
+    const i = slides.findIndex((s) => s.attachment.id === v.attachmentId);
+    const current = slides[i];
+    if (current === undefined) return nothing;   // its message was taken back or deleted for you
+    const list = mediaOf(v.conversation).image;
+    const older = v.local === null && list.hasMore && slides.length === list.items.length;
+    const who = current.sender.id === me?.id ? 'Bạn' : current.sender.displayName;
     return html`
-      <div class="viewer" role="dialog" aria-modal="true" aria-label="Xem ảnh" tabindex="-1" data-viewer
-        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { viewer = null; update(); } else if (e.key === 'ArrowLeft' && pictures.length > 1) step(-1); else if (e.key === 'ArrowRight' && pictures.length > 1) step(1); }}
-        @click=${(e: MouseEvent) => { if (e.target === e.currentTarget) { viewer = null; update(); } }}>
+      <dialog class="viewer" aria-label="Xem ảnh" data-viewer data-modal
+        @close=${closeViewer}
+        @keydown=${(e: KeyboardEvent) => {
+          if (e.key === 'Escape') { e.preventDefault(); closeViewer(); }
+          else if (e.key === 'ArrowLeft') { e.preventDefault(); void stepViewer(-1); }
+          else if (e.key === 'ArrowRight') { e.preventDefault(); void stepViewer(1); }
+        }}>
         <div class="viewer-bar">
-          <span>${viewer.index + 1} / ${pictures.length}</span>
-          <a class="ib" href=${`/api/attachments/${current.id}`} download=${current.name} aria-label="Tải ảnh xuống" data-viewer-download>${icons.download()}</a>
-          <button class="ib" type="button" data-viewer-close aria-label="Đóng" @click=${() => { viewer = null; update(); }}>${icons.close()}</button>
+          <span data-viewer-count aria-live="polite">${i + 1} / ${slides.length}${older ? '+' : ''}</span>
+          <a class="ib" href=${`/api/attachments/${current.attachment.id}`} download=${current.attachment.name} aria-label="Lưu về máy" data-viewer-download>${icons.download()}</a>
+          ${current.sent ? html`
+            <button class="ib" type="button" data-viewer-forward aria-label="Chuyển tiếp ảnh" @click=${() => { closeViewer(); startForward('', [current.attachment]); }}>${icons.forward()}</button>
+            <button class="ib" type="button" data-viewer-goto aria-label="Xem tin nhắn" @click=${() => { closeViewer(); void reveal({ id: current.messageId, conversationId: v.conversation }); }}>${icons.reply()}</button>` : nothing}
+          <button class="ib" type="button" data-viewer-close aria-label="Đóng" @click=${closeViewer}>${icons.close()}</button>
         </div>
-        ${pictures.length > 1 ? html`<button class="ib vprev" type="button" data-viewer-prev aria-label="Ảnh trước" @click=${() => step(-1)}>${icons.back()}</button>
-          <button class="ib vnext" type="button" data-viewer-next aria-label="Ảnh sau" @click=${() => step(1)}>${icons.next()}</button>` : nothing}
-        <img class="vimg" src=${`/api/attachments/${current.id}`} alt=${current.name}>
-      </div>`;
+        ${i > 0 || older ? html`<button class="ib vprev" type="button" data-viewer-prev aria-label="Ảnh trước" @click=${() => void stepViewer(-1)}>${icons.back()}</button>` : nothing}
+        ${i < slides.length - 1 ? html`<button class="ib vnext" type="button" data-viewer-next aria-label="Ảnh sau" @click=${() => void stepViewer(1)}>${icons.next()}</button>` : nothing}
+        <div class="vtrack" data-viewer-track tabindex="0" aria-label="Các ảnh"
+          @scrollend=${SCROLL_END ? (e: Event) => onViewerSettle(e.currentTarget as HTMLElement) : nothing}
+          @scroll=${SCROLL_END ? nothing : (e: Event) => onViewerScroll(e.currentTarget as HTMLElement)}
+          @click=${(e: MouseEvent) => { if ((e.target as Element).classList.contains('vslide')) closeViewer(); }}>
+          ${repeat(slides, (s) => s.attachment.id, (s, k) => html`
+            <div class="vslide" role="group" aria-roledescription="ảnh" aria-label=${`${k + 1} / ${slides.length}`} data-viewer-slide=${s.attachment.id}>
+              <img class="vimg" src=${`/api/attachments/${s.attachment.id}`} alt=${s.attachment.name} loading="lazy" decoding="async"
+                width=${s.attachment.width ?? nothing} height=${s.attachment.height ?? nothing}></div>`)}
+        </div>
+        <div class="viewer-foot" data-viewer-foot>
+          <div class="vwho"><b>${who}</b><small>${sentAt(current.createdAt)}</small></div>
+          ${current.body === '' ? nothing : html`<p class="vcap" data-viewer-caption>${words(current.body)}</p>`}
+        </div>
+      </dialog>`;
   };
 
   /** What is chosen for the next message, above the box where it is written. */
@@ -383,15 +516,47 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <b>${p.sender.id === me?.id ? 'Bạn' : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
         <span>${[...p.body].length > 160 ? [...p.body].slice(0, 160).join('') + '…' : p.body}</span></button></li>`)}</ul>` : nothing}`;
 
-  /** Where to pass a message on: your conversations, newest first. The message goes as a new message from you, with nothing saying who wrote it first. */
-  const forwardPanel = (m: Shown) => html`
-    <div class="forward card" role="group" aria-label="Chuyển tiếp tin nhắn" data-forward-panel>
-      <p><b>Chuyển tiếp đến</b></p>
-      <p class="hint fw-text">${m.body.length > 120 ? [...m.body].slice(0, 120).join('') + '…' : m.body}</p>
-      <ul class="fw-list">${(chats ?? []).map((c) => html`
-        <li><button class="btn secondary" type="button" data-forward-to=${c.id} @click=${() => void forward(m, c.id)}>${c.title ?? '…'}</button></li>`)}</ul>
-      <button class="btn secondary small" type="button" data-cancel-forward @click=${() => { forwarding = null; update(); }}>Hủy</button>
-    </div>`;
+  /**
+   * Where to pass a message on: a dialog with your conversations (newest first, narrowed by what is typed), up to FORWARD_MAX ticked,
+   * and a note that is sent after it. It goes as a new message from you, with nothing saying who wrote it first.
+   */
+  const forwardPanel = (f: NonNullable<typeof forwarding>) => {
+    const shown = (chats ?? []).filter((c) => matches(c.title ?? '', f.q));
+    const full = f.picked.length >= FORWARD_MAX;
+    const pictures = f.attachments.filter((a) => a.kind === 'image').length;
+    const files = f.attachments.length - pictures;
+    const what = [pictures > 0 ? `${pictures} ảnh` : '', files > 0 ? `${files} tệp` : ''].filter((x) => x !== '').join(', ');
+    const cancel = () => { if (!f.busy) { forwarding = null; update(); } };
+    return html`
+      <dialog class="fwd" aria-labelledby="fwd-title" data-forward-panel data-modal @close=${cancel}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } }}>
+        <header class="fwd-head"><h2 id="fwd-title">Chuyển tiếp</h2>
+          <button class="ib" type="button" data-close-forward aria-label="Đóng" @click=${cancel}>${icons.close()}</button></header>
+        <div class="fwd-what">
+          ${f.body === '' ? nothing : html`<p class="fw-text">${[...f.body].length > 120 ? [...f.body].slice(0, 120).join('') + '…' : f.body}</p>`}
+          ${what === '' ? nothing : html`<p class="hint">${what}</p>`}
+        </div>
+        <div class="searchfield input">${icons.search()}
+          <input type="search" aria-label="Tìm cuộc trò chuyện" placeholder="Tìm kiếm" autocomplete="off" maxlength="60" data-forward-search
+            .value=${liveValue(f.q)} @input=${(e: Event) => { f.q = (e.target as HTMLInputElement).value; update(); }}></div>
+        ${shown.length === 0 ? html`<p class="hint" data-forward-none>Không tìm thấy cuộc trò chuyện nào.</p>` : html`
+          <ul class="fwd-list">${repeat(shown, (c) => c.id, (c) => {
+            const on = f.picked.includes(c.id);
+            return html`<li><label class="fwd-row">
+              <input type="checkbox" data-forward-pick=${c.id} .checked=${on} ?disabled=${f.busy || (!on && full)}
+                @change=${(e: Event) => { const yes = (e.target as HTMLInputElement).checked; f.picked = yes ? [...f.picked.filter((x) => x !== c.id), c.id] : f.picked.filter((x) => x !== c.id); update(); }}>
+              ${avatar(c.title ?? '?')}<span>${c.title ?? '…'}</span></label></li>`;
+          })}</ul>`}
+        ${full ? html`<p class="hint" data-forward-full>Chọn tối đa ${FORWARD_MAX} cuộc trò chuyện mỗi lần.</p>` : nothing}
+        <textarea class="fwd-note" rows="2" aria-label="Lời nhắn kèm theo" placeholder="Nhập lời nhắn (không bắt buộc)" maxlength="4000" data-forward-note
+          .value=${liveValue(f.note)} @input=${(e: Event) => { f.note = (e.target as HTMLTextAreaElement).value; }}></textarea>
+        <footer class="fwd-foot">
+          <button class="btn secondary" type="button" data-cancel-forward ?disabled=${f.busy} @click=${cancel}>Hủy</button>
+          <button class="btn" type="button" data-forward-send ?disabled=${f.busy || f.picked.length === 0} @click=${() => void sendForward()}>
+            Chuyển tiếp${f.picked.length > 0 ? ` (${f.picked.length})` : ''}</button>
+        </footer>
+      </dialog>`;
+  };
 
   /** The narrow bar on a wide screen: messages, contacts, and a gear for settings and signing out. */
   const rail = () => html`
@@ -441,6 +606,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       list.items = mergeMedia(list.items, result.data.items);
       list.hasMore = result.data.hasMore;
       list.loaded = true;
+      // Older pictures come in front of the one the viewer shows: the strip is moved so the same picture stays in view.
+      if (kind === 'image' && viewer?.conversation === id && viewerSync === null) viewerSync = 'instant';
     }
     update();
   }
@@ -452,8 +619,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       : html`<button class="btn secondary small" type="button" data-info-more=${kind} ?disabled=${list.loading} @click=${() => void loadMedia(id, kind, true)}>Xem thêm</button>`;
     return html`
       ${image.items.length === 0 ? nothing : html`<h3>Ảnh</h3>
-        <div class="info-media" data-info-media>${image.items.map(({ attachment: a, messageId }) => html`
-          <button class="pic" type="button" data-info-pic=${a.id} aria-label=${a.name} @click=${() => void reveal({ id: messageId, conversationId: id })}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy"></button>`)}</div>
+        <div class="info-media" data-info-media>${image.items.map(({ attachment: a }) => html`
+          <button class="pic" type="button" data-info-pic=${a.id} aria-label=${a.name} @click=${() => openViewer(id, a.id, null)}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy"></button>`)}</div>
         ${more('image', image)}`}
       ${file.items.length === 0 ? nothing : html`<h3>Tệp</h3>
         <ul class="info-list" data-info-files>${file.items.map(({ attachment: a }) => html`<li><a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name}>${icons.file()}<span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span></a></li>`)}</ul>
@@ -571,6 +738,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function update(): void {
     render(view(), root);
     placeMenu();
+    showDialogs();
     const after = root.querySelector<HTMLElement>('.msgs');
     if (after === null || openId === null) return;
     const t = threadOf(openId);
@@ -582,6 +750,24 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (t.loaded) t.jump = false;   // the first unread one is further back than what was loaded: read from the end
     }
     if (t.stick) after.scrollTop = after.scrollHeight;
+  }
+
+  /**
+   * A dialog drawn for the first time is opened as a modal one (the rest of the page cannot be reached, and Escape or the Back gesture
+   * closes it). Then the viewer's strip is moved to the current picture, if asked for.
+   */
+  function showDialogs(): void {
+    for (const d of root.querySelectorAll<HTMLDialogElement>('dialog[data-modal]')) {
+      if (d.open) continue;
+      if (typeof d.showModal === 'function') d.showModal(); else d.setAttribute('open', '');
+    }
+    const track = root.querySelector<HTMLElement>('[data-viewer-track]');
+    if (viewer === null || viewerSync === null || track === null || track.clientWidth <= 0) return;
+    const i = slidesOf(viewer).findIndex((s) => s.attachment.id === viewer!.attachmentId);
+    const left = Math.max(0, i) * track.clientWidth;
+    if (viewerSync === 'smooth' && typeof track.scrollTo === 'function' && matchMedia?.('(prefers-reduced-motion: no-preference)').matches) track.scrollTo({ left, behavior: 'smooth' });
+    else track.scrollLeft = left;
+    viewerSync = null;
   }
 
   // ---- the person's actions
@@ -718,11 +904,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const c = chatOf(conversation);
     if (c === undefined) { if (chats !== null) void refreshList(); return; }
 
-    // The side panel's list follows: a new message's pictures and files join it, a message taken back leaves it.
+    // A message taken back leaves the viewer (if its picture was the one shown, the viewer is gone); the others keep their place.
+    if (event.kind === 'deleted' && viewer?.conversation === conversation) viewerSync ??= 'instant';
+
+    // The side panel's list follows: a new message's pictures and files join it, a message taken back leaves it, changed words follow.
     const lists = mediaLists.get(conversation);
     if (lists !== undefined) {
       if (event.kind === 'deleted') for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.filter((i) => i.messageId !== message.id);
-      else if (event.kind === 'created') for (const a of message.attachments ?? []) lists[a.kind].items = mergeMedia(lists[a.kind].items, [{ attachment: a, messageId: message.id, seq: message.seq, createdAt: message.createdAt }]);
+      else if (event.kind === 'created') for (const a of message.attachments ?? []) lists[a.kind].items = mergeMedia(lists[a.kind].items, [{ attachment: a, messageId: message.id, seq: message.seq, createdAt: message.createdAt, sender: message.sender, body: message.body }]);
+      else for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.map((i) => i.messageId === message.id ? { ...i, body: message.body } : i);
     }
 
     const t = threads.get(conversation);
@@ -920,47 +1110,82 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
-  /**
-   * Sends the words, pictures and files of a message to another conversation as a new message from you. The pictures and files are
-   * copied by the server first (so that needs a connection: with none, nothing is queued and you are told); the message then uses
-   * the same queue as writing, so a lost connection does not lose it. A refusal for good (no longer friends, say) is told here, not
-   * left in a thread you are not in.
-   */
-  async function forward(m: Shown, target: string): Promise<void> {
+  /** Opens the dialog for passing on these words, pictures and files (a whole message, or one picture from the viewer). */
+  function startForward(body: string, attachments: Attachment[]): void {
+    menu = null;
+    forwarding = { body, attachments, picked: [], q: '', note: '', busy: false };
+    update();
+    root.querySelector<HTMLInputElement>('[data-forward-search]')?.focus();
+  }
+
+  type Passed = { kind: 'sent' | 'queued' } | { kind: 'failed'; why: string } | { kind: 'signed-out' };
+
+  /** Passes it on to each ticked conversation in turn, then says in one line how that went. */
+  async function sendForward(): Promise<void> {
+    const f = forwarding;
+    if (f === null || f.busy || f.picked.length === 0 || me === null) return;
+    f.busy = true;
+    notice = f.attachments.length > 0 ? 'Đang chuyển tiếp…' : '';
+    update();
+    const sent: string[] = [], queued: string[] = [], failed: { name: string; why: string }[] = [];
+    for (const target of f.picked) {
+      const name = chatOf(target)?.title ?? '';
+      const r = await forwardTo(f, target, name);
+      if (r.kind === 'signed-out') return;
+      if (r.kind === 'failed') failed.push({ name, why: r.why }); else if (r.kind === 'sent') sent.push(name); else queued.push(name);
+    }
     forwarding = null;
-    if (me === null) return;
-    const name = chatOf(target)?.title ?? '';
+    const one = f.picked.length === 1;
+    notice = [
+      sent.length > 0 ? `Đã chuyển tiếp đến ${sent.join(', ')}.` : '',
+      queued.length > 0 ? `Chưa gửi được đến ${queued.join(', ')}. Sẽ gửi khi có mạng.` : '',
+      ...failed.map((x) => one ? x.why : `${x.name}: ${x.why}`),
+    ].filter((x) => x !== '').join(' ');
+    update();
+  }
+
+  /**
+   * Sends the words, pictures and files to one conversation as a new message from you, and then the note, if any. The pictures and
+   * files are copied by the server first (so that needs a connection: with none, nothing is queued and you are told); the messages
+   * then use the same queue as writing, so a lost connection does not lose them. A refusal for good (no longer friends, say) is told
+   * here, not left in a thread you are not in.
+   */
+  async function forwardTo(f: NonNullable<typeof forwarding>, target: string, name: string): Promise<Passed> {
     const t = threadOf(target);
     const copies: Attachment[] = [];
-    if ((m.attachments ?? []).length > 0) {
-      notice = `Đang chuyển tiếp đến ${name}…`;
-      update();
-      for (const a of m.attachments ?? []) {
-        const copy = await api.copyAttachment(target, a.id);
-        if (copy.ok) { copies.push(copy.data); continue; }
-        if (copy.error === 'unauthorized') { go('/sign-in'); return; }
-        notice = copy.error === 'network' ? `Chưa chuyển tiếp được đến ${name}. Cần có mạng để chuyển ảnh và tệp.` : errorText(copy);
-        update();
-        return;
-      }
+    for (const a of f.attachments) {
+      const copy = await api.copyAttachment(target, a.id);
+      if (copy.ok) { copies.push(copy.data); continue; }
+      if (copy.error === 'unauthorized') { go('/sign-in'); return { kind: 'signed-out' }; }
+      return { kind: 'failed', why: copy.error === 'network' ? `Chưa chuyển tiếp được đến ${name}. Cần có mạng để chuyển ảnh và tệp.` : errorText(copy) };
     }
-    const clientId = deps.newId();
-    const waiting = t.pending.some((x) => x.state === 'queued');
-    t.pending.push({
-      id: clientId, clientId, seq: 0, conversationId: target, sender: { id: me.id, displayName: me.displayName }, body: m.body,
-      createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(copies.length > 0 ? { attachments: copies } : {}),
-    });
-    persist();
-    update();
-    if (!waiting) await flush(target);
-    const p = t.pending.find((x) => x.clientId === clientId);
-    if (p?.state === 'failed') {
-      notice = p.error ? errorText(p.error) : 'Chưa chuyển tiếp được.';
+    const queue = (body: string, files: Attachment[]): string => {
+      const clientId = deps.newId();
+      const waiting = t.pending.some((x) => x.state === 'queued');
+      t.pending.push({
+        id: clientId, clientId, seq: 0, conversationId: target, sender: { id: me!.id, displayName: me!.displayName }, body,
+        createdAt: deps.now().toISOString(), state: waiting ? 'queued' : 'sending', ...(files.length > 0 ? { attachments: files } : {}),
+      });
+      persist();
+      update();
+      return clientId;
+    };
+    /** Sends what is queued, and says how this one fared; one refused for good is taken out again. */
+    const outcome = async (clientId: string): Promise<Passed> => {
+      if (!t.pending.some((x) => x.clientId === clientId && x.state === 'queued')) await flush(target);
+      const p = t.pending.find((x) => x.clientId === clientId);
+      if (p === undefined) return { kind: 'sent' };
+      if (p.state !== 'failed') return { kind: 'queued' };
       t.pending = t.pending.filter((x) => x.clientId !== clientId);
       persist();
-    } else if (p !== undefined) notice = `Chưa gửi được đến ${name}. Sẽ gửi khi có mạng.`;
-    else notice = `Đã chuyển tiếp đến ${name}.`;
-    update();
+      return { kind: 'failed', why: p.error ? errorText(p.error) : `Chưa chuyển tiếp được đến ${name}.` };
+    };
+    const passed = await outcome(queue(f.body, copies));
+    // The note goes after what it is about: not at all if that was refused, and behind it in the queue if that is waiting for the network.
+    const note = f.note.trim();
+    if (note === '' || passed.kind === 'failed') return passed;
+    const said = await outcome(queue(note, []));
+    return said.kind === 'sent' ? passed : said;
   }
 
   // ---- searching
@@ -1000,6 +1225,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Takes a message out of this device's view: it goes from the thread, and the list is asked again (the preview may have changed). */
   function drop(conversation: string, messageId: string): void {
+    if (viewer?.conversation === conversation) viewerSync ??= 'instant';
     const lists = mediaLists.get(conversation);
     if (lists !== undefined) for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.filter((i) => i.messageId !== messageId);
     const t = threads.get(conversation);

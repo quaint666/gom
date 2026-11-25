@@ -46,7 +46,8 @@ export interface Reply { id: string; sender: Sender | null; snippet: string | nu
 /** A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb. */
 export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null }
 /** One picture or file in the side panel's list, with the message it belongs to. */
-export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string }
+/** A picture or file of a conversation, with the message it came in: who sent it and its words (the viewer shows them under the picture). */
+export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string; sender: Sender; body: string }
 /** What the page behind the first address in a message says about itself. The picture, if any, is at /api/attachments/{imageId}/thumb. */
 /** A line in a group's thread that says what happened (who was added or taken out, who left, a new name): not something anyone wrote. */
 export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed'; target?: Sender | null; title?: string | null }

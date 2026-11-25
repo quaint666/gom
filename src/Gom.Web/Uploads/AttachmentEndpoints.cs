@@ -16,8 +16,11 @@ public static class AttachmentEndpoints
     /// <summary>Which picture or file to copy into another conversation.</summary>
     public sealed record CopyRequest(Guid? From);
 
-    /// <summary>One picture or file in the side panel's list, with the message it belongs to (a click goes there).</summary>
-    public sealed record MediaItem(AttachmentDto Attachment, Guid MessageId, long Seq, DateTimeOffset CreatedAt);
+    /// <summary>
+    /// One picture or file in the side panel's list, with the message it belongs to: who sent it and its words, which the picture
+    /// viewer shows under the picture.
+    /// </summary>
+    public sealed record MediaItem(AttachmentDto Attachment, Guid MessageId, long Seq, DateTimeOffset CreatedAt, MessageEndpoints.PersonDto Sender, string Body);
 
     /// <summary>How many messages' worth of pictures (or files) one page of the media list holds.</summary>
     private const int MediaPage = 24;
@@ -58,14 +61,15 @@ public static class AttachmentEndpoints
             join m in db.Messages on a.MessageId equals m.Id
             where m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null && (before == null || m.Seq < before)
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id)
-            select new { Attachment = a, m.Seq, m.CreatedAt };
+            join u in db.Users on m.SenderId equals u.Id
+            select new { Attachment = a, m.Seq, m.CreatedAt, m.Body, SenderId = u.Id, u.DisplayName };
 
         // A page is a number of messages, so one message's pictures are never split between two pages.
         var seqs = await visible.Select(x => x.Seq).Distinct().OrderByDescending(s => s).Take(MediaPage + 1).ToListAsync(ct);
         var hasMore = seqs.Count > MediaPage;
         var page = seqs.Take(MediaPage).ToList();
         var rows = await visible.Where(x => page.Contains(x.Seq)).OrderByDescending(x => x.Seq).ThenBy(x => x.Attachment.Position).ThenBy(x => x.Attachment.CreatedAt).ToListAsync(ct);
-        return Results.Ok(new { items = rows.Select(r => new MediaItem(ToDto(r.Attachment), r.Attachment.MessageId!.Value, r.Seq, r.CreatedAt)), hasMore });
+        return Results.Ok(new { items = rows.Select(r => new MediaItem(ToDto(r.Attachment), r.Attachment.MessageId!.Value, r.Seq, r.CreatedAt, new MessageEndpoints.PersonDto(r.SenderId, r.DisplayName), r.Body)), hasMore });
     }
 
     /// <summary>
