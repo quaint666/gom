@@ -181,7 +181,6 @@ public static class GroupEndpoints
         await db.Reactions.Where(r => db.Messages.Any(m => m.Id == r.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
         await db.Pins.Where(p => p.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Hides.Where(h => db.Messages.Any(m => m.Id == h.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
-        await db.Previews.Where(p => db.Messages.Any(m => m.Id == p.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
         await db.Events.Where(e => e.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Messages.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Members.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);

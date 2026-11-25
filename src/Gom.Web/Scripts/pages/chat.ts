@@ -3,7 +3,7 @@ import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
 import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, Reply, User } from '../api.js';
-import { linkify, safeUrl } from '../linkify.js';
+import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, clock, initials, listTime, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
@@ -230,29 +230,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const words = (body: string) => linkify(body).map((p) => 'url' in p
     ? html`<a class="ext" href=${p.url} target="_blank" rel="noopener noreferrer nofollow">${p.text}</a>` : p.text);
 
-  /** The card under a message for its first address: a small picture, the site, the title and a few words. The writer can take it away. */
-  const previewOf = (m: ChatMessage, mine: boolean) => {
-    const p = m.preview;
-    const href = p ? safeUrl(p.url) : null;
-    if (!p || href === null || (p.title === null && p.description === null)) return nothing;
-    return html`
-      <div class="lcard" data-preview>
-        <a class="lc-main" href=${href} target="_blank" rel="noopener noreferrer nofollow">
-          ${p.imageId === null ? nothing : html`<img src=${`/api/attachments/${p.imageId}/thumb`} alt="" loading="lazy" decoding="async">`}
-          <span class="lc-t">${p.site === null ? nothing : html`<small>${p.site}</small>`}${p.title === null ? nothing : html`<b>${p.title}</b>`}${p.description === null ? nothing : html`<span>${p.description}</span>`}</span>
-        </a>
-        ${mine ? html`<button class="ib small lc-x" type="button" data-preview-remove aria-label="Gỡ xem trước liên kết" @click=${() => void removePreview(m)}>${icons.close()}</button>` : nothing}
-      </div>`;
-  };
-
-  async function removePreview(m: ChatMessage): Promise<void> {
-    const kept = m.preview;
-    m.preview = null;
-    update();
-    const result = await api.removePreview(m.conversationId, m.id);
-    if (!result.ok) { m.preview = kept; handleFailure(result); }
-  }
-
   /** The pictures of a message as a grid, then its files as cards. */
   const attachmentsOf = (m: ChatMessage): TemplateResult | typeof nothing => {
     const all = m.attachments ?? [];
@@ -325,7 +302,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? html`<div class="av sm a${avatarTone(m.sender.displayName)}" aria-hidden="true">${initials(m.sender.displayName)}</div>` : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
-          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}${previewOf(m, item.mine)}`}
+          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<div class="sender">${m.sender.displayName}</div>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">đã chỉnh sửa · </span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? 'Đang gửi' : 'Chờ gửi'}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? 'Đã xem' : 'Đã gửi'}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${!item.mine ? tools : nothing}
       </div>

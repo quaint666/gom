@@ -17,8 +17,6 @@ Needs the .NET 10 SDK, Node 22 or newer, and Docker.
 
 Uploads need a folder: set `Uploads__Path` to one (without it the upload endpoints answer 503). On Linux the picture library needs `fontconfig` installed (`apk add fontconfig` on Alpine, `libfontconfig1` on Debian and Ubuntu; Fedora has it).
 
-Link previews are off. `LinkPreviews__Enabled=true` makes the server fetch the first address in a message (http or https, ports 80 and 443 only, never a private, loopback or metadata address, at most three redirects, 5 seconds, 512 KB) to draw a card under it; it needs the container to reach the internet, and the sites see the server's address, not the readers'. Turn it on only after the network allows it.
-
 The first start needs an owner account: set `Owner__GomId` and `Owner__Password` (10 characters or more) once, on an empty database, then remove the password from the configuration. Apply the database migrations first (`dotnet dotnet-ef database update --project src/Gom.Web`); the app does not do it for you.
 
 Decisions and their reasons are in `docs/decisions.md`. The mockups and design notes are in `design/`.

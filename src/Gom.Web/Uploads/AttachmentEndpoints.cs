@@ -134,7 +134,7 @@ public static class AttachmentEndpoints
         // In a message: only what was said after you joined, and not what you hid.
         if (a.MessageId is { } messageId && !await db.Messages.AnyAsync(m => m.Id == messageId && m.Seq > access.JoinedSeq && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct))
             return Results.NotFound();
-        var picture = a.Kind is AttachmentKind.Image or AttachmentKind.Preview;
+        var picture = a.Kind == AttachmentKind.Image;
         if (thumb && !picture) return Results.NotFound();
 
         var stream = services.GetRequiredService<IBlobStore>().OpenRead(thumb ? id + ".t" : id.ToString());

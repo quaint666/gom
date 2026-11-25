@@ -1,7 +1,6 @@
 namespace Gom.Web.Data;
 
-/// <summary><see cref="Preview"/> is the picture of a link preview: stored like a picture, but not one of the message's own attachments.</summary>
-public enum AttachmentKind { Image = 0, File = 1, Preview = 2 }
+public enum AttachmentKind { Image = 0, File = 1 }
 
 /// <summary>
 /// A picture or a file somebody uploaded to a conversation. It belongs to its uploader alone until it is put in a message

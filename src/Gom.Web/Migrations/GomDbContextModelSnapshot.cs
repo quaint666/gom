@@ -548,47 +548,6 @@ namespace Gom.Web.Migrations
                     b.ToTable("message_pins", (string)null);
                 });
 
-            modelBuilder.Entity("Gom.Web.Data.MessagePreview", b =>
-                {
-                    b.Property<Guid>("MessageId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("message_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(800)
-                        .HasColumnType("character varying(800)")
-                        .HasColumnName("description");
-
-                    b.Property<Guid?>("ImageId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("image_id");
-
-                    b.Property<string>("Site")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("site");
-
-                    b.Property<string>("Title")
-                        .HasMaxLength(400)
-                        .HasColumnType("character varying(400)")
-                        .HasColumnName("title");
-
-                    b.Property<string>("Url")
-                        .IsRequired()
-                        .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)")
-                        .HasColumnName("url");
-
-                    b.HasKey("MessageId")
-                        .HasName("pk_message_previews");
-
-                    b.ToTable("message_previews", (string)null);
-                });
-
             modelBuilder.Entity("Gom.Web.Data.MessageReaction", b =>
                 {
                     b.Property<Guid>("MessageId")
@@ -1049,16 +1008,6 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_message_pins_pinned_by");
-                });
-
-            modelBuilder.Entity("Gom.Web.Data.MessagePreview", b =>
-                {
-                    b.HasOne("Gom.Web.Data.Message", null)
-                        .WithOne()
-                        .HasForeignKey("Gom.Web.Data.MessagePreview", "MessageId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_message_previews_message_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.MessageReaction", b =>

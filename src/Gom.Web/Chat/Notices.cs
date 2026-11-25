@@ -46,7 +46,7 @@ public static class Notices
         var people = await db.Users.AsNoTracking().Where(u => u.Id == notice.SenderId || u.Id == notice.NoticeTargetId).Select(u => new MessageEndpoints.PersonDto(u.Id, u.DisplayName)).ToListAsync(ct);
         var actor = people.Single(p => p.Id == notice.SenderId);
         var target = notice.NoticeTargetId is { } t ? people.Single(p => p.Id == t) : null;
-        var dto = MessageEndpoints.ToDto(notice, actor, null, null, new MessageExtras(null, null, new NoticeDto(Name(notice.Notice!.Value), target, notice.Notice == NoticeKind.Renamed ? notice.Body : null)));
+        var dto = MessageEndpoints.ToDto(notice, actor, null, null, new MessageExtras(null, new NoticeDto(Name(notice.Notice!.Value), target, notice.Notice == NoticeKind.Renamed ? notice.Body : null)));
         await live.PublishAsync(db, notice.Seq, "created", dto);
     }
 

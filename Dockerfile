@@ -45,7 +45,6 @@ COPY src/Gom.Web/Data ./src/Gom.Web/Data
 COPY src/Gom.Web/Migrations ./src/Gom.Web/Migrations
 COPY src/Gom.Web/Social ./src/Gom.Web/Social
 COPY src/Gom.Web/Uploads ./src/Gom.Web/Uploads
-COPY src/Gom.Web/Previews ./src/Gom.Web/Previews
 # The app stops at start without a connection string, so finding the DbContext here needs a placeholder; the real one is
 # given when the bundle runs. The bundle is not self-contained: it runs on the .NET runtime the site image already has.
 RUN ConnectionStrings__Default="Host=placeholder;Database=placeholder" \

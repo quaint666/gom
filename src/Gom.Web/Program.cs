@@ -44,11 +44,6 @@ builder.Services.AddSingleton<SendLimiter>(sp =>
     return new SendLimiter(sp.GetRequiredService<TimeProvider>(), o.SendBurst, o.SendPerSecond);
 });
 builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection("Uploads"));
-builder.Services.Configure<Gom.Web.Previews.PreviewOptions>(builder.Configuration.GetSection("LinkPreviews"));
-builder.Services.AddSingleton<Gom.Web.Previews.PreviewQueue>();
-builder.Services.AddSingleton(sp => new Gom.Web.Previews.SafeFetcher(sp.GetRequiredService<IOptions<Gom.Web.Previews.PreviewOptions>>()));
-builder.Services.AddSingleton<Gom.Web.Previews.PreviewWorker>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<Gom.Web.Previews.PreviewWorker>());
 builder.Services.AddSingleton<IBlobStore>(sp => new DiskBlobStore(sp.GetRequiredService<IOptions<UploadOptions>>().Value.Path));
 builder.Services.AddSingleton<UploadLimiter>(sp =>
 {
