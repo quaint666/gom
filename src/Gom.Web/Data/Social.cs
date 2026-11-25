@@ -85,6 +85,8 @@ public class Message
     /// <summary>The message this one answers, in the same conversation. Null when it answers nothing.</summary>
     public Guid? ReplyToId { get; set; }
     public string Body { get; set; } = "";
+    /// <summary>Set when the message is one sticker (its code, from <see cref="Chat.Stickers"/>); then it has no words and no files.</summary>
+    public string? Sticker { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
     /// <summary>When its words were last changed by the sender; null if never. The old words are not kept.</summary>

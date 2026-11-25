@@ -151,8 +151,10 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
                 t.HasCheckConstraint("ck_messages_seq", "seq > 0");
                 t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4)");
                 t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
+                t.HasCheckConstraint("ck_messages_sticker", "sticker IS NULL OR (body = '' AND notice IS NULL)");
             });
             e.Property(x => x.Body).HasMaxLength(16000);
+            e.Property(x => x.Sticker).HasMaxLength(Chat.Stickers.MaxCodeLength);
             // Order inside a conversation, and "this device already sent this one".
             e.HasIndex(x => new { x.ConversationId, x.Seq }).IsUnique();
             e.HasIndex(x => new { x.SenderId, x.ClientId }).IsUnique();

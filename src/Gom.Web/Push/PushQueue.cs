@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 namespace Gom.Web.Push;
 
 /// <summary>A message that may need notifications: what is needed to word them, and who wrote it (who is not told).</summary>
-public sealed record PushJob(Guid ConversationId, long Seq, Guid SenderId, string SenderName, int Images, int Files);
+public sealed record PushJob(Guid ConversationId, long Seq, Guid SenderId, string SenderName, int Images, int Files, bool Sticker = false);
 
 /// <summary>
 /// Messages waiting for their notifications, handed over after the commit. Bounded: when it is full a notification is dropped, never

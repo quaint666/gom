@@ -174,6 +174,14 @@ public class PushCryptoTests
         Assert.Equal(("Nhà mình", $"Minh: {what}"), PushSender.Words(job, ConversationKind.Group, "Nhà mình"));
     }
 
+    [Fact]
+    public void A_sticker_is_named_as_one()
+    {
+        var job = new PushJob(Guid.NewGuid(), 5, Guid.NewGuid(), "Minh", 0, 0, Sticker: true);
+        Assert.Equal(("Minh", "Đã gửi 1 nhãn dán"), PushSender.Words(job, ConversationKind.Direct, null));
+        Assert.Equal(("Nhà mình", "Minh: Đã gửi 1 nhãn dán"), PushSender.Words(job, ConversationKind.Group, "Nhà mình"));
+    }
+
     [Theory]
     [InlineData("https://fcm.googleapis.com/fcm/send/x", true)]
     [InlineData("https://jmt17.google.com/fcm/send/x", true)]
@@ -319,6 +327,18 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
         await Subscribe(second, browser);
         Assert.False((await State(first)).GetProperty("subscribed").GetBoolean());
         Assert.True((await State(second)).GetProperty("subscribed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_sticker_sent_is_notified_as_a_sticker()
+    {
+        var p = await Pair();
+        using var phone = new FakeBrowser();
+        await Subscribe(p.CA, phone);
+        using var r = await app.Call(HttpMethod.Post, $"/api/conversations/{p.Chat}/messages", new { clientId = Guid.NewGuid(), sticker = "1f602" }, p.CB);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var note = phone.Read((await app.Push.Next(phone.Endpoint)).Body);
+        Assert.Equal("Đã gửi 1 nhãn dán", note.GetProperty("body").GetString());
     }
 
     [Fact]

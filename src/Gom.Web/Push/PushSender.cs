@@ -106,7 +106,7 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
     /// </summary>
     public static (string Title, string Body) Words(PushJob job, ConversationKind kind, string? groupTitle)
     {
-        var what = (job.Images, job.Files) switch
+        var what = job.Sticker ? "Đã gửi 1 nhãn dán" : (job.Images, job.Files) switch
         {
             ( > 0, > 0) => $"Đã gửi {job.Images} ảnh và {job.Files} file",
             ( > 0, _) => $"Đã gửi {job.Images} ảnh",

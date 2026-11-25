@@ -12,13 +12,13 @@ namespace Gom.Web.Chat;
 /// <summary>Sending, history and read position. The database is the truth; nothing here depends on a live connection.</summary>
 public static class MessageEndpoints
 {
-    public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null, List<Guid>? Attachments = null);
+    public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null, List<Guid>? Attachments = null, string? Sticker = null);
     public sealed record ReactRequest(string? Emoji);
     public sealed record EditRequest(string? Body);
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, NoticeDto? Notice = null);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, NoticeDto? Notice = null, string? Sticker = null);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -44,7 +44,7 @@ public static class MessageEndpoints
 
     internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null, MessageExtras? extras = null) =>
         new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Notice is null ? m.Body : "", m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt,
-            m.DeletedAt != null ? null : extras?.Attachments, extras?.Notice);
+            m.DeletedAt != null ? null : extras?.Attachments, extras?.Notice, m.DeletedAt != null ? null : m.Sticker);
 
     // ---- what a message may contain
 
@@ -80,11 +80,14 @@ public static class MessageEndpoints
         var existing = await FindExisting(db, me, clientId, ct);
         if (existing is not null) return await Same(db, existing, id, sender, access.JoinedSeq, ct);
 
+        // A sticker is the whole message: no words and no files with it.
+        if (request.Sticker is not null && (!Stickers.Allowed.Contains(request.Sticker) || !string.IsNullOrWhiteSpace(request.Body) || request.Attachments is { Count: > 0 }))
+            return Error(StatusCodes.Status400BadRequest, "invalid_sticker");
         // A message may be only pictures and files; then its words may be empty. Otherwise it needs words.
         var attached = request.Attachments?.Distinct().ToList() ?? [];
         if (request.Attachments is not null && attached.Count != request.Attachments.Count) return Error(StatusCodes.Status400BadRequest, "invalid_attachment");
         if (attached.Count > Math.Max(1, uploads.Value.MaxPerMessage)) return Error(StatusCodes.Status400BadRequest, "too_many_attachments");
-        var (body, problem) = attached.Count > 0 && string.IsNullOrWhiteSpace(request.Body) ? ("", null) : Clean(request.Body, options.Value.MaxChars);
+        var (body, problem) = (attached.Count > 0 || request.Sticker is not null) && string.IsNullOrWhiteSpace(request.Body) ? ("", null) : Clean(request.Body, options.Value.MaxChars);
         if (body is null) return Error(StatusCodes.Status400BadRequest, problem!);
         // Only your own uploads to this conversation that no message has taken yet.
         if (attached.Count > 0 && await db.Attachments.CountAsync(a => attached.Contains(a.Id) && a.ConversationId == id && a.UploaderId == me && a.MessageId == null, ct) != attached.Count)
@@ -117,7 +120,7 @@ public static class MessageEndpoints
             var seq = (await db.Database.SqlQuery<long>(
                 $"UPDATE conversations SET last_seq = last_seq + 1, last_message_at = {now} WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
 
-            message = new Message { Id = Guid.NewGuid(), ConversationId = id, Seq = seq, SenderId = me, ClientId = clientId, Body = body, CreatedAt = now, ReplyToId = request.ReplyTo };
+            message = new Message { Id = Guid.NewGuid(), ConversationId = id, Seq = seq, SenderId = me, ClientId = clientId, Body = body, Sticker = request.Sticker, CreatedAt = now, ReplyToId = request.ReplyTo };
             db.Messages.Add(message);
             db.Events.Add(new MessageEvent { ConversationId = id, Seq = seq, Kind = EventKind.Created, MessageId = message.Id, CreatedAt = now });
             try
@@ -153,7 +156,7 @@ public static class MessageEndpoints
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
         var files = dto.Attachments ?? [];
-        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind != "image")));
+        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind != "image"), message.Sticker is not null));
         return Results.Ok(dto);
     }
 
@@ -198,7 +201,7 @@ public static class MessageEndpoints
         {
             // Erase first, and only if it is still there: of several recalls at once exactly one gets 1 here.
             var erased = await db.Messages.Where(m => m.Id == messageId && m.DeletedAt == null)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.DeletedAt, (DateTimeOffset?)now).SetProperty(m => m.Body, ""), ct);
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.DeletedAt, (DateTimeOffset?)now).SetProperty(m => m.Body, "").SetProperty(m => m.Sticker, (string?)null), ct);
             if (erased == 0) return Results.NoContent();
             // A message taken back is no longer there to stay at the top.
             pinsGone = await db.Pins.Where(p => p.MessageId == messageId).ExecuteDeleteAsync(ct) > 0;
@@ -323,6 +326,7 @@ public static class MessageEndpoints
         var found = await db.Messages.AsNoTracking().Where(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.JoinedSeq && m.DeletedAt == null && m.Notice == null).SingleOrDefaultAsync(ct);
         if (found is null) return Results.NotFound();
         if (found.SenderId != me) return Error(StatusCodes.Status403Forbidden, "not_your_message");
+        if (found.Sticker is not null) return Error(StatusCodes.Status400BadRequest, "not_editable");   // a sticker has no words to change
         var (body, problem) = Clean(request.Body, options.Value.MaxChars);
         if (body is null) return Error(StatusCodes.Status400BadRequest, problem!);
         if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
