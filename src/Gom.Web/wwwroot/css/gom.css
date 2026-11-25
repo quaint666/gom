@@ -487,3 +487,7 @@ select:focus-visible { outline-offset: 0; }
 
 /* a line in a group's thread: who was added, who left, a new name */
 .notice-row { align-self: center; max-inline-size: min(90%, 480px); margin-block: 8px; padding: 4px 12px; border-radius: 12px; background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--muted); font-size: 13px; text-align: center; overflow-wrap: anywhere; }
+
+/* The bar that says a new version is there: over the top of whatever page is open. */
+.updatebar { position: fixed; z-index: 40; inset-block-start: max(8px, env(safe-area-inset-top)); inset-inline: 12px; margin-inline: auto; max-inline-size: 420px; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--tint); color: var(--tint-text); font-size: 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25); }
+.updatebar span { flex: 1; }
