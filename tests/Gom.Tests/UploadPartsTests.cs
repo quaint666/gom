@@ -238,10 +238,12 @@ public class ImageProcessorTests
     [Theory]
     [InlineData(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }, true)]
     [InlineData(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, true)]
-    [InlineData(new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61 }, false)]
+    [InlineData(new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61 }, true)]    // GIF89a
+    [InlineData(new byte[] { 0x47, 0x49, 0x46, 0x38, 0x37, 0x61 }, true)]    // GIF87a
+    [InlineData(new byte[] { 0x47, 0x49, 0x46, 0x38, 0x38, 0x61 }, false)]   // not a GIF version
     [InlineData(new byte[] { 0x25, 0x50, 0x44, 0x46 }, false)]
     [InlineData(new byte[] { }, false)]
-    public void Recognises_the_three_formats_by_their_first_bytes(byte[] head, bool image) => Assert.Equal(image, ImageProcessor.LooksLikeImage(head));
+    public void Recognises_the_four_formats_by_their_first_bytes(byte[] head, bool image) => Assert.Equal(image, ImageProcessor.LooksLikeImage(head));
 
     [Fact]
     public void Recognises_webp_by_its_riff_header()

@@ -4,7 +4,7 @@ import { mountSettings } from '../Scripts/pages/settings.js';
 import { chosenLanguage, pageTitle } from '../Scripts/say.js';
 import { en } from '../Scripts/strings/en.js';
 import { vi as vietnamese } from '../Scripts/strings/vi.js';
-import { fail, fakeApi, flush, ok } from './helpers.js';
+import { fail, fakeApi, flush, ok, text } from './helpers.js';
 
 let root: HTMLElement;
 beforeEach(() => { root = document.createElement('div'); document.body.replaceChildren(root); });
@@ -62,6 +62,99 @@ describe('settings: language', () => {
     expect(localStorage.getItem('gom-language')).toBe('en');
     expect(go).toHaveBeenCalledWith('/settings');
     localStorage.setItem('gom-language', 'vi');
+  });
+});
+
+describe('settings: colour', () => {
+  const me = { id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false, language: 'vi' as const };
+  const swatch = (code: string) => root.querySelector<HTMLInputElement>(`[data-palette-choice] input[value="${code}"]`)!;
+
+  it('shows the twelve, draws a chosen one at once and saves it; a refusal puts the old one back with the reason', async () => {
+    localStorage.clear();
+    delete document.documentElement.dataset['palette'];
+    const setPalette = vi.fn().mockResolvedValueOnce(ok(undefined)).mockResolvedValueOnce(fail('invalid_palette', 400));
+    const a = fakeApi({ me: vi.fn(async () => ok(me)), sessions: vi.fn(async () => ok([])), pushState: vi.fn(async () => fail('unknown', 404)), setPalette });
+    mountSettings(root, a, vi.fn());
+    await flush();
+    expect(root.querySelectorAll('[data-palette-choice] input')).toHaveLength(12);
+    expect(swatch('sage').checked).toBe(true);
+    expect(text(root.querySelector('[data-palette-choice]')!)).toContain('Oải hương');
+
+    swatch('jade').checked = true;
+    swatch('jade').dispatchEvent(new Event('change'));
+    expect(document.documentElement.dataset['palette']).toBe('jade');
+    await flush();
+    expect(setPalette).toHaveBeenCalledWith('jade');
+    expect(localStorage.getItem('gom-palette')).toBe('jade');
+
+    swatch('moss').checked = true;
+    swatch('moss').dispatchEvent(new Event('change'));
+    await flush();
+    expect(document.documentElement.dataset['palette']).toBe('jade');
+    expect(swatch('jade').checked).toBe(true);
+    expect(text(root)).toContain('Gom chưa có màu này.');
+    localStorage.clear();
+    delete document.documentElement.dataset['palette'];
+  });
+});
+
+describe('settings: pure black', () => {
+  it('turns it on for this device without asking the server, and off again', async () => {
+    localStorage.clear();
+    delete document.documentElement.dataset['black'];
+    const a = fakeApi({ me: vi.fn(async () => ok({ id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false })), sessions: vi.fn(async () => ok([])), pushState: vi.fn(async () => fail('unknown', 404)) });
+    mountSettings(root, a, vi.fn());
+    await flush();
+    const box = root.querySelector<HTMLInputElement>('[data-black-switch]')!;
+    expect(box.checked).toBe(false);
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    expect(document.documentElement.hasAttribute('data-black')).toBe(true);
+    expect(localStorage.getItem('gom-black')).toBe('1');
+    box.checked = false;
+    box.dispatchEvent(new Event('change'));
+    expect(document.documentElement.hasAttribute('data-black')).toBe(false);
+    expect(localStorage.getItem('gom-black')).toBeNull();
+  });
+});
+
+describe('settings: background', () => {
+  const me = { id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false, language: 'vi' as const };
+  const tile = (code: string) => root.querySelector<HTMLInputElement>(`[data-pattern-choice] input[value="${code}"]`)!;
+
+  it('shows the nine, each drawn as the conversation would, remembers a chosen one and saves it; a refusal puts the old one back', async () => {
+    localStorage.clear();
+    const setPattern = vi.fn().mockResolvedValueOnce(ok(undefined)).mockResolvedValueOnce(fail('invalid_pattern', 400));
+    const a = fakeApi({ me: vi.fn(async () => ok(me)), sessions: vi.fn(async () => ok([])), pushState: vi.fn(async () => fail('unknown', 404)), setPattern });
+    mountSettings(root, a, vi.fn());
+    await flush();
+    expect(root.querySelectorAll('[data-pattern-choice] input')).toHaveLength(9);
+    expect(tile('plain').checked).toBe(true);
+    expect(root.querySelector('[data-pattern-choice] .backdrop[data-pattern="tiles"]')).not.toBeNull();
+    expect(text(root.querySelector('[data-pattern-choice]')!)).toContain('Gạch bông');
+
+    tile('clouds').checked = true;
+    tile('clouds').dispatchEvent(new Event('change'));
+    expect(localStorage.getItem('gom-pattern')).toBe('clouds');
+    await flush();
+    expect(setPattern).toHaveBeenCalledWith('clouds');
+
+    tile('grid').checked = true;
+    tile('grid').dispatchEvent(new Event('change'));
+    await flush();
+    expect(localStorage.getItem('gom-pattern')).toBe('clouds');
+    expect(tile('clouds').checked).toBe(true);
+    expect(text(root)).toContain('Gom chưa có hình nền này.');
+    localStorage.clear();
+  });
+});
+
+describe('the API: the person\'s colour', () => {
+  it('tells the page the account\'s colour', async () => {
+    const onPalette = vi.fn();
+    const api = createApi(async () => new Response(JSON.stringify({ id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false, palette: 'sea' })), undefined, { onPalette });
+    await api.me();
+    expect(onPalette).toHaveBeenCalledWith('sea');
   });
 });
 

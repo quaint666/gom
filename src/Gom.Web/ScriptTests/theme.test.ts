@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyScheme, chooseScheme, chosenScheme } from '../Scripts/theme.js';
+import { PALETTES, applyBlack, applyPalette, applyScheme, chooseScheme, chosenScheme, isPalette, storedBlack, storedPalette, syncThemeColor } from '../Scripts/theme.js';
 
 describe('applyScheme', () => {
   beforeEach(() => {
@@ -50,5 +50,52 @@ describe('the three-way choice', () => {
     expect(chosenScheme()).toBe('system');
     expect(localStorage.getItem('color-scheme')).toBeNull();
     expect(document.querySelector('meta[name="color-scheme"]')!.getAttribute('content')).toBe('light dark');
+  });
+});
+
+describe('the person\'s colour', () => {
+  beforeEach(() => {
+    document.head.innerHTML = '<meta name="theme-color" content="#3F6B57">';
+    delete document.documentElement.dataset['palette'];
+    localStorage.clear();
+  });
+
+  it('is sage until one is chosen, marks the page with any other, and remembers it for the next page', () => {
+    expect(storedPalette()).toBe('sage');
+    applyPalette('lotus');
+    expect(document.documentElement.dataset['palette']).toBe('lotus');
+    expect(storedPalette()).toBe('lotus');
+    applyPalette('sage');
+    expect(document.documentElement.dataset['palette']).toBeUndefined();
+    expect(storedPalette()).toBe('sage');
+  });
+
+  it('gives the browser\'s bar the colour the stylesheet resolves', () => {
+    document.documentElement.style.setProperty('--btn', '#A34867');
+    try {
+      syncThemeColor();
+      expect(document.querySelector('meta[name="theme-color"]')!.getAttribute('content')).toBe('#A34867');
+    } finally { document.documentElement.style.removeProperty('--btn'); }
+  });
+
+  it('ignores a stored code it does not know', () => {
+    localStorage.setItem('gom-palette', 'neon');
+    expect(storedPalette()).toBe('sage');
+    expect(isPalette('neon')).toBe(false);
+    expect(PALETTES).toHaveLength(12);
+  });
+});
+
+describe('pure black', () => {
+  beforeEach(() => { localStorage.clear(); delete document.documentElement.dataset['black']; });
+
+  it('is off until turned on, marks the page while on, and is remembered on this device only', () => {
+    expect(storedBlack()).toBe(false);
+    applyBlack(true);
+    expect(document.documentElement.hasAttribute('data-black')).toBe(true);
+    expect(storedBlack()).toBe(true);
+    applyBlack(false);
+    expect(document.documentElement.hasAttribute('data-black')).toBe(false);
+    expect(localStorage.getItem('gom-black')).toBeNull();
   });
 });

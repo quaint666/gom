@@ -9,29 +9,63 @@
   &:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }
   &:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
 
-  --bg: light-dark(#F7F5EF, #121513);
-  --surface: light-dark(#FFFFFF, #1B201C);
-  --text: light-dark(#1F2A24, #EEF0EA);
-  --muted: light-dark(#4A5650, #AEB5AC);
-  --border: light-dark(#DAD6C9, #343B36);
-  --link: light-dark(#3F6B57, #9EC3A5);
-  --btn: #3F6B57;
-  --btn-hover: light-dark(#2C4D3E, #4A7A64);
+  --bg: light-dark(#F7F5EF, var(--black-bg, #121513));
+  --surface: light-dark(#FFFFFF, var(--black-surface, #1B201C));
+  --text: light-dark(#1F2A24, var(--black-text, #EEF0EA));
+  --muted: light-dark(#4A5650, var(--black-muted, #AEB5AC));
+  --border: light-dark(#DAD6C9, var(--black-border, #343B36));
   --on-btn: #FFFFFF;
-  --tint: light-dark(#E3EFE7, #1D2B24);
-  --tint-text: light-dark(#25513E, #BFE3CF);
-  --ring: light-dark(#3F6B57, #9EC3A5);
   --err-bg: light-dark(#FBE4E0, #3A1F1B);
   --err-text: light-dark(#7A1F14, #F4B8AF);
   --err-border: light-dark(#A32A1E, #F4B8AF);
-  --out: light-dark(#DCEBE1, #24382D);
-  --hover: light-dark(#ECE9DF, #2A3036);
-  --press: light-dark(#E2DED1, #343B42);
-  --badge: #3F6B57;
+  --hover: light-dark(#ECE9DF, var(--black-hover, #2A3036));
+  --press: light-dark(#E2DED1, var(--black-press, #343B42));
   --warn-bg: light-dark(#FFF1CC, #3A3118);
   --warn-text: light-dark(#7A4F00, #EBD3A6);
   --warn-border: light-dark(#E3C77A, #6B5A2A);
 }
+
+/* Pure black (Settings, per device): when the page is dark, the neutrals' dark half above gives way to these, so an OLED screen
+   leaves the background unlit. Light mode is untouched. theme-init.js sets the attribute before the first paint. */
+:root[data-black] { --black-bg: #000000; --black-surface: #121212; --black-text: #EDEDED; --black-muted: #A3A3A3; --black-border: #262626; --black-hover: #1C1C1C; --black-press: #262626; }
+
+/* Sage, the default accent. Any element may carry a colour of its own (a dot in Settings, a conversation with its own colour). */
+:root, [data-palette="sage"] {
+  --link: light-dark(#3F6B57, #9EC3A5);
+  --btn: #3F6B57;
+  --btn-hover: light-dark(#2C4D3E, #4A7A64);
+  --tint: light-dark(#E3EFE7, #1D2B24);
+  --tint-text: light-dark(#25513E, #BFE3CF);
+  --ring: light-dark(#3F6B57, #9EC3A5);
+  --out: light-dark(#DCEBE1, #24382D);
+  --badge: #3F6B57;
+  --pat: light-dark(#E1E4DD, #1B2621);
+}
+/* The person's colour (Settings › Giao diện), on the page's root; or a conversation's own, on its pane. Each block replaces the sage
+   accent above; the neutrals stay. The codes are
+   Chat/Appearance.cs's, and a test checks every block's contrast. Made with design/palettes.py; light, then dark, as above. */
+[data-palette="sea"] { --btn: #2F5F8A; --btn-hover: light-dark(#214261, #406C93); --badge: #2F5F8A; --link: light-dark(#2F5F8A, #9DC2E6); --ring: light-dark(#2F5F8A, #9DC2E6);
+  --tint: light-dark(#E2ECF6, #1C2836); --tint-text: light-dark(#1E4466, #BCD6F0); --out: light-dark(#DCE8F3, #1F3346); --pat: light-dark(#DFE3E3, #18242B); }
+[data-palette="lotus"] { --btn: #A34867; --btn-hover: light-dark(#723248, #AA5773); --badge: #A34867; --link: light-dark(#A34867, #EDB3C6); --ring: light-dark(#A34867, #EDB3C6);
+  --tint: light-dark(#F7E6EC, #33212A); --tint-text: light-dark(#6E2742, #F2C6D4); --out: light-dark(#F5DFE6, #3E2530); --pat: light-dark(#EDE0DF, #2F1F24); }
+[data-palette="turmeric"] { --btn: #8A5A12; --btn-hover: light-dark(#613F0D, #936725); --badge: #8A5A12; --link: light-dark(#8A5A12, #E5C58A); --ring: light-dark(#8A5A12, #E5C58A);
+  --tint: light-dark(#F6EBD3, #302818); --tint-text: light-dark(#5E3D08, #EBD3A6); --out: light-dark(#F3E6CC, #3A2F1A); --pat: light-dark(#EAE2D4, #2A2313); }
+[data-palette="lavender"] { --btn: #6A4F9E; --btn-hover: light-dark(#4A376F, #765DA6); --badge: #6A4F9E; --link: light-dark(#6A4F9E, #C9B8EE); --ring: light-dark(#6A4F9E, #C9B8EE);
+  --tint: light-dark(#ECE6F7, #272238); --tint-text: light-dark(#46327A, #D3C8EE); --out: light-dark(#E6DEF3, #2E2643); --pat: light-dark(#E6E1E5, #24212F); }
+[data-palette="graphite"] { --btn: #4A535C; --btn-hover: light-dark(#343A40, #586169); --badge: #4A535C; --link: light-dark(#4A535C, #B8C2CC); --ring: light-dark(#4A535C, #B8C2CC);
+  --tint: light-dark(#E8EBEE, #22272C); --tint-text: light-dark(#2E363E, #D2D9E0); --out: light-dark(#E4E7EA, #2A3036); --pat: light-dark(#E2E2DD, #1D2122); }
+[data-palette="jade"] { --btn: #1E6B66; --btn-hover: light-dark(#154B47, #307772); --badge: #1E6B66; --link: light-dark(#1E6B66, #9ABCBA); --ring: light-dark(#1E6B66, #9ABCBA);
+  --tint: light-dark(#E2ECEB, #142624); --tint-text: light-dark(#154B47, #C0D6D4); --out: light-dark(#D9E6E5, #16312E); --pat: light-dark(#DDE4DF, #142624); }
+[data-palette="indigo"] { --btn: #3D4B94; --btn-hover: light-dark(#2B3468, #4D599D); --badge: #3D4B94; --link: light-dark(#3D4B94, #A8AECF); --ring: light-dark(#3D4B94, #A8AECF);
+  --tint: light-dark(#E6E8F1, #1B202D); --tint-text: light-dark(#2B3468, #C9CDE1); --out: light-dark(#DEE0ED, #20263C); --pat: light-dark(#E1E1E4, #1B202D); }
+[data-palette="plum"] { --btn: #7B3B6A; --btn-hover: light-dark(#56294A, #864B76); --badge: #7B3B6A; --link: light-dark(#7B3B6A, #C4A7BC); --ring: light-dark(#7B3B6A, #C4A7BC);
+  --tint: light-dark(#EEE6EC, #271D24); --tint-text: light-dark(#56294A, #DAC8D5); --out: light-dark(#E9DEE6, #34212F); --pat: light-dark(#E8DFDF, #271D24); }
+[data-palette="lacquer"] { --btn: #A63A2C; --btn-hover: light-dark(#74291F, #AD4A3D); --badge: #A63A2C; --link: light-dark(#A63A2C, #D7A6A0); --ring: light-dark(#A63A2C, #D7A6A0);
+  --tint: light-dark(#F3E5E4, #301C18); --tint-text: light-dark(#74291F, #E6C8C4); --out: light-dark(#F0DEDB, #41211B); --pat: light-dark(#EDDFD8, #301C18); }
+[data-palette="coffee"] { --btn: #6E4B36; --btn-hover: light-dark(#4D3426, #7A5946); --badge: #6E4B36; --link: light-dark(#6E4B36, #BEAEA5); --ring: light-dark(#6E4B36, #BEAEA5);
+  --tint: light-dark(#ECE8E5, #24201A); --tint-text: light-dark(#4D3426, #D6CDC7); --out: light-dark(#E6E0DD, #2F261E); --pat: light-dark(#E7E1D9, #24201A); }
+[data-palette="moss"] { --btn: #56661F; --btn-hover: light-dark(#3C4716, #647231); --badge: #56661F; --link: light-dark(#56661F, #B3BA9A); --ring: light-dark(#56661F, #B3BA9A);
+  --tint: light-dark(#E9EBE2, #202515); --tint-text: light-dark(#3C4716, #D0D4C0); --out: light-dark(#E2E5D9, #282F17); --pat: light-dark(#E4E4D6, #202515); }
 
 * { box-sizing: border-box; }
 body {
@@ -190,6 +224,21 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .th-title small { color: var(--muted); font-size: 13px; }
 button.th-title { display: block; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 button.th-title:hover b { text-decoration: underline; }
+/* The background behind the messages (Settings): a pattern from /patterns drawn in the colour's --pat through a mask, on a layer of
+   its own under the scrolling messages, so it never scrolls and never takes a press. Gone in forced colours, where it is decoration. */
+.backdrop { position: relative; flex: 1; min-block-size: 0; display: flex; flex-direction: column; }
+.backdrop:not([data-pattern="plain"])::before { content: ""; position: absolute; inset: 0; background-color: var(--pat); mask-image: var(--pattern); mask-repeat: repeat; pointer-events: none; }
+.backdrop[data-pattern="dots"] { --pattern: url("/patterns/dots.svg"); }
+.backdrop[data-pattern="tiles"] { --pattern: url("/patterns/tiles.svg"); }
+.backdrop[data-pattern="waves"] { --pattern: url("/patterns/waves.svg"); }
+.backdrop[data-pattern="bamboo"] { --pattern: url("/patterns/bamboo.svg"); }
+.backdrop[data-pattern="clouds"] { --pattern: url("/patterns/clouds.svg"); }
+.backdrop[data-pattern="grid"] { --pattern: url("/patterns/grid.svg"); }
+.backdrop[data-pattern="weave"] { --pattern: url("/patterns/weave.svg"); }
+.backdrop[data-pattern="lotus"] { --pattern: url("/patterns/lotus.svg"); }
+/* On pure black the pattern stays faint, so an OLED screen keeps most of its pixels off. */
+:root[data-black] .backdrop::before { opacity: .5; }
+@media (forced-colors: active) { .backdrop::before { display: none; } }
 .msgs { position: relative; flex: 1; min-block-size: 0; overflow-y: auto; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 2px; overflow-anchor: none; }
 .msgs .more { align-self: center; margin-block-end: 8px; }
 .day { align-self: center; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 12px; margin-block: 6px 10px; }
@@ -469,6 +518,33 @@ a.mi { text-decoration: none; }
 .choice input { inline-size: 22px; block-size: 22px; accent-color: var(--btn); flex: none; }
 .choice label { flex: 1; min-block-size: 44px; display: flex; align-items: center; gap: 10px; margin: 0; font-weight: 400; }
 .choice:has(input:checked) { border-color: var(--btn); background: var(--tint); }
+/* The colours in Settings: each dot carries its palette's code, so it takes that block (top of this file): a colour is written once. */
+.swatches { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; }
+.swatches legend { padding: 0; margin-block-end: 8px; }
+.swatches .hint { grid-column: 1 / -1; }
+.swatch { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-block-size: 44px; font-size: 12.5px; color: var(--muted); text-align: center; cursor: pointer; }
+.swatch input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
+.swatch .dot { inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--btn); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .08); }
+.swatch:has(input:checked) { color: var(--text); font-weight: 600; }
+.swatch:has(input:checked) .dot { outline: 3px solid var(--btn); outline-offset: 2px; }
+.swatch:has(input:focus-visible) .dot { outline: 3px solid var(--ring); outline-offset: 4px; }
+/* The backgrounds in Settings: each tile is the same .backdrop the conversation draws. */
+.patterns { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.patterns legend { padding: 0; margin-block-end: 8px; }
+.patterns .hint { grid-column: 1 / -1; }
+.pattern-tile { position: relative; display: block; block-size: 76px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); cursor: pointer; }
+.pattern-tile input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
+.pattern-tile .backdrop { position: absolute; inset: 0; }
+.pattern-tile .name { position: absolute; inset-inline-start: 6px; inset-block-end: 6px; padding: 0 6px; border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; }
+.pattern-tile:has(input:checked) { outline: 3px solid var(--btn); outline-offset: 2px; }
+.pattern-tile:has(input:focus-visible) { outline: 3px solid var(--ring); outline-offset: 4px; }
+/* A conversation's own colour and background (its info panel): the same dots and tiles, "each person's own" first as a dashed ring. */
+.look h2 { margin: 0 0 4px; font-size: 18px; }
+.look .tabs { margin-block: 12px; }
+.look-body { margin-block-end: 14px; }
+.look .btn { inline-size: 100%; }
+.swatch .dot.each { background: none; box-shadow: none; border: 2px dashed var(--muted); }
+.look-dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--btn); flex: none; align-self: center; }
 
 /* pressed states: a touch answers at once */
 .item:active, .mi:active, .brand:active, .person:is(a):active { background: var(--press); }
@@ -560,6 +636,11 @@ a.mi { text-decoration: none; }
 .pic img { display: block; inline-size: 100%; block-size: auto; object-fit: cover; }
 .pics:not(.n1) .pic { aspect-ratio: 1; }
 .pics:not(.n1) .pic img { block-size: 100%; }
+.pic.moving { position: relative; cursor: default; }
+.pic-open { display: block; padding: 0; border: 0; background: none; inline-size: 100%; block-size: 100%; cursor: zoom-in; }
+.moving-toggle { position: absolute; inset-block-end: 6px; inset-inline-start: 6px; display: flex; align-items: center; gap: 4px; min-block-size: 36px;
+  padding: 0 10px 0 8px; border: 0; border-radius: 18px; background: rgb(0 0 0 / .6); color: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.moving-toggle .i { inline-size: 16px; block-size: 16px; }
 /* A picture or file the owner trimmed: its place stays, saying so, with nothing to open. */
 .pic.removed { display: grid; place-items: center; min-block-size: 96px; padding: 8px; cursor: default; border: 1px dashed var(--border); background: transparent; color: var(--muted); font-size: 12px; text-align: center; }
 .pics.n1 .pic.removed { inline-size: 200px; }
@@ -571,6 +652,9 @@ a.mi { text-decoration: none; }
 .filecard .fi { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
 .filecard b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filecard small { color: var(--muted); }
+.appwarn { display: flex; gap: 6px; align-items: flex-start; max-inline-size: 320px; margin-block: 4px 2px; padding: 6px 8px; border: 1px solid var(--warn-border); border-radius: 10px;
+  background: var(--warn-bg); color: var(--warn-text); font-size: 12.5px; line-height: 1.35; }
+.appwarn svg { inline-size: 16px; block-size: 16px; flex: none; margin-block-start: 1px; }
 .mrow .bub:has(> .pics:only-child), .mrow .bub:has(> .pics:first-child:nth-last-child(2)) { padding: 4px; }
 .mrow .bub > .pics:only-child { margin-block-end: 0; }
 
@@ -648,6 +732,8 @@ select:focus-visible { outline-offset: 0; }
 .pcard-top h2 { margin: 6px 0 0; font-size: 19px; overflow-wrap: anywhere; }
 .pcard-top small { color: var(--muted); }
 .pcard-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-block: 14px 6px; }
+.appq h2 { margin: 18px 0 8px; font-size: 18px; }
+.appq b { overflow-wrap: anywhere; }
 .pcard h3 { margin: 12px 0 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .pcard .ask { margin-block-start: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
 .pcard .ask p { flex-basis: 100%; margin: 0; }

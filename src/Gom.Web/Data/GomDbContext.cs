@@ -52,6 +52,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => x.RequestedAt).HasFilter("requested_at IS NOT NULL");
             // Everyone who was here before languages existed reads Vietnamese: the database says so, not only the C# default.
             e.Property(x => x.Language).HasMaxLength(2).HasDefaultValue(ServerText.DefaultLanguage);
+            e.Property(x => x.Palette).HasMaxLength(Chat.Appearance.CodeMaxLength).HasDefaultValue(Chat.Appearance.DefaultPalette);
+            e.Property(x => x.Pattern).HasMaxLength(Chat.Appearance.CodeMaxLength).HasDefaultValue(Chat.Appearance.DefaultPattern);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.DeletedBy).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.GomId).IsUnique();
             // At most one row with is_owner = true.
@@ -143,6 +145,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.Property(x => x.Kind).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<ConversationKind>(v, true)).HasMaxLength(10);
             e.Property(x => x.DirectKey).HasMaxLength(73);
             e.Property(x => x.Title).HasMaxLength(Auth.DisplayName.MaxLength);
+            e.Property(x => x.Palette).HasMaxLength(Chat.Appearance.CodeMaxLength);
+            e.Property(x => x.Pattern).HasMaxLength(Chat.Appearance.CodeMaxLength);
             e.HasIndex(x => x.DirectKey).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.JoinApproval).HasDefaultValue(false);
@@ -173,7 +177,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("messages", t =>
             {
                 t.HasCheckConstraint("ck_messages_seq", "seq > 0");
-                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6)");
+                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7)");
                 t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
                 t.HasCheckConstraint("ck_messages_sticker", "sticker IS NULL OR (body = '' AND notice IS NULL)");
             });
@@ -221,6 +225,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasIndex(x => x.ConversationId);
             e.HasIndex(x => x.MessageId);
             e.HasIndex(x => new { x.MessageId, x.CreatedAt });   // the cleanup of uploads nobody used
+            e.HasIndex(x => new { x.UploaderId, x.CreatedAt });  // a person's uploads of the last day, for the daily limit
             e.ToTable(t => t.HasCheckConstraint("ck_attachments_kind", "kind in (0, 1, 2)"));
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UploaderId).OnDelete(DeleteBehavior.Restrict);

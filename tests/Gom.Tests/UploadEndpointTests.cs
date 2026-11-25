@@ -1,7 +1,9 @@
 using System.Net;
+using System.Net.Http.Json;
 using Gom.Web.Data;
 using Gom.Web.Uploads;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
 
@@ -380,6 +382,45 @@ public class UploadEndpointTests(AppFixture app) : IClassFixture<AppFixture>
         using var r = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, r.StatusCode);
         Assert.Equal("uploads_disabled", await ErrorOf(r));
+    }
+
+    [Fact]
+    public async Task A_person_may_upload_only_so_much_in_a_day_copies_included_and_the_oldest_day_falls_away()
+    {
+        var p = await NewPair();
+        using var capped = app.Factory.WithWebHostBuilder(b => b.UseSetting("Uploads:DailyBytes", "1000"));
+        using var client = capped.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false, BaseAddress = new Uri(AppFixture.Origin) });
+        async Task<HttpResponseMessage> Send(string path, HttpContent content, string cookie)
+        {
+            var request = new HttpRequestMessage(Post, path) { Content = content };
+            request.Headers.Add("Cookie", $"{Gom.Web.Auth.SessionCookie.Name}={cookie}");
+            request.Headers.Add("Origin", AppFixture.Origin);
+            return await client.SendAsync(request);
+        }
+        Task<HttpResponseMessage> File(string cookie, int size) => Send($"/api/conversations/{p.Chat}/attachments?name=a.txt", new ByteArrayContent(new byte[size]), cookie);
+
+        using var first = await File(p.CA, 600);
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        using var second = await File(p.CA, 600);
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+        Assert.Equal("daily_upload_limit", await ErrorOf(second));
+        using var small = await File(p.CA, 300);   // what is left still fits
+        Assert.Equal(HttpStatusCode.Created, small.StatusCode);
+
+        // The other person has their own day. Sent, so it can be copied; a copy is an upload too.
+        using var theirs = await File(p.CB, 600);
+        var theirId = (await AppFixture.Json(theirs)).GetProperty("id").GetGuid();
+        using (var sent = await app.Call(Post, $"/api/conversations/{p.Chat}/messages", new { clientId = Guid.NewGuid(), body = "", attachments = new[] { theirId } }, p.CB))
+            Assert.Equal(HttpStatusCode.OK, sent.StatusCode);
+        using var copy = await Send($"/api/conversations/{p.Chat}/attachments/copy", JsonContent.Create(new { from = theirId }), p.CA);
+        Assert.Equal(HttpStatusCode.TooManyRequests, copy.StatusCode);
+        Assert.Equal("daily_upload_limit", await ErrorOf(copy));
+
+        // A day later the first ones no longer count.
+        await using (var db = app.Db.NewContext())
+            await db.Attachments.Where(a => a.UploaderId == p.A.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.CreatedAt, app.Clock.Now.AddHours(-25)));
+        using var later = await File(p.CA, 600);
+        Assert.Equal(HttpStatusCode.Created, later.StatusCode);
     }
 
     [Fact]

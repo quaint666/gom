@@ -1,7 +1,7 @@
 import { html, nothing, render } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
 import type { Api, Failure, PushLevel, PushState, SessionInfo, User } from '../api.js';
-import { chosenScheme, chooseScheme, type Choice } from '../theme.js';
+import { PALETTES, PATTERNS, applyBlack, applyPalette, chosenScheme, chooseScheme, rememberPattern, storedBlack, storedPalette, storedPattern, type Choice, type Palette, type Pattern } from '../theme.js';
 import type { Installer } from '../install.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
@@ -26,6 +26,9 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let receiptsStatus = '';
   let busy = false;
   let scheme: Choice = chosenScheme();
+  let palette: Palette = storedPalette();
+  let pattern: Pattern = storedPattern();
+  let black = storedBlack();
   let installStatus = '';
   /** A picture chosen for the profile, not saved yet: the file, and what the preview shows (read as a data: address, which the page's rules allow). */
   let picked: { file: File; preview: string } | null = null;
@@ -140,6 +143,24 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
               @change=${() => { scheme = value; chooseScheme(value); update(); }}>
               <label for=${`scheme-${value}`}>${label}</label></div>`)}
         </fieldset>
+        <div class="pick"><input type="checkbox" id="black" data-black-switch aria-describedby="black-note" .checked=${live(black)}
+          @change=${(e: Event) => { black = (e.target as HTMLInputElement).checked; applyBlack(black); update(); }}>
+          <label for="black">${say.settings.black}</label></div>
+        <p class="hint" id="black-note">${say.settings.blackNote}</p>
+        <fieldset class="swatches" data-palette-choice aria-describedby="palette-note">
+          <legend class="hint">${say.settings.palette}</legend>
+          ${PALETTES.map((value) => html`
+            <label class="swatch"><input type="radio" name="palette" value=${value} .checked=${live(palette === value)} ?disabled=${busy}
+              @change=${() => void choosePalette(value)}><span class="dot" data-palette=${value} aria-hidden="true"></span><span>${say.settings.palettes[value]}</span></label>`)}
+          <p class="hint" id="palette-note">${say.settings.paletteNote}</p>
+        </fieldset>
+        <fieldset class="patterns" data-pattern-choice aria-describedby="pattern-note">
+          <legend class="hint">${say.settings.pattern}</legend>
+          ${PATTERNS.map((value) => html`
+            <label class="pattern-tile"><input type="radio" name="pattern" value=${value} .checked=${live(pattern === value)} ?disabled=${busy}
+              @change=${() => void choosePattern(value)}><span class="backdrop" data-pattern=${value} aria-hidden="true"></span><span class="name">${say.settings.patterns[value]}</span></label>`)}
+          <p class="hint" id="pattern-note">${say.settings.patternNote}</p>
+        </fieldset>
         <fieldset class="choices" data-language>
           <legend class="hint">${say.settings.language}</legend>
           ${LANGUAGES.map(([value, label]) => html`
@@ -175,6 +196,24 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     const result = await api.sessions();
     if (result.ok) sessions = result.data; else error = result;
     update();
+  }
+
+  /** The person's colour: drawn at once, then saved with their account; put back, with the reason, if the server says no. */
+  async function choosePalette(chosen: Palette): Promise<void> {
+    const before = palette;
+    palette = chosen; error = null; applyPalette(chosen); update();
+    const result = await api.setPalette(chosen);
+    if (result.ok) return;
+    palette = before; applyPalette(before); error = result; update();
+  }
+
+  /** The background behind the person's messages: remembered at once, then saved with their account; put back if the server says no. */
+  async function choosePattern(chosen: Pattern): Promise<void> {
+    const before = pattern;
+    pattern = chosen; error = null; rememberPattern(chosen); update();
+    const result = await api.setPattern(chosen);
+    if (result.ok) return;
+    pattern = before; rememberPattern(before); error = result; update();
   }
 
   /** The person's language for every device: saved with their account, then this page again in it. */

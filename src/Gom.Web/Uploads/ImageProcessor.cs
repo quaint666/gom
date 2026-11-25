@@ -26,7 +26,85 @@ public static class ImageProcessor
     public static bool LooksLikeImage(ReadOnlySpan<byte> head) =>
         head.Length >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF                                            // JPEG
         || head.Length >= 8 && head[..8].SequenceEqual(PngSignature)                                                // PNG
-        || head.Length >= 12 && head[..4].SequenceEqual("RIFF"u8) && head.Slice(8, 4).SequenceEqual("WEBP"u8);              // WebP
+        || head.Length >= 12 && head[..4].SequenceEqual("RIFF"u8) && head.Slice(8, 4).SequenceEqual("WEBP"u8)               // WebP
+        || LooksLikeGif(head);                                                                                              // GIF (a still one; a moving one never gets here)
+
+    /// <summary>A GIF, still or moving. A still one is made into WebP like any picture; a moving one is kept as sent.</summary>
+    public static bool LooksLikeGif(ReadOnlySpan<byte> head) =>
+        head.Length >= 6 && (head[..6].SequenceEqual("GIF87a"u8) || head[..6].SequenceEqual("GIF89a"u8));
+
+    /// <summary>A moving picture's size, its number of frames, whether it is a GIF (else WebP), and about how much memory checking it holds.</summary>
+    public sealed record AnimatedPlan(int Width, int Height, int Frames, bool Gif, long Cost);
+
+    /// <summary>Not moving (then it is handled as any picture or file), or moving with its plan, or moving but refused.</summary>
+    public sealed record AnimatedPlanResult(bool Animated, AnimatedPlan? Plan, ImageProblem? Problem);
+
+    /// <summary>The still first frame of a moving picture, as WebP for its small version, or why it was refused.</summary>
+    public sealed record AnimatedResult(byte[]? Still, ImageProblem? Problem);
+
+    /// <summary>
+    /// Whether this is a moving picture (a GIF or a WebP with more than one frame) and, if so, whether it is within the limits, judged
+    /// from its headers before any pixel is made: a picture's size, the number of frames, and the pixels of all frames together.
+    /// </summary>
+    public static AnimatedPlanResult PlanAnimated(byte[] bytes, UploadOptions o)
+    {
+        if (!LooksLikeGif(bytes) && !(bytes.Length >= 12 && bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) && bytes.AsSpan(8, 4).SequenceEqual("WEBP"u8)))
+            return new AnimatedPlanResult(false, null, null);
+        try
+        {
+            using var codec = SKCodec.Create(new MemoryStream(bytes, writable: false));
+            if (codec is null || codec.EncodedFormat is not (SKEncodedImageFormat.Gif or SKEncodedImageFormat.Webp))
+                return new AnimatedPlanResult(false, null, null);
+            var frames = codec.FrameCount;
+            if (frames <= 1) return new AnimatedPlanResult(false, null, null);
+            long pixels = (long)codec.Info.Width * codec.Info.Height;
+            if (pixels > o.MaxPixels || frames > o.MaxFrames || pixels * frames > o.MaxAnimatedPixels)
+                return new AnimatedPlanResult(true, null, ImageProblem.TooManyPixels);
+            // One frame at a time, in one bitmap, and the still copy made from the first.
+            return new AnimatedPlanResult(true, new AnimatedPlan(codec.Info.Width, codec.Info.Height, frames,
+                codec.EncodedFormat == SKEncodedImageFormat.Gif, pixels * 4 * 2 + Overhead), null);
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException or NullReferenceException)
+        {
+            // A GIF that cannot be read is a broken picture; any other header goes on to be judged as a still picture or a file.
+            return LooksLikeGif(bytes) ? new AnimatedPlanResult(true, null, ImageProblem.Unreadable) : new AnimatedPlanResult(false, null, null);
+        }
+    }
+
+    /// <summary>
+    /// Decodes every frame once, in order, into one bitmap (a frame drawn on the one before passes that one as already there), so a
+    /// moving picture cut short or broken anywhere is refused, as a still one is. The first frame becomes the small version.
+    /// </summary>
+    public static AnimatedResult CheckAnimated(byte[] bytes, AnimatedPlan plan, UploadOptions o)
+    {
+        try
+        {
+            using var codec = SKCodec.Create(new MemoryStream(bytes, writable: false));
+            if (codec is null || codec.FrameCount != plan.Frames) return new AnimatedResult(null, ImageProblem.Unreadable);
+            var info = new SKImageInfo(plan.Width, plan.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+            using var frame = new SKBitmap(info);
+            var frames = codec.FrameInfo;
+            byte[]? still = null;
+            for (var i = 0; i < plan.Frames; i++)
+            {
+                var required = frames[i].RequiredFrame;
+                // The frame before is in the bitmap; any other needed frame the codec decodes again itself.
+                var prior = required >= 0 && required == i - 1 ? required : -1;
+                if (codec.GetPixels(info, frame.GetPixels(), new SKCodecOptions(i, prior)) != SKCodecResult.Success) return new AnimatedResult(null, ImageProblem.Unreadable);
+                if (i == 0)
+                {
+                    using var small = Scale(frame, o.ThumbEdge);
+                    still = Encode(small, o.ThumbQuality);
+                    if (still is null) return new AnimatedResult(null, ImageProblem.Unreadable);
+                }
+            }
+            return new AnimatedResult(still, null);
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException or NullReferenceException)
+        {
+            return new AnimatedResult(null, ImageProblem.Unreadable);
+        }
+    }
 
     /// <summary>How a picture will be handled, worked out from its header alone (no pixel is made yet).</summary>
     /// <param name="DecodeWidth">The size it is decoded at: a big JPEG or WebP is decoded already scaled down (a half, a quarter or an eighth), which takes far less memory and time.</param>
@@ -43,7 +121,7 @@ public static class ImageProcessor
         try
         {
             using var codec = SKCodec.Create(new MemoryStream(bytes, writable: false));
-            if (codec is null || codec.EncodedFormat is not (SKEncodedImageFormat.Jpeg or SKEncodedImageFormat.Png or SKEncodedImageFormat.Webp))
+            if (codec is null || codec.EncodedFormat is not (SKEncodedImageFormat.Jpeg or SKEncodedImageFormat.Png or SKEncodedImageFormat.Webp or SKEncodedImageFormat.Gif))
                 return new PlanResult(null, ImageProblem.NotAnImage);
             // Judged from the header, before any pixel is made: a few kilobytes can describe a picture of many gigabytes.
             if ((long)codec.Info.Width * codec.Info.Height > o.MaxPixels) return new PlanResult(null, ImageProblem.TooManyPixels);
@@ -178,7 +256,8 @@ public static class ImageProcessor
         using var canvas = new SKCanvas(target);
         canvas.Clear(SKColors.Transparent);
         canvas.SetMatrix(m);
-        canvas.DrawBitmap(source, 0, 0);
+        // Nearest: the pixels only move (a turn or a mirror), so none is blended with its neighbour.
+        canvas.DrawBitmap(source, 0, 0, new SKSamplingOptions(SKFilterMode.Nearest), null);
         return target;
     }
 }

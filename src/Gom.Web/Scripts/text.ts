@@ -57,10 +57,12 @@ export function errorText(failure: Failure): string {
     case 'missing_fields': return say.errors.missingFields;
     case 'invalid_invite': return say.errors.invalidInvite(l.inviteDays, l.inviteUses);
     case 'too_large': return say.errors.tooLarge(formatSize(l.imageBytes), formatSize(l.fileBytes));
+    case 'animated_too_large': return say.errors.animatedTooLarge(formatSize(l.animatedBytes));
     case 'image_dimensions': return say.errors.imageDimensions;
     case 'invalid_image': return say.errors.invalidImage;
     case 'busy': return say.errors.busy;
     case 'too_many_uploads': return say.errors.tooManyUploads;
+    case 'daily_upload_limit': return say.errors.dailyUploadLimit(formatSize(l.uploadDailyBytes));
     case 'uploads_disabled': return say.errors.uploadsDisabled;
     case 'empty_upload': return say.errors.emptyUpload;
     case 'invalid_attachment': return say.errors.invalidAttachment;
@@ -78,6 +80,8 @@ export function errorText(failure: Failure): string {
     case 'pending_approval': return say.errors.pendingApproval;
     case 'not_a_request': return say.errors.notARequest;
     case 'invalid_language': return say.errors.invalidLanguage;
+    case 'invalid_palette': return say.errors.invalidPalette;
+    case 'invalid_pattern': return say.errors.invalidPattern;
     case 'invalid_endpoint': return say.errors.invalidEndpoint;
     case 'invalid_keys': return say.errors.invalidKeys;
     case 'network': return say.errors.network;

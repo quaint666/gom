@@ -30,6 +30,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("Animated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("animated");
+
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -91,11 +95,11 @@ namespace Gom.Web.Migrations
                     b.HasIndex("MessageId")
                         .HasDatabaseName("ix_attachments_message_id");
 
-                    b.HasIndex("UploaderId")
-                        .HasDatabaseName("ix_attachments_uploader_id");
-
                     b.HasIndex("MessageId", "CreatedAt")
                         .HasDatabaseName("ix_attachments_message_id_created_at");
+
+                    b.HasIndex("UploaderId", "CreatedAt")
+                        .HasDatabaseName("ix_attachments_uploader_id_created_at");
 
                     b.ToTable("attachments", null, t =>
                         {
@@ -168,6 +172,16 @@ namespace Gom.Web.Migrations
                     b.Property<long>("LastSeq")
                         .HasColumnType("bigint")
                         .HasColumnName("last_seq");
+
+                    b.Property<string>("Palette")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("palette");
+
+                    b.Property<string>("Pattern")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("pattern");
 
                     b.Property<string>("Title")
                         .HasMaxLength(60)
@@ -479,7 +493,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 
@@ -870,10 +884,26 @@ namespace Gom.Web.Migrations
                         .HasDefaultValue("vi")
                         .HasColumnName("language");
 
+                    b.Property<string>("Palette")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("sage")
+                        .HasColumnName("palette");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("password_hash");
+
+                    b.Property<string>("Pattern")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("plain")
+                        .HasColumnName("pattern");
 
                     b.Property<DateTimeOffset?>("RefusedAt")
                         .HasColumnType("timestamp with time zone")
