@@ -39,8 +39,8 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
     private static async Task<JsonElement> LimitsOf(HttpClient client, string path)
     {
         var html = await (await client.GetAsync(path)).Content.ReadAsStringAsync();
-        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\">");
-        Assert.True(attribute.Success);
+        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\" data-video-script=\"/js/video(\\.[0-9a-f]{10})?\\.js\">");
+        Assert.True(attribute.Success);   // the video converter's address, fingerprinted when the build made a copy
         return JsonDocument.Parse(WebUtility.HtmlDecode(attribute.Groups[1].Value)).RootElement.Clone();
     }
 
@@ -124,6 +124,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         Assert.Contains("script-src 'self'", csp);
         Assert.Contains("frame-ancestors 'none'", csp);
         Assert.Contains("base-uri 'none'", csp);
+        Assert.Contains("media-src 'self';", csp);   // videos play from this site only, never from a blob or another site
         Assert.DoesNotContain("unsafe", csp);
         Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
         Assert.Equal("no-referrer", response.Headers.GetValues("Referrer-Policy").Single());

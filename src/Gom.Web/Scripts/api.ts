@@ -44,13 +44,13 @@ export interface GroupUse { id: string; title: string | null; members: number; m
 export interface PersonUse { gomId: string; displayName: string; deleted: boolean; files: number; bytes: number }
 /** What Gom keeps, for the owner. One-to-one chats are counted together; disk and folder are missing when uploads are off. */
 export interface Storage {
-  disk: { total: number; free: number } | null; database: number; uploadsFolder: number | null; pictures: Totals; files: Totals;
+  disk: { total: number; free: number } | null; database: number; uploadsFolder: number | null; pictures: Totals; videos: Totals; files: Totals;
   direct: { conversations: number; messages: number; files: number; bytes: number }; groups: GroupUse[]; people: PersonUse[];
 }
-/** What to trim: sent before `before`; `kind` 'all', 'image' or 'file'; `where` 'all', 'direct' (every one-to-one chat) or a group's id. */
-export interface TrimRule { before: string; kind: 'all' | 'image' | 'file'; where: string; minBytes: number | null }
+/** What to trim: sent before `before`; `kind` 'all', 'image', 'video' or 'file'; `where` 'all', 'direct' (every one-to-one chat) or a group's id. */
+export interface TrimRule { before: string; kind: 'all' | 'image' | 'video' | 'file'; where: string; minBytes: number | null }
 /** What a trim would remove (a preview) or removed. */
-export interface TrimResult { pictures: Totals; files: Totals; conversations: number }
+export interface TrimResult { pictures: Totals; videos: Totals; files: Totals; conversations: number }
 /** What a message trim would remove or removed: the messages people wrote, and the pictures and files they carried. */
 export interface MessageTrimResult extends TrimResult { messages: number }
 export interface Issued { id?: string; token: string; path: string; expiresAt: string }
@@ -69,8 +69,9 @@ export interface Reply { id: string; sender: Sender | null; snippet: string | nu
  * A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb.
  * `removed`: the owner trimmed it; only a placeholder is shown, and it cannot be opened, saved or forwarded.
  */
-export interface Attachment { id: string; kind: 'image' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean; animated?: boolean }
-/** A picture or file of a conversation, with the message it came in: who sent it and its words (the viewer shows them under the picture). */
+/** `durationMs`: how long a video plays. A video's `/thumb` is its still picture, when its sender's browser made one. */
+export interface Attachment { id: string; kind: 'image' | 'video' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean; animated?: boolean; durationMs?: number | null }
+/** A picture, video or file of a conversation, with the message it came in: who sent it and its words (the viewer shows them under the picture). */
 export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string; sender: Sender; body: string }
 /**
  * A line in a thread that says what happened (who was added or taken out, who left, a new name; or, in any conversation, that the
@@ -83,7 +84,7 @@ export interface ChatMessage { id: string; seq: number; conversationId: string; 
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
-export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'file' | null; sticker?: string | null }
+export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'video' | 'file' | null; sticker?: string | null }
 /** How much a notification on this device says: who and where, or only "Tin nhắn mới". */
 export type PushLevel = 'words' | 'name' | 'nothing';
 export interface PushState { key: string; subscribed: boolean; level: PushLevel }
@@ -197,6 +198,8 @@ export interface Api {
   media(conversation: string, kind: 'image' | 'file', before?: number): Promise<Result<{ items: MediaItem[]; hasMore: boolean }>>;
   /** Copies a picture or file you may see into another conversation as a new upload of yours (not yet in a message): this is how it is forwarded. */
   copyAttachment(conversation: string, from: string): Promise<Result<Attachment>>;
+  /** A video's still picture, made on this device, sent after the video and before the message. */
+  setPoster(attachment: string, picture: Blob): Promise<Result<void>>;
   /** Sends one picture or file to a conversation (not yet in a message). `onProgress` gets 0 to 1 while the bytes go up. */
   upload(conversation: string, file: Blob & { name?: string }, onProgress: (fraction: number) => void): Promise<Result<Attachment>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
@@ -402,6 +405,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
     media: (conversation, kind, before) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}`),
     copyAttachment: (conversation, from) => call('POST', `/api/conversations/${enc(conversation)}/attachments/copy`, { from }),
+    setPoster: (attachment, picture) => call('PUT', `/api/attachments/${enc(attachment)}/poster`, picture),
     search: (conversation, query) => call('GET', `/api/conversations/${enc(conversation)}/search?q=${enc(query)}`),
     searchAll: (query) => call('GET', `/api/search?q=${enc(query)}`),
     pins: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/pins`),

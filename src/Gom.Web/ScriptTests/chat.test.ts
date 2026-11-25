@@ -42,7 +42,7 @@ interface Harness {
   notes: ReturnType<typeof vi.fn>;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo'] } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(me)),
@@ -88,6 +88,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     visible: () => visible.value,
     clearNotifications: notes,
     ...(opts.pusher ? { pusher: opts.pusher } : {}),
+    ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}),
   };
   mountChat(root, api, go, deps);
   return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes };
@@ -3450,6 +3451,120 @@ describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
     expect(root.querySelector('[data-info-panel]')).not.toBeNull();
     expect(h.api.groupMembers).not.toHaveBeenCalled();
     expect(root.querySelector('[data-info-member]')).toBeNull();
+  });
+});
+
+describe('chat: videos', () => {
+  const clip = (name = 'clip.mov', bytes = 3) => new File([new Uint8Array(bytes)], name, { type: 'video/quicktime' });
+  const video = (id: string, extra: Partial<Attachment> = {}): Attachment => ({ id, kind: 'video', name: 'clip.mp4', size: 4096, width: 1280, height: 720, durationMs: 42_000, ...extra });
+  const open = (opts: { api?: Record<string, unknown>; history?: ChatMessage[]; prepareVideo?: ChatDeps['prepareVideo'] } = {}) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: opts.history?.length ?? 0 })], history: { [C1]: opts.history ?? [] }, api: opts.api ?? {}, ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}) });
+  const pickGallery = async (files: File[]) => {
+    const input = root.querySelector<HTMLInputElement>('input[name="gallery"]')!;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush(); await flush();
+  };
+
+  it('has a button for pictures and videos beside the one for any file, as on a phone', async () => {
+    open();
+    await flush();
+    const gallery = root.querySelector<HTMLInputElement>('input[name="gallery"]')!;
+    expect(gallery.accept).toBe('image/*,video/*');
+    expect(gallery.multiple).toBe(true);
+    expect(root.querySelector('[data-gallery]')!.getAttribute('aria-label')).toBe('Gửi ảnh hoặc video');
+    expect(root.querySelector<HTMLInputElement>('input[name="files"]')!.accept).toBe('');
+  });
+
+  it('makes a video smaller on the device, showing how far it is, then sends it as an MP4 with its still picture', async () => {
+    let progress: (f: number) => void = () => undefined;
+    let done: (v: { video: Blob; poster: Blob | null }) => void = () => undefined;
+    const prepareVideo = vi.fn((_f: File, onProgress: (f: number) => void) => { progress = onProgress; return new Promise<{ video: Blob; poster: Blob | null }>((r) => { done = r; }); });
+    const upload = vi.fn(async (_c: string, file: File) => ok(video('v1', { name: file.name })));
+    const setPoster = vi.fn(async () => ok(undefined));
+    const h = open({ api: { upload, setPoster }, prepareVideo });
+    await flush();
+    await pickGallery([clip('Nhà mình.mov')]);
+    expect(prepareVideo).toHaveBeenCalledOnce();
+    const bar = root.querySelector<HTMLProgressElement>('[data-tray-converting]')!;
+    expect(bar.getAttribute('aria-label')).toBe('Đang chuẩn bị video Nhà mình.mov');
+    progress(0.5); await flush();
+    expect(root.querySelector<HTMLProgressElement>('[data-tray-converting]')!.value).toBe(0.5);
+    expect(root.querySelector<HTMLButtonElement>('.composer .send')!.disabled).toBe(true);
+    expect(upload).not.toHaveBeenCalled();
+
+    const poster = new Blob([new Uint8Array([9])], { type: 'image/jpeg' });
+    done({ video: new Blob([new Uint8Array(5)], { type: 'video/mp4' }), poster });
+    await flush(); await flush(); await flush();
+    const sent = upload.mock.calls[0]![1];
+    expect(sent.name).toBe('Nhà mình.mp4');
+    expect(sent.type).toBe('video/mp4');
+    expect(sent.size).toBe(5);
+    expect(setPoster).toHaveBeenCalledWith('v1', poster);
+    expect(root.querySelector('[data-tray-item] img')!.getAttribute('src')).toMatch(/^data:image\/jpeg;base64,/);
+    expect(root.querySelector<HTMLButtonElement>('.composer .send')!.disabled).toBe(false);
+    expect(h.api.upload).toHaveBeenCalledOnce();
+  });
+
+  it('sends the video as it is when the device cannot make it smaller, and refuses one over the limit before any upload', async () => {
+    const upload = vi.fn(async (_c: string, _f: File) => ok(video('v1')));
+    open({ api: { upload }, prepareVideo: vi.fn(async () => null) });
+    await flush();
+    const small = clip('a.mp4', 10);
+    await pickGallery([small]);
+    expect(upload.mock.calls[0]![1]).toBe(small);
+
+    const big = clip('b.mp4');
+    Object.defineProperty(big, 'size', { value: 45 * 1024 * 1024 + 1 });
+    await pickGallery([big]);
+    expect(upload).toHaveBeenCalledOnce();
+    expect(text(root.querySelector('[data-tray-item].failed [role="alert"]')!)).toContain('Video quá lớn (tối đa 45 MB).');
+  });
+
+  it('plays a video in its message with its still picture and length, and offers a download where it cannot play', async () => {
+    open({ history: [{ ...msg(1, 'minh', ''), attachments: [video('v1')] }] });
+    await flush();
+    const player = root.querySelector<HTMLVideoElement>('[data-video="v1"] video')!;
+    expect(player.getAttribute('src')).toBe('/api/attachments/v1');
+    expect(player.getAttribute('poster')).toBe('/api/attachments/v1/thumb');
+    expect(player.controls).toBe(true);
+    expect(player.getAttribute('preload')).toBe('metadata');
+    expect(player.getAttribute('aria-label')).toBe('Video clip.mp4, dài 0:42');
+    expect(text(root.querySelector('[data-video="v1"] .vid-len')!)).toBe('0:42');
+    player.dispatchEvent(new Event('error'));
+    await flush();
+    expect(root.querySelector('[data-video="v1"]')).toBeNull();
+    expect(root.querySelector('a[data-video-download="v1"]')!.getAttribute('download')).toBe('clip.mp4');
+  });
+
+  it('shows a video in the grid of pictures with a play mark, and plays it in the viewer', async () => {
+    const v = video('v1');
+    const shown = { ...msg(1, 'minh', ''), attachments: [v] };
+    const listed = { attachment: v, messageId: shown.id, seq: 1, createdAt: shown.createdAt, sender: shown.sender, body: '' };
+    open({ history: [shown], api: { media: vi.fn(async (_c: string, kind: string) => ok({ items: kind === 'image' ? [listed] : [], hasMore: false })) } });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-info-page-open]')!.click();
+    await flush(); await flush();
+    const tile = root.querySelector<HTMLButtonElement>('[data-info-pic="v1"]')!;
+    expect(tile.classList.contains('vtile')).toBe(true);
+    expect(tile.getAttribute('aria-label')).toBe('Video clip.mp4, dài 0:42');
+    tile.click();
+    await flush();
+    const player = root.querySelector<HTMLVideoElement>('[data-viewer] [data-viewer-slide="v1"] video')!;
+    expect(player.getAttribute('src')).toBe('/api/attachments/v1');
+    expect(player.controls).toBe(true);
+  });
+
+  it('says a video was sent in the list', async () => {
+    start({ chats: [chat(C1, 'Minh', { lastSeq: 1, lastMessage: { seq: 1, body: '', createdAt: at(10, 1), sender: { id: 'u-minh', displayName: 'Minh' }, attachment: 'video' } })] });
+    await flush();
+    expect(text(root.querySelector('[data-chat] .pv')!)).toBe('Đã gửi một video');
+  });
+
+  it('says a trimmed video is gone, keeping its place', async () => {
+    open({ history: [{ ...msg(1, 'minh', ''), attachments: [video('v2', { removed: true })] }] });
+    await flush();
+    expect(text(root.querySelector('[data-video-removed="v2"]')!)).toBe('Video không còn khả dụng');
   });
 });
 

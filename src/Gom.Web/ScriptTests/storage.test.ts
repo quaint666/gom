@@ -10,7 +10,7 @@ const owner = { gomId: 'boss', displayName: 'Boss', isOwner: true };
 const MB = 1024 * 1024;
 const storage = {
   disk: { total: 25 * 1024 * MB, free: 15 * 1024 * MB }, database: 9 * MB, uploadsFolder: 14 * MB,
-  pictures: { count: 29, bytes: 1.2 * MB }, files: { count: 4, bytes: 12 * MB },
+  pictures: { count: 29, bytes: 1.2 * MB }, videos: { count: 2, bytes: 30 * MB }, files: { count: 4, bytes: 12 * MB },
   direct: { conversations: 2, messages: 180, files: 33, bytes: 13 * MB },
   groups: [
     { id: 'g1', title: 'Nhà mình', members: 4, messages: 30, files: 0, bytes: 0 },
@@ -38,19 +38,21 @@ describe('storage page', () => {
     expect(text(root.querySelector('[data-total="folder"]')!)).toContain('14 MB');
     expect(text(root.querySelector('[data-total="database"]')!)).toContain('9 MB');
     expect(text(root.querySelector('[data-total="files"]')!)).toContain('4 · 12 MB');
+    expect(text(root.querySelector('[data-total="videos"]')!)).toContain('Video đã gửi');
+    expect(text(root.querySelector('[data-total="videos"]')!)).toContain('2 · 30 MB');
   });
 
   it('counts one-to-one chats together, with no names', async () => {
     mountStorage(root, api(), vi.fn());
     await flush();
     expect(text(root.querySelector('[data-total="direct"]')!)).toContain('2 cuộc trò chuyện');
-    expect(text(root.querySelector('[data-total="direct"]')!)).toContain('180 tin nhắn · 33 ảnh và tệp · 13 MB');
+    expect(text(root.querySelector('[data-total="direct"]')!)).toContain('180 tin nhắn · 33 ảnh, video và tệp · 13 MB');
   });
 
   it('lists people, marking a deleted account', async () => {
     mountStorage(root, api(), vi.fn());
     await flush();
-    expect(text(root.querySelector('[data-person="lan"]')!)).toContain('@lan · 33 ảnh và tệp');
+    expect(text(root.querySelector('[data-person="lan"]')!)).toContain('@lan · 33 ảnh, video và tệp');
     expect(text(root.querySelector('[data-person="x1"]')!)).toContain('Đã xóa');
   });
 
@@ -86,13 +88,24 @@ describe('storage page', () => {
   });
 
   describe('trimming pictures and files', () => {
-    const preview = { pictures: { count: 120, bytes: 400 * MB }, files: { count: 3, bytes: 10 * MB }, conversations: 5 };
+    const preview = { pictures: { count: 120, bytes: 400 * MB }, videos: { count: 2, bytes: 60 * MB }, files: { count: 3, bytes: 10 * MB }, conversations: 5 };
     const set = (selector: string, value: string) => {
       const el = root.querySelector<HTMLInputElement | HTMLSelectElement>(selector)!;
       el.value = value;
       el.dispatchEvent(new Event(el instanceof HTMLSelectElement || el.type !== 'text' ? 'change' : 'input', { bubbles: true }));
     };
     const click = async (selector: string) => { root.querySelector<HTMLButtonElement>(selector)!.click(); await flush(); };
+
+    it('can trim videos alone', async () => {
+      const a = api({ trimPreview: vi.fn(async () => ok(preview)) });
+      mountStorage(root, a, vi.fn());
+      await flush();
+      expect([...root.querySelectorAll<HTMLOptionElement>('#trim-kind option')].map((o) => o.value)).toEqual(['all', 'image', 'video', 'file']);
+      set('#trim-day', '2026-01-01'); await flush();
+      set('#trim-kind', 'video'); await flush();
+      await click('[data-trim-preview]');
+      expect(a.trimPreview).toHaveBeenCalledWith(expect.objectContaining({ kind: 'video' }));
+    });
 
     it('previews the chosen rule, then trims only after Delete is typed exactly', async () => {
       const a = api({ trimPreview: vi.fn(async () => ok(preview)), trimFiles: vi.fn(async () => ok(preview)) });
@@ -107,7 +120,7 @@ describe('storage page', () => {
 
       const rule = { before: new Date('2026-01-01T00:00').toISOString(), kind: 'image', where: 'g1', minBytes: Math.round(1.5 * MB) };
       expect(a.trimPreview).toHaveBeenCalledWith(rule);
-      expect(text(root.querySelector('[data-trim-summary]')!)).toBe('Sẽ xóa vĩnh viễn 120 ảnh (400 MB) và 3 tệp (10 MB) trong 5 cuộc trò chuyện.');
+      expect(text(root.querySelector('[data-trim-summary]')!)).toBe('Sẽ xóa vĩnh viễn 120 ảnh (400 MB), 2 video (60 MB) và 3 tệp (10 MB) trong 5 cuộc trò chuyện.');
 
       const go = () => root.querySelector<HTMLButtonElement>('[data-trim-confirm]')!;
       expect(go().disabled).toBe(true);
@@ -116,7 +129,7 @@ describe('storage page', () => {
       expect(go().disabled).toBe(false);
       await click('[data-trim-confirm]');
       expect(a.trimFiles).toHaveBeenCalledWith(rule, 'Delete');
-      expect(text(root.querySelector('[data-trim-done]')!)).toBe('Đã xóa 120 ảnh (400 MB) và 3 tệp (10 MB) trong 5 cuộc trò chuyện.');
+      expect(text(root.querySelector('[data-trim-done]')!)).toBe('Đã xóa 120 ảnh (400 MB), 2 video (60 MB) và 3 tệp (10 MB) trong 5 cuộc trò chuyện.');
       expect(root.querySelector('[data-trim-confirm]')).toBeNull();
       expect(a.storage).toHaveBeenCalledTimes(2);
     });
@@ -133,7 +146,7 @@ describe('storage page', () => {
     });
 
     it('says so when nothing matches, and offers no delete', async () => {
-      const none = { pictures: { count: 0, bytes: 0 }, files: { count: 0, bytes: 0 }, conversations: 0 };
+      const none = { pictures: { count: 0, bytes: 0 }, videos: { count: 0, bytes: 0 }, files: { count: 0, bytes: 0 }, conversations: 0 };
       mountStorage(root, api({ trimPreview: vi.fn(async () => ok(none)) }), vi.fn());
       await flush();
       set('#trim-day', '2026-01-01'); await flush();
@@ -151,7 +164,7 @@ describe('storage page', () => {
   });
 
   describe('trimming messages', () => {
-    const result = { messages: 347, pictures: { count: 120, bytes: 400 * MB }, files: { count: 3, bytes: 10 * MB }, conversations: 5 };
+    const result = { messages: 347, pictures: { count: 120, bytes: 400 * MB }, videos: { count: 2, bytes: 60 * MB }, files: { count: 3, bytes: 10 * MB }, conversations: 5 };
     const set = (selector: string, value: string) => {
       const el = root.querySelector<HTMLInputElement | HTMLSelectElement>(selector)!;
       el.value = value;
@@ -169,19 +182,19 @@ describe('storage page', () => {
       await click('[data-mtrim-preview]');
       const rule = { before: new Date('2026-01-01T00:00').toISOString(), where: 'direct' };
       expect(a.trimMessagesPreview).toHaveBeenCalledWith(rule);
-      expect(text(root.querySelector('[data-mtrim-summary]')!)).toBe('Sẽ xóa vĩnh viễn 347 tin nhắn, kèm 120 ảnh (400 MB) và 3 tệp (10 MB), trong 5 cuộc trò chuyện.');
+      expect(text(root.querySelector('[data-mtrim-summary]')!)).toBe('Sẽ xóa vĩnh viễn 347 tin nhắn, kèm 120 ảnh (400 MB), 2 video (60 MB) và 3 tệp (10 MB), trong 5 cuộc trò chuyện.');
       const go = () => root.querySelector<HTMLButtonElement>('[data-mtrim-confirm]')!;
       set('#mtrim-confirm', 'delete'); await flush();
       expect(go().disabled).toBe(true);
       set('#mtrim-confirm', 'Delete'); await flush();
       await click('[data-mtrim-confirm]');
       expect(a.trimMessages).toHaveBeenCalledWith(rule, 'Delete');
-      expect(text(root.querySelector('[data-mtrim-done]')!)).toBe('Đã xóa 347 tin nhắn, kèm 120 ảnh (400 MB) và 3 tệp (10 MB), trong 5 cuộc trò chuyện.');
+      expect(text(root.querySelector('[data-mtrim-done]')!)).toBe('Đã xóa 347 tin nhắn, kèm 120 ảnh (400 MB), 2 video (60 MB) và 3 tệp (10 MB), trong 5 cuộc trò chuyện.');
       expect(a.trimFiles).not.toHaveBeenCalled();
     });
 
     it('drops the preview when a choice changes, and says so when nothing matches', async () => {
-      const none = { messages: 0, pictures: { count: 0, bytes: 0 }, files: { count: 0, bytes: 0 }, conversations: 0 };
+      const none = { messages: 0, pictures: { count: 0, bytes: 0 }, videos: { count: 0, bytes: 0 }, files: { count: 0, bytes: 0 }, conversations: 0 };
       mountStorage(root, api({ trimMessagesPreview: vi.fn(async () => ok(none)) }), vi.fn());
       await flush();
       set('#mtrim-day', '2026-01-01'); await flush();

@@ -35,6 +35,11 @@ export interface ChatDeps {
   clearNotifications?(conversation: string): void;
   /** This device's notifications, for the one-time "turn them on" banner. */
   pusher?: Pusher;
+  /**
+   * Makes a picked video smaller on this device (`onProgress` from 0 to 1); null when this device cannot. Loaded only when a video
+   * is picked. Without it every video goes as it is.
+   */
+  prepareVideo?(file: File, onProgress: (fraction: number) => void): Promise<PreparedVideo | null>;
 }
 
 /** Remembered per device (browser storage) once "Để sau" is tapped: the banner does not come back there. */
@@ -59,7 +64,43 @@ const SEARCH_AS_YOU_TYPE_CHARS = 2;
 const SCROLL_END = typeof window !== 'undefined' && 'onscrollend' in window;
 
 /** One picture or file chosen for the next message: it goes up at once, and joins the message when that is sent. */
-interface TrayItem { key: number; name: string; file: File | null; state: 'waiting' | 'uploading' | 'done' | 'failed'; progress: number; attachment?: Attachment; error?: Failure }
+/**
+ * Something chosen for the next message. A video is made smaller on this device first ('converting', with its progress), once:
+ * `prepared` says that step is behind it, and `poster` is its still picture, sent after it.
+ */
+interface TrayItem {
+  key: number; name: string; file: File | null; state: 'waiting' | 'converting' | 'uploading' | 'done' | 'failed'; progress: number; attachment?: Attachment; error?: Failure;
+  prepared?: boolean; poster?: Blob | null; preview?: string;
+}
+
+/** A video picked on this device made ready to send: an MP4 Gom plays everywhere, and its first picture. */
+export interface PreparedVideo { video: Blob; poster: Blob | null }
+
+/** Whether a picked file is a video, by its type or, when the device gives none, its name. */
+export const isVideoFile = (file: File): boolean => file.type.startsWith('video/') || /\.(mp4|m4v|mov|webm|mkv|3gp)$/i.test(file.name);
+
+/** A small picture made on this device, as an address the page may show (the page's policy allows data: pictures). */
+const asDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result as string);
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(blob);
+});
+
+/** "clip.mov" sent as "clip.mp4": the name says what it now is. */
+const mp4Name = (name: string): string => `${(name || 'video').replace(/\.[^./]*$/, '')}.mp4`;
+
+/** How long a video plays, as a player shows it: "0:42", "12:05", "1:02:03". Empty when unknown. */
+export function playLength(ms: number | null | undefined): string {
+  if (!ms || ms <= 0) return '';
+  const all = Math.round(ms / 1000);
+  const h = Math.floor(all / 3600), m = Math.floor((all % 3600) / 60), sec = all % 60;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
+/** Which list of the side panel an attachment is in: videos are with the pictures, as in a phone's gallery. */
+const shelf = (a: Attachment): 'image' | 'file' => a.kind === 'file' ? 'file' : 'image';
 
 /** The mark on your own message: one check when sent, two when seen, none otherwise. */
 type Tick = 'sent' | 'seen' | null;
@@ -220,7 +261,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (last === null) return say.chat.noMessagesYet;
     if (last.deleted) return recalledText(last.sender.id === me?.id, c.kind === 'group' ? last.sender.displayName : null);
     const who = last.sender.id === me?.id ? `${say.common.you}: ` : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
-    return who + (last.body !== '' ? last.body : last.sticker ? say.chat.sentSticker : last.attachment === 'image' ? say.chat.sentPicture : last.attachment === 'file' ? say.chat.sentFile : '');
+    return who + (last.body !== '' ? last.body : last.sticker ? say.chat.sentSticker : last.attachment === 'image' ? say.chat.sentPicture : last.attachment === 'video' ? say.chat.sentVideo : last.attachment === 'file' ? say.chat.sentFile : '');
   }
 
   const row = (c: Conversation) => html`
@@ -353,11 +394,29 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </div>`;
   };
 
-  /** The pictures of a message as a grid, then its files as cards. */
+  /** Videos that this browser could not play: shown as a card to download instead. */
+  const unplayable = new Set<string>();
+
+  /**
+   * A video in its message: the browser's own player, with its still picture (when its sender's device made one) and how long it is.
+   * Only its first moments are fetched before it is played, which also gives a picture to one without a still. One this browser
+   * cannot play becomes a download.
+   */
+  const videoView = (a: Attachment): TemplateResult => unplayable.has(a.id)
+    ? html`<a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-video-download=${a.id}>${icons.film()}
+        <span class="fi"><b>${a.name}</b><small>${say.chat.videoCannotPlay}</small></span>${icons.download()}</a>`
+    : html`<div class="vid" data-video=${a.id}>
+        <video controls playsinline preload="metadata" src=${`/api/attachments/${a.id}`} poster=${`/api/attachments/${a.id}/thumb`}
+          width=${a.width ?? nothing} height=${a.height ?? nothing} aria-label=${say.chat.videoLabel(a.name, playLength(a.durationMs))}
+          @error=${() => { unplayable.add(a.id); update(); }}></video>
+        ${a.durationMs ? html`<span class="vid-len" aria-hidden="true">${playLength(a.durationMs)}</span>` : nothing}</div>`;
+
+  /** The pictures of a message as a grid, then its videos, then its files as cards. */
   const attachmentsOf = (m: ChatMessage): TemplateResult | typeof nothing => {
     const all = m.attachments ?? [];
     if (all.length === 0) return nothing;
     const pictures = all.filter((a) => a.kind === 'image');
+    const videos = all.filter((a) => a.kind === 'video');
     const files = all.filter((a) => a.kind === 'file');
     return html`
       ${pictures.length === 0 ? nothing : html`<div class=${`pics n${Math.min(pictures.length, 5)}`} data-pics>${pictures.map((a, i) => a.removed
@@ -367,6 +426,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         : html`
         <button class="pic" type="button" data-pic=${a.id} aria-label=${say.chat.viewPicture(i + 1, pictures.length)} @click=${() => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id)}>
           <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}
+      ${videos.map((a) => a.removed
+        ? html`<div class="pic removed vid" data-video-removed=${a.id}><span>${say.chat.videoGone}</span></div>`
+        : videoView(a))}
       ${files.map((a) => a.removed
         ? html`<div class="filecard removed" data-file-removed=${a.id}>${icons.file()}<span class="fi"><b>${say.chat.fileGone}</b><small>${a.name}</small></span></div>`
         : isAppFile(a.name) ? html`
@@ -506,8 +568,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           @click=${(e: MouseEvent) => { if ((e.target as Element).classList.contains('vslide')) closeViewer(); }}>
           ${repeat(slides, (s) => s.attachment.id, (s, k) => html`
             <div class="vslide" role="group" aria-roledescription=${say.chat.pictureRole} aria-label=${`${k + 1} / ${slides.length}`} data-viewer-slide=${s.attachment.id}>
-              <img class="vimg" src=${`/api/attachments/${s.attachment.id}`} alt=${s.attachment.name} loading="lazy" decoding="async"
-                width=${s.attachment.width ?? nothing} height=${s.attachment.height ?? nothing}></div>`)}
+              ${s.attachment.kind === 'video'
+                ? html`<video class="vimg" controls playsinline preload="none" src=${`/api/attachments/${s.attachment.id}`} poster=${`/api/attachments/${s.attachment.id}/thumb`}
+                    width=${s.attachment.width ?? nothing} height=${s.attachment.height ?? nothing} aria-label=${say.chat.videoLabel(s.attachment.name, playLength(s.attachment.durationMs))}></video>`
+                : html`<img class="vimg" src=${`/api/attachments/${s.attachment.id}`} alt=${s.attachment.name} loading="lazy" decoding="async"
+                width=${s.attachment.width ?? nothing} height=${s.attachment.height ?? nothing}>`}</div>`)}
         </div>
         <div class="viewer-foot" data-viewer-foot>
           <div class="vwho"><b>${who}</b><small>${sentAt(current.createdAt)}</small></div>
@@ -522,7 +587,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${repeat(t.tray, (i) => i.key, (i) => html`
         <div class=${`tray-item ${i.state}`} data-tray-item=${i.key}>
           ${i.state === 'done' && i.attachment?.kind === 'image' ? html`<img src=${`/api/attachments/${i.attachment.id}/thumb`} alt=${i.name}>`
+            : i.preview !== undefined ? html`<img src=${i.preview} alt=${i.name}><span class="tray-play" aria-hidden="true">${icons.play()}</span>`
             : html`<div class="tray-file">${icons.file()}<span>${i.name}</span></div>`}
+          ${i.state === 'converting' ? html`<progress max="1" value=${i.progress} aria-label=${say.chat.preparingVideo(i.name)} data-tray-converting></progress>` : nothing}
           ${i.state === 'uploading' || i.state === 'waiting' ? html`<progress max="1" value=${i.state === 'waiting' ? 0 : i.progress} aria-label=${say.chat.uploading(i.name)}></progress>` : nothing}
           ${i.state === 'failed' ? html`<div class="tray-err" role="alert">${i.error ? errorText(i.error) : say.chat.uploadFailed}
             <button class="btn secondary small" type="button" data-tray-retry @click=${() => retryTray(i)}>${say.common.retry}</button></div>` : nothing}
@@ -750,7 +817,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       ${image.items.length === 0 ? nothing : html`<h3>${say.chat.picturesHeading}</h3>
         <div class="info-media" data-info-media>${image.items.map(({ attachment: a }) => html`
-          <button class="pic" type="button" data-info-pic=${a.id} aria-label=${a.name} @click=${() => openViewer(id, a.id, null)}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy"></button>`)}</div>
+          <button class=${`pic ${a.kind === 'video' ? 'vtile' : ''}`} type="button" data-info-pic=${a.id} aria-label=${a.kind === 'video' ? say.chat.videoLabel(a.name, playLength(a.durationMs)) : a.name} @click=${() => openViewer(id, a.id, null)}><img src=${`/api/attachments/${a.id}/thumb`} alt="" loading="lazy">${a.kind === 'video' ? html`<span class="tray-play" aria-hidden="true">${icons.play()}</span>` : nothing}</button>`)}</div>
         ${more('image', image)}`}
       ${file.items.length === 0 ? nothing : html`<h3>${say.chat.filesHeading}</h3>
         <ul class="info-list" data-info-files>${file.items.map(({ attachment: a }) => html`<li><a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name}>${icons.file()}<span class="fi"><b>${a.name}</b><small>${formatSize(a.size)}</small></span></a></li>`)}</ul>
@@ -946,6 +1013,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${trayView(t)}
           <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
             ${t.editing === null && uploadsOn() ? html`
+              <button class="ib attach" type="button" data-gallery aria-label=${say.chat.picturesAndVideos} @click=${() => root.querySelector<HTMLInputElement>('input[name="gallery"]')?.click()}>${icons.image()}</button>
+              <input class="file-input" type="file" name="gallery" accept="image/*,video/*" multiple tabindex="-1" aria-hidden="true"
+                @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>
               <button class="ib attach" type="button" data-attach aria-label=${say.chat.attach} @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
               <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
                 @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
@@ -1344,7 +1414,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const lists = mediaLists.get(conversation);
     if (lists !== undefined) {
       if (event.kind === 'deleted') for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.filter((i) => i.messageId !== message.id);
-      else if (event.kind === 'created') for (const a of message.attachments ?? []) lists[a.kind].items = mergeMedia(lists[a.kind].items, [{ attachment: a, messageId: message.id, seq: message.seq, createdAt: message.createdAt, sender: message.sender, body: message.body }]);
+      else if (event.kind === 'created') for (const a of message.attachments ?? []) lists[shelf(a)].items = mergeMedia(lists[shelf(a)].items, [{ attachment: a, messageId: message.id, seq: message.seq, createdAt: message.createdAt, sender: message.sender, body: message.body }]);
       else for (const k of ['image', 'file'] as const) lists[k].items = lists[k].items.map((i) => i.messageId === message.id ? { ...i, body: message.body } : i);
     }
 
@@ -2112,7 +2182,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function pumpTray(id: string): void {
     const t = threadOf(id);
     for (;;) {
-      if (t.tray.filter((i) => i.state === 'uploading').length >= UPLOADS_AT_ONCE) return;
+      if (t.tray.filter((i) => i.state === 'uploading' || i.state === 'converting').length >= UPLOADS_AT_ONCE) return;
       const next = t.tray.find((i) => i.state === 'waiting');
       if (next === undefined) return;
       void uploadOne(id, t, next);
@@ -2120,16 +2190,51 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   async function uploadOne(id: string, t: Thread, item: TrayItem): Promise<void> {
+    if (!item.prepared && isVideoFile(item.file!)) {
+      if (!await prepare(item)) { pumpTray(id); return; }
+      if (!t.tray.includes(item)) { pumpTray(id); return; }
+    }
     item.state = 'uploading';
     item.progress = 0;
     update();
     const result = await api.upload(id, item.file!, (fraction) => { item.progress = fraction; update(); });
     if (!t.tray.includes(item)) { pumpTray(id); return; }   // taken out while it was going up
+    // A video's still picture follows it; without one it still plays (it shows nothing until then).
+    if (result.ok && result.data.kind === 'video' && item.poster) await api.setPoster(result.data.id, item.poster);
     if (result.ok) { item.state = 'done'; item.attachment = result.data; item.file = null; delete item.error; }
     else if (result.error === 'unauthorized') { go('/sign-in'); return; }
     else { item.state = 'failed'; item.error = result; }
     update();
     pumpTray(id);
+  }
+
+  /**
+   * Makes a picked video smaller on this device, once. When this device cannot, the video goes as it is if it is within the limit
+   * (the server keeps it as a video when it is an MP4, as a file when not); over the limit it fails here, before any upload.
+   * False when it failed.
+   */
+  async function prepare(item: TrayItem): Promise<boolean> {
+    const original = item.file!;
+    item.state = 'converting';
+    item.progress = 0;
+    update();
+    let ready: PreparedVideo | null = null;
+    try { ready = await deps.prepareVideo?.(original, (fraction) => { item.progress = fraction; update(); }) ?? null; } catch { ready = null; }
+    item.prepared = true;
+    if (ready !== null) {
+      item.file = new File([ready.video], mp4Name(original.name), { type: 'video/mp4' });
+      item.poster = ready.poster;
+      if (ready.poster !== null) item.preview = await asDataUrl(ready.poster);
+    }
+    if (item.file!.size > limits().videoBytes) {
+      item.state = 'failed';
+      item.error = { ok: false, status: 413, error: 'video_too_large' };
+      item.file = original;
+      item.prepared = false;   // a retry tries the device again
+      update();
+      return false;
+    }
+    return true;
   }
 
   function retryTray(item: TrayItem): void {

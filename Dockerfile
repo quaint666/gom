@@ -23,7 +23,7 @@ COPY src/Gom.Web/Scripts ./Scripts
 COPY src/Gom.Web/wwwroot/css ./wwwroot/css
 COPY src/Gom.Web/wwwroot/theme-init.js ./wwwroot/
 # The check fails the build if nothing came out.
-RUN npm run build && [ -s wwwroot/js/main.js ] && [ -s wwwroot/assets.json ]
+RUN npm run build && [ -s wwwroot/js/main.js ] && [ -s wwwroot/js/video.js ] && [ -s wwwroot/assets.json ]
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0.404-alpine3.24@sha256:0294f285d062afacc8b5f6d7febb0cd4ee879320e5585fa15f2f4ebf1feb9ba7 AS restore
 
