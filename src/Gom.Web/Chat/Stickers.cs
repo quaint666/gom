@@ -3,7 +3,7 @@ using System.Collections.Frozen;
 namespace Gom.Web.Chat;
 
 /// <summary>
-/// The stickers a message may be: still Noto Emoji pictures (Google, SIL Open Font License 1.1), named by their code points, kept
+/// The stickers a message may be: still Noto Emoji pictures (Google, Apache License 2.0), named by their code points, kept
 /// with the page under wwwroot/stickers. The page lists the same ones, in the same packs and order; a test keeps the two in step.
 /// </summary>
 public static class Stickers

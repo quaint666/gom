@@ -2,7 +2,7 @@
 export interface StickerPack { name: string; codes: readonly string[] }
 
 /**
- * The stickers, in packs: still Noto Emoji pictures (Google, SIL Open Font License 1.1, from the noto-emoji repository's 2D/svg folder,
+ * The stickers, in packs: still Noto Emoji pictures (Google, Apache License 2.0, from the noto-emoji repository's 2D/svg folder,
  * unchanged), served from /stickers/<code>.svg. The server keeps the same codes (Chat/Stickers.cs), and a server test checks that the two
  * and the files agree. A code never leaves the list once sent: an old message must still draw.
  */
