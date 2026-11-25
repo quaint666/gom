@@ -831,11 +831,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
               <button class="ib attach" type="button" data-attach aria-label="Đính kèm ảnh hoặc tệp" @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
               <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
                 @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
-            ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label="Emoji và nhãn dán" aria-expanded=${picker !== null ? 'true' : 'false'}
-              @click=${togglePicker}>${icons.smile()}</button>` : nothing}
+            <div class="field">
             <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
               .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}
               @focus=${() => { if (picker !== null) { picker = null; update(); } }}></textarea>
+            ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label="Emoji và nhãn dán" aria-expanded=${picker !== null ? 'true' : 'false'}
+              @click=${togglePicker}>${icons.smile()}</button>` : nothing}
+            </div>
             <button class="send" type="submit" aria-label="Gửi" ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
           </form>
           ${picker !== null && t.editing === null ? pickerPanel(openId!, picker) : nothing}`}
