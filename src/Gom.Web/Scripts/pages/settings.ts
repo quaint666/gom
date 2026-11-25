@@ -159,7 +159,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
         <h2 class="section">Thiết bị đang đăng nhập</h2>
         <ul class="list">${sessions.map(row)}</ul>
         <button class="btn secondary" type="button" data-signout @click=${signOut}>Đăng xuất</button>
-        ${user.isOwner ? html`<a class="btn secondary" href="/owner">Lời mời và thành viên</a>` : deleteCard(user)}`}
+        ${user.isOwner ? html`<a class="btn secondary" href="/owner">Lời mời và thành viên</a><a class="btn secondary" href="/owner/storage" data-storage-link>Dung lượng</a>` : deleteCard(user)}`}
     </div>`;
   const update = () => render(view(), root);
 

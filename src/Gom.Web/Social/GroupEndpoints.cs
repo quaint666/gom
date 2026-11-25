@@ -167,11 +167,11 @@ public static class GroupEndpoints
     }
 
     /// <summary>The same lock a send and an add take, so who is in the group and who leads it cannot change under a decision.</summary>
-    private static Task<int> LockGroup(GomDbContext db, Guid id, CancellationToken ct) =>
+    internal static Task<int> LockGroup(GomDbContext db, Guid id, CancellationToken ct) =>
         db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
 
     /// <summary>Takes a group and everything in it out of the database. Every key is Restrict, so this goes from the leaves inward.</summary>
-    private static async Task<List<Guid>> DeleteGroup(GomDbContext db, Guid id, CancellationToken ct)
+    internal static async Task<List<Guid>> DeleteGroup(GomDbContext db, Guid id, CancellationToken ct)
     {
         // The uploads of the conversation, used or not; their files are removed after the commit.
         var files = await db.Attachments.Where(a => a.ConversationId == id).Select(a => a.Id).ToListAsync(ct);

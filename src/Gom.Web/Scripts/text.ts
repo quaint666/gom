@@ -19,6 +19,7 @@ export function errorText(failure: Failure): string {
     case 'confirm_mismatch': return 'Gom ID bạn nhập không khớp.';
     case 'owner_cannot_delete': return 'Chủ Gom không thể xóa tài khoản của mình.';
     case 'account_deleted': return 'Tài khoản này đã bị xóa.';
+    case 'group_not_empty': return 'Nhóm này vẫn còn thành viên.';
     case 'user_not_found': return 'Không tìm thấy ai có Gom ID này. Hãy kiểm tra lại.';
     case 'cannot_add_self': return 'Đây là Gom ID của chính bạn.';
     case 'already_friends': return 'Hai bạn đã là bạn bè.';
@@ -71,5 +72,6 @@ export function formatSize(bytes: number): string {
   const number = (n: number) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 }).format(n);
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${number(bytes / 1024)} KB`;
-  return `${number(bytes / (1024 * 1024))} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${number(bytes / (1024 * 1024))} MB`;
+  return `${number(bytes / (1024 * 1024 * 1024))} GB`;
 }
