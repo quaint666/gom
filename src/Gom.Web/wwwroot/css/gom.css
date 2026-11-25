@@ -78,6 +78,8 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .btn:disabled { opacity: .6; cursor: progress; }
 .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
 .btn.secondary:hover { background: color-mix(in srgb, var(--tint) 60%, var(--surface)); }
+.btn.danger { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
+.btn.danger:hover { background: color-mix(in srgb, var(--err-border) 20%, var(--err-bg)); }
 .btn.small { min-block-size: 44px; inline-size: auto; padding-inline: 14px; font-size: 14px; flex: none; }
 .ib {
   display: inline-grid; place-items: center; inline-size: 44px; block-size: 44px; flex: none; border: 0; border-radius: 50%;
@@ -525,6 +527,8 @@ button.th-title:hover b { text-decoration: underline; }
 .tray-x .i { inline-size: 14px; block-size: 14px; }
 .file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
 .composer .attach { flex: none; }
+/* Where the composer was, in a one-to-one conversation whose other person deleted their account. */
+.closed-note { margin: 0; padding: 14px 16px max(14px, env(safe-area-inset-bottom)); background: var(--surface); border-block-start: 1px solid var(--border); color: var(--muted); font-size: 14px; text-align: center; }
 
 /* the big picture: a modal dialog over everything, with a strip of pictures that the browser scrolls and snaps one at a time */
 .viewer { position: fixed; inset: 0; inline-size: 100vw; block-size: 100dvh; max-inline-size: none; max-block-size: none; margin: 0; padding: 0; border: 0;

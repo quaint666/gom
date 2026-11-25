@@ -16,6 +16,9 @@ export function errorText(failure: Failure): string {
     case 'invalid_display_name': return 'Tên hiển thị tối đa 60 ký tự và không được có ký tự điều khiển.';
     case 'wrong_password': return 'Mật khẩu hiện tại không đúng.';
     case 'cannot_disable_owner': return 'Không thể khóa tài khoản của chủ Gom.';
+    case 'confirm_mismatch': return 'Gom ID bạn nhập không khớp.';
+    case 'owner_cannot_delete': return 'Chủ Gom không thể xóa tài khoản của mình.';
+    case 'account_deleted': return 'Tài khoản này đã bị xóa.';
     case 'user_not_found': return 'Không tìm thấy ai có Gom ID này. Hãy kiểm tra lại.';
     case 'cannot_add_self': return 'Đây là Gom ID của chính bạn.';
     case 'already_friends': return 'Hai bạn đã là bạn bè.';

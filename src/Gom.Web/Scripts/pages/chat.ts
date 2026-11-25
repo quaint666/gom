@@ -698,6 +698,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** Under a 1:1 conversation's name: their Gom ID, and how many groups you share once their card has been fetched. */
   function peerLine(c: Conversation): string {
     const shared = c.peer === null ? undefined : cards.get(c.peer.id)?.commonGroups.length;
+    if (c.peer?.deleted) return 'Tài khoản đã bị xóa';
     return [`@${c.peer?.gomId ?? ''}`, shared ? `${shared} nhóm chung` : ''].filter((x) => x !== '').join(' · ');
   }
 
@@ -740,7 +741,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             ${p.gomId === null ? nothing : html`<small>@${p.gomId}</small>`}
           </div>
           ${k.error === null ? nothing : errorBox(k.error)}
-          ${k.asking !== null ? html`
+          ${p.deleted ? html`<p class="hint" data-card-deleted>Tài khoản này đã bị xóa.</p>` : k.asking !== null ? html`
             <div class="ask" role="group" aria-labelledby="card-q" data-card-ask>
               <p id="card-q"><b>${k.asking === 'unfriend' ? `Xóa bạn với ${name}?` : `Chặn ${name}?`}</b><br>
                 <span class="hint">${k.asking === 'unfriend' ? 'Hai người vẫn đọc được tin nhắn cũ, nhưng không nhắn thêm được cho đến khi kết bạn lại.'
@@ -805,30 +806,32 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${cardView()}
         ${muteView()}
-        ${t.editing === null ? nothing : html`
-          <div class="replybar" data-editbar>
-            <div class="rb-text"><b>Đang chỉnh sửa tin nhắn</b></div>
-            <button class="ib" type="button" data-cancel-edit aria-label="Hủy chỉnh sửa" @click=${() => { t.editing = null; t.draft = ''; update(); }}>${icons.close()}</button>
-          </div>`}
-        ${t.replying === null ? nothing : html`
-          <div class="replybar" data-replybar>
-            <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.sticker ? 'Nhãn dán' : t.replying.snippet ?? ''}</span></div>
-            <button class="ib" type="button" data-cancel-reply aria-label="Hủy trả lời" @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
-          </div>`}
-        ${trayView(t)}
-        <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
-          ${t.editing === null && uploadsOn() ? html`
-            <button class="ib attach" type="button" data-attach aria-label="Đính kèm ảnh hoặc tệp" @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
-            <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
-              @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
-          ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label="Emoji và nhãn dán" aria-expanded=${picker !== null ? 'true' : 'false'}
-            @click=${togglePicker}>${icons.smile()}</button>` : nothing}
-          <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
-            .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}
-            @focus=${() => { if (picker !== null) { picker = null; update(); } }}></textarea>
-          <button class="send" type="submit" aria-label="Gửi" ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
-        </form>
-        ${picker !== null && t.editing === null ? pickerPanel(openId!, picker) : nothing}
+        ${c?.peer?.deleted ? html`
+          <p class="closed-note" role="status" data-peer-deleted>Tài khoản này đã bị xóa. Bạn vẫn đọc được tin nhắn cũ nhưng không gửi thêm được.</p>` : html`
+          ${t.editing === null ? nothing : html`
+            <div class="replybar" data-editbar>
+              <div class="rb-text"><b>Đang chỉnh sửa tin nhắn</b></div>
+              <button class="ib" type="button" data-cancel-edit aria-label="Hủy chỉnh sửa" @click=${() => { t.editing = null; t.draft = ''; update(); }}>${icons.close()}</button>
+            </div>`}
+          ${t.replying === null ? nothing : html`
+            <div class="replybar" data-replybar>
+              <div class="rb-text"><b>Đang trả lời ${t.replying.sender?.id === me?.id ? 'chính bạn' : t.replying.sender?.displayName ?? ''}</b><span>${t.replying.sticker ? 'Nhãn dán' : t.replying.snippet ?? ''}</span></div>
+              <button class="ib" type="button" data-cancel-reply aria-label="Hủy trả lời" @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
+            </div>`}
+          ${trayView(t)}
+          <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
+            ${t.editing === null && uploadsOn() ? html`
+              <button class="ib attach" type="button" data-attach aria-label="Đính kèm ảnh hoặc tệp" @click=${() => root.querySelector<HTMLInputElement>('input[name="files"]')?.click()}>${icons.attach()}</button>
+              <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
+                @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
+            ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label="Emoji và nhãn dán" aria-expanded=${picker !== null ? 'true' : 'false'}
+              @click=${togglePicker}>${icons.smile()}</button>` : nothing}
+            <textarea name="message" rows="1" aria-label="Nhập tin nhắn" placeholder="Nhập tin nhắn" autocomplete="off" enterkeyhint="enter"
+              .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}
+              @focus=${() => { if (picker !== null) { picker = null; update(); } }}></textarea>
+            <button class="send" type="submit" aria-label="Gửi" ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
+          </form>
+          ${picker !== null && t.editing === null ? pickerPanel(openId!, picker) : nothing}`}
       </section>`;
   }
 
