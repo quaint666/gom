@@ -56,6 +56,16 @@ public class StickerTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task The_longest_flag_code_is_stored_and_read_back_whole()
+    {
+        var p = await NewPair();
+        const string england = "1f3f4_e0067_e0062_e0065_e006e_e0067_e007f";
+        var sent = await Sticker(p, p.CA, england);
+        Assert.Equal(england, (await Seen(p, p.CB, sent.GetProperty("id").GetGuid())).GetProperty("sticker").GetString());
+        Assert.True(Stickers.Allowed.Max(c => c.Length) <= Stickers.MaxCodeLength);
+    }
+
+    [Fact]
     public async Task A_message_of_words_has_no_sticker()
     {
         var p = await NewPair();

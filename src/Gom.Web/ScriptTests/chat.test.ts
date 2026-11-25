@@ -4211,7 +4211,7 @@ describe('chat: stickers', () => {
     expect(text(panel()!)).toContain('Cảm xúc');
     expect(root.querySelector('[data-send-sticker="1f602"]')!.getAttribute('aria-label')).toBe('Gửi nhãn dán 😂');
     expect(root.querySelector<HTMLImageElement>('[data-send-sticker="1f602"] img')!.getAttribute('src')).toBe('/stickers/1f602.svg');
-    expect(text(panel()!)).toContain('Noto Emoji của Google, giấy phép Apache 2.0.');
+    expect(text(panel()!)).toContain('Noto Emoji của Google, giấy phép Apache 2.0; cờ các nước thuộc phạm vi công cộng.');
     await toggle();
     expect(panel()).toBeNull();
   });

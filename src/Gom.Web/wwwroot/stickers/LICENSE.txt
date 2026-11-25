@@ -1,7 +1,9 @@
 Copyright 2013 Google, Inc. All Rights Reserved.
 
 The sticker pictures in this folder are Noto Emoji images from
-https://github.com/googlefonts/noto-emoji (the 2D/svg folder), unchanged.
+https://github.com/googlefonts/noto-emoji (the 2D/svg folder), unchanged,
+except the flags of countries and regions (the files named 1f1xx_1f1xx.svg
+and 1f3f4_e0067_...svg), which are in the public domain: see LICENSE-flags.txt.
 That folder is licensed under the Apache License, Version 2.0 (the "License");
 you may not use these files except in compliance with the License.
 The License text is copied below, and is also available at

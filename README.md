@@ -2,7 +2,7 @@
 
 A small, invite-only web chat for family and friends, with message history kept on the server so it is there on every device. Web only. The UI is in Vietnamese; code and docs are in English.
 
-Status: in use by the family, in production and on a staging host. Built: accounts and invites, friends and blocking, profile pictures, one-to-one and group chat (roles, removal, approval, bans) with live delivery, offline sending, replies, forwarding, pins, reactions, editing, taking a message back, delete for me, search, mute (for a while or until turned back on), a menu on each conversation (pin to the top, mark unread, hide, delete the conversation for yourself), read receipts, pictures and files, notifications (Web Push), emoji and 110 stickers in six packs, deleting your own account, and for the owner a storage page that trims old pictures, files and messages. Not yet: sharing into Gom from other apps, a webhook that posts alerts into a group, link cards, two-step sign-in for the owner, and the load test. GIFs were dropped.
+Status: in use by the family, in production and on a staging host. Built: accounts and invites, friends and blocking, profile pictures, one-to-one and group chat (roles, removal, approval, bans) with live delivery, offline sending, replies, forwarding, pins, reactions, editing, taking a message back, delete for me, search, mute (for a while or until turned back on), a menu on each conversation (pin to the top, mark unread, hide, delete the conversation for yourself), read receipts, pictures and files, notifications (Web Push), emoji and 379 stickers in seven packs (one of them every flag), deleting your own account, and for the owner a storage page that trims old pictures, files and messages. Not yet: sharing into Gom from other apps, a webhook that posts alerts into a group, link cards, two-step sign-in for the owner, and the load test. GIFs were dropped.
 
 ## Run it locally
 
@@ -25,7 +25,7 @@ The first start needs an owner account: set `Owner__GomId` and `Owner__Password`
 
 Decisions and their reasons are in `docs/decisions.md`; what comes next is in `docs/next-session.md`. The mockups and design notes are in `design/`.
 
-The font (Be Vietnam Pro, in `wwwroot/fonts/`) is under the SIL Open Font License 1.1, and the stickers (still images from Google's Noto Emoji, its `2D/svg` folder, in `wwwroot/stickers/`) under the Apache License 2.0; the licence text sits beside each.
+The font (Be Vietnam Pro, in `wwwroot/fonts/`) is under the SIL Open Font License 1.1, and the stickers (still images from Google's Noto Emoji, its `2D/svg` folder, in `wwwroot/stickers/`) under the Apache License 2.0, except the flags, which are in the public domain; the licence text sits beside each.
 
 ## On a server
 
