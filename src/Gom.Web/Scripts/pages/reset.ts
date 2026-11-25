@@ -2,6 +2,7 @@ import { html, render } from 'lit-html';
 import type { Api, Failure } from '../api.js';
 import { brand, deadLink, errorBox, passwordField } from '../ui.js';
 import { passwordHint } from '../text.js';
+import { say } from '../say.js';
 
 type State = { kind: 'loading' } | { kind: 'dead' } | { kind: 'form'; gomId: string };
 
@@ -13,18 +14,18 @@ export function mountReset(root: HTMLElement, api: Api, go: (path: string) => vo
   let error: Failure | null = null;
 
   const view = () => {
-    if (state.kind === 'dead') return deadLink('Liên kết không dùng được nữa', 'Liên kết này có thể đã hết hạn hoặc đã được dùng. Hãy nhờ người quản lý Gom tạo liên kết mới.');
+    if (state.kind === 'dead') return deadLink(say.account.deadReset, say.account.deadResetNote);
     if (state.kind === 'loading') return html`<div class="page">${brand()}</div>`;
     return html`
       <div class="page">
         ${brand()}
-        <div><h1>Đặt lại mật khẩu</h1><p class="lead">Chọn mật khẩu mới cho <b>@${state.gomId}</b>. Các thiết bị đang đăng nhập sẽ bị đăng xuất.</p></div>
+        <div><h1>${say.account.resetTitle}</h1><p class="lead">${say.account.resetFor} <b>@${state.gomId}</b>. ${say.account.resetNote}</p></div>
         <form @submit=${onSubmit}>
           ${errorBox(error)}
           <input class="sr-only" name="username" type="text" autocomplete="username" readonly tabindex="-1" aria-hidden="true" .value=${state.gomId}>
-          ${passwordField({ label: 'Mật khẩu mới', autocomplete: 'new-password', value: password, shown, hint: passwordHint(),
+          ${passwordField({ label: say.settings.newPassword, autocomplete: 'new-password', value: password, shown, hint: passwordHint(),
             onInput: (v) => { password = v; }, onToggle: () => { shown = !shown; update(); } })}
-          <button class="btn" type="submit" ?disabled=${busy}>Lưu mật khẩu</button>
+          <button class="btn" type="submit" ?disabled=${busy}>${say.account.savePassword}</button>
         </form>
       </div>`;
   };

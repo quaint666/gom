@@ -43,7 +43,7 @@ RUN dotnet publish src/Gom.Web/Gom.Web.csproj -c Release --no-restore -r linux-m
 FROM restore AS bundle
 # Only what the bundle compiles. A NEW folder of C# in src/Gom.Web goes in this list too (a missing one fails the build with a
 # compile error, never silently). Scripts and wwwroot are left out on purpose, so this stage stays cached when only they change.
-COPY src/Gom.Web/Program.cs src/Gom.Web/Assets.cs src/Gom.Web/Pages.cs src/Gom.Web/appsettings.json src/Gom.Web/
+COPY src/Gom.Web/Program.cs src/Gom.Web/Assets.cs src/Gom.Web/Pages.cs src/Gom.Web/ServerText.cs src/Gom.Web/appsettings.json src/Gom.Web/
 COPY src/Gom.Web/Auth ./src/Gom.Web/Auth
 COPY src/Gom.Web/Chat ./src/Gom.Web/Chat
 COPY src/Gom.Web/Data ./src/Gom.Web/Data

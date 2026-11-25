@@ -6,10 +6,11 @@ import type { Installer } from '../install.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
 import { errorText, passwordHint } from '../text.js';
+import { say } from '../say.js';
 import { limits } from '../limits.js';
 
 /** The choices for the colour scheme, in the order shown. */
-const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', 'Theo hệ thống'], ['light', 'Sáng'], ['dark', 'Tối']];
+const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', say.settings.schemeSystem], ['light', say.settings.schemeLight], ['dark', say.settings.schemeDark]];
 
 export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer, pusher?: Pusher): void {
   let user: User | null = null;
@@ -39,10 +40,10 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   const row = (s: SessionInfo) => html`
     <li class="li" data-session=${s.id}>
       <div class="t">
-        <b>${s.deviceLabel}${s.current ? html`<span class="tag">Thiết bị này</span>` : nothing}</b>
-        <small>Hoạt động lần cuối: ${formatTime(s.lastSeenAt)}</small>
+        <b>${s.deviceLabel}${s.current ? html`<span class="tag">${say.settings.thisDevice}</span>` : nothing}</b>
+        <small>${say.settings.lastSeen(formatTime(s.lastSeenAt))}</small>
       </div>
-      ${s.current ? nothing : html`<button class="btn secondary small" type="button" @click=${() => endSession(s.id)}>Đăng xuất thiết bị</button>`}
+      ${s.current ? nothing : html`<button class="btn secondary small" type="button" @click=${() => endSession(s.id)}>${say.settings.signOutDevice}</button>`}
     </li>`;
 
   /**
@@ -51,19 +52,19 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
    */
   const pictureCard = (u: User) => html`
     <div class="card" data-avatar>
-      <p><b>Ảnh đại diện</b></p>
+      <p><b>${say.settings.picture}</b></p>
       ${picked === null ? html`
         <div class="avatar-row">
-          <label class="btn secondary small" for="avatar-file">${u.avatar ? 'Đổi ảnh' : 'Chọn ảnh'}</label>
+          <label class="btn secondary small" for="avatar-file">${u.avatar ? say.settings.changePicture : say.settings.choosePicture}</label>
           <input class="file-input" id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" data-avatar-file
             @change=${(e: Event) => { const input = e.target as HTMLInputElement; const file = input.files?.[0]; input.value = ''; if (file) choosePicture(file); }}>
-          ${u.avatar ? html`<button class="btn secondary small" type="button" data-avatar-remove ?disabled=${busy} @click=${() => void removePicture()}>Xóa ảnh</button>` : nothing}
+          ${u.avatar ? html`<button class="btn secondary small" type="button" data-avatar-remove ?disabled=${busy} @click=${() => void removePicture()}>${say.settings.removePicture}</button>` : nothing}
         </div>
-        <p class="hint">Ảnh được cắt thành hình vuông ở giữa. Bạn bè và người cùng nhóm sẽ thấy ảnh này.</p>` : html`
+        <p class="hint">${say.settings.pictureNote}</p>` : html`
         <div class="avatar-row">
-          <img class="avatar-preview" src=${picked.preview} alt="Ảnh sẽ dùng" data-avatar-preview>
-          <button class="btn small" type="button" data-avatar-save ?disabled=${busy} @click=${() => void savePicture()}>Lưu ảnh</button>
-          <button class="btn secondary small" type="button" data-avatar-cancel ?disabled=${busy} @click=${() => { picked = null; update(); }}>Hủy</button>
+          <img class="avatar-preview" src=${picked.preview} alt=${say.settings.picturePreview} data-avatar-preview>
+          <button class="btn small" type="button" data-avatar-save ?disabled=${busy} @click=${() => void savePicture()}>${say.settings.savePicture}</button>
+          <button class="btn secondary small" type="button" data-avatar-cancel ?disabled=${busy} @click=${() => { picked = null; update(); }}>${say.common.cancel}</button>
         </div>`}
       <p class="hint" role="status" data-avatar-status>${pictureStatus}</p>
     </div>`;
@@ -72,23 +73,23 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   const pushCard = (p: PushState) => {
     const support = pusher?.support() ?? 'unsupported';
     return html`
-      <h2 class="section">Thông báo</h2>
+      <h2 class="section">${say.settings.notifications}</h2>
       <div class="card" data-push>
-        ${support === 'needs-home-screen' ? html`<p class="hint" data-push-home>Trên iPhone và iPad, thông báo chỉ đến khi Gom ở trên Màn hình chính: bấm nút Chia sẻ, chọn "Thêm vào MH chính", mở Gom từ biểu tượng đó rồi bật thông báo ở đây.</p>`
-          : support === 'unsupported' ? html`<p class="hint" data-push-unsupported>Trình duyệt này không nhận được thông báo.</p>`
-          : !p.subscribed && pusher!.permission() === 'denied' ? html`<p class="hint" data-push-blocked>Thông báo của Gom đang bị chặn trên trình duyệt này. Hãy cho phép thông báo trong phần cài đặt trang của trình duyệt, rồi quay lại đây.</p>`
+        ${support === 'needs-home-screen' ? html`<p class="hint" data-push-home>${say.settings.pushHomeScreen}</p>`
+          : support === 'unsupported' ? html`<p class="hint" data-push-unsupported>${say.settings.pushUnsupported}</p>`
+          : !p.subscribed && pusher!.permission() === 'denied' ? html`<p class="hint" data-push-blocked>${say.settings.pushBlocked}</p>`
           : html`
             <div class="pick"><input type="checkbox" id="push-on" data-push-switch .checked=${live(p.subscribed)} ?disabled=${pushBusy}
               @change=${(e: Event) => void setPushOn((e.target as HTMLInputElement).checked)}>
-              <label for="push-on">Nhận thông báo tin nhắn mới trên thiết bị này</label></div>
+              <label for="push-on">${say.settings.pushOn}</label></div>
             ${p.subscribed ? html`
               <fieldset class="choices" data-push-level>
-                <legend class="hint">Thông báo hiện:</legend>
-                ${([['name', 'Tên người gửi và cuộc trò chuyện'], ['nothing', 'Chỉ "Tin nhắn mới"']] as const).map(([value, label]) => html`
+                <legend class="hint">${say.settings.pushShows}</legend>
+                ${([['name', say.settings.pushLevelName], ['nothing', say.settings.pushLevelNothing]] as const).map(([value, label]) => html`
                   <div class="choice"><input type="radio" name="push-level" id=${`push-${value}`} value=${value} .checked=${live(p.level === value)} ?disabled=${pushBusy}
                     @change=${() => void setPushLevel(value)}><label for=${`push-${value}`}>${label}</label></div>`)}
               </fieldset>` : nothing}
-            <p class="hint">Thông báo không bao giờ hiện nội dung tin nhắn.</p>`}
+            <p class="hint">${say.settings.pushNeverWords}</p>`}
         <p class="hint" role="status" data-push-status>${pushStatus}</p>
       </div>`;
   };
@@ -97,70 +98,69 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   const deleteCard = (u: User) => {
     const typed = confirmDelete.trim().replace(/^@/, '').toLowerCase();
     return html`
-      <h2 class="section">Xóa tài khoản</h2>
+      <h2 class="section">${say.settings.deleteAccount}</h2>
       <form class="card" data-delete-account @submit=${deleteAccount}>
-        <p class="hint">Bạn sẽ rời mọi nhóm, mất danh sách bạn bè và bị đăng xuất khỏi mọi thiết bị. Tin nhắn, ảnh và tệp bạn đã gửi vẫn còn
-          trong các cuộc trò chuyện, dưới tên "Tài khoản đã xóa". Không thể hoàn tác.</p>
-        <label for="delete-confirm">Nhập Gom ID của bạn (@${u.gomId}) để xác nhận</label>
+        <p class="hint">${say.settings.deleteNote}</p>
+        <label for="delete-confirm">${say.settings.deleteConfirm(u.gomId)}</label>
         <div class="input"><input id="delete-confirm" name="confirm" type="text" autocomplete="off" autocapitalize="none" spellcheck="false"
           .value=${live(confirmDelete)} @input=${(e: Event) => { confirmDelete = (e.target as HTMLInputElement).value; update(); }}></div>
-        <button class="btn danger" type="submit" data-delete-button ?disabled=${busy || typed !== u.gomId}>Xóa tài khoản vĩnh viễn</button>
+        <button class="btn danger" type="submit" data-delete-button ?disabled=${busy || typed !== u.gomId}>${say.settings.deleteForever}</button>
       </form>`;
   };
 
   const view = () => html`
-    ${appBar({ title: 'Cài đặt', back: '/' })}
+    ${appBar({ title: say.settings.title, back: '/' })}
     <div class="page">
       ${errorBox(error)}
       ${user === null ? nothing : html`
         <div class="profile" data-profile>${avatar(user.displayName, false, true, user.avatar)}
           <div class="t"><b>${user.displayName}</b><small>@${user.gomId}</small></div></div>
-        <h2 class="section">Hồ sơ</h2>
+        <h2 class="section">${say.settings.profile}</h2>
         ${user.uploads ? pictureCard(user) : nothing}
         <form class="card" data-nickname @submit=${saveNickname}>
-          <label for="display-name">Tên mọi người nhìn thấy</label>
+          <label for="display-name">${say.settings.displayName}</label>
           <div class="input"><input id="display-name" name="displayName" type="text" autocomplete="nickname" maxlength=${limits().nameChars} enterkeyhint="done"
             .value=${nickname} @input=${(e: Event) => { nickname = (e.target as HTMLInputElement).value; }}></div>
-          <p class="hint">Để trống để dùng Gom ID (@${user.gomId}).</p>
-          <button class="btn" type="submit" ?disabled=${busy}>Lưu tên</button>
+          <p class="hint">${say.settings.displayNameHint(user.gomId)}</p>
+          <button class="btn" type="submit" ?disabled=${busy}>${say.settings.saveName}</button>
           <p class="hint" role="status" data-nickname-status>${nicknameStatus}</p>
         </form>
         ${installer?.available() ? html`
-          <h2 class="section">Ứng dụng</h2>
+          <h2 class="section">${say.settings.app}</h2>
           <div class="card" data-install>
-            <p class="hint">Thêm Gom vào màn hình chính để mở như một ứng dụng, không cần mở trình duyệt.</p>
-            <button class="btn" type="button" data-install-button @click=${installApp}>Cài đặt Gom</button>
+            <p class="hint">${say.settings.installNote}</p>
+            <button class="btn" type="button" data-install-button @click=${installApp}>${say.settings.install}</button>
           </div>` : installStatus === '' ? nothing : html`<p class="hint" role="status" data-install-status>${installStatus}</p>`}
         ${push === null ? nothing : pushCard(push)}
-        <h2 class="section">Giao diện</h2>
+        <h2 class="section">${say.settings.appearance}</h2>
         <fieldset class="choices" data-scheme>
-          <legend class="sr-only">Màu giao diện</legend>
+          <legend class="sr-only">${say.settings.scheme}</legend>
           ${SCHEMES.map(([value, label]) => html`
             <div class="choice"><input type="radio" name="scheme" id=${`scheme-${value}`} value=${value} .checked=${live(scheme === value)}
               @change=${() => { scheme = value; chooseScheme(value); update(); }}>
               <label for=${`scheme-${value}`}>${label}</label></div>`)}
         </fieldset>
-        <h2 class="section">Quyền riêng tư</h2>
+        <h2 class="section">${say.settings.privacy}</h2>
         <div class="card">
           <div class="pick"><input type="checkbox" id="receipts" name="receipts" .checked=${live(receipts)} @change=${(e: Event) => void saveReceipts((e.target as HTMLInputElement).checked)}>
-            <label for="receipts">Cho người khác biết khi tôi đã xem tin nhắn</label></div>
-          <p class="hint">Nếu tắt, bạn cũng không thấy người khác đã xem tin nhắn của bạn.</p>
+            <label for="receipts">${say.settings.receipts}</label></div>
+          <p class="hint">${say.settings.receiptsNote}</p>
           <p class="hint" role="status" data-receipts-status>${receiptsStatus}</p>
         </div>
-        <h2 class="section">Bảo mật</h2>
+        <h2 class="section">${say.settings.security}</h2>
         <form class="card" data-password @submit=${savePassword}>
           <input class="sr-only" name="username" type="text" autocomplete="username" readonly tabindex="-1" aria-hidden="true" .value=${user.gomId}>
-          ${passwordField({ label: 'Mật khẩu hiện tại', name: 'current', autocomplete: 'current-password', value: current, shown,
+          ${passwordField({ label: say.settings.currentPassword, name: 'current', autocomplete: 'current-password', value: current, shown,
             onInput: (v) => { current = v; }, onToggle: toggleShown })}
-          ${passwordField({ label: 'Mật khẩu mới', name: 'password', autocomplete: 'new-password', value: next, shown,
-            hint: `${passwordHint()} Các thiết bị khác sẽ bị đăng xuất.`, onInput: (v) => { next = v; }, onToggle: toggleShown })}
-          <button class="btn" type="submit" ?disabled=${busy}>Đổi mật khẩu</button>
+          ${passwordField({ label: say.settings.newPassword, name: 'password', autocomplete: 'new-password', value: next, shown,
+            hint: `${passwordHint()} ${say.settings.othersSignedOut}`, onInput: (v) => { next = v; }, onToggle: toggleShown })}
+          <button class="btn" type="submit" ?disabled=${busy}>${say.settings.changePassword}</button>
           <p class="hint" role="status" data-password-status>${passwordStatus}</p>
         </form>
-        <h2 class="section">Thiết bị đang đăng nhập</h2>
+        <h2 class="section">${say.settings.devices}</h2>
         <ul class="list">${sessions.map(row)}</ul>
-        <button class="btn secondary" type="button" data-signout @click=${signOut}>Đăng xuất</button>
-        ${user.isOwner ? html`<a class="btn secondary" href="/owner">Lời mời và thành viên</a><a class="btn secondary" href="/owner/storage" data-storage-link>Dung lượng</a>` : deleteCard(user)}`}
+        <button class="btn secondary" type="button" data-signout @click=${signOut}>${say.common.signOut}</button>
+        ${user.isOwner ? html`<a class="btn secondary" href="/owner">${say.common.ownerPage}</a><a class="btn secondary" href="/owner/storage" data-storage-link>${say.settings.storage}</a>` : deleteCard(user)}`}
     </div>`;
   const update = () => render(view(), root);
 
@@ -173,7 +173,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   async function saveReceipts(enabled: boolean): Promise<void> {
     receipts = enabled; receiptsStatus = ''; error = null;
     const result = await api.setReceipts(enabled);
-    if (result.ok) receiptsStatus = 'Đã lưu.'; else { receipts = !enabled; error = result; }
+    if (result.ok) receiptsStatus = say.settings.saved; else { receipts = !enabled; error = result; }
     update();
   }
 
@@ -181,7 +181,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
 
   async function installApp(): Promise<void> {
     const result = await installer?.install();
-    installStatus = result === 'accepted' ? 'Đã cài đặt. Mở Gom từ màn hình chính.' : '';
+    installStatus = result === 'accepted' ? say.settings.installed : '';
     update();
   }
 
@@ -189,16 +189,16 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     pictureStatus = '';
     const reader = new FileReader();
     reader.onload = () => { if (typeof reader.result === 'string') { picked = { file, preview: reader.result }; update(); } };
-    reader.onerror = () => { pictureStatus = 'Không đọc được ảnh này.'; update(); };
+    reader.onerror = () => { pictureStatus = say.errors.invalidImage; update(); };
     reader.readAsDataURL(file);
   }
 
   async function savePicture(): Promise<void> {
     if (picked === null || busy || user === null) return;
-    busy = true; pictureStatus = 'Đang lưu…'; update();
+    busy = true; pictureStatus = say.settings.saving; update();
     const result = await api.setAvatar(picked.file);
     busy = false;
-    if (result.ok) { user = { ...user, avatar: result.data.avatar }; picked = null; pictureStatus = 'Đã lưu ảnh.'; }
+    if (result.ok) { user = { ...user, avatar: result.data.avatar }; picked = null; pictureStatus = say.settings.pictureSaved; }
     else if (result.error === 'unauthorized') { go('/sign-in'); return; }
     else pictureStatus = errorText(result);
     update();
@@ -209,7 +209,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     busy = true; update();
     const result = await api.removeAvatar();
     busy = false;
-    if (result.ok) { user = { ...user, avatar: null }; pictureStatus = 'Đã xóa ảnh.'; }
+    if (result.ok) { user = { ...user, avatar: null }; pictureStatus = say.settings.pictureRemoved; }
     else if (result.error === 'unauthorized') { go('/sign-in'); return; }
     else pictureStatus = errorText(result);
     update();
@@ -221,19 +221,19 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     pushBusy = true; pushStatus = ''; update();
     if (on) {
       const sub = await pusher.subscribe(push.key);
-      if (sub === 'denied') pushStatus = 'Bạn chưa cho phép Gom gửi thông báo.';
-      else if (sub === 'failed') pushStatus = 'Không bật được thông báo trên trình duyệt này.';
+      if (sub === 'denied') pushStatus = say.settings.pushDenied;
+      else if (sub === 'failed') pushStatus = say.settings.pushFailed;
       else if (sub === 'no-service') pushStatus = NO_PUSH_SERVICE;
       else {
         const result = await api.setPush(sub, push.level);
-        if (result.ok) { push = { ...push, subscribed: true }; pushStatus = 'Đã bật thông báo.'; }
+        if (result.ok) { push = { ...push, subscribed: true }; pushStatus = say.settings.pushTurnedOn; }
         else if (result.error === 'unauthorized') { go('/sign-in'); return; }
         else pushStatus = errorText(result);
       }
     } else {
       await pusher.unsubscribe();
       const result = await api.removePush();
-      if (result.ok) { push = { ...push, subscribed: false }; pushStatus = 'Đã tắt thông báo.'; }
+      if (result.ok) { push = { ...push, subscribed: false }; pushStatus = say.settings.pushTurnedOff; }
       else if (result.error === 'unauthorized') { go('/sign-in'); return; }
       else pushStatus = errorText(result);
     }
@@ -247,8 +247,8 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     const sub = await pusher.current();
     const result = sub === null ? null : await api.setPush(sub, level);
     pushBusy = false;
-    if (result?.ok) { push = { ...push, level }; pushStatus = 'Đã lưu.'; }
-    else if (result === null) { push = { ...push, subscribed: false }; pushStatus = 'Thiết bị này không còn nhận thông báo. Hãy bật lại.'; }
+    if (result?.ok) { push = { ...push, level }; pushStatus = say.settings.saved; }
+    else if (result === null) { push = { ...push, subscribed: false }; pushStatus = say.settings.pushGone; }
     else if (result.error === 'unauthorized') { go('/sign-in'); return; }
     else pushStatus = errorText(result);
     update();
@@ -260,7 +260,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     busy = true; error = null; nicknameStatus = ''; update();
     const result = await api.setNickname(nickname);
     busy = false;
-    if (result.ok) { user = { ...user, ...result.data }; nickname = result.data.displayName; nicknameStatus = 'Đã lưu.'; } else error = result;
+    if (result.ok) { user = { ...user, ...result.data }; nickname = result.data.displayName; nicknameStatus = say.settings.saved; } else error = result;
     update();
   }
 
@@ -271,7 +271,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     const result = await api.changePassword(current, next);
     busy = false;
     if (!result.ok) { error = result; update(); return; }
-    current = ''; next = ''; passwordStatus = 'Đã đổi mật khẩu. Các thiết bị khác đã bị đăng xuất.';
+    current = ''; next = ''; passwordStatus = say.settings.passwordChanged;
     await load();
   }
 

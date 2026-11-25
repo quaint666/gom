@@ -3,6 +3,7 @@ import type { Failure } from './api.js';
 import * as icons from './icons.js';
 import { avatarTone, initials } from './chat/model.js';
 import { errorText } from './text.js';
+import { say } from './say.js';
 
 export const brand = (): TemplateResult => html`<div class="logo">${icons.logo()}<span>Gom</span></div>`;
 
@@ -29,7 +30,7 @@ export const passwordField = (o: PasswordFieldOptions): TemplateResult => html`
     <div class="input">
       <input id=${o.name ?? 'password'} name=${o.name ?? 'password'} type=${o.shown ? 'text' : 'password'} autocomplete=${o.autocomplete} required
         enterkeyhint="done" .value=${o.value} @input=${(e: Event) => o.onInput((e.target as HTMLInputElement).value)}>
-      <button type="button" class="ib" aria-pressed=${o.shown ? 'true' : 'false'} aria-label="Hiện mật khẩu" @click=${o.onToggle}>${icons.eye()}</button>
+      <button type="button" class="ib" aria-pressed=${o.shown ? 'true' : 'false'} aria-label=${say.account.showPassword} @click=${o.onToggle}>${icons.eye()}</button>
     </div>
     ${o.hint ? html`<p class="hint">${o.hint}</p>` : nothing}
   </div>`;
@@ -53,14 +54,14 @@ export const deadLink = (title: string, body: string): TemplateResult => html`
     ${brand()}
     <div class="big-icon">${icons.clock()}</div>
     <div><h1>${title}</h1><p class="lead">${body}</p></div>
-    <a class="btn secondary" href="/sign-in">Đăng nhập</a>
+    <a class="btn secondary" href="/sign-in">${say.account.signIn}</a>
   </div>`;
 
 export interface BarOptions { title: string; back?: string; actions?: TemplateResult | typeof nothing }
 
 export const appBar = (o: BarOptions): TemplateResult => html`
   <header class="bar">
-    ${o.back ? html`<a class="ib" href=${o.back} aria-label="Quay lại">${icons.back()}</a>` : nothing}
+    ${o.back ? html`<a class="ib" href=${o.back} aria-label=${say.common.back}>${icons.back()}</a>` : nothing}
     <h1>${o.title}</h1>
     ${o.actions ?? nothing}
   </header>`;

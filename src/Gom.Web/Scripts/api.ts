@@ -1,4 +1,5 @@
 import type { DeviceSubscription } from './push.js';
+import { say } from './say.js';
 /** The error codes the server sends, each once. A code missing here would reach the page as 'unknown' and lose its own words. */
 const SERVER_CODE_LIST = [
   'invalid_credentials', 'too_many_attempts', 'invalid_link', 'id_taken', 'invalid_gom_id', 'password_too_short',
@@ -250,7 +251,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
   function upload(conversation: string, file: Blob & { name?: string }, onProgress: (fraction: number) => void): Promise<Result<Attachment>> {
     return new Promise((resolve) => {
       const xhr = makeXhr();
-      xhr.open('POST', `/api/conversations/${encodeURIComponent(conversation)}/attachments?name=${encodeURIComponent(file.name ?? 'tệp')}`);
+      xhr.open('POST', `/api/conversations/${encodeURIComponent(conversation)}/attachments?name=${encodeURIComponent(file.name ?? say.chat.fileFallbackName)}`);
       xhr.withCredentials = true;
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
       // Given up when nothing has moved for a while; every bit of progress starts the wait again.

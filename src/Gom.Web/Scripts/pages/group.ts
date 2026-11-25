@@ -3,6 +3,7 @@ import { live as liveValue } from 'lit-html/directives/live.js';
 import type { Api, BanRow, Failure, GroupMember, JoinRequestRow, Person } from '../api.js';
 import { appBar, avatar, errorBox } from '../ui.js';
 import { limits } from '../limits.js';
+import { say } from '../say.js';
 
 /** Who is in a group and who leads it, asking another member to be friends, adding friends, leaving, and what a leader or deputy may do. */
 export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => void, conversation: string): void {
@@ -25,8 +26,8 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
 
   const action = (m: GroupMember) => {
     if (m.isMe || m.isFriend) return nothing;
-    if (m.request === 'sent') return html`<span class="tag">Đã gửi lời mời</span>`;
-    return html`<button class="btn secondary small" type="button" data-befriend @click=${() => run(() => api.askMember(conversation, m.id))}>${m.request === 'received' ? 'Chấp nhận kết bạn' : 'Kết bạn'}</button>`;
+    if (m.request === 'sent') return html`<span class="tag">${say.group.requestSent}</span>`;
+    return html`<button class="btn secondary small" type="button" data-befriend @click=${() => run(() => api.askMember(conversation, m.id))}>${m.request === 'received' ? say.common.acceptFriend : say.common.befriend}</button>`;
   };
 
   const mine = (): GroupMember | undefined => members?.find((m) => m.isMe);
@@ -39,37 +40,37 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     return !!me && !m.isMe && (me.role === 'leader' || (me.role === 'deputy' && m.role === 'member'));
   };
 
-  const roleTag = (m: GroupMember) => m.role === 'leader' ? html`<span class="tag" data-role="leader">Trưởng nhóm</span>`
-    : m.role === 'deputy' ? html`<span class="tag" data-role="deputy">Phó nhóm</span>` : nothing;
+  const roleTag = (m: GroupMember) => m.role === 'leader' ? html`<span class="tag" data-role="leader">${say.group.leaderTag}</span>`
+    : m.role === 'deputy' ? html`<span class="tag" data-role="deputy">${say.common.deputy}</span>` : nothing;
 
   const menu = (m: GroupMember) => html`
-    <div class="card" role="group" aria-label=${`Quản lý ${m.displayName}`} data-menu=${m.id}>
-      ${leads() && m.role === 'member' ? html`<button class="btn secondary" type="button" data-make-deputy @click=${() => run(() => api.setRole(conversation, m.id, 'deputy'))}>Đặt làm phó nhóm</button>` : nothing}
-      ${leads() && m.role === 'deputy' ? html`<button class="btn secondary" type="button" data-drop-deputy @click=${() => run(() => api.setRole(conversation, m.id, 'member'))}>Bỏ phó nhóm</button>` : nothing}
-      ${leads() ? html`<button class="btn secondary" type="button" data-hand-over @click=${() => { sure = { kind: 'handover', member: m }; update(); }}>Chuyển quyền trưởng nhóm</button>` : nothing}
-      <button class="btn secondary" type="button" data-remove @click=${() => { sure = { kind: 'remove', member: m }; banThem = false; update(); }}>Xóa khỏi nhóm</button>
+    <div class="card" role="group" aria-label=${say.group.manage(m.displayName)} data-menu=${m.id}>
+      ${leads() && m.role === 'member' ? html`<button class="btn secondary" type="button" data-make-deputy @click=${() => run(() => api.setRole(conversation, m.id, 'deputy'))}>${say.group.makeDeputy}</button>` : nothing}
+      ${leads() && m.role === 'deputy' ? html`<button class="btn secondary" type="button" data-drop-deputy @click=${() => run(() => api.setRole(conversation, m.id, 'member'))}>${say.group.dropDeputy}</button>` : nothing}
+      ${leads() ? html`<button class="btn secondary" type="button" data-hand-over @click=${() => { sure = { kind: 'handover', member: m }; update(); }}>${say.group.handOver}</button>` : nothing}
+      <button class="btn secondary" type="button" data-remove @click=${() => { sure = { kind: 'remove', member: m }; banThem = false; update(); }}>${say.group.remove}</button>
     </div>`;
 
   const memberRow = (m: GroupMember) => html`
     <li class="li" data-member=${m.id}>
       ${avatar(m.displayName, true, false, m.avatar)}
-      <div class="t"><b>${m.displayName}${m.isMe ? html`<span class="tag">Bạn</span>` : nothing}${roleTag(m)}</b>${m.gomId ? html`<small>@${m.gomId}</small>` : nothing}</div>
+      <div class="t"><b>${m.displayName}${m.isMe ? html`<span class="tag">${say.common.you}</span>` : nothing}${roleTag(m)}</b>${m.gomId ? html`<small>@${m.gomId}</small>` : nothing}</div>
       ${action(m)}
-      ${manages(m) ? html`<button class="btn secondary small" type="button" data-manage aria-label=${`Quản lý ${m.displayName}`} aria-expanded=${menuFor === m.id ? 'true' : 'false'}
+      ${manages(m) ? html`<button class="btn secondary small" type="button" data-manage aria-label=${say.group.manage(m.displayName)} aria-expanded=${menuFor === m.id ? 'true' : 'false'}
         @click=${() => { menuFor = menuFor === m.id ? null : m.id; update(); }}>⋮</button>` : nothing}
     </li>
     ${menuFor === m.id && manages(m) ? menu(m) : nothing}`;
 
   const question = (s: NonNullable<typeof sure>) => {
     const who = s.member?.displayName ?? '';
-    const text = s.kind === 'remove' ? { q: `Xóa ${who} khỏi nhóm?`, hint: `${who} sẽ không còn thấy nhóm này. Một thành viên có thể thêm lại, nhưng chỉ thấy tin sau khi được thêm.`, yes: 'Xóa khỏi nhóm' }
-      : s.kind === 'handover' ? { q: `Chuyển quyền trưởng nhóm cho ${who}?`, hint: 'Bạn sẽ trở thành thành viên thường và không thể lấy lại quyền nếu người kia không chuyển lại.', yes: 'Chuyển quyền' }
-      : { q: 'Giải tán nhóm này?', hint: 'Nhóm và toàn bộ tin nhắn sẽ bị xóa với mọi người. Không thể khôi phục.', yes: 'Giải tán nhóm' };
+    const text = s.kind === 'remove' ? { q: say.group.removeQ(who), hint: say.group.removeNote(who), yes: say.group.remove }
+      : s.kind === 'handover' ? { q: say.group.handOverQ(who), hint: say.group.handOverNote, yes: say.group.handOverYes }
+      : { q: say.group.disbandQ, hint: say.group.disbandNote, yes: say.group.disband };
     return html`<div class="card" role="group" aria-labelledby="sure-q">
       <p id="sure-q"><b>${text.q}</b></p><p class="hint">${text.hint}</p>
-      ${s.kind === 'remove' ? html`<label class="check"><input type="checkbox" data-ban .checked=${liveValue(banThem)} @change=${(e: Event) => { banThem = (e.target as HTMLInputElement).checked; }}> Không cho vào lại nhóm</label>` : nothing}
+      ${s.kind === 'remove' ? html`<label class="check"><input type="checkbox" data-ban .checked=${liveValue(banThem)} @change=${(e: Event) => { banThem = (e.target as HTMLInputElement).checked; }}> ${say.group.ban}</label>` : nothing}
       <button class="btn" type="button" data-confirm-sure @click=${proceed}>${text.yes}</button>
-      <button class="btn secondary" type="button" data-cancel-sure @click=${() => { sure = null; update(); }}>Hủy</button>
+      <button class="btn secondary" type="button" data-cancel-sure @click=${() => { sure = null; update(); }}>${say.common.cancel}</button>
     </div>`;
   };
 
@@ -96,27 +97,27 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     ? html`<h2 class="section" data-group-name>${title}</h2>`
     : html`
       <form class="card" data-rename @submit=${onRename}>
-        <label for="group-name">Tên nhóm</label>
+        <label for="group-name">${say.group.name}</label>
         <input id="group-name" name="title" type="text" maxlength=${limits().nameChars} autocomplete="off" .value=${liveValue(draftTitle)}
           @input=${(e: Event) => { draftTitle = (e.target as HTMLInputElement).value; update(); }}>
-        <button class="btn" type="submit" ?disabled=${renaming || draftTitle.trim() === '' || draftTitle.trim() === title}>Lưu tên</button>
+        <button class="btn" type="submit" ?disabled=${renaming || draftTitle.trim() === '' || draftTitle.trim() === title}>${say.settings.saveName}</button>
       </form>`;
 
   const view = () => html`
-    ${appBar({ title: 'Thành viên nhóm', back: `/c/${conversation}` })}
+    ${appBar({ title: say.group.title, back: `/c/${conversation}` })}
     <div class="page">
       ${errorBox(error)}
       ${members === null ? nothing : html`
         ${nameSection()}
-        <h2 class="section">${members.length} thành viên</h2>
+        <h2 class="section">${say.common.members(members.length)}</h2>
         <ul class="list">${members.map(memberRow)}</ul>
 
         ${addable().length === 0 ? nothing : html`
-          <h2 class="section" id="add">Thêm thành viên</h2>
+          <h2 class="section" id="add">${say.group.addMembers}</h2>
           <ul class="list">${addable().map((f) => html`
             <li class="li" data-addable=${f.gomId}>
               <div class="t"><b>${f.displayName}</b><small>@${f.gomId}</small></div>
-              <button class="btn secondary small" type="button" @click=${() => void add(f.gomId)}>Thêm</button>
+              <button class="btn secondary small" type="button" @click=${() => void add(f.gomId)}>${say.group.add}</button>
             </li>`)}</ul>`}
 
         ${addStatus === '' ? nothing : html`<p class="hint" role="status" data-add-status>${addStatus}</p>`}
@@ -124,37 +125,37 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
         ${leads() ? html`
           <label class="check card" data-approval-switch><input type="checkbox" data-join-approval .checked=${liveValue(joinApproval)}
             @change=${(e: Event) => { void run(() => api.setJoinApproval(conversation, (e.target as HTMLInputElement).checked)); }}>
-            Thành viên thêm người cần được trưởng nhóm hoặc phó nhóm duyệt</label>` : nothing}
+            ${say.group.approvalSwitch}</label>` : nothing}
 
         ${mayManage() && requests.length > 0 ? html`
-          <h2 class="section">Chờ duyệt</h2>
+          <h2 class="section">${say.group.waiting}</h2>
           <ul class="list" data-requests>${requests.map((r) => html`
             <li class="li" data-request=${r.id}>
-              <div class="t"><b>${r.displayName}</b><small>${r.by.displayName} muốn thêm</small></div>
-              <button class="btn small" type="button" data-approve @click=${() => run(() => api.approveRequest(conversation, r.id))}>Duyệt</button>
-              <button class="btn secondary small" type="button" data-decline @click=${() => run(() => api.declineRequest(conversation, r.id))}>Từ chối</button>
+              <div class="t"><b>${r.displayName}</b><small>${say.group.wantsToAdd(r.by.displayName)}</small></div>
+              <button class="btn small" type="button" data-approve @click=${() => run(() => api.approveRequest(conversation, r.id))}>${say.group.approve}</button>
+              <button class="btn secondary small" type="button" data-decline @click=${() => run(() => api.declineRequest(conversation, r.id))}>${say.group.decline}</button>
             </li>`)}</ul>` : nothing}
 
         ${mayManage() && bans.length > 0 ? html`
-          <h2 class="section">Không được vào lại</h2>
+          <h2 class="section">${say.group.banned}</h2>
           <ul class="list" data-bans>${bans.map((b) => html`
             <li class="li" data-ban-row=${b.id}>
               <div class="t"><b>${b.displayName}</b></div>
-              ${leads() ? html`<button class="btn secondary small" type="button" data-unban @click=${() => run(() => api.unban(conversation, b.id))}>Bỏ chặn</button>` : nothing}
+              ${leads() ? html`<button class="btn secondary small" type="button" data-unban @click=${() => run(() => api.unban(conversation, b.id))}>${say.group.unban}</button>` : nothing}
             </li>`)}</ul>` : nothing}
 
         ${sure ? question(sure) : nothing}
 
         ${leads() && members.length > 1 ? html`
-          <button class="btn secondary" type="button" disabled data-leave>Rời nhóm</button>
-          <p class="hint" data-leader-note>Chuyển quyền trưởng nhóm cho người khác trước khi rời nhóm.</p>` : confirming ? html`
+          <button class="btn secondary" type="button" disabled data-leave>${say.common.leaveGroup}</button>
+          <p class="hint" data-leader-note>${say.chat.leaderMustHandOver}</p>` : confirming ? html`
           <div class="card" role="group" aria-labelledby="leave-q">
-            <p id="leave-q"><b>Rời nhóm này?</b></p>
-            <p class="hint">Bạn sẽ không còn thấy tin nhắn của nhóm. Một thành viên có thể thêm bạn lại, nhưng bạn chỉ thấy tin sau khi được thêm.</p>
-            <button class="btn" type="button" data-confirm-leave @click=${leave}>Rời nhóm</button>
-            <button class="btn secondary" type="button" data-cancel-leave @click=${() => { confirming = false; update(); }}>Ở lại</button>
-          </div>` : html`<button class="btn secondary" type="button" data-leave @click=${() => { confirming = true; update(); }}>Rời nhóm</button>`}
-        ${leads() ? html`<button class="btn secondary" type="button" data-disband @click=${() => { sure = { kind: 'disband' }; update(); }}>Giải tán nhóm</button>` : nothing}`}
+            <p id="leave-q"><b>${say.chat.leaveQ}</b></p>
+            <p class="hint">${say.group.leaveNote}</p>
+            <button class="btn" type="button" data-confirm-leave @click=${leave}>${say.common.leaveGroup}</button>
+            <button class="btn secondary" type="button" data-cancel-leave @click=${() => { confirming = false; update(); }}>${say.chat.stay}</button>
+          </div>` : html`<button class="btn secondary" type="button" data-leave @click=${() => { confirming = true; update(); }}>${say.common.leaveGroup}</button>`}
+        ${leads() ? html`<button class="btn secondary" type="button" data-disband @click=${() => { sure = { kind: 'disband' }; update(); }}>${say.group.disband}</button>` : nothing}`}
     </div>`;
   const update = () => render(view(), root);
 
@@ -179,7 +180,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
   async function add(gomId: string): Promise<void> {
     const result = await api.addMember(conversation, gomId);
     if (!result.ok) { error = result; update(); return; }
-    addStatus = result.data?.status === 'pending' ? 'Đã gửi yêu cầu, chờ trưởng nhóm hoặc phó nhóm duyệt.' : '';
+    addStatus = result.data?.status === 'pending' ? say.group.askedApproval : '';
     await reload();
   }
 
