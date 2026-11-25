@@ -173,6 +173,16 @@ namespace Gom.Web.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("last_seq");
 
+                    b.Property<string>("Palette")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("palette");
+
+                    b.Property<string>("Pattern")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("pattern");
+
                     b.Property<string>("Title")
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)")
@@ -483,7 +493,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 

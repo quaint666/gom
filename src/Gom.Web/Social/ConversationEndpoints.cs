@@ -1,4 +1,6 @@
 using Gom.Web.Auth;
+using Gom.Web.Chat;
+using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -11,6 +13,8 @@ public static class ConversationEndpoints
     public sealed record OpenRequest(string? GomId);
     public sealed record MuteRequest(bool? Muted, DateTimeOffset? Until);
     public sealed record SwitchRequest(bool? On);
+    /// <summary>A conversation's own colour and background; null for either: each person's own.</summary>
+    public sealed record LookRequest(string? Palette, string? Pattern);
 
     /// <summary>The list carries only the start of the last message; history has the whole of it.</summary>
     public const int PreviewChars = 200;
@@ -24,6 +28,7 @@ public static class ConversationEndpoints
         api.MapGet("", List);
         api.MapPost("/direct", OpenDirect);
         api.MapPut("/{id:guid}/mute", SetMute);
+        api.MapPut("/{id:guid}/look", SetLook);
         api.MapPut("/{id:guid}/pinned", SetPinned);
         api.MapPut("/{id:guid}/unread", SetUnread);
         api.MapPut("/{id:guid}/hidden", SetHidden);
@@ -157,6 +162,35 @@ public static class ConversationEndpoints
 
     private static IResult InvalidMute() => Results.Json(new { error = "invalid_mute" }, statusCode: StatusCodes.Status400BadRequest);
 
+    /// <summary>
+    /// Anyone in a conversation sets its colour and background for everyone in it, or gives each person their own back (null). A line
+    /// in the conversation says who changed it, as a rename does; setting what it already is changes nothing and says nothing. A
+    /// one-to-one chat needs the two to still be friends, as a message does.
+    /// </summary>
+    private static async Task<IResult> SetLook(Guid id, LookRequest request, HttpContext http, GomDbContext db, LiveDelivery live, TimeProvider clock, CancellationToken ct)
+    {
+        if (request.Palette is { } p && !Appearance.Palettes.Contains(p)) return Results.BadRequest(new { error = "invalid_palette" });
+        if (request.Pattern is { } q && !Appearance.Patterns.Contains(q)) return Results.BadRequest(new { error = "invalid_pattern" });
+        var me = GomClaims.User(http.User);
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, id, me, ct))
+            return Results.Json(new { error = "not_friends" }, statusCode: StatusCodes.Status403Forbidden);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await GroupEndpoints.LockGroup(db, id, ct);   // the same lock a send takes, so the notice gets its number in order
+        if (!await db.Members.AnyAsync(m => m.ConversationId == id && m.UserId == me, ct)) return Results.NotFound();
+        var before = await db.Conversations.Where(c => c.Id == id).Select(c => new { c.Palette, c.Pattern }).SingleAsync(ct);
+        if (before.Palette == request.Palette && before.Pattern == request.Pattern) return Results.NoContent();
+        await db.Conversations.Where(c => c.Id == id).ExecuteUpdateAsync(s => s.SetProperty(c => c.Palette, request.Palette).SetProperty(c => c.Pattern, request.Pattern), ct);
+        var notice = await Notices.Write(db, id, me, NoticeKind.Restyled, null, "", clock.GetUtcNow(), ct);
+        var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
+        await tx.CommitAsync(ct);
+        live.ConversationsChanged(everyone);
+        await Notices.Publish(db, live, notice, ct);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> List(HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
@@ -168,7 +202,7 @@ public static class ConversationEndpoints
             orderby (c.LastMessageAt ?? c.CreatedAt) descending
             select new
             {
-                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, m.LastReadSeq, m.Muted, m.MutedUntil, m.PinnedAt, m.MarkedUnread, m.HiddenSeq,
+                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, c.Palette, c.Pattern, m.LastReadSeq, m.Muted, m.MutedUntil, m.PinnedAt, m.MarkedUnread, m.HiddenSeq,
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new
@@ -201,6 +235,9 @@ public static class ConversationEndpoints
             muted = r.Muted || r.MutedUntil > now,
             mutedUntil = r.MutedUntil > now ? r.MutedUntil : null,
             joinApproval = r.Kind == ConversationKind.Group && r.JoinApproval,
+            // Its own colour and background, the same for everyone in it; null: each person's own.
+            palette = r.Palette,
+            pattern = r.Pattern,
             pinned = r.PinnedAt is not null,
             markedUnread = r.MarkedUnread,
             // Hidden until something is said after it was hidden (a notice does not bring it back).

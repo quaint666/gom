@@ -47,6 +47,12 @@ public class Conversation
     public DateTimeOffset? LastMessageAt { get; set; }
     /// <summary>On: someone adding a person to a group needs the leader or a deputy to approve it (the leader and deputies add directly).</summary>
     public bool JoinApproval { get; set; }
+    /// <summary>
+    /// The conversation's own colour and background, the same for everyone in it (codes from <see cref="Chat.Appearance"/>); null: each
+    /// person sees their own.
+    /// </summary>
+    public string? Palette { get; set; }
+    public string? Pattern { get; set; }
 }
 
 /// <summary>What a member may do in a group. A one-to-one chat has only plain members.</summary>
@@ -83,7 +89,7 @@ public class ConversationMember
 /// <see cref="FilesTrimmed"/> and <see cref="MessagesTrimmed"/>: the owner trimmed pictures and files, or messages, sent before a date
 /// (the date is the notice's body).
 /// </summary>
-public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6 }
+public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7 }
 
 public class Message
 {

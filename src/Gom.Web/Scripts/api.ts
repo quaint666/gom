@@ -76,7 +76,7 @@ export interface MediaItem { attachment: Attachment; messageId: string; seq: num
  * A line in a thread that says what happened (who was added or taken out, who left, a new name; or, in any conversation, that the
  * owner trimmed pictures and files, or messages, sent before `before`): not something anyone wrote.
  */
-export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed'; target?: Sender | null; title?: string | null; before?: string | null }
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled'; target?: Sender | null; title?: string | null; before?: string | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
   /** Set when the message is one sticker (its code): then it has no words and no files. */
   sticker?: string | null }
@@ -91,6 +91,8 @@ export interface Conversation {
   /** `peer.gomId` is there only while you are friends (the chat stays after an unfriend or a block; their ID does not). */
   id: string; kind: 'direct' | 'group'; title: string | null; peer: (Omit<Person, 'gomId'> & { gomId: string | null; id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
+  /** Its own colour and background, the same for everyone in it; null (or absent): each person's own. */
+  palette?: string | null; pattern?: string | null;
   /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
   muted?: boolean; mutedUntil?: string | null;
   /** Your own handling of it in your list: pinned to the top, and marked unread to come back to (your read position does not move). */
@@ -215,6 +217,8 @@ export interface Api {
   leaveGroup(conversation: string): Promise<Result<void>>;
   /** Without `until`, muting lasts until it is turned back on. */
   setMute(conversation: string, muted: boolean, until?: string): Promise<Result<void>>;
+  /** A conversation's own colour and background for everyone in it; null for either: each person's own. */
+  setLook(conversation: string, palette: string | null, pattern: string | null): Promise<Result<void>>;
   /** The "..." menu of a conversation in the list: each is yours alone. */
   setPinned(conversation: string, on: boolean): Promise<Result<void>>;
   setMarkedUnread(conversation: string, on: boolean): Promise<Result<void>>;
@@ -368,6 +372,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
     person: (userId) => call('GET', `/api/people/${enc(userId)}`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
+    setLook: (conversation, palette, pattern) => call('PUT', `/api/conversations/${enc(conversation)}/look`, { palette, pattern }),
     setMute: (conversation, muted, until) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, until === undefined ? { muted } : { muted, until }),
     setPinned: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/pinned`, { on }),
     setMarkedUnread: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/unread`, { on }),

@@ -135,6 +135,7 @@ export function noticeText(m: ChatMessage, me: string): string {
     case 'removed': return say.notices.removed(who, target);
     case 'left': return say.notices.left(who);
     case 'renamed': return say.notices.renamed(who, notice.title ?? '');
+    case 'restyled': return say.notices.restyled(who);
     // The owner did it, but it is not about anyone: no name.
     case 'filesTrimmed': return say.notices.filesTrimmed(notice.before ? dayFormat.format(new Date(notice.before)) : '');
     case 'messagesTrimmed': return say.notices.messagesTrimmed(notice.before ? dayFormat.format(new Date(notice.before)) : '');

@@ -41,6 +41,8 @@ Each person may choose one of twelve colours in Settings (since 2026-11-26): sag
 
 Behind the messages, a person may choose a background (Settings): Trơn (none, the default), Chấm bi, Gạch bông (the cement tiles of old houses), Sóng, Lá tre, Mây, Ô ly (squared school paper), Đan tre (a bamboo basket) and Hoa sen. Each is a small SVG in `wwwroot/patterns`, drawn through a mask in the colour's own quiet tone (`--pat`), on a layer that does not scroll and takes no press; grey text that crosses it (a day, a notice) still reads at 4.5 to 1 or better. In forced colours it is gone.
 
+Anyone in a conversation may give it its own colour and background, the same for everyone in it, from its info panel ("Màu và hình nền"; a line in the conversation says who changed it). The pane is drawn in that colour (the same palette block, on the pane), and the list marks such a conversation with a small dot in its colour; "Mỗi người" gives each person their own back.
+
 No pure black anywhere, except where a person turns on "Nền đen tuyệt đối" (Settings, per device, since 2026-11-26): when the look is dark, the background goes to `#000000`, cards, bubbles and bars to `#121212`, lines to `#262626`, text to `#EDEDED` and grey text to `#A3A3A3`; the colour's own accents keep their dark values. Light mode is untouched. The image viewer is `#0E100F` in both themes, on purpose. A dim layer behind dialogs and menus is `rgba(20,26,22,.45)` in light and `rgba(0,0,0,.6)` in dark.
 
 Avatars and sender names are neutral on purpose (only the first avatar tint is sage): the amber, lilac and rose of the first draft were dropped so the colour stays one hue. In a busy group, names then differ by avatar initials, not by colour.

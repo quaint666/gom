@@ -54,7 +54,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
         var css = Source("wwwroot", "css", "gom.css");
         var blocks = CssBlock().Matches(css).Select(m => m.Groups[1].Value).ToList();
         Assert.Equal(Appearance.Palettes.Skip(1), blocks);   // sage is the default, in its own block
-        Assert.Contains("[data-swatch=\"sage\"]", css);
+        Assert.Contains(":root, [data-palette=\"sage\"] {", css);
 
         foreach (var table in new[] { "vi.ts", "en.ts" })
         {
@@ -123,7 +123,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
     {
         var css = Source("wwwroot", "css", "gom.css");
         var neutrals = Tokens(css[css.IndexOf(":root {", StringComparison.Ordinal)..css.IndexOf("\n}\n", StringComparison.Ordinal)]);
-        var sageAt = css.IndexOf(":root, [data-swatch=\"sage\"] {", StringComparison.Ordinal);
+        var sageAt = css.IndexOf(":root, [data-palette=\"sage\"] {", StringComparison.Ordinal);
         var palettes = new Dictionary<string, Dictionary<string, (string Light, string Dark)>>
         {
             ["sage"] = Tokens(css[sageAt..css.IndexOf('}', sageAt)]),
@@ -199,7 +199,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
     private static partial Regex PatternNames();
     [GeneratedRegex(@"'([a-z]+)'")]
     private static partial Regex Quoted();
-    [GeneratedRegex(@":root\[data-palette=""([a-z]+)""\]")]
+    [GeneratedRegex(@"^\[data-palette=""([a-z]+)""\] \{", RegexOptions.Multiline)]
     private static partial Regex CssBlock();
     [GeneratedRegex(@"palettes: \{([^}]*)\}")]
     private static partial Regex Names();

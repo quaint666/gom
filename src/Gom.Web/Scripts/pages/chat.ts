@@ -12,7 +12,7 @@ import { avatarUrl, errorBox } from '../ui.js';
 import { matches } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
 import { isAppFile } from '../appfiles.js';
-import { storedPattern } from '../theme.js';
+import { PALETTES, PATTERNS, storedPattern } from '../theme.js';
 import { limits } from '../limits.js';
 import { say } from '../say.js';
 import { mountWaiting } from './waiting.js';
@@ -160,6 +160,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let leaving = false;
   /** The conversation whose "for how long" choices are open, when its bell was tapped to mute it. */
   let muting: string | null = null;
+  /** The colour and background being chosen for a conversation (null: each person's own), from its info panel. */
+  let looking: { id: string; tab: 'colour' | 'pattern'; palette: string | null; pattern: string | null; busy: boolean; error: Failure | null } | null = null;
   /** An app file whose card was tapped: asked about before it is saved. */
   let appFile: Attachment | null = null;
   /** What is being passed on, while the person picks where to (at most FORWARD_MAX), with the search over the list and a note to send after it. */
@@ -219,7 +221,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       @pointerdown=${(e: PointerEvent) => rowPressStart(e, c.id)} @pointermove=${rowPressMove} @pointerup=${rowPressEnd} @pointercancel=${rowPressEnd} @pointerleave=${rowPressEnd}>
       ${avatar(c.title ?? '?', c.peer?.avatar)}
       <div class="im">
-        <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label=${say.chat.pinnedMark}>${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
+        <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label=${say.chat.pinnedMark}>${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.palette ? html`<span class="look-dot" data-palette=${c.palette} role="img" aria-label=${say.chat.ownLook}></span>` : nothing}${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv">${preview(c)}</span>
           ${isMuted(c) ? html`<span class="mute-mark" role="img" aria-label=${say.chat.mutedMark}>${icons.bellOff()}</span>` : nothing}
           ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label=${say.chat.unreadCount(c.unread)}>${c.unread > 99 ? '99+' : c.unread}</span>`
@@ -758,6 +760,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <div class="info-actions">
         <button class="btn secondary small" type="button" data-info-search @click=${() => { if (page) closeInfoPage(); searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} ${say.chat.searchMessages}</button>
         <button class="btn secondary small" type="button" data-info-mute @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()} ${isMuted(c) ? say.common.unmute : say.common.mute}</button>
+        <button class="btn secondary small" type="button" data-info-look @click=${() => { looking = { id: c.id, tab: 'colour', palette: c.palette ?? null, pattern: c.pattern ?? null, busy: false, error: null }; update(); }}>${icons.palette()} ${say.chat.look}</button>
       </div>
       ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}
       ${t.pins.length === 0 ? nothing : html`
@@ -886,7 +889,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const t = threadOf(openId);
     const items = buildThread(t.messages, me?.id ?? '', t.lastReadAtOpen, t.unreadAtOpen, deps.now(), t.pending);
     return html`
-      <section class="thread-pane" @dragover=${(e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }}
+      <section class="thread-pane" data-palette=${c?.palette ?? nothing} @dragover=${(e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }}
         @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
           <a class="ib back" href="/" aria-label=${say.common.back} @click=${onBack}>${icons.back()}</a>
@@ -905,7 +908,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${banner()}
         ${searching === null ? nothing : searchPanel(searching)}
         ${pinBar(t)}
-        <div class="backdrop" data-pattern=${storedPattern()}>
+        <div class="backdrop" data-pattern=${c?.pattern ?? storedPattern()}>
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>${say.chat.older}</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group'), tickOf(t, c)))}
@@ -1063,6 +1066,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${rowMenuView()}
       ${muteView()}
       ${appFileView()}
+      ${lookView()}
       ${undoView()}
     </div>`;
 
@@ -1408,6 +1412,53 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="pcard-head"><h2 id="mute-title">${say.common.mute}</h2><button class="ib" type="button" aria-label=${say.common.close} @click=${close}>${icons.close()}</button></div>
         <ul class="info-list">${MUTE_CHOICES.map(([key, label, end]) => html`
           <li><button class="info-person" type="button" data-mute-for=${key} @click=${() => { muting = null; void setMuted(c, true, end(deps.now())); }}>${label}</button></li>`)}</ul>
+      </dialog>`;
+  };
+
+  /**
+   * A conversation's own colour and background, for everyone in it: two tabs, each with "each person's own" first, then Save. The
+   * dots and tiles are the same ones Settings shows. On a phone it is a sheet from the bottom, like the other dialogs.
+   */
+  const lookView = () => {
+    const l = looking;
+    if (l === null) return nothing;
+    const close = () => { looking = null; update(); };
+    const save = async () => {
+      l.busy = true; l.error = null; update();
+      const result = await api.setLook(l.id, l.palette, l.pattern);
+      if (!result.ok) { l.busy = false; l.error = result; update(); return; }
+      const c = chats?.find((x) => x.id === l.id);
+      if (c !== undefined) { c.palette = l.palette; c.pattern = l.pattern; }
+      close();
+    };
+    const tab = (id: 'colour' | 'pattern', label: string) => html`
+      <button class="tab" type="button" role="tab" data-look-tab=${id} aria-selected=${l.tab === id ? 'true' : 'false'} @click=${() => { l.tab = id; update(); }}>${label}</button>`;
+    const colours = html`
+      <fieldset class="swatches" data-look-colours><legend class="sr-only">${say.chat.lookColour}</legend>
+        <label class="swatch"><input type="radio" name="look-palette" value="" .checked=${liveValue(l.palette === null)} @change=${() => { l.palette = null; update(); }}>
+          <span class="dot each" aria-hidden="true"></span><span>${say.chat.lookEach}</span></label>
+        ${PALETTES.map((p) => html`
+        <label class="swatch"><input type="radio" name="look-palette" value=${p} .checked=${liveValue(l.palette === p)} @change=${() => { l.palette = p; update(); }}>
+          <span class="dot" data-palette=${p} aria-hidden="true"></span><span>${say.settings.palettes[p]}</span></label>`)}
+      </fieldset>`;
+    const patterns = html`
+      <fieldset class="patterns" data-look-patterns><legend class="sr-only">${say.chat.lookPattern}</legend>
+        <label class="pattern-tile"><input type="radio" name="look-pattern" value="" .checked=${liveValue(l.pattern === null)} @change=${() => { l.pattern = null; update(); }}>
+          <span class="backdrop" data-pattern=${storedPattern()} data-palette=${l.palette ?? nothing} aria-hidden="true"></span><span class="name">${say.chat.lookEach}</span></label>
+        ${PATTERNS.map((p) => html`
+        <label class="pattern-tile"><input type="radio" name="look-pattern" value=${p} .checked=${liveValue(l.pattern === p)} @change=${() => { l.pattern = p; update(); }}>
+          <span class="backdrop" data-pattern=${p} data-palette=${l.palette ?? nothing} aria-hidden="true"></span><span class="name">${say.settings.patterns[p]}</span></label>`)}
+      </fieldset>`;
+    return html`
+      <dialog class="pcard look" aria-labelledby="look-title" aria-describedby="look-note" data-look-panel data-modal @close=${close}
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
+        <div class="pcard-head"><button class="ib" type="button" aria-label=${say.common.close} @click=${close}>${icons.close()}</button></div>
+        <h2 id="look-title">${say.chat.look}</h2>
+        <p class="hint" id="look-note">${say.chat.lookNote}</p>
+        <div class="tabs" role="tablist" aria-label=${say.chat.look}>${tab('colour', say.chat.lookColour)}${tab('pattern', say.chat.lookPattern)}</div>
+        <div class="look-body" role="tabpanel">${l.tab === 'colour' ? colours : patterns}</div>
+        ${errorBox(l.error)}
+        <button class="btn" type="button" data-look-save ?disabled=${l.busy} @click=${() => void save()}>${say.chat.lookSave}</button>
       </dialog>`;
   };
 

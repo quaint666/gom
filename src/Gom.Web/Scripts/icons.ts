@@ -30,6 +30,7 @@ export const block = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M5.6 5.6l12
 export const info = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 11v5.5', 'M12 7.5h.01');
 export const attach = () => icon('M20 11.5l-8.2 8.2a5 5 0 01-7.1-7.1l8.5-8.5a3.3 3.3 0 014.7 4.7l-8.5 8.5a1.7 1.7 0 01-2.4-2.4l7.8-7.8');
 export const file = () => icon('M6 3h8l4 4v14H6z', 'M14 3v4h4', 'M9 13h6M9 17h6');
+export const palette = () => icon('M12 3a9 9 0 100 18c1.1 0 1.6-.7 1.6-1.5 0-.9-.8-1.3-.8-2.1 0-.9.7-1.5 1.6-1.5H16a5 5 0 005-5c0-4.4-4-7.9-9-7.9z', 'M7.5 12h.01', 'M9.5 7.5h.01', 'M14.5 7.5h.01');
 export const play = () => icon('M8 5.5v13l10.5-6.5z');
 export const pause = () => icon('M9 5.5v13', 'M15 5.5v13');
 export const download = () => icon('M12 4v11', 'M7.5 11l4.5 4.5 4.5-4.5', 'M5 20h14');

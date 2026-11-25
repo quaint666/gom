@@ -145,6 +145,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.Property(x => x.Kind).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<ConversationKind>(v, true)).HasMaxLength(10);
             e.Property(x => x.DirectKey).HasMaxLength(73);
             e.Property(x => x.Title).HasMaxLength(Auth.DisplayName.MaxLength);
+            e.Property(x => x.Palette).HasMaxLength(Chat.Appearance.CodeMaxLength);
+            e.Property(x => x.Pattern).HasMaxLength(Chat.Appearance.CodeMaxLength);
             e.HasIndex(x => x.DirectKey).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.JoinApproval).HasDefaultValue(false);
@@ -175,7 +177,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("messages", t =>
             {
                 t.HasCheckConstraint("ck_messages_seq", "seq > 0");
-                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6)");
+                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7)");
                 t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
                 t.HasCheckConstraint("ck_messages_sticker", "sticker IS NULL OR (body = '' AND notice IS NULL)");
             });

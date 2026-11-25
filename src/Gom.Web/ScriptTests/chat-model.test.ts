@@ -141,7 +141,7 @@ describe('avatarTone', () => {
 
 describe('notices in a thread', () => {
   const sender = (id: string, displayName: string) => ({ id, displayName });
-  const notice = (n: number, who: string, type: 'added' | 'removed' | 'left' | 'renamed', target?: { id: string; displayName: string }, title?: string): ChatMessage =>
+  const notice = (n: number, who: string, type: 'added' | 'removed' | 'left' | 'renamed' | 'restyled', target?: { id: string; displayName: string }, title?: string): ChatMessage =>
     ({ ...msg(n, who, at(10, 12, n)), body: '', sender: sender(who === 'me' ? 'me' : `u-${who}`, who), notice: { type, target: target ?? null, title: title ?? null } });
 
   it('puts a notice between messages, breaks the run, and is never the first of a new-message divider', () => {
@@ -164,6 +164,7 @@ describe('notices in a thread', () => {
     expect(noticeText(notice(1, 'lan', 'removed', sender('u-bao', 'Bảo')), 'me')).toBe('lan đã xóa Bảo khỏi nhóm');
     expect(noticeText(notice(1, 'lan', 'left'), 'me')).toBe('lan đã rời nhóm');
     expect(noticeText(notice(1, 'me', 'renamed', undefined, 'Nhà mình'), 'me')).toBe('Bạn đã đổi tên nhóm thành "Nhà mình"');
+    expect(noticeText(notice(1, 'lan', 'restyled'), 'me')).toBe('lan đã đổi màu và hình nền của cuộc trò chuyện');
     expect(noticeText(msg(1, 'lan', at(10, 1)), 'me')).toBe('');
   });
 });

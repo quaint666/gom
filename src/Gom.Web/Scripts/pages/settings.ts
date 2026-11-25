@@ -151,7 +151,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
           <legend class="hint">${say.settings.palette}</legend>
           ${PALETTES.map((value) => html`
             <label class="swatch"><input type="radio" name="palette" value=${value} .checked=${live(palette === value)} ?disabled=${busy}
-              @change=${() => void choosePalette(value)}><span class="dot" data-swatch=${value} aria-hidden="true"></span><span>${say.settings.palettes[value]}</span></label>`)}
+              @change=${() => void choosePalette(value)}><span class="dot" data-palette=${value} aria-hidden="true"></span><span>${say.settings.palettes[value]}</span></label>`)}
           <p class="hint" id="palette-note">${say.settings.paletteNote}</p>
         </fieldset>
         <fieldset class="patterns" data-pattern-choice aria-describedby="pattern-note">

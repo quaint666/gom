@@ -53,7 +53,7 @@ def block(code, button):
     }
     for name, ratio in pairs.items():
         print(f'{name:32} {ratio:5.2f}{"" if ratio >= 4.5 else "  TOO LOW"}', file=sys.stderr)
-    return (f':root[data-palette="{code}"], [data-swatch="{code}"] {{ --btn: {button}; --btn-hover: light-dark({hover}, {hover_dark}); '
+    return (f'[data-palette="{code}"] {{ --btn: {button}; --btn-hover: light-dark({hover}, {hover_dark}); '
             f'--badge: {button}; --link: light-dark({button}, {link_dark}); --ring: light-dark({button}, {link_dark});\n'
             f'  --tint: light-dark({tint}, {tint_dark}); --tint-text: light-dark({tint_text}, {tint_text_dark}); --out: light-dark({out}, {out_dark}); --pat: light-dark({pattern}, {pattern_dark}); }}')
 

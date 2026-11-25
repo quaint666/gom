@@ -3293,6 +3293,55 @@ describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
     expect(localStorage.getItem('gom-info')).toBe('0');
   });
 
+  it('sets a conversation\'s own colour and background from its info panel, for everyone, and draws its pane in them', async () => {
+    const setLook = vi.fn(async () => ok(undefined));
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh'), chat(C2, 'Lan', { palette: 'lotus' })], history: { [C1]: [msg(1, 'minh')] }, api: { setLook } });
+    await flush();
+    expect(root.querySelector('[data-chat="' + C2 + '"] .look-dot')!.getAttribute('data-palette')).toBe('lotus');
+    expect(root.querySelector('[data-chat="' + C1 + '"] .look-dot')).toBeNull();
+    expect(root.querySelector('.thread-pane')!.hasAttribute('data-palette')).toBe(false);
+
+    root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-info-look]')!.click();
+    await flush();
+    const panel = () => root.querySelector<HTMLElement>('[data-look-panel]')!;
+    expect(panel().querySelectorAll('[data-look-colours] input')).toHaveLength(13);   // each person's own, then twelve
+    expect(panel().querySelector<HTMLInputElement>('[data-look-colours] input[value=""]')!.checked).toBe(true);
+    const sea = panel().querySelector<HTMLInputElement>('[data-look-colours] input[value="sea"]')!;
+    sea.checked = true; sea.dispatchEvent(new Event('change'));
+    panel().querySelector<HTMLButtonElement>('[data-look-tab="pattern"]')!.click();
+    await flush();
+    expect(panel().querySelectorAll('[data-look-patterns] input')).toHaveLength(10);
+    const waves = panel().querySelector<HTMLInputElement>('[data-look-patterns] input[value="waves"]')!;
+    waves.checked = true; waves.dispatchEvent(new Event('change'));
+    panel().querySelector<HTMLButtonElement>('[data-look-save]')!.click();
+    await flush();
+    expect(setLook).toHaveBeenCalledWith(C1, 'sea', 'waves');
+    expect(root.querySelector('[data-look-panel]')).toBeNull();
+    expect(root.querySelector('.thread-pane')!.getAttribute('data-palette')).toBe('sea');
+    expect(root.querySelector<HTMLElement>('.thread-pane .backdrop')!.dataset['pattern']).toBe('waves');
+  });
+
+  it('keeps the dialog open with the reason when the server says no', async () => {
+    const setLook = vi.fn(async () => fail('not_friends', 403));
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { palette: 'jade', pattern: 'dots' })], history: { [C1]: [msg(1, 'minh')] }, api: { setLook } });
+    await flush();
+    expect(root.querySelector('.thread-pane')!.getAttribute('data-palette')).toBe('jade');
+    root.querySelector<HTMLButtonElement>('[data-info]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-info-look]')!.click();
+    await flush();
+    const each = root.querySelector<HTMLInputElement>('[data-look-panel] [data-look-colours] input[value=""]')!;
+    expect(root.querySelector<HTMLInputElement>('[data-look-panel] input[value="jade"]')!.checked).toBe(true);
+    each.checked = true; each.dispatchEvent(new Event('change'));
+    root.querySelector<HTMLButtonElement>('[data-look-save]')!.click();
+    await flush();
+    expect(setLook).toHaveBeenCalledWith(C1, null, 'dots');
+    expect(root.querySelector('[data-look-panel]')).not.toBeNull();
+    expect(root.querySelector('.thread-pane')!.getAttribute('data-palette')).toBe('jade');
+  });
+
   it('starts with the panel open when it was left open, and asks for the members only for a group', async () => {
     localStorage.setItem('gom-info', '1');
     const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] }, api: { groupMembers: vi.fn(async () => ok(people)) } });
