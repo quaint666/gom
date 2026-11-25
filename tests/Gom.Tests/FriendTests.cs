@@ -287,7 +287,7 @@ public class FriendTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
-    public async Task A_blocked_person_asking_looks_like_it_worked_but_nothing_is_stored()
+    public async Task A_blocked_person_asking_sees_a_request_that_waits_and_the_one_who_blocked_never_sees_it()
     {
         var (a, ca) = await app.Member();
         var (b, cb) = await app.Member();
@@ -295,10 +295,42 @@ public class FriendTests(AppFixture app) : IClassFixture<AppFixture>
 
         using var response = await Ask(cb, a.GomId);
 
+        // To B it is exactly an unanswered request, as after a plain unfriend: nothing gives the block away.
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("pending", (await AppFixture.Json(response)).GetProperty("status").GetString());
-        Assert.Equal(0, await RowsBetween(a, b));
+        Assert.Equal([a.GomId], Ids((await Lists(cb)).GetProperty("outgoing")));
+        // A is not shown it, and cannot take it while the block stands.
         Assert.Empty(Ids((await Lists(ca)).GetProperty("incoming")));
+        using (var accept = await app.Call(Post, $"/api/friends/requests/{b.GomId}/accept", cookie: ca))
+            Assert.Equal(HttpStatusCode.NotFound, accept.StatusCode);
+        Assert.Empty(Ids((await Lists(ca)).GetProperty("friends")));
+
+        // Unblocked, A finds the request waiting like any other.
+        using (await app.Call(Delete, $"/api/blocks/{b.GomId}", cookie: ca)) { }
+        Assert.Equal([b.GomId], Ids((await Lists(ca)).GetProperty("incoming")));
+    }
+
+    [Fact]
+    public async Task A_request_from_someone_you_blocked_shows_nowhere_for_you_not_in_a_group_list_nor_on_their_card()
+    {
+        var (a, ca) = await app.Member();
+        var (b, cb) = await app.Member();
+        var (c, cc) = await app.Member();
+        await app.Befriend(c, a); await app.Befriend(c, b);
+        using var made = await app.Call(Post, "/api/conversations/group", new { title = "Nhà", members = new[] { a.GomId, b.GomId } }, cc);
+        var group = (await AppFixture.Json(made)).GetProperty("id").GetGuid();
+        using (await app.Call(Post, $"/api/blocks/{b.GomId}", cookie: ca)) { }
+        using (var asked = await app.Call(Post, $"/api/conversations/{group}/members/{a.Id}/friend-request", cookie: cb))
+            Assert.Equal(HttpStatusCode.OK, asked.StatusCode);
+
+        using var members = await app.Call(Get, $"/api/conversations/{group}/members", cookie: ca);
+        var row = (await AppFixture.Json(members)).EnumerateArray().Single(m => m.GetProperty("id").GetGuid() == b.Id);
+        Assert.Equal("none", row.GetProperty("request").GetString());
+        using var card = await app.Call(Get, $"/api/people/{b.Id}", cookie: ca);
+        Assert.Equal("none", (await AppFixture.Json(card)).GetProperty("friend").GetString());
+        // B, who asked, sees it as sent.
+        using var theirs = await app.Call(Get, $"/api/people/{a.Id}", cookie: cb);
+        Assert.Equal("sent", (await AppFixture.Json(theirs)).GetProperty("friend").GetString());
     }
 
     [Fact]

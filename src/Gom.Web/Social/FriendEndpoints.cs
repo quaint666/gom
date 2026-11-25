@@ -44,6 +44,8 @@ public static class FriendEndpoints
             where f.UserLow == me || f.UserHigh == me
             join u in db.Users on (f.UserLow == me ? f.UserHigh : f.UserLow) equals u.Id
             where u.DisabledAt == null
+            // A request from someone I blocked is not shown to me (they see it as waiting; see AskAsync).
+            where !(f.Status == FriendStatus.Pending && f.RequestedBy != me && db.Blocks.Any(b => b.BlockerId == me && b.BlockedId == u.Id))
             orderby u.DisplayName, u.GomId
             select new { f.Status, f.RequestedBy, f.CreatedAt, u.GomId, u.DisplayName, u.AvatarId, OtherId = u.Id }).ToListAsync(ct);
 
@@ -71,8 +73,8 @@ public static class FriendEndpoints
         if (other == me) return Error(StatusCodes.Status400BadRequest, "cannot_add_self");
 
         if (await db.Blocks.AnyAsync(b => b.BlockerId == me && b.BlockedId == other, ct)) return Error(StatusCodes.Status409Conflict, "you_blocked_them");
-        // Someone who blocked you must not learn it: it looks like the request went out, and nothing is stored.
-        if (await db.Blocks.AnyAsync(b => b.BlockerId == other && b.BlockedId == me, ct)) return Results.Ok(new { status = "pending" });
+        // Someone who blocked you must not learn it: the request is stored as any other and shows in your list as waiting, but the one who
+        // blocked you is never shown it while the block stands (an answer "pending" with nothing in your list gave the block away).
 
         var (low, high) = Friendship.Order(me, other);
         // Two people asking each other at once: one insert loses the race, then sees the other's request and accepts it.
@@ -110,9 +112,10 @@ public static class FriendEndpoints
         if (other is null) return Results.NotFound();
         var (low, high) = Friendship.Order(me, other.Value);
         var now = clock.GetUtcNow();
-        // Only the one who was asked can accept: the request must have come from the other person.
+        // Only the one who was asked can accept: the request must have come from the other person. Not while either has blocked the other.
         var accepted = await db.Friendships
-            .Where(f => f.UserLow == low && f.UserHigh == high && f.Status == FriendStatus.Pending && f.RequestedBy == other)
+            .Where(f => f.UserLow == low && f.UserHigh == high && f.Status == FriendStatus.Pending && f.RequestedBy == other
+                && !db.Blocks.Any(b => (b.BlockerId == me && b.BlockedId == other) || (b.BlockerId == other && b.BlockedId == me)))
             .ExecuteUpdateAsync(s => s.SetProperty(f => f.Status, FriendStatus.Accepted).SetProperty(f => f.AcceptedAt, (DateTimeOffset?)now), ct);
         return accepted == 0 ? Results.NotFound() : Results.NoContent();
     }

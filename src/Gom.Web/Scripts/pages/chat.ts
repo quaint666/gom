@@ -712,7 +712,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function peerLine(c: Conversation): string {
     const shared = c.peer === null ? undefined : cards.get(c.peer.id)?.commonGroups.length;
     if (c.peer?.deleted) return 'Tài khoản đã bị xóa';
-    return [`@${c.peer?.gomId ?? ''}`, shared ? `${shared} nhóm chung` : ''].filter((x) => x !== '').join(' · ');
+    return [c.peer?.gomId ? `@${c.peer.gomId}` : '', shared ? `${shared} nhóm chung` : ''].filter((x) => x !== '').join(' · ');
   }
 
   /**

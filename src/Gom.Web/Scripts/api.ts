@@ -81,7 +81,8 @@ export interface LastMessage { seq: number; body: string; createdAt: string; sen
 export type PushLevel = 'name' | 'nothing';
 export interface PushState { key: string; subscribed: boolean; level: PushLevel }
 export interface Conversation {
-  id: string; kind: 'direct' | 'group'; title: string | null; peer: (Person & { id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
+  /** `peer.gomId` is there only while you are friends (the chat stays after an unfriend or a block; their ID does not). */
+  id: string; kind: 'direct' | 'group'; title: string | null; peer: (Omit<Person, 'gomId'> & { gomId: string | null; id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
   /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
   muted?: boolean; mutedUntil?: string | null;

@@ -171,7 +171,11 @@ public static class ConversationEndpoints
                 c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, m.LastReadSeq, m.Muted, m.MutedUntil, m.PinnedAt, m.MarkedUnread, m.HiddenSeq,
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
-                    .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new { u.Id, u.GomId, u.DisplayName, u.AvatarId, Deleted = u.DeletedAt != null }).FirstOrDefault(),
+                    .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new
+                    {
+                        u.Id, u.GomId, u.DisplayName, u.AvatarId, Deleted = u.DeletedAt != null,
+                        Friend = db.Friendships.Any(f => ((f.UserLow == me && f.UserHigh == u.Id) || (f.UserLow == u.Id && f.UserHigh == me)) && f.Status == FriendStatus.Accepted),
+                    }).FirstOrDefault(),
                 Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq && x.Seq > m.ClearedSeq && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).OrderByDescending(x => x.Seq)
                     .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
                     {
@@ -189,7 +193,8 @@ public static class ConversationEndpoints
             id = r.Id,
             kind = r.Kind.ToString().ToLowerInvariant(),
             title = r.Kind == ConversationKind.Direct ? r.Peer?.DisplayName : r.Title,
-            peer = r.Kind == ConversationKind.Direct && r.Peer is not null ? new { id = r.Peer.Id, gomId = r.Peer.GomId, displayName = r.Peer.DisplayName, avatar = r.Peer.AvatarId, deleted = r.Peer.Deleted } : null,
+            // A Gom ID is shown to friends only: after an unfriend or a block the chat stays, its ID does not.
+            peer = r.Kind == ConversationKind.Direct && r.Peer is not null ? new { id = r.Peer.Id, gomId = r.Peer.Friend ? r.Peer.GomId : null, displayName = r.Peer.DisplayName, avatar = r.Peer.AvatarId, deleted = r.Peer.Deleted } : null,
             memberCount = r.MemberCount,
             lastSeq = r.LastSeq,
             lastReadSeq = r.LastReadSeq,

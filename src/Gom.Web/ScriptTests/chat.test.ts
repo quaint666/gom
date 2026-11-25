@@ -4049,6 +4049,16 @@ describe("chat: someone's card", () => {
     expect(text(root.querySelector('[data-peer-card]')!)).toContain('@minh · 2 nhóm chung');
   });
 
+  it("a 1:1 conversation's header shows no Gom ID once you are no longer friends, and no stray @", async () => {
+    const person = vi.fn(async () => ok(cardOf({ gomId: null, friend: 'none', commonGroups: [{ id: G, title: 'Nhà', memberCount: 3 }] })));
+    const former = chat(C2, 'Minh', { peer: { id: 'u-minh', gomId: null, displayName: 'Minh' } });
+    start({ path: `/c/${C2}`, chats: [former], history: { [C2]: [] }, api: { person } });
+    await flush(); await flush();
+    const line = text(root.querySelector('[data-peer-card]')!);
+    expect(line).toContain('1 nhóm chung');
+    expect(line).not.toContain('@');
+  });
+
   it('says so when the card cannot be had, and closes when the browser closes the dialog', async () => {
     inGroup({ person: vi.fn(async () => fail('unknown', 404)) });
     await flush();

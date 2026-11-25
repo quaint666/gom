@@ -7,7 +7,7 @@ namespace Gom.Tests;
 
 public class ConversationTests(AppFixture app) : IClassFixture<AppFixture>
 {
-    private static readonly HttpMethod Post = HttpMethod.Post, Get = HttpMethod.Get;
+    private static readonly HttpMethod Post = HttpMethod.Post, Get = HttpMethod.Get, Delete = HttpMethod.Delete;
 
     private Task<HttpResponseMessage> Open(string cookie, string gomId) =>
         app.Call(Post, "/api/conversations/direct", new { gomId }, cookie);
@@ -159,6 +159,23 @@ public class ConversationTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(0, chat.GetProperty("lastSeq").GetInt64());
         Assert.Equal(0, chat.GetProperty("lastReadSeq").GetInt64());
         Assert.Equal(2, (await List(cb)).Length);
+    }
+
+    [Fact]
+    public async Task After_an_unfriend_the_chat_stays_in_the_list_but_their_Gom_ID_does_not()
+    {
+        var (a, ca) = await app.Member(); var (b, cb) = await app.Member();
+        await app.Befriend(a, b);
+        var id = await app.OpenChat(ca, b.GomId);
+        async Task<JsonElement> Peer(string cookie)
+        {
+            using var r = await app.Call(Get, "/api/conversations", cookie: cookie);
+            return (await AppFixture.Json(r)).EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == id).GetProperty("peer");
+        }
+        using (await app.Call(Delete, $"/api/friends/{b.GomId}", cookie: ca)) { }
+        Assert.Equal(JsonValueKind.Null, (await Peer(ca)).GetProperty("gomId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, (await Peer(cb)).GetProperty("gomId").ValueKind);
+        Assert.Equal(b.Id, (await Peer(ca)).GetProperty("id").GetGuid());
     }
 
     [Fact]
