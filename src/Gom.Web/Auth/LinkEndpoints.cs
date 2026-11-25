@@ -121,7 +121,7 @@ public static class LinkEndpoints
 
     private static async Task<IResult> ListUsers(GomDbContext db, CancellationToken ct) =>
         Results.Ok(await db.Users.OrderBy(u => u.CreatedAt)
-            .Select(u => new { gomId = u.GomId, displayName = u.DisplayName, isOwner = u.IsOwner, disabled = u.DisabledAt != null, createdAt = u.CreatedAt })
+            .Select(u => new { gomId = u.GomId, displayName = u.DisplayName, isOwner = u.IsOwner, disabled = u.DisabledAt != null, deleted = u.DeletedAt != null, createdAt = u.CreatedAt })
             .ToListAsync(ct));
 
     private static async Task<IResult> CreateReset(string gomId, HttpContext http, GomDbContext db, TimeProvider clock, IOptions<AuthOptions> options, CancellationToken ct)

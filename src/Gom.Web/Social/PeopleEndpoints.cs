@@ -33,7 +33,7 @@ public static class PeopleEndpoints
     {
         var me = GomClaims.User(http.User);
         if (userId == me) return Results.NotFound();
-        var them = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => new { u.Id, u.GomId, u.DisplayName, u.AvatarId }).SingleOrDefaultAsync(ct);
+        var them = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => new { u.Id, u.GomId, u.DisplayName, u.AvatarId, Deleted = u.DeletedAt != null }).SingleOrDefaultAsync(ct);
         if (them is null) return Results.NotFound();
 
         var (low, high) = Friendship.Order(me, userId);
@@ -63,6 +63,7 @@ public static class PeopleEndpoints
             gomId = friends ? them.GomId : null,
             friend = friends ? "friends" : row is { Status: FriendStatus.Pending } ? (row.RequestedBy == me ? "sent" : "received") : "none",
             commonGroups = groups,
+            deleted = them.Deleted,
         });
     }
 }
