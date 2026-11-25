@@ -2,7 +2,7 @@
 
 A small, invite-only web chat for family and friends, with message history kept on the server so it is there on every device. Web only. The UI is in Vietnamese; code and docs are in English.
 
-Status: usable end to end, deployed to a staging host. Accounts and invites, friends and contacts, one-to-one and group chat (roles, removal, approval, bans) with live delivery, offline sending, replies, forwarding, pins, reactions, editing, taking a message back, delete for me, search, mute, read receipts, and pictures and files are built. Not yet: push notifications, GIFs and stickers, deleting an account, the shop's alert rooms, backups, and the load test.
+Status: in use by the family, in production and on a staging host. Built: accounts and invites, friends and blocking, profile pictures, one-to-one and group chat (roles, removal, approval, bans) with live delivery, offline sending, replies, forwarding, pins, reactions, editing, taking a message back, delete for me, search, mute (for a while or until turned back on), read receipts, pictures and files, notifications (Web Push), emoji and stickers, deleting your own account, and for the owner a storage page that trims old pictures, files and messages. Not yet: sharing into Gom from other apps, a webhook that posts alerts into a group, link cards, two-step sign-in for the owner, and the load test. GIFs were dropped.
 
 ## Run it locally
 
@@ -23,13 +23,16 @@ Notifications need a key pair: `dotnet run --project src/Gom.Web -- --vapid-keys
 
 The first start needs an owner account: set `Owner__GomId` and `Owner__Password` (10 characters or more) once, on an empty database, then remove the password from the configuration. Apply the database migrations first (`dotnet dotnet-ef database update --project src/Gom.Web`); the app does not do it for you.
 
-Decisions and their reasons are in `docs/decisions.md`. The mockups and design notes are in `design/`.
+Decisions and their reasons are in `docs/decisions.md`; what comes next is in `docs/next-session.md`. The mockups and design notes are in `design/`.
+
+The font (Be Vietnam Pro, in `wwwroot/fonts/`) and the stickers (still images from Google's Noto Emoji, in `wwwroot/stickers/`) are under the SIL Open Font License 1.1; the licence text sits beside each.
 
 ## On a server
 
-The image built from the `Dockerfile` holds the site and the migration bundle (`/app/efbundle`, run before each start). Four things about its surroundings:
+The image built from the `Dockerfile` holds the site and the migration bundle (`/app/efbundle`, run before each start). Five things about its surroundings:
 
+- **Say how many proxies stand in front.** `ForwardedHeaders__Hops` is the number of proxies (for example 2 for two proxies in a row); the visitor's address, which the sign-in limits key on, is picked out of `X-Forwarded-For` by that count. It is 0 by default, so a header a visitor sends is never believed, and with it set the app must be reachable only through those proxies.
 - **A reverse proxy must let a file through.** A file is one request with the file as its body, up to `Uploads__MaxFileBytes` (25 MB by default). A proxy in front has its own limit on a request body, and it answers 413 before the app sees the request when that is smaller. nginx's default is 1 MB (`client_max_body_size`); set it to at least `MaxFileBytes` for the site, and remember that a limit set in a `server` or `location` block overrides one set in `http`.
 - **Notifications go out to the push services** (`fcm.googleapis.com`, `jmt17.google.com` (Chromium builds and pre-release Chrome), `*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`) over HTTPS: the server must be able to reach them on port 443.
 - **Back up the database and the uploads folder together.** A message row names its files by id, so a file without its row and a row without its file are both useless. Restoring one without the other leaves broken pictures or files nobody can reach.
-- **A backup that only ever adds files keeps deleted pictures and files for good** (a recalled message, an ended group). Decide how long deleted files may live in backups, and say so to the people who use Gom.
+- **Copy the uploads folder as a mirror, so deletions reach the backup.** Gom deletes files when a message is taken back, a group ends, an account is deleted, a profile picture changes, an upload is never sent, and when the owner trims. A copy that only ever adds files keeps all of these for good, and the owner's promise that a trim is gone for good would not hold. Guard the mirror so a missing or empty source folder is never copied over the backup. A trimmed picture or file keeps its row with `removed_at` set and has no file on purpose: a restore check must skip those rows. Database dumps and whole-machine snapshots keep deleted data until they age out; say how long to the people who use Gom.

@@ -16,4 +16,6 @@ See `README.md`. `dotnet test` needs `ConnectionStrings__Default` pointing at a 
 
 ## Docs
 - `docs/decisions.md`: what was decided, and why.
+- `docs/next-session.md`: where things stand and what comes next.
+- `docs/repo-review.md`: the prompt for a whole-repository review.
 - `design/`: the mockups (images and HTML sources) and `design-notes.md`, the look and the product rules the screens assume.

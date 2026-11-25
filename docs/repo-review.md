@@ -4,8 +4,10 @@ A prompt for a whole-repository review, so each run checks the same things the s
 milestone and before the first deployment. Paste everything below the line to the assistant in a session started in
 this repository. When a feature is built that this prompt does not cover, add its area before the review that includes it.
 
-**Not covered yet (not built):** push notifications, file and image uploads (storage), the ops-room bot, backups, the
-load test (the end goal is 1,000 to 5,000 connections, although real traffic will be far lower).
+**Not covered yet (not built):** sharing into Gom from other apps, the webhook that posts alerts into a group, link
+cards, two-step sign-in for the owner, the load test (the end goal is 1,000 to 5,000 connections, although real traffic
+will be far lower). Backups are run outside this repository; only what Gom asks of them is in scope
+(`README.md`, "On a server").
 
 ---
 
@@ -49,10 +51,22 @@ the owner approves. Then fix in small batches, one branch and pull request each,
    pinned by commit.
 10. **Repository.** README setup works from a clean clone; migrations apply on an empty database and on the previous
     schema; decisions in `docs/decisions.md` match what is built.
+11. **Pictures and files.** A picture is decoded, made upright, scaled and re-encoded so no metadata survives; anything
+    else is only ever a download with a safe type; size, pixel and per-person limits; who may fetch what (the uploader
+    before it is in a message, then members who were in the conversation when it was said and did not hide it); a file's
+    bytes deleted only after its row's commit; the cleanup of uploads nobody sent.
+12. **Notifications.** The RFC 8291 encryption against the RFC's worked example; a notification never carries the words;
+    who is pushed (not the sender, not muted, not removed, no live socket); a 404 or 410 deletes the subscription; a slow
+    push service never delays a send; only known push hosts are accepted.
+13. **Owner tools and deletion.** Deleting your own account (what stays, what goes, the leader handing over); the storage
+    view never naming who talks to whom in one-to-one chats; trims: the preview equals what is removed, "Delete" typed
+    exactly, a notice in each conversation, trimmed files never fetched or forwarded again, answers to trimmed messages
+    kept.
 
-**Deployment items** (keep listing until fixed): forwarded headers (`ASPNETCORE_FORWARDEDHEADERS_ENABLED`), reverse
-proxy WebSocket upgrade, `AllowedHosts`, a health endpoint, log level and what the logs contain, data-protection
-keys, migrations before start.
+**Deployment items** (keep listing until fixed): forwarded headers (`ForwardedHeaders__Hops` matches the proxies in
+front; checked live on 2026-11-25), reverse proxy WebSocket upgrade, the proxy's request body limit for files,
+`AllowedHosts`, a health endpoint, log level and what the logs contain, data-protection keys, migrations before start,
+the uploads backup copied as a mirror.
 
 ## How to check
 

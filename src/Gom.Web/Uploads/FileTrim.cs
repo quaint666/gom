@@ -10,7 +10,7 @@ namespace Gom.Web.Uploads;
 /// <summary>
 /// The owner trims pictures and files sent before a date: everywhere, in one-to-one chats only, or in one group; pictures, files or
 /// both; optionally only the larger ones. A preview says how much first; the trim itself needs "Delete" typed. The bytes go for good
-/// (the homelab copies of the uploads are mirrors, so backups lose them too); each row stays, marked removed, so its message shows a
+/// (the backup copies of the uploads are mirrors, so backups lose them too); each row stays, marked removed, so its message shows a
 /// placeholder; and every conversation that lost something gets a notice that names nobody.
 /// </summary>
 public static class FileTrim

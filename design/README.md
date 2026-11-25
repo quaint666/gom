@@ -41,6 +41,7 @@ Each page can show one frame alone: add `?frame=<index>&theme=light|dark` to the
 Window sizes: phone 390 x 780 (screen 08 is 390 x 960, screens 02 and 03 are 390 x 760), desktop 1180 x 700. The images are made at 2x for phones and 1x for desktop, then saved as lossless WebP.
 
 ## Things that are not obvious
+- **The mockups are a snapshot of 2026-11-24, before most of the app was built.** Stickers and emoji, profile pictures, notifications, account deletion and the owner's storage page are not drawn, and screen 17 (the "Ops room") shows a plan that changed (rule 7 in `design-notes.md`). The rules in `design-notes.md` and `docs/decisions.md` are what the app follows.
 - **Each screen shows one moment, not behaviour.** Hover, focus and pressed looks follow the Peekbox rules in `design-notes.md` and are not drawn per screen. Animation, tablet width and the desktop message menu are not drawn.
 - **No screen shows the password reset, the list of your sessions, or the display-name field yet.** Rule 11 in `design-notes.md` says they exist; they are not drawn.
 - **The QR code is a fake pattern** and does not scan.
