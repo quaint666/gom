@@ -21,6 +21,11 @@ public sealed class ChatOptions
     public int MaxBadFrames { get; set; } = 5;
     /// <summary>How often a socket is sent a small "still here" message, in seconds. Anything in the path that cuts idle connections sees traffic, and the page can tell a dead connection from a quiet one.</summary>
     public int HeartbeatSeconds { get; set; } = 25;
+    /// <summary>
+    /// How often an open socket checks that its session is still live, in seconds. Ending a session closes its sockets at once; this
+    /// catches what nothing announces: a session that simply ran out, or one ended in the moment its socket was opening.
+    /// </summary>
+    public int SessionCheckSeconds { get; set; } = 300;
     /// <summary>How many "sync" requests (a device asking for what it missed) one socket may make in a quick burst. A catch-up page is 200 events, so this is plenty.</summary>
     public int SyncBurst { get; set; } = 10;
     /// <summary>After the burst, how many more per second. A request over the limit is answered with "slow_down" and the page asks again a moment later.</summary>

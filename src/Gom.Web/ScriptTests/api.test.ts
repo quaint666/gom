@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createApi } from '../Scripts/api.js';
+import { createApi, REQUEST_TIMEOUT_MS, UPLOAD_STALL_MS } from '../Scripts/api.js';
 import { errorText } from '../Scripts/text.js';
 import textSource from '../Scripts/text.ts?raw';
 
@@ -40,6 +40,23 @@ describe('api', () => {
       expect(failure, code).toMatchObject({ ok: false, error: code });
       if (!failure.ok) expect(errorText(failure), code).not.toBe(errorText({ ok: false, status: 400, error: 'unknown' }));
     }
+  });
+
+  it('gives every request a time limit, a longer one for the owner\'s trims, and calls a request that ran out "network"', async () => {
+    const limits: number[] = [];
+    const real = AbortSignal.timeout.bind(AbortSignal);
+    const spy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => { limits.push(ms); return real(ms); });
+    try {
+      const seen: (AbortSignal | null | undefined)[] = [];
+      const api = createApi(async (_url, init) => { seen.push(init?.signal); return json({}); });
+      await api.me();
+      await api.trimMessages({ before: '2026-01-01T00:00:00Z', where: 'all' }, 'Delete');
+      await api.trimFiles({ before: '2026-01-01T00:00:00Z', kind: 'all', where: 'all', minBytes: null }, 'Delete');
+      expect(limits).toEqual([REQUEST_TIMEOUT_MS, 300_000, 300_000]);
+      expect(seen.every((s) => s instanceof AbortSignal)).toBe(true);
+    } finally { spy.mockRestore(); }
+    const late = createApi(async () => { throw new DOMException('The operation timed out.', 'TimeoutError'); });
+    expect(await late.me()).toEqual({ ok: false, status: 0, error: 'network' });
   });
 
   it('calls a 401 without a body "unauthorized" and a 403 "forbidden"', async () => {
@@ -83,7 +100,9 @@ describe('api: uploading a picture or a file', () => {
     method = ''; url = ''; headers: Record<string, string> = {}; withCredentials = false; sent: unknown = null;
     status = 0; responseText = '';
     upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = { onprogress: null };
-    onload: (() => void) | null = null; onerror: (() => void) | null = null; ontimeout: (() => void) | null = null;
+    onload: (() => void) | null = null; onerror: (() => void) | null = null; ontimeout: (() => void) | null = null; onabort: (() => void) | null = null;
+    aborted = false;
+    abort() { this.aborted = true; this.onabort?.(); }
     open(method: string, url: string) { this.method = method; this.url = url; }
     setRequestHeader(k: string, v: string) { this.headers[k] = v; }
     send(body: unknown) { this.sent = body; }
@@ -130,6 +149,44 @@ describe('api: uploading a picture or a file', () => {
     r = make(); pending = r.api.upload('c1', file, () => undefined);
     r.x.onerror!();
     expect(await pending).toEqual({ ok: false, status: 0, error: 'network' });
+  });
+
+  it('gives up on an upload when nothing has moved for a minute, but not while it keeps moving', async () => {
+    vi.useFakeTimers();
+    try {
+      const { x, api } = make();
+      const pending = api.upload('c1', file, () => undefined);
+      vi.advanceTimersByTime(UPLOAD_STALL_MS - 1000);
+      x.upload.onprogress!({ lengthComputable: true, loaded: 1, total: 4 });   // moving: the wait starts again
+      vi.advanceTimersByTime(UPLOAD_STALL_MS - 1000);
+      expect(x.aborted).toBe(false);
+      vi.advanceTimersByTime(2000);
+      expect(x.aborted).toBe(true);
+      expect(await pending).toEqual({ ok: false, status: 0, error: 'network' });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('gives up on an upload that never moves at all', async () => {
+    vi.useFakeTimers();
+    try {
+      const { x, api } = make();
+      const pending = api.upload('c1', file, () => undefined);
+      vi.advanceTimersByTime(UPLOAD_STALL_MS + 1);
+      expect(x.aborted).toBe(true);
+      expect(await pending).toMatchObject({ error: 'network' });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('an upload that ends in time leaves no timer to abort it later', async () => {
+    vi.useFakeTimers();
+    try {
+      const { x, api } = make();
+      const pending = api.upload('c1', file, () => undefined);
+      x.status = 201; x.responseText = JSON.stringify({ id: 'a1', kind: 'file', name: 'x', size: 3, width: null, height: null }); x.onload!();
+      await pending;
+      vi.advanceTimersByTime(UPLOAD_STALL_MS * 2);
+      expect(x.aborted).toBe(false);
+    } finally { vi.useRealTimers(); }
   });
 
   it('sends the upload ids with a message only when there are some', async () => {

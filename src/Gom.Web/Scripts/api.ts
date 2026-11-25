@@ -212,13 +212,25 @@ export interface Api {
 }
 
 /** The browser sends the Origin header itself on same-origin POST and DELETE; the server checks it. */
+/**
+ * How long a request may take before the page gives up on it and calls it a network failure. Without one, a request lost on a bad mobile
+ * line could hang for minutes, and the messages queued behind it in a conversation with it. Giving up is safe: a message is sent again
+ * with the same client id, so the server stores it once.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+/** The owner's trims work through every conversation: they get longer. */
+const SLOW_REQUEST_TIMEOUT_MS = 300_000;
+/** An upload is given up when no byte has gone for this long (a large file on a slow line takes minutes, but it keeps moving). */
+export const UPLOAD_STALL_MS = 60_000;
+
 export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest()): Api {
-  async function call<T>(method: string, path: string, body?: unknown): Promise<Result<T>> {
+  async function call<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Result<T>> {
     let response: Response;
     try {
       response = await fetchFn(path, {
         method,
         credentials: 'same-origin',
+        signal: AbortSignal.timeout(timeoutMs),
         ...(body === undefined ? {} : body instanceof Blob ? { headers: { 'Content-Type': 'application/octet-stream' }, body }
           : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
       });
@@ -239,9 +251,13 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       xhr.open('POST', `/api/conversations/${encodeURIComponent(conversation)}/attachments?name=${encodeURIComponent(file.name ?? 'tệp')}`);
       xhr.withCredentials = true;
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-      xhr.upload.onprogress = (e) => { if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total); };
-      xhr.onerror = xhr.ontimeout = () => resolve({ ok: false, status: 0, error: 'network' });
+      // Given up when nothing has moved for a while; every bit of progress starts the wait again.
+      let stall = 0;
+      const watch = () => { clearTimeout(stall); stall = setTimeout(() => xhr.abort(), UPLOAD_STALL_MS) as unknown as number; };
+      xhr.upload.onprogress = (e) => { watch(); if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total); };
+      xhr.onerror = xhr.ontimeout = xhr.onabort = () => { clearTimeout(stall); resolve({ ok: false, status: 0, error: 'network' }); };
       xhr.onload = () => {
+        clearTimeout(stall);
         let json: unknown = null;
         try { json = JSON.parse(xhr.responseText); } catch { /* not JSON: a proxy's own answer */ }
         if (xhr.status >= 200 && xhr.status < 300 && json !== null) { resolve({ ok: true, data: json as Attachment }); return; }
@@ -251,6 +267,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
         resolve({ ok: false, status: xhr.status, error });
       };
       xhr.send(file);
+      watch();
     });
   }
 
@@ -273,9 +290,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     storage: () => call('GET', '/api/owner/storage'),
     deleteEmptyGroup: (id) => call('DELETE', `/api/owner/groups/${enc(id)}`),
     trimPreview: (rule) => call('POST', '/api/owner/trim/files/preview', rule),
-    trimFiles: (rule, confirm) => call('POST', '/api/owner/trim/files', { ...rule, confirm }),
+    trimFiles: (rule, confirm) => call('POST', '/api/owner/trim/files', { ...rule, confirm }, SLOW_REQUEST_TIMEOUT_MS),
     trimMessagesPreview: (rule) => call('POST', '/api/owner/trim/messages/preview', rule),
-    trimMessages: (rule, confirm) => call('POST', '/api/owner/trim/messages', { ...rule, confirm }),
+    trimMessages: (rule, confirm) => call('POST', '/api/owner/trim/messages', { ...rule, confirm }, SLOW_REQUEST_TIMEOUT_MS),
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
