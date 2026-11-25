@@ -794,6 +794,32 @@ namespace Gom.Web.Migrations
                     b.ToTable("sessions", (string)null);
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.SiteSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("OpenSignUp")
+                        .HasColumnType("boolean")
+                        .HasColumnName("open_sign_up");
+
+                    b.HasKey("Id")
+                        .HasName("pk_site_settings");
+
+                    b.ToTable("site_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_site_settings_one_row", "id = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            OpenSignUp = false
+                        });
+                });
+
             modelBuilder.Entity("Gom.Web.Data.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -841,6 +867,19 @@ namespace Gom.Web.Migrations
                         .HasColumnType("text")
                         .HasColumnName("password_hash");
 
+                    b.Property<DateTimeOffset?>("RefusedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("refused_at");
+
+                    b.Property<string>("RequestNote")
+                        .HasMaxLength(800)
+                        .HasColumnType("character varying(800)")
+                        .HasColumnName("request_note");
+
+                    b.Property<DateTimeOffset?>("RequestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("requested_at");
+
                     b.Property<bool>("ShareReadReceipts")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -866,11 +905,19 @@ namespace Gom.Web.Migrations
                         .HasDatabaseName("ix_users_is_owner")
                         .HasFilter("is_owner");
 
+                    b.HasIndex("RequestedAt")
+                        .HasDatabaseName("ix_users_requested_at")
+                        .HasFilter("requested_at IS NOT NULL");
+
                     b.ToTable("users", null, t =>
                         {
                             t.HasCheckConstraint("ck_users_deleted", "deleted_at IS NULL OR (disabled_at IS NOT NULL AND NOT is_owner)");
 
                             t.HasCheckConstraint("ck_users_gom_id", "gom_id ~ '^[a-z0-9_]{3,20}$'");
+
+                            t.HasCheckConstraint("ck_users_refused", "refused_at IS NULL OR requested_at IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_users_request", "requested_at IS NULL OR NOT is_owner");
                         });
                 });
 

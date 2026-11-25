@@ -13,6 +13,9 @@ public sealed class AuthOptions
     /// <summary>Origins allowed to make state-changing requests, such as https://gom.example. Empty means none, so nothing can change.</summary>
     public string[] AllowedOrigins { get; set; } = [];
 
+    /// <summary>How many requests to join may wait at once (refused ones do not count); past it, sign-up says so.</summary>
+    public int MaxWaitingRequests { get; set; } = 20;
+
     /// <summary>A session lasts this long after its last use (sliding)...</summary>
     public int SessionDays { get; set; } = 30;
 

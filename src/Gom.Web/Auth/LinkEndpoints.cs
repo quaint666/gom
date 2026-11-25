@@ -30,7 +30,7 @@ public static class LinkEndpoints
     // The same answer for a link that never existed, ran out, was used or was revoked: no hints.
     private static IResult InvalidLink() => Results.Json(new { error = "invalid_link" }, statusCode: StatusCodes.Status404NotFound);
 
-    private static IResult Rejected(PasswordProblem problem) => Results.BadRequest(new
+    internal static IResult Rejected(PasswordProblem problem) => Results.BadRequest(new
     {
         error = problem switch
         {
@@ -120,14 +120,14 @@ public static class LinkEndpoints
     }
 
     private static async Task<IResult> ListUsers(GomDbContext db, CancellationToken ct) =>
-        Results.Ok(await db.Users.OrderBy(u => u.CreatedAt)
+        Results.Ok(await db.Users.Where(u => u.RequestedAt == null).OrderBy(u => u.CreatedAt)   // requests to join have their own list
             .Select(u => new { gomId = u.GomId, displayName = u.DisplayName, isOwner = u.IsOwner, disabled = u.DisabledAt != null, deleted = u.DeletedAt != null, createdAt = u.CreatedAt })
             .ToListAsync(ct));
 
     private static async Task<IResult> CreateReset(string gomId, HttpContext http, GomDbContext db, TimeProvider clock, IOptions<AuthOptions> options, CancellationToken ct)
     {
         var id = gomId.Trim().ToLowerInvariant();
-        var target = await db.Users.Where(u => u.GomId == id && u.DisabledAt == null).Select(u => new { u.Id }).SingleOrDefaultAsync(ct);
+        var target = await db.Users.Where(u => u.GomId == id && u.DisabledAt == null && u.RequestedAt == null).Select(u => new { u.Id }).SingleOrDefaultAsync(ct);
         if (target is null) return Results.NotFound();
 
         var now = clock.GetUtcNow();

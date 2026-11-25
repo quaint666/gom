@@ -7,6 +7,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<SiteSettings> Site => Set<SiteSettings>();
     public DbSet<OneTimeLink> Links => Set<OneTimeLink>();
     public DbSet<InviteUse> InviteUses => Set<InviteUse>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
@@ -28,6 +29,13 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
         // Search ignores accents ("pho" finds "Phở"). The extension ships with PostgreSQL's contrib package and is trusted, so the database's own owner can create it.
         b.HasPostgresExtension("unaccent");
 
+        b.Entity<SiteSettings>(e =>
+        {
+            e.ToTable("site_settings", t => t.HasCheckConstraint("ck_site_settings_one_row", "id = 1"));
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.HasData(new SiteSettings { Id = 1, OpenSignUp = false });
+        });
+
         b.Entity<User>(e =>
         {
             e.ToTable("users", t =>
@@ -35,7 +43,12 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
                 t.HasCheckConstraint("ck_users_gom_id", $"gom_id ~ '{GomId.DatabasePattern}'");
                 // A deleted account is a disabled one, and never the owner.
                 t.HasCheckConstraint("ck_users_deleted", "deleted_at IS NULL OR (disabled_at IS NOT NULL AND NOT is_owner)");
+                // A request to join is never the owner; it is refused only while it is a request.
+                t.HasCheckConstraint("ck_users_request", "requested_at IS NULL OR NOT is_owner");
+                t.HasCheckConstraint("ck_users_refused", "refused_at IS NULL OR requested_at IS NOT NULL");
             });
+            e.Property(x => x.RequestNote).HasMaxLength(Auth.SignUpEndpoints.NoteMaxLength * 4);   // text elements; a flag is up to 4 UTF-16 units
+            e.HasIndex(x => x.RequestedAt).HasFilter("requested_at IS NOT NULL");
             e.HasOne<User>().WithMany().HasForeignKey(x => x.DeletedBy).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.GomId).IsUnique();
             // At most one row with is_owner = true.

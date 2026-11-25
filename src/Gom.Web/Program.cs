@@ -7,6 +7,7 @@ using Gom.Web.Push;
 using Gom.Web.Social;
 using Gom.Web.Uploads;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -93,7 +94,14 @@ builder.Services.AddSingleton<HashLimiter>(sp =>
     return new HashLimiter(slots, TimeSpan.FromSeconds(o.HashWaitSeconds));
 });
 builder.Services.AddAuthentication(GomClaims.Scheme).AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(GomClaims.Scheme, null);
-builder.Services.AddAuthorization(o => o.AddPolicy("Owner", p => p.RequireAuthenticatedUser().RequireClaim(GomClaims.IsOwner, "true")));
+builder.Services.AddAuthorization(o =>
+{
+    // Everything signed in is for members: a request to join (a "standing" claim) is refused everywhere but where "SignedIn" says.
+    o.DefaultPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser()
+        .RequireAssertion(c => !c.User.HasClaim(x => x.Type == GomClaims.Standing)).Build();
+    o.AddPolicy("SignedIn", p => p.RequireAuthenticatedUser());
+    o.AddPolicy("Owner", p => p.RequireAuthenticatedUser().RequireClaim(GomClaims.IsOwner, "true"));
+});
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("Owner").Get<OwnerOptions>() ?? new OwnerOptions());
 builder.Services.AddSingleton<OwnerSeeder>();
 builder.Services.AddHostedService<OwnerSeedingService>();
@@ -116,6 +124,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuth();
 app.MapLinks();
+app.MapSignUp();
 app.MapAccount();
 app.MapFriends();
 app.MapConversations();

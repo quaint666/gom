@@ -13,6 +13,9 @@ public sealed class ServerText
     /// <summary>What replaces a notification once its message is taken back.</summary>
     public required string Recalled { get; init; }
     public required string SentSticker { get; init; }
+    /// <summary>The owner's notification of a request to join: with the name, and without (the "nothing" level).</summary>
+    public required Func<string, string> JoinRequest { get; init; }
+    public required string JoinRequestUnnamed { get; init; }
     public required Func<int, string> SentPictures { get; init; }
     public required Func<int, string> SentFiles { get; init; }
     public required Func<int, int, string> SentPicturesAndFiles { get; init; }
@@ -36,6 +39,8 @@ public sealed class ServerText
         Group = "Nhóm",
         Recalled = "Tin nhắn đã được thu hồi",
         SentSticker = "Đã gửi 1 nhãn dán",
+        JoinRequest = name => $"{name} xin tham gia Gom",
+        JoinRequestUnnamed = "Có người xin tham gia Gom",
         SentPictures = n => $"Đã gửi {n} ảnh",
         SentFiles = n => $"Đã gửi {n} file",
         SentPicturesAndFiles = (pictures, files) => $"Đã gửi {pictures} ảnh và {files} file",

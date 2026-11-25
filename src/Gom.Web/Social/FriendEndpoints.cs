@@ -33,7 +33,8 @@ public static class FriendEndpoints
     {
         var id = (gomId ?? "").Trim().ToLowerInvariant();
         if (!GomId.IsValid(id)) return Task.FromResult<Guid?>(null);
-        return db.Users.Where(u => u.GomId == id && u.DisabledAt == null).Select(u => (Guid?)u.Id).SingleOrDefaultAsync(ct);
+        // A request to join is nobody yet: it cannot be found, befriended or messaged.
+        return db.Users.Where(u => u.GomId == id && u.DisabledAt == null && u.RequestedAt == null).Select(u => (Guid?)u.Id).SingleOrDefaultAsync(ct);
     }
 
     private static async Task<IResult> List(HttpContext http, GomDbContext db, CancellationToken ct)

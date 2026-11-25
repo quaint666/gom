@@ -16,6 +16,9 @@ public static class GomClaims
     public const string DisplayName = "displayname";
     public const string IsOwner = "isowner";
     public const string ReadReceipts = "receipts";
+    /// <summary>Only on a request to join: "pending" or "refused". Such a session may use only what the "SignedIn" policy allows.</summary>
+    public const string Standing = "standing";
+    public const string Pending = "pending", Refused = "refused";
 
     public static Guid User(ClaimsPrincipal p) => Guid.Parse(p.FindFirstValue(UserId)!);
     public static Guid Session(ClaimsPrincipal p) => Guid.Parse(p.FindFirstValue(SessionId)!);
@@ -60,7 +63,16 @@ public sealed class SessionAuthenticationHandler(
             new Claim(GomClaims.IsOwner, found.User.IsOwner ? "true" : "false"),
             new Claim(GomClaims.ReadReceipts, found.User.ShareReadReceipts ? "true" : "false"),
         ], GomClaims.Scheme);
+        if (found.User.RequestedAt is not null)
+            identity.AddClaim(new Claim(GomClaims.Standing, found.User.RefusedAt is null ? GomClaims.Pending : GomClaims.Refused));
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), GomClaims.Scheme));
+    }
+
+    /// <summary>A request to join that tries anything else is told why, so the page can show its waiting screen.</summary>
+    protected override async Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        if (Context.User.HasClaim(c => c.Type == GomClaims.Standing)) await Response.WriteAsJsonAsync(new { error = "pending_approval" });
     }
 
     private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a < b ? a : b;
