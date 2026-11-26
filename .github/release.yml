@@ -1,0 +1,13 @@
+# Sections of a release's generated notes, by each pull request's one type label (docs/decisions.md).
+changelog:
+  categories:
+    - title: New
+      labels: [enhancement]
+    - title: Fixes
+      labels: [bug]
+    - title: Build and CI
+      labels: [ci]
+    - title: Docs
+      labels: [documentation]
+    - title: Other
+      labels: ["*"]
