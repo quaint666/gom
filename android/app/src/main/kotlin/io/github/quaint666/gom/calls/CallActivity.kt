@@ -27,6 +27,8 @@ import kotlinx.coroutines.launch
  */
 class CallActivity : ComponentActivity() {
     private var locked by mutableStateOf(false)
+    /** Opened by calling: who is being called, shown as "Calling…" until the service has the call (else "no call" looks like ringing). */
+    private var dialling by mutableStateOf<String?>(null)
     /** What waits for the microphone question's answer: answering, or calling back. */
     private var afterMic: (() -> Unit)? = null
 
@@ -57,7 +59,8 @@ class CallActivity : ComponentActivity() {
             val routes by CallService.sound.collectAsState()
             val hidden by CallService.lockedTitle.collectAsState()
             var choosing by remember { mutableStateOf(false) }
-            CallScreen(view, routes, locked, hidden, act, choosing) { choosing = it }
+            val shown = view ?: dialling?.let { CallView(null, "", Peer(it), mine = true, phase = Phase.OUTGOING) }
+            CallScreen(shown, routes, locked, hidden, act, choosing) { choosing = it }
         }
         // The screen closes once the call it showed is over and its ending has been shown.
         lifecycleScope.launch {
@@ -75,11 +78,12 @@ class CallActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
-        if (!CallService.running) finish()   // the call ended while the screen was away
+        if (!CallService.running && dialling == null) finish()   // the call ended while the screen was away
     }
 
     private fun handle(intent: Intent?) {
         if (intent?.action == ANSWER) withMic { CallService.answer(this) }
+        dialling = if (intent?.action == DIALLING) intent.getStringExtra(EXTRA_NAME).orEmpty() else null
     }
 
     private fun withMic(then: () -> Unit) {
@@ -108,5 +112,8 @@ class CallActivity : ComponentActivity() {
     companion object {
         /** Open to answer (the ringing notification's button). */
         const val ANSWER = "io.github.quaint666.gom.call.SCREEN_ANSWER"
+        /** Open as a call starts from here, with [EXTRA_NAME], the one called. */
+        const val DIALLING = "io.github.quaint666.gom.call.SCREEN_DIALLING"
+        const val EXTRA_NAME = "name"
     }
 }

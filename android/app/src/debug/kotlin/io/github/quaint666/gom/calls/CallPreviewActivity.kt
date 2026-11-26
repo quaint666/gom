@@ -11,7 +11,8 @@ import kotlinx.coroutines.launch
 /**
  * Debug builds only: shows one of [CallScreenPreviews]' screens full size on a phone or emulator, with no call and no server
  * (`adb shell am start -n <package>/io.github.quaint666.gom.calls.CallPreviewActivity --es screen 25`). `--es screen loopback`
- * instead connects two of the app's WebRTC connections to each other, with no server, and logs how it went (tag GomLoopback).
+ * instead connects two of the app's WebRTC connections to each other, with no server, and logs how it went (tag GomLoopback);
+ * `--es screen dial` starts a call as the page's button does, to a chat that does not exist.
  */
 class CallPreviewActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,6 +21,8 @@ class CallPreviewActivity : ComponentActivity() {
         val screen = intent.getStringExtra("screen").orEmpty()
         setContent { previews[screen]?.invoke() ?: Calling() }
         if (screen == "loopback") loopback()
+        // A call to a chat that does not exist, as the page's call button would start it: the service, the call screen, an ending.
+        if (screen == "dial") { CallService.dial(this, "00000000-0000-4000-8000-000000000000", "Thử", null); finish() }
     }
 
     private fun loopback() = lifecycleScope.launch {
