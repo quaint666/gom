@@ -9,6 +9,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<SiteSettings> Site => Set<SiteSettings>();
     public DbSet<ContactMessage> ContactMessages => Set<ContactMessage>();
+    public DbSet<Call> Calls => Set<Call>();
+    public DbSet<CallParty> CallParties => Set<CallParty>();
     public DbSet<OneTimeLink> Links => Set<OneTimeLink>();
     public DbSet<InviteUse> InviteUses => Set<InviteUse>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
@@ -35,6 +37,33 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("site_settings", t => t.HasCheckConstraint("ck_site_settings_one_row", "id = 1"));
             e.Property(x => x.Id).ValueGeneratedNever();
             e.HasData(new SiteSettings { Id = 1, OpenSignUp = false });
+        });
+
+        b.Entity<Call>(e =>
+        {
+            e.ToTable("calls", t =>
+            {
+                t.HasCheckConstraint("ck_calls_state", "state IN (1, 2, 3)");
+                t.HasCheckConstraint("ck_calls_outcome", "(state = 3) = (outcome IS NOT NULL) AND (outcome IS NULL OR outcome IN (1, 2, 3, 4, 5))");
+                t.HasCheckConstraint("ck_calls_two", "caller_id <> callee_id");
+            });
+            e.HasIndex(x => new { x.CallerId, x.ClientId }).IsUnique();
+            e.HasIndex(x => x.State);
+            e.HasIndex(x => x.MessageId);
+            e.HasIndex(x => x.CalleeId);
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CallerId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CalleeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<CallParty>(e =>
+        {
+            e.ToTable("call_parties");
+            e.HasKey(x => x.UserId);
+            e.HasIndex(x => x.CallId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Call>().WithMany().HasForeignKey(x => x.CallId).OnDelete(DeleteBehavior.Restrict);
         });
 
         b.Entity<ContactMessage>(e =>
@@ -184,7 +213,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("messages", t =>
             {
                 t.HasCheckConstraint("ck_messages_seq", "seq > 0");
-                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7)");
+                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8)");
                 t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
                 t.HasCheckConstraint("ck_messages_sticker", "sticker IS NULL OR (body = '' AND notice IS NULL)");
             });

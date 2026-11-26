@@ -137,6 +137,121 @@ namespace Gom.Web.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.Call", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AnswerSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("answer_session_id");
+
+                    b.Property<DateTimeOffset?>("AnsweredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("answered_at");
+
+                    b.Property<Guid>("CalleeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("callee_id");
+
+                    b.Property<DateTimeOffset?>("CalleeSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("callee_seen_at");
+
+                    b.Property<Guid>("CallerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caller_id");
+
+                    b.Property<DateTimeOffset?>("CallerSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("caller_seen_at");
+
+                    b.Property<Guid>("CallerSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("caller_session_id");
+
+                    b.Property<Guid>("ClientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("client_id");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conversation_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<Guid?>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<int?>("Outcome")
+                        .HasColumnType("integer")
+                        .HasColumnName("outcome");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer")
+                        .HasColumnName("state");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_calls");
+
+                    b.HasIndex("CalleeId")
+                        .HasDatabaseName("ix_calls_callee_id");
+
+                    b.HasIndex("ConversationId")
+                        .HasDatabaseName("ix_calls_conversation_id");
+
+                    b.HasIndex("MessageId")
+                        .HasDatabaseName("ix_calls_message_id");
+
+                    b.HasIndex("State")
+                        .HasDatabaseName("ix_calls_state");
+
+                    b.HasIndex("CallerId", "ClientId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_calls_caller_id_client_id");
+
+                    b.ToTable("calls", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_calls_outcome", "(state = 3) = (outcome IS NOT NULL) AND (outcome IS NULL OR outcome IN (1, 2, 3, 4, 5))");
+
+                            t.HasCheckConstraint("ck_calls_state", "state IN (1, 2, 3)");
+
+                            t.HasCheckConstraint("ck_calls_two", "caller_id <> callee_id");
+                        });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.CallParty", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("CallId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("call_id");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_call_parties");
+
+                    b.HasIndex("CallId")
+                        .HasDatabaseName("ix_call_parties_call_id");
+
+                    b.ToTable("call_parties", (string)null);
+                });
+
             modelBuilder.Entity("Gom.Web.Data.ContactMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -526,7 +641,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 
@@ -1032,6 +1147,53 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_blocks_blocker_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.Call", b =>
+                {
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("CalleeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_calls_callee_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("CallerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_calls_caller_id");
+
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_calls_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.Message", null)
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_calls_message_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.CallParty", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Call", null)
+                        .WithMany()
+                        .HasForeignKey("CallId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_call_parties_call_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_call_parties_user_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.Conversation", b =>

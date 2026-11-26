@@ -23,6 +23,8 @@ Notifications need a key pair: `dotnet run --project src/Gom.Web -- --vapid-keys
 
 The privacy policy (`/privacy`, which Google Play asks for) names who runs this Gom: set `Site__Operator` to that name. Without it the page says "the person who runs this site". Its contact form keeps each message `Contact__KeepDays` days (180 by default; the page says the number) and takes at most `Contact__DailyMax` messages a day from everyone together (50); the owner reads them in Settings and is told by a notification.
 
+Voice calls (Android app, `docs/voice-calls.md`) are off until `Calls__Enabled` is `true`; then `/api/calls` answers and `/api/me` says `calls: true`. `Calls__RingSeconds` (45) is how long a call rings, `Calls__AliveSeconds` (30) how often a phone in a call says it is still there, `Calls__SilentSeconds` (90) how long a silent side is waited for, and `Calls__CallBurst` (3) and `Calls__SecondsBetweenCalls` (20) how fast one person may start calls.
+
 The first start needs an owner account: set `Owner__GomId` and `Owner__Password` (10 characters or more) once, on an empty database, then remove the password from the configuration. Apply the database migrations first (`dotnet dotnet-ef database update --project src/Gom.Web`); the app does not do it for you.
 
 Decisions and their reasons are in `docs/decisions.md`; what comes next is in `docs/next-session.md`. The mockups and design notes are in `design/`.

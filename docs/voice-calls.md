@@ -183,8 +183,14 @@ video, recording, iPhone native.
 
 1. **Design:** mockups in `design/` for the incoming call, the call screen, the call ended state and the chat rows;
    a rule in `design-notes.md`; the `/privacy` page.
-2. **Server, calls:** the `calls` table (migration), the call states, the REST steps, socket frames, the chat rows,
-   the endings in section 2 (block, deletion, sign-out), the rate limit, the protocol version, the switch. Tests.
+2. **Server, calls** (2a, 2026-11-26): the `calls` table (migration `Calls`), the call states, the REST steps, socket frames,
+   the chat line, the endings in section 2, the rate limit, the protocol version, the switch. Tests. **2b, web:** the call
+   lines drawn in the chat and the list (mockups 29 and 30), and the missed-call notification. Settled while designing 2a
+   (H, 2026-11-26): the server decides which answer wins (no "select answer" step as in Matrix); each offer and answer carries
+   all its addresses (no trickle ICE: one message, about a second slower to start); offers and answers stay in memory only;
+   two people calling each other at once get the first call; a phone in a call says "still here" every 30 s and 90 s of
+   silence ends it; a missed call notifies even in a muted chat; a person who cannot take calls (no app) is not offered the
+   button, checked once phones register (PR 4).
 3. **Server, relay:** Cloudflare logins (3 hours, tag, revoke), a fake Cloudflare in tests.
 4. **Server, phones:** registering FCM tokens, sending with FCM's HTTP v1 API, the call and cancel pushes with their
    expiry, a fake FCM in tests.

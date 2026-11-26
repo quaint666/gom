@@ -5,7 +5,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Gom.Web.Chat;
 
 /// <summary>What a notice says, for the page to put in words: what happened, who it was about, for a rename the new name, for a trim the date.</summary>
-public sealed record NoticeDto(string Type, MessageEndpoints.PersonDto? Target, string? Title, DateTimeOffset? Before = null);
+public sealed record NoticeDto(string Type, MessageEndpoints.PersonDto? Target, string? Title, DateTimeOffset? Before = null, CallNoticeDto? Call = null);
+
+/// <summary>A call's line in the chat: who called, how it ended, when it began, and how long it lasted once answered (seconds).</summary>
+public sealed record CallNoticeDto(Guid CallerId, string Outcome, DateTimeOffset StartedAt, int Seconds);
 
 /// <summary>
 /// Notices: the lines in a group's thread that say who was added, who was taken out, who left, and what the group was renamed to;
@@ -19,12 +22,23 @@ public static class Notices
 {
     private static string Name(NoticeKind kind) => kind switch
     {
-        NoticeKind.Added => "added", NoticeKind.Removed => "removed", NoticeKind.Left => "left", NoticeKind.FilesTrimmed => "filesTrimmed", NoticeKind.MessagesTrimmed => "messagesTrimmed", NoticeKind.Restyled => "restyled", _ => "renamed",
+        NoticeKind.Added => "added", NoticeKind.Removed => "removed", NoticeKind.Left => "left", NoticeKind.FilesTrimmed => "filesTrimmed", NoticeKind.MessagesTrimmed => "messagesTrimmed", NoticeKind.Restyled => "restyled", NoticeKind.Call => "call", _ => "renamed",
     };
 
-    private static NoticeDto Dto(NoticeKind kind, MessageEndpoints.PersonDto? target, string body) => new(Name(kind), target,
+    private static NoticeDto Dto(NoticeKind kind, MessageEndpoints.PersonDto? target, string body, CallNoticeDto? call = null) => new(Name(kind), target,
         kind == NoticeKind.Renamed ? body : null,
-        kind is NoticeKind.FilesTrimmed or NoticeKind.MessagesTrimmed ? DateTimeOffset.Parse(body, System.Globalization.CultureInfo.InvariantCulture) : null);
+        kind is NoticeKind.FilesTrimmed or NoticeKind.MessagesTrimmed ? DateTimeOffset.Parse(body, System.Globalization.CultureInfo.InvariantCulture) : null,
+        call);
+
+    /// <summary>The calls behind these call lines, by line.</summary>
+    private static async Task<Dictionary<Guid, CallNoticeDto>> CallsOf(GomDbContext db, IReadOnlyCollection<Guid> lines, CancellationToken ct)
+    {
+        if (lines.Count == 0) return [];
+        var rows = await db.Calls.AsNoTracking().Where(k => k.MessageId != null && lines.Contains(k.MessageId.Value))
+            .Select(k => new { Line = k.MessageId!.Value, k.CallerId, k.Outcome, k.CreatedAt, k.AnsweredAt, k.EndedAt }).ToListAsync(ct);
+        return rows.ToDictionary(r => r.Line, r => new CallNoticeDto(r.CallerId, CallEndpoints.Name(r.Outcome ?? CallOutcome.Failed), r.CreatedAt,
+            r.AnsweredAt is { } a && r.EndedAt is { } e && e > a ? (int)(e - a).TotalSeconds : 0));
+    }
 
     /// <summary>
     /// Writes a notice into the stream. <paramref name="text"/> is the new name of a rename, the date of a trim, else empty. Call it inside the transaction that made the change, with the conversation locked. Returns what
@@ -52,7 +66,8 @@ public static class Notices
         var people = await db.Users.AsNoTracking().Where(u => u.Id == notice.SenderId || u.Id == notice.NoticeTargetId).Select(u => new MessageEndpoints.PersonDto(u.Id, u.DisplayName)).ToListAsync(ct);
         var actor = people.Single(p => p.Id == notice.SenderId);
         var target = notice.NoticeTargetId is { } t ? people.Single(p => p.Id == t) : null;
-        var dto = MessageEndpoints.ToDto(notice, actor, null, null, new MessageExtras(null, Dto(notice.Notice!.Value, target, notice.Body)));
+        var call = notice.Notice == NoticeKind.Call ? (await CallsOf(db, [notice.Id], ct)).GetValueOrDefault(notice.Id) : null;
+        var dto = MessageEndpoints.ToDto(notice, actor, null, null, new MessageExtras(null, Dto(notice.Notice!.Value, target, notice.Body, call)));
         await live.PublishAsync(db, notice.Seq, "created", dto);
     }
 
@@ -65,6 +80,7 @@ public static class Notices
                           join u in db.Users on m.NoticeTargetId equals u.Id into targets
                           from t in targets.DefaultIfEmpty()
                           select new { m.Id, Kind = m.Notice!.Value, m.Body, TargetId = (Guid?)t.Id, TargetName = t.DisplayName }).ToListAsync(ct);
-        return rows.ToDictionary(r => r.Id, r => Dto(r.Kind, r.TargetId is { } id ? new MessageEndpoints.PersonDto(id, r.TargetName) : null, r.Body));
+        var calls = await CallsOf(db, [.. rows.Where(r => r.Kind == NoticeKind.Call).Select(r => r.Id)], ct);
+        return rows.ToDictionary(r => r.Id, r => Dto(r.Kind, r.TargetId is { } id ? new MessageEndpoints.PersonDto(id, r.TargetName) : null, r.Body, calls.GetValueOrDefault(r.Id)));
     }
 }

@@ -23,7 +23,7 @@ public static class AccountDeletion
     private static IResult Error(string code) => Results.BadRequest(new { error = code });
 
     internal static async Task<IResult> Delete([FromBody] DeleteRequest request, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live,
-        ConnectionRegistry sockets, IBlobStore blobs, CancellationToken ct)
+        ConnectionRegistry sockets, IBlobStore blobs, Chat.CallRelay relay, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var gomId = http.User.FindFirst(GomClaims.GomId)!.Value;
@@ -37,6 +37,7 @@ public static class AccountDeletion
         Guid? picture;
         var notices = new List<Message>();
         HashSet<Guid> told;
+        List<(Guid Id, Guid Conversation, Guid Caller, Guid Callee)> unfinished;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
             picture = await db.Users.Where(u => u.Id == me).Select(u => u.AvatarId).SingleAsync(ct);
@@ -78,6 +79,8 @@ public static class AccountDeletion
                 notices.Add(await Notices.Write(db, group, me, NoticeKind.Left, null, "", now, ct));
             }
 
+            // Their calls go, with their lines in the chat (docs/voice-calls.md, decision 16); one still going ends for the other side.
+            unfinished = await Chat.CallEndpoints.DeleteRecords(db, me, ct);
             await db.Friendships.Where(f => f.UserLow == me || f.UserHigh == me).ExecuteDeleteAsync(ct);
             await db.Blocks.Where(b => b.BlockerId == me || b.BlockedId == me).ExecuteDeleteAsync(ct);
             await db.JoinRequests.Where(j => j.UserId == me || j.RequestedBy == me).ExecuteDeleteAsync(ct);
@@ -96,6 +99,11 @@ public static class AccountDeletion
         AttachmentFiles.Forget(blobs, files);
         if (picture is { } old) blobs.Delete(old.ToString());
         sockets.CloseUser(me);
+        foreach (var call in unfinished)
+        {
+            relay.Forget(call.Id);
+            relay.Send(call.Caller == me ? call.Callee : call.Caller, Frames.CallEnded(call.Id, call.Conversation, "failed"));
+        }
         live.ConversationsChanged(told);
         foreach (var notice in notices) await Notices.Publish(db, live, notice, ct);
         SessionCookie.Clear(http.Response);

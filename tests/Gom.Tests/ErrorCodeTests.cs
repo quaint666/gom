@@ -9,7 +9,9 @@ namespace Gom.Tests;
 public class ErrorCodeTests
 {
     /// <summary>Codes the server sends that no page acts on: a request no page makes that way.</summary>
-    private static readonly HashSet<string> NotForPages = ["bad_request", "websocket_required"];
+    /// The call codes are the Android app's until calls come to the web pages (docs/voice-calls.md, PR 8).
+    private static readonly HashSet<string> NotForPages = ["bad_request", "websocket_required",
+        "unsupported_version", "invalid_sdp", "invalid_call", "call_waiting", "too_many_calls", "in_call", "call_ended", "call_answered", "not_in_call"];
 
     private static string Web()
     {
