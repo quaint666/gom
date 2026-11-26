@@ -36,6 +36,10 @@ export interface Limits {
   inviteDefaultUses: number;
   /** The pages' code number (Pages.PageVersion), sent with every request so a server that has moved past it can say "reload". */
   pageVersion: number;
+  /** The privacy page's form: the message, the way to reach the writer, and how many days the owner keeps it. */
+  contactChars: number;
+  contactReplyChars: number;
+  contactKeepDays: number;
 }
 
 /** Read from the page each time (it is small), so nothing here can drift from what the server sent. */

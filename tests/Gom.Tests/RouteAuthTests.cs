@@ -10,13 +10,14 @@ namespace Gom.Tests;
 /// </summary>
 public class RouteAuthTests(AppFixture app) : IClassFixture<AppFixture>
 {
-    /// <summary>What a visitor may call: signing in, an invite, asking to join, and a password reset. Each checks its own token or limit.</summary>
+    /// <summary>What a visitor may call: signing in, an invite, asking to join, a password reset, and writing to the owner. Each checks its own token or limit.</summary>
     private static readonly HashSet<string> Open =
     [
         "POST /api/session",
         "GET /api/join/{token}", "POST /api/join/{token}",
         "GET /api/sign-up", "POST /api/sign-up",
         "GET /api/reset/{token}", "POST /api/reset/{token}",
+        "POST /api/contact",
     ];
 
     [Fact]
@@ -38,8 +39,8 @@ public class RouteAuthTests(AppFixture app) : IClassFixture<AppFixture>
     /// <summary>The owner's tools, each written out: one that loses its Owner policy, or a new one, changes this list on purpose.</summary>
     private static readonly string[] OwnerOnly =
     [
-        "DELETE /api/invites/{id:guid}", "DELETE /api/join-requests/{gomId}", "DELETE /api/owner/groups/{id:guid}",
-        "GET /api/invites", "GET /api/join-requests", "GET /api/owner/storage", "GET /api/users",
+        "DELETE /api/contact/{id:guid}", "DELETE /api/invites/{id:guid}", "DELETE /api/join-requests/{gomId}", "DELETE /api/owner/groups/{id:guid}",
+        "GET /api/contact", "GET /api/invites", "GET /api/join-requests", "GET /api/owner/storage", "GET /api/users",
         "POST /api/invites", "POST /api/join-requests/{gomId}/approve", "POST /api/join-requests/{gomId}/refuse",
         "POST /api/owner/trim/files", "POST /api/owner/trim/files/preview", "POST /api/owner/trim/messages", "POST /api/owner/trim/messages/preview",
         "POST /api/users/{gomId}/disable", "POST /api/users/{gomId}/enable", "POST /api/users/{gomId}/reset-link",

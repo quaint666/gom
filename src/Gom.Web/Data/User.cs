@@ -46,6 +46,16 @@ public class SiteSettings
     public bool OpenSignUp { get; set; }
 }
 
+/// <summary>A message to the owner from the privacy page's form; deleted by itself after a while (ContactOptions.KeepDays).</summary>
+public class ContactMessage
+{
+    public Guid Id { get; set; }
+    public string Body { get; set; } = "";
+    /// <summary>How to answer, if the writer left one (an address, a phone number, a Gom ID): as they typed it.</summary>
+    public string? ReplyTo { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public class Session
 {
     public Guid Id { get; set; }

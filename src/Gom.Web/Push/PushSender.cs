@@ -55,7 +55,7 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GomDbContext>();
         var now = clock.GetUtcNow();
-        if (job.JoinRequest) { await TellOwnerAsync(db, job, now, ct); return; }
+        if (job.JoinRequest || job.Contact) { await TellOwnerAsync(db, job, now, ct); return; }
         var chat = await db.Conversations.AsNoTracking().Where(c => c.Id == job.ConversationId).Select(c => new { c.Kind, c.Title }).SingleOrDefaultAsync(ct);
         if (chat is null) return;
 
@@ -85,7 +85,10 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         }
     }
 
-    /// <summary>Someone asked to join: the owner's devices are told, at their level ("nothing" names nobody); a tap opens the owner's page.</summary>
+    /// <summary>
+    /// Someone asked to join, or wrote from the privacy page: the owner's devices are told, at their level ("nothing" names nobody; a
+    /// contact message never carries its words); a tap opens the owner's page.
+    /// </summary>
     private async Task TellOwnerAsync(GomDbContext db, PushJob job, DateTimeOffset now, CancellationToken ct)
     {
         var devices = await (
@@ -98,8 +101,8 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         foreach (var d in devices)
         {
             var say = ServerText.For(d.Language);
-            var body = d.Level == PushLevel.Nothing ? say.JoinRequestUnnamed : say.JoinRequest(job.SenderName);
-            await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, new { c = "", title = "Gom", body, open = "owner" }, "normal", "join-requests", now, ct);
+            var body = job.Contact ? say.ContactMessage : d.Level == PushLevel.Nothing ? say.JoinRequestUnnamed : say.JoinRequest(job.SenderName);
+            await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, new { c = "", title = "Gom", body, open = "owner" }, "normal", job.Contact ? "contact" : "join-requests", now, ct);
         }
     }
 

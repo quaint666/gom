@@ -137,6 +137,35 @@ namespace Gom.Web.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.ContactMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("ReplyTo")
+                        .HasColumnType("text")
+                        .HasColumnName("reply_to");
+
+                    b.HasKey("Id")
+                        .HasName("pk_contact_messages");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_contact_messages_created_at");
+
+                    b.ToTable("contact_messages", (string)null);
+                });
+
             modelBuilder.Entity("Gom.Web.Data.Conversation", b =>
                 {
                     b.Property<Guid>("Id")

@@ -79,6 +79,8 @@ export function errorText(failure: Failure): string {
     case 'invalid_note': return say.errors.invalidNote(l.noteChars);
     case 'sign_up_closed': return say.errors.signUpClosed;
     case 'sign_up_full': return say.errors.signUpFull;
+    case 'invalid_contact': return say.errors.invalidContact(l.contactChars, l.contactReplyChars);
+    case 'contact_full': return say.errors.contactFull;
     case 'pending_approval': return say.errors.pendingApproval;
     case 'not_a_request': return say.errors.notARequest;
     case 'invalid_language': return say.errors.invalidLanguage;

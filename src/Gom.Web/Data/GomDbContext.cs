@@ -8,6 +8,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<SiteSettings> Site => Set<SiteSettings>();
+    public DbSet<ContactMessage> ContactMessages => Set<ContactMessage>();
     public DbSet<OneTimeLink> Links => Set<OneTimeLink>();
     public DbSet<InviteUse> InviteUses => Set<InviteUse>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
@@ -34,6 +35,12 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("site_settings", t => t.HasCheckConstraint("ck_site_settings_one_row", "id = 1"));
             e.Property(x => x.Id).ValueGeneratedNever();
             e.HasData(new SiteSettings { Id = 1, OpenSignUp = false });
+        });
+
+        b.Entity<ContactMessage>(e =>
+        {
+            e.ToTable("contact_messages");
+            e.HasIndex(x => x.CreatedAt);
         });
 
         b.Entity<User>(e =>

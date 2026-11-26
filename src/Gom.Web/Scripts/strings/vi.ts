@@ -132,6 +132,8 @@ export const vi = {
     invalidNote: (max: number) => `Hãy cho chủ Gom biết bạn là ai (tối đa ${max} ký tự).`,
     signUpClosed: 'Gom hiện không nhận yêu cầu tham gia.',
     signUpFull: 'Gom đang không nhận yêu cầu mới. Hãy thử lại sau.',
+    invalidContact: (max: number, replyMax: number) => `Hãy viết lời nhắn (tối đa ${max} ký tự); cách liên lạc tối đa ${replyMax} ký tự, trên một dòng.`,
+    contactFull: 'Hôm nay Gom đã nhận nhiều thư. Hãy thử lại sau.',
     pendingApproval: 'Tài khoản của bạn đang chờ chủ Gom duyệt.',
     notARequest: 'Tài khoản này không phải là yêu cầu tham gia.',
     invalidLanguage: 'Gom chưa có ngôn ngữ này.',
@@ -390,6 +392,9 @@ export const vi = {
     openSignUp: 'Cho phép mọi người xin tham gia (bạn duyệt từng người)',
     waitingCount: (n: number) => `Chờ duyệt (${n})`,
     refusedList: 'Đã từ chối',
+    contactHeading: 'Thư liên hệ',
+    contactNote: (days: number) => `Gửi từ trang Chính sách quyền riêng tư. Thư tự xóa sau ${days} ngày.`,
+    contactReply: (how: string) => `liên lạc: ${how}`,
     noneWaiting: 'Không có ai đang chờ duyệt.',
     askedAt: (when: string) => `Xin lúc ${when}`,
     approve: 'Duyệt',
@@ -685,13 +690,22 @@ export const vi = {
       ] },
       { heading: 'Quyền của bạn', items: [
         'Bạn có thể xem và sửa tên và ảnh đại diện, xem và đăng xuất các thiết bị, tắt xác nhận đã đọc, và xóa tài khoản bất cứ lúc nào.',
-        'Muốn hỏi, sửa hay xóa dữ liệu khác, hãy liên hệ người vận hành.',
+        'Muốn hỏi, sửa hay xóa dữ liệu khác, hãy viết cho người vận hành bằng mẫu bên dưới.',
       ] },
       { heading: 'Khi chính sách thay đổi', items: [
         'Ngày cập nhật ở đầu trang đổi theo. Thay đổi lớn sẽ được báo trong Gom.',
       ] },
     ],
     home: 'Về Gom',
+    contactHeading: 'Liên hệ',
+    contactLead: (days: number) => `Viết cho người vận hành về quyền riêng tư hay bất cứ điều gì. Chỉ người vận hành đọc được thư này, và nó tự xóa sau ${days} ngày. Nếu muốn được trả lời, hãy để lại cách liên lạc.`,
+    contactBody: 'Lời nhắn',
+    contactReply: 'Cách liên lạc với bạn (không bắt buộc)',
+    contactReplyHint: 'Email, số điện thoại hoặc Gom ID',
+    /** The hidden field bots fill in: never seen by a person, read only by a screen reader that ignores the hiding. */
+    contactTrap: 'Để trống ô này',
+    contactSend: 'Gửi',
+    contactSent: 'Đã gửi. Cảm ơn bạn.',
   },
 };
 

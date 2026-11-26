@@ -14,7 +14,7 @@ const SERVER_CODE_LIST = [
   'invalid_invite', 'too_large', 'animated_too_large', 'video_too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'daily_upload_limit', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
   'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
   'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette', 'invalid_pattern',
-  'update_required',
+  'update_required', 'invalid_contact', 'contact_full',
 ] as const;
 
 /** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
@@ -31,6 +31,8 @@ export type Standing = 'member' | 'pending' | 'refused';
 export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string }
 /** Someone asking to join, as the owner sees them. */
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
+/** A message to the owner from the privacy page's form. */
+export interface ContactMessage { id: string; body: string; replyTo: string | null; createdAt: string }
 export interface SignUpBody { gomId: string; password: string; displayName: string; note: string }
 export interface SessionInfo { id: string; deviceLabel: string; createdAt: string; lastSeenAt: string; current: boolean }
 /** A link the owner gives out. It works for `maxUses` people (any number when null) until it expires or is revoked. */
@@ -144,6 +146,10 @@ export interface Api {
   /** The person takes back their own request: the account goes. */
   withdrawSignUp(): Promise<Result<void>>;
   signUpRequests(): Promise<Result<{ open: boolean; requests: JoinRequest[] }>>;
+  /** The privacy page's form: anyone may write to the owner. `website` is the hidden field a person leaves empty. */
+  contact(body: string, replyTo: string, website: string): Promise<Result<void>>;
+  contactMessages(): Promise<Result<{ messages: ContactMessage[] }>>;
+  deleteContact(id: string): Promise<Result<void>>;
   setSignUpOpen(open: boolean): Promise<Result<void>>;
   approveJoin(gomId: string): Promise<Result<void>>;
   refuseJoin(gomId: string): Promise<Result<void>>;
@@ -352,6 +358,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     signUp: (body) => call('POST', '/api/sign-up', body),
     withdrawSignUp: () => call('DELETE', '/api/sign-up'),
     signUpRequests: () => call('GET', '/api/join-requests'),
+    contact: (body, replyTo, website) => call('POST', '/api/contact', { body, replyTo, website }),
+    contactMessages: () => call('GET', '/api/contact'),
+    deleteContact: (id) => call('DELETE', `/api/contact/${enc(id)}`),
     setSignUpOpen: (open) => call('PUT', '/api/sign-up-open', { open }),
     approveJoin: (gomId) => call('POST', `/api/join-requests/${enc(gomId)}/approve`),
     refuseJoin: (gomId) => call('POST', `/api/join-requests/${enc(gomId)}/refuse`),

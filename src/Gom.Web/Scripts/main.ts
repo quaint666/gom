@@ -173,7 +173,7 @@ if (root) {
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
     case 'group': mountGroup(root, api, go, token); break;
-    case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? ''); break;
+    case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? '', api); break;
   }
 }
 

@@ -1,5 +1,5 @@
 import { html, nothing, render } from 'lit-html';
-import type { Api, Failure, Invite, Issued, JoinRequest, Member } from '../api.js';
+import type { Api, ContactMessage, Failure, Invite, Issued, JoinRequest, Member } from '../api.js';
 import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, errorBox, formatTime } from '../ui.js';
@@ -30,6 +30,8 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   /** Asking to join: whether it is open, and who asked (waiting first, then refused). */
   let signUpOpen = false;
   let requests: JoinRequest[] = [];
+  /** Messages from the privacy page's form, newest first. */
+  let contacts: ContactMessage[] = [];
 
   const inviteRow = (i: Invite) => html`
     <li class="li invite" data-invite=${i.id} data-status=${i.status}>
@@ -94,6 +96,19 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       ${refused.length === 0 ? nothing : html`<h3 class="section">${say.owner.refusedList}</h3><ul class="list" data-refused-list>${refused.map(requestRow)}</ul>`}`;
   };
 
+  const contactRow = (c: ContactMessage) => html`
+    <li class="li" data-contact=${c.id}>
+      <div class="t"><small>${formatTime(c.createdAt)}${c.replyTo === null ? nothing : html` · ${say.owner.contactReply(c.replyTo)}`}</small>
+        <span class="request-note">${c.body}</span></div>
+      <button class="btn secondary small" type="button" data-delete-contact @click=${() => answer(() => api.deleteContact(c.id))}>${say.owner.remove}</button>
+    </li>`;
+
+  /** Shown only when there is something to read: the form is on the privacy page, and most days nobody writes. */
+  const contactsView = () => contacts.length === 0 ? nothing : html`
+    <h2 class="section">${say.owner.contactHeading}</h2>
+    <p class="hint">${say.owner.contactNote(limits().contactKeepDays)}</p>
+    <ul class="list" data-contact-list>${contacts.map(contactRow)}</ul>`;
+
   const shownMembers = (): Member[] => {
     if (query.trim() !== '') return members.filter((m) => matches(`${m.displayName} ${m.gomId}`, query));
     return moreMembers || members.length <= HANDFUL ? members : members.slice(0, HANDFUL);
@@ -114,6 +129,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       </div>
       ${linkBox()}
       ${requestsView()}
+      ${contactsView()}
       <h2 class="section">${say.owner.invites}</h2>
       <ul class="list">${(moreInvites || invites.length <= HANDFUL ? invites : invites.slice(0, HANDFUL)).map(inviteRow)}</ul>
       ${moreInvites || invites.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-invites @click=${() => { moreInvites = true; update(); }}>${say.friends.seeMoreCount(invites.length - HANDFUL)}</button>`}
@@ -130,10 +146,11 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   const show = (issued: Issued, note: string) => { link = { url: origin + issued.path, note }; copied = ''; error = null; };
 
   async function reload(): Promise<void> {
-    const [i, m, r] = await Promise.all([api.invites(), api.members(), api.signUpRequests()]);
+    const [i, m, r, c] = await Promise.all([api.invites(), api.members(), api.signUpRequests(), api.contactMessages()]);
     if (i.ok) invites = i.data; else error = i;
     if (m.ok) members = m.data; else error = m;
     if (r.ok) { signUpOpen = r.data.open; requests = r.data.requests; } else error = r;
+    if (c.ok) contacts = c.data.messages; else error = c;
     update();
   }
 
