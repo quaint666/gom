@@ -5,12 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
+import io.github.quaint666.gom.calls.CallService
 
 /** Starts what the whole app shares: the server's origin rule, Firebase (when this build has its settings) and the channels. */
 class GomApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Notices.channels(this)
+        CallService.channels(this)
         if (push) {
             // Started here rather than from google-services.json, so the values stay out of the repository (README).
             val options = FirebaseOptions.Builder()

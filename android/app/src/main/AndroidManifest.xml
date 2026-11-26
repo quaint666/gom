@@ -3,6 +3,14 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Calls (docs/voice-calls.md, decision 30): the microphone, Android's call system for an app's own calls, the service that keeps
+         a call going (phoneCall, and microphone once the person answers or calls), and ringing over the lock screen. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- No backup: a session copied to another phone would sign it in. -->
     <application
@@ -31,6 +39,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".calls.CallService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall|microphone" />
 
         <service
             android:name=".PushService"

@@ -6,4 +6,12 @@
     <string name="new_message">Tin nhắn mới</string>
     <string name="new_notice">Có thông báo mới</string>
     <string name="not_configured">Bản này được dựng mà không có địa chỉ máy chủ (gom.&lt;flavour&gt;.baseUrl).</string>
+    <string name="channel_calls">Cuộc gọi</string>
+    <string name="channel_missed_calls">Cuộc gọi nhỡ</string>
+    <string name="call_voice">Cuộc gọi thoại Gom</string>
+    <string name="call_incoming">Cuộc gọi đến</string>
+    <string name="call_calling">Đang gọi…</string>
+    <string name="call_ringing">Đang đổ chuông…</string>
+    <string name="call_connecting">Đang kết nối…</string>
+    <string name="call_reconnecting">Đang kết nối lại…</string>
 </resources>

@@ -56,6 +56,11 @@ class ProtocolTest {
         assertEquals(FromPage.Clear("c-1"), FromPage.parse("""{"t":"clear","c":"c-1"}"""))
         assertNull(FromPage.parse("""{"t":"clear"}"""))
         assertNull(FromPage.parse("""{"t":"call"}"""))
+        val chat = "6f1e2d3c-4b5a-4968-8776-655443322110"
+        assertEquals(FromPage.Call(chat, "Minh", "/api/avatars/a.webp"), FromPage.parse("""{"t":"call","c":"$chat","name":"Minh","avatar":"/api/avatars/a.webp"}"""))
+        assertEquals(FromPage.Call(chat, "Minh", null), FromPage.parse("""{"t":"call","c":"$chat","name":"Minh","avatar":null}"""))
+        assertEquals(FromPage.Call(chat, "Minh", null), FromPage.parse("""{"t":"call","c":"$chat","name":"Minh","avatar":"https://elsewhere.example/a.webp"}"""))
+        assertNull(FromPage.parse("""{"t":"call","c":"../x","name":"Minh"}"""))
         assertNull(FromPage.parse("not json"))
         assertNull(FromPage.parse("[]"))
     }
@@ -72,6 +77,8 @@ class ProtocolTest {
         assertEquals("fid-1", hello.getString("fid"))
         assertTrue(hello.getBoolean("push"))
         assertFalse(JSONObject(ToPage.hello("1.0.0", push = false, permission = "default", fid = null)).has("fid"))
+        assertFalse(hello.has("calls"))   // a build that takes no calls says nothing of them, as an older app
+        assertTrue(JSONObject(ToPage.hello("1.0.0", push = true, permission = "granted", fid = null, calls = true)).getBoolean("calls"))
         assertEquals("fid-2", JSONObject(ToPage.enabled("fid-2")).getString("fid"))
         assertEquals("fid", JSONObject(ToPage.fid("fid-3")).getString("t"))
         assertEquals("denied", JSONObject(ToPage.denied).getString("t"))

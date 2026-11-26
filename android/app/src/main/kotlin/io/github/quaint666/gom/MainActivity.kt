@@ -36,6 +36,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
+import io.github.quaint666.gom.calls.CallService
 
 /**
  * Gom in a web view, and only Gom (docs/voice-calls.md, decision 31): its own pages load inside, every other address opens in
@@ -64,6 +65,15 @@ class MainActivity : ComponentActivity() {
         }
         picking?.onReceiveValue(chosen)   // always answered, or the page's file input stops working
         picking = null
+    }
+
+    /** A call the page asked for, waiting for Android's microphone question. */
+    private var dialling: FromPage.Call? = null
+
+    private val askMicrophone = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val call = dialling
+        dialling = null
+        if (granted && call != null) CallService.dial(this, call.conversation, call.name, call.avatar)
     }
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -224,12 +234,14 @@ class MainActivity : ComponentActivity() {
         when (message) {
             is FromPage.Hello -> {
                 imageBytes = message.images
-                from.send(ToPage.hello(appVersion(), GomApp.push, permission(), Registration.fid(this)))
+                // Calls ring by FCM, so a build without it takes none.
+                from.send(ToPage.hello(appVersion(), GomApp.push, permission(), Registration.fid(this), calls = CallService.AVAILABLE && GomApp.push))
             }
             FromPage.Enable -> enable()
             FromPage.Disable -> Registration.unregister(this)
             is FromPage.Clear -> Notices.clear(this, message.conversation)
             is FromPage.Theme -> paint(message.bar ?: getColor(R.color.gom), message.page ?: getColor(R.color.page))
+            is FromPage.Call -> call(message)
         }
     }
 
@@ -245,6 +257,13 @@ class MainActivity : ComponentActivity() {
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED -> register()
             else -> askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    /** The page's call button: Android's microphone question first, as a browser asks before a call. */
+    private fun call(call: FromPage.Call) {
+        if (!CallService.AVAILABLE) return
+        if (CallService.hasMic(this)) CallService.dial(this, call.conversation, call.name, call.avatar)
+        else { dialling = call; askMicrophone.launch(Manifest.permission.RECORD_AUDIO) }
     }
 
     private fun register() = Registration.register(this) { fid -> bridge.send(if (fid != null) ToPage.enabled(fid) else ToPage.failed) }
