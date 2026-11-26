@@ -34,6 +34,8 @@ export interface Limits {
   /** What a new invite starts at on the owner's page: the server's defaults. */
   inviteDefaultDays: number;
   inviteDefaultUses: number;
+  /** The pages' code number (Pages.PageVersion), sent with every request so a server that has moved past it can say "reload". */
+  pageVersion: number;
 }
 
 /** Read from the page each time (it is small), so nothing here can drift from what the server sent. */

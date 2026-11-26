@@ -41,6 +41,12 @@ public static class SocketEndpoint
         if (!http.WebSockets.IsWebSocketRequest) return Results.BadRequest(new { error = "websocket_required" });
 
         using var socket = await http.WebSockets.AcceptWebSocketAsync();
+        // A page too old for this server: 4426 tells it to stop trying and reload (a refused upgrade would only be retried).
+        if (Pages.TooOld(http.Request.Query["page"]))
+        {
+            await socket.CloseOutputAsync((WebSocketCloseStatus)4426, "update_required", CancellationToken.None);
+            return Results.Empty;
+        }
         var o = options.Value;
         var connection = new Connection(GomClaims.User(http.User), GomClaims.Session(http.User), new WebSocketSink(socket),
             o.SocketQueue, TimeSpan.FromSeconds(o.SocketSendTimeoutSeconds), loggers.CreateLogger<Connection>());

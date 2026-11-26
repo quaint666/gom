@@ -999,6 +999,27 @@ describe('chat: sending while the connection is bad', () => {
     expect(h.timers.filter((t) => t.live).at(-1)!.ms).toBe(7000);
   });
 
+  it('keeps a message the server turned away as from an older page, to send after the reload, and does not retry it here', async () => {
+    const send = vi.fn(async () => fail('update_required', 409));
+    const h = open({ send });
+    await flush();
+    write('sau khi cập nhật');
+    await flush();
+    expect(pendingOf('new-1')!.getAttribute('data-state')).toBe('queued');
+    expect(h.outbox.items.map((i) => i.body)).toEqual(['sau khi cập nhật']);
+    expect(h.timers.filter((t) => t.live)).toHaveLength(0);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not say "reconnecting" once the server has turned the page away as too old', async () => {
+    const h = open();
+    await flush();
+    h.handlers().state(false);
+    expect(root.querySelector('.warn')).not.toBeNull();
+    h.handlers().tooOld!();
+    expect(root.querySelector('.warn')).toBeNull();
+  });
+
   it('never waits less than a second, even if told zero', async () => {
     const h = open({ send: vi.fn(async () => fail('too_many_messages', 429, 0)) });
     await flush();

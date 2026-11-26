@@ -135,6 +135,7 @@ export const en: Strings = {
     invalidLanguage: 'Gom does not have this language.',
     invalidPalette: 'Gom does not have this colour.',
     invalidPattern: 'Gom does not have this background.',
+    updateRequired: 'Gom has been updated. Reload the page to carry on.',
     tooManyAttachments: (max: number) => `A message can carry at most ${count(max, 'file', 'files')}.`,
   },
   settings: {
@@ -460,6 +461,8 @@ export const en: Strings = {
   app: {
     newVersion: 'A new version of Gom is ready.',
     reloadsItself: 'Gom reloads by itself when you switch away.',
+    updated: 'Gom has been updated.',
+    reloadToGoOn: 'Reload to carry on. What you are typing is kept.',
     reload: 'Reload',
     noPushService: 'This browser has no push service, so Gom cannot send notifications here. Some Chromium-based browsers (such as Helium) removed it; Chrome, Edge and Firefox all have one.',
   },

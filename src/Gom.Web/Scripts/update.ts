@@ -17,8 +17,11 @@ export interface UpdateDeps {
   visible(): boolean;
   /** True while a reload would lose something: files waiting to be sent, a message being changed, a field being filled in. */
   busy(): boolean;
-  /** Tells the person a new version is there (again, when the tab is shown and it has not reloaded yet). */
-  announce(): void;
+  /**
+   * Tells the person a new version is there (again, when the tab is shown and it has not reloaded yet). `must`: the server no
+   * longer answers this page (it is older than the server's minimum), so there is no "later".
+   */
+  announce(must: boolean): void;
   reload(): void;
   /** When this tab last reloaded by itself, kept across that reload; null when it never has. */
   reloadedAt: { get(): number | null; set(at: number): void };
@@ -44,10 +47,11 @@ const AUTO_GAP_MS = 5 * 60 * 1000;
  * Once it knows, it reloads while the tab is hidden, or as the tab is shown again, unless something would be lost (`busy`); a
  * tab in view shows the bar instead, and the bar comes back each time the tab is shown until the reload happens.
  */
-export function watchForUpdate(deps: UpdateDeps): { check(): Promise<void>; heard(version: string): void } {
+export function watchForUpdate(deps: UpdateDeps): { check(): Promise<void>; heard(version: string): void; tooOld(): void } {
   let baseline: string | null | undefined;
   let lastAt = Number.NEGATIVE_INFINITY;
   let stale = false;
+  let must = false;
   let asking = false;
 
   /** Reloads if that loses nothing and this tab has not just done so; says whether it did. */
@@ -63,7 +67,7 @@ export function watchForUpdate(deps: UpdateDeps): { check(): Promise<void>; hear
   function found(): void {
     if (stale) return;
     stale = true;
-    if (deps.visible() || !reloadQuietly()) deps.announce();
+    if (deps.visible() || !reloadQuietly()) deps.announce(must);
   }
 
   async function check(): Promise<void> {
@@ -86,12 +90,18 @@ export function watchForUpdate(deps: UpdateDeps): { check(): Promise<void>; hear
   deps.every(() => { void check(); }, EVERY_MS);
   deps.onHidden(() => { if (stale) reloadQuietly(); });
   deps.onShown(() => {
-    if (stale) { if (!reloadQuietly()) deps.announce(); return; }
+    if (stale) { if (!reloadQuietly()) deps.announce(must); return; }
     if (deps.now() - lastAt >= MIN_GAP_MS) void check();
   });
   return {
     check,
     heard(version) { if (deps.own !== null && version !== deps.own) found(); },
+    /** The server refused this page as too old: the same moves, and the bar without "later" (shown again if it was the gentle one). */
+    tooOld() {
+      if (must) return;
+      must = true;
+      if (stale) deps.announce(true); else found();
+    },
   };
 }
 
@@ -100,13 +110,22 @@ export function versionOf(scriptPath: string): string | null {
   return /\/main\.([0-9a-f]+)\.js$/.exec(scriptPath)?.[1] ?? null;
 }
 
-/** The bar at the top of the page: a new version is there, reload now, or leave it until the tab is shown again (or reloads by itself). */
-export function showUpdateBar(host: HTMLElement, reload: () => void): void {
+/**
+ * The bar at the top of the page: a new version is there, reload now, or leave it until the tab is shown again (or reloads by
+ * itself). `must`: this page can no longer work with the server, so reloading is the only choice.
+ */
+export function showUpdateBar(host: HTMLElement, reload: () => void, must = false): void {
   const close = (): void => { render(nothing, host); };
-  render(html`
-    <div class="updatebar" role="status" data-update>
-      <span><b>${say.app.newVersion}</b><small>${say.app.reloadsItself}</small></span>
-      <button class="btn small" type="button" data-update-reload @click=${reload}>${say.app.reload}</button>
-      <button class="btn secondary small" type="button" data-update-later @click=${close}>${say.chat.later}</button>
-    </div>`, host);
+  render(must
+    ? html`
+      <div class="updatebar" role="alert" data-update data-update-must>
+        <span><b>${say.app.updated}</b><small>${say.app.reloadToGoOn}</small></span>
+        <button class="btn small" type="button" data-update-reload @click=${reload}>${say.app.reload}</button>
+      </div>`
+    : html`
+      <div class="updatebar" role="status" data-update>
+        <span><b>${say.app.newVersion}</b><small>${say.app.reloadsItself}</small></span>
+        <button class="btn small" type="button" data-update-reload @click=${reload}>${say.app.reload}</button>
+        <button class="btn secondary small" type="button" data-update-later @click=${close}>${say.chat.later}</button>
+      </div>`, host);
 }

@@ -120,6 +120,17 @@ app.UseStaticFiles(new StaticFileOptions
 });
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(25) });
 app.UseMiddleware<OriginCheck>();
+// A page too old for this server (Pages.PageVersion) is told to reload instead of being answered; the socket checks its own.
+app.Use(async (http, next) =>
+{
+    if (http.Request.Path.StartsWithSegments("/api") && Pages.TooOld(http.Request.Headers[Pages.PageVersionHeader]))
+    {
+        http.Response.StatusCode = StatusCodes.Status409Conflict;
+        await http.Response.WriteAsJsonAsync(new { error = "update_required" });
+        return;
+    }
+    await next(http);
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAuth();

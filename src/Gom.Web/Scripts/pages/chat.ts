@@ -2326,6 +2326,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           continue;
         }
         if (result.error === 'unauthorized') { p.state = 'queued'; update(); go('/sign-in'); return; }
+        // The server wants a newer page: it waits, kept in the outbox, and goes once the page has reloaded.
+        if (result.error === 'update_required') { p.state = 'queued'; p.error = result; persist(); update(); return; }
 
         const transient = result.error === 'network' || result.error === 'server' || result.error === 'too_many_messages';
         const tries = (t.attempts.get(p.clientId) ?? 0) + (result.error === 'network' ? 0 : 1);
@@ -2446,6 +2448,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     },
     ended: () => go('/sign-in'),
     replaced() { notice = say.chat.replaced; update(); },
+    // Not reconnecting on purpose: the page must reload, and the update bar says so; "reconnecting" would not be true.
+    tooOld() { offline = false; update(); },
   };
 
   // Back from the information page (its own step in the history) only closes it.

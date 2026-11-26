@@ -217,6 +217,31 @@ describe('moving to the new version', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('when the server refuses the page as too old, shows the bar with no "later", also over the gentle one', async () => {
+    answers = [said('"a"')];
+    const w = start();
+    await flush();
+    w.heard('bbb');
+    expect(announce).toHaveBeenLastCalledWith(false);
+    w.tooOld();
+    expect(announce).toHaveBeenLastCalledWith(true);
+    show();
+    busy = true; hide(); show();
+    expect(announce).toHaveBeenLastCalledWith(true);
+  });
+
+  it('reloads a page refused as too old once it is hidden, like any other', async () => {
+    answers = [said('"a"')];
+    const w = start();
+    await flush();
+    busy = true;
+    w.tooOld();
+    expect(announce).toHaveBeenCalledWith(true);
+    busy = false;
+    hide();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it('reads the version from the script name', () => {
     expect(versionOf('/js/main.bf066b7453.js')).toBe('bf066b7453');
     expect(versionOf('/js/main.js')).toBeNull();
@@ -234,6 +259,14 @@ describe('the bar', () => {
     expect(reload).not.toHaveBeenCalled();
     host.querySelector<HTMLButtonElement>('[data-update-reload]')!.click();
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no "later" when the page must reload, and says so as an alert', () => {
+    const host = document.createElement('div');
+    showUpdateBar(host, vi.fn(), true);
+    expect(host.querySelector('[data-update]')!.getAttribute('role')).toBe('alert');
+    expect(host.textContent).toContain('Gom vừa được cập nhật.');
+    expect(host.querySelector('[data-update-later]')).toBeNull();
   });
 
   it('goes away on "later" without reloading', () => {

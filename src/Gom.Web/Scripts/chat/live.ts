@@ -33,6 +33,8 @@ export interface LiveHandlers {
   replaced(): void;
   /** The version of the pages the server hands out, told on every connect (after a deploy, the first reconnect tells the new one). */
   version?(version: string): void;
+  /** The server no longer works with this page's code (closed with 4426): stop trying, the page must reload. */
+  tooOld?(): void;
 }
 
 export interface LiveControl {
@@ -122,6 +124,7 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
       if (stopped) return;
       if (e.code === 4401) { stopped = true; handlers.ended(); return; }
       if (e.code === 1008) { stopped = true; handlers.replaced(); return; }
+      if (e.code === 4426) { stopped = true; handlers.tooOld?.(); return; }
       // Wait 1 s, 2 s, 4 s ... up to 30 s, with a random share taken off so devices do not all come back together.
       const wait = Math.min(MAX_WAIT_MS, 1000 * 2 ** attempt) * (0.5 + deps.random() * 0.5);
       attempt++;

@@ -6,6 +6,7 @@ import { mountFriends } from './pages/friends.js';
 import { mountChat, type ChatDeps, type OutboxItem } from './pages/chat.js';
 import { createInstaller } from './install.js';
 import { createLive } from './chat/live.js';
+import { limits } from './limits.js';
 import { mountJoin } from './pages/join.js';
 import { mountReset } from './pages/reset.js';
 import { mountSettings } from './pages/settings.js';
@@ -26,6 +27,8 @@ const api = createApi(undefined, undefined, {
   onPalette: (chosen) => { if (isPalette(chosen) && chosen !== storedPalette()) applyPalette(chosen); },
   // The background is read by the chat page as it draws, which comes after this answer.
   onPattern: (chosen) => { if (isPattern(chosen)) rememberPattern(chosen); },
+  // The server has moved past this page's code: reload, at once if that loses nothing (the watcher, set up below, decides).
+  onTooOld: () => updates.tooOld(),
 });
 syncThemeColor();
 document.documentElement.lang = language;
@@ -69,7 +72,7 @@ const updates = watchForUpdate({
   onHidden: (fn) => { document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') fn(); }); },
   visible: () => document.visibilityState === 'visible',
   busy: () => pageBusy() || fieldInUse(),
-  announce: () => showUpdateBar(updateBar, () => location.reload()),
+  announce: (must) => showUpdateBar(updateBar, () => location.reload(), must),
   reload: () => location.reload(),
   reloadedAt: {
     get: () => { try { const at = Number(sessionStorage.getItem(RELOADED_AT)); return at > 0 ? at : null; } catch { return null; } },
@@ -113,7 +116,8 @@ const chatDeps = (): ChatDeps => ({
   clearNotifications: (conversation) => pusher.clear(conversation),
   pusher,
   prepareVideo,
-  live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`, { ...handlers, version: (v) => updates.heard(v) }),
+  live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?page=${limits().pageVersion}`,
+    { ...handlers, version: (v) => updates.heard(v), tooOld: () => { handlers.tooOld?.(); updates.tooOld(); } }),
   nav: { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), back: () => history.back(), onPop: (callback) => addEventListener('popstate', callback) },
   now: () => new Date(),
   newId: () => crypto.randomUUID(),
