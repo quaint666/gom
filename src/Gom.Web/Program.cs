@@ -88,6 +88,19 @@ builder.Services.AddSingleton(sp =>
     return new CallLimiter(new SendLimiter(sp.GetRequiredService<TimeProvider>(), o.CallBurst, 1.0 / Math.Max(1, o.SecondsBetweenCalls)));
 });
 builder.Services.AddHostedService<CallJanitor>();
+builder.Services.Configure<TurnOptions>(builder.Configuration.GetSection("Turn"));
+(builder.Configuration.GetSection("Turn").Get<TurnOptions>() ?? new TurnOptions()).Check();
+builder.Services.AddHttpClient(CloudflareTurnClient.Client, c => c.Timeout = TimeSpan.FromSeconds(5))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddSingleton<ITurnClient, CloudflareTurnClient>();
+builder.Services.AddSingleton<TurnLogins>();
+builder.Services.AddSingleton<TurnRevoker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TurnRevoker>());
+builder.Services.AddSingleton(sp =>
+{
+    var o = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CallOptions>>().Value;
+    return new TurnLimiter(new SendLimiter(sp.GetRequiredService<TimeProvider>(), o.CallBurst, 1.0 / Math.Max(1, o.SecondsBetweenCalls)));
+});
 builder.Services.AddHostedService<ContactJanitor>();
 builder.Services.AddSingleton<PushQueue>();
 builder.Services.AddHttpClient(HttpPushTransport.Client)

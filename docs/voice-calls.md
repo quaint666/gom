@@ -191,7 +191,12 @@ video, recording, iPhone native.
    two people calling each other at once get the first call; a phone in a call says "still here" every 30 s and 90 s of
    silence ends it; a missed call notifies even in a muted chat; a person who cannot take calls (no app) is not offered the
    button, checked once phones register (PR 4).
-3. **Server, relay:** Cloudflare logins (3 hours, tag, revoke), a fake Cloudflare in tests.
+3. **Server, relay:** Cloudflare logins (3 hours, tag, revoke), a fake Cloudflare in tests. Settled while designing it
+   (H, 2026-11-26): a device asks `POST /api/calls/relay` for its login before it builds its offer or answer (they carry
+   every address), so the login cannot come in the start or accept answer; the call it starts or answers claims it, a login
+   no call claims within the ring time and 15 s is taken back, and all of a call's logins are taken back as it ends (a
+   revoked login is dropped by Cloudflare "after a short delay" [stated: Cloudflare FAQ]). One key per environment, made by
+   a script in the operations repository [stated: the operations session].
 4. **Server, phones:** registering FCM tokens, sending with FCM's HTTP v1 API, the call and cancel pushes with their
    expiry, a fake FCM in tests.
 5. **Android, the shell:** the project, the web view locked to Gom, the bridge, the session, FCM registration, CI
