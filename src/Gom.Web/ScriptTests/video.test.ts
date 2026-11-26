@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitted } from '../Scripts/video.js';
+import { fitted, longestVideo, videoPlan } from '../Scripts/videoPlan.js';
 import { isVideoFile, playLength } from '../Scripts/pages/chat.js';
 
 describe('the size a video is sent at', () => {
@@ -14,6 +14,36 @@ describe('the size a video is sent at', () => {
     expect(fitted(4000, 3000)).toEqual({ width: 960, height: 720 });
     expect(fitted(1440, 1440)).toEqual({ width: 720, height: 720 });
     expect(fitted(853, 479)).toEqual({ width: 854, height: 480 });
+  });
+
+  it('fits 480p when asked', () => {
+    expect(fitted(1920, 1080, 480)).toEqual({ width: 854, height: 480 });
+    expect(fitted(1080, 1920, 480)).toEqual({ width: 480, height: 854 });
+  });
+});
+
+describe('fitting a video into the limit', () => {
+  const limit = 45 * 1024 * 1024;
+
+  it('sends a short video at 720p and 2 Mbit/s, and a smaller one at a bitrate for its size', () => {
+    expect(videoPlan(1920, 1080, 60, limit, true)).toEqual({ width: 1280, height: 720, bitrate: 2_000_000 });
+    expect(videoPlan(640, 360, 60, limit, true)).toEqual({ width: 640, height: 360, bitrate: 500_000 });
+  });
+
+  it('lowers the bitrate for a longer one, then goes to 480p, and gives up when even that would not fit', () => {
+    expect(videoPlan(1920, 1080, 240, limit, true)).toEqual({ width: 1280, height: 720, bitrate: 1_159_577 });
+    expect(videoPlan(1080, 1920, 400, limit, true)).toEqual({ width: 480, height: 854, bitrate: 593_346 });
+    expect(videoPlan(1920, 1080, 600, limit, true)).toBeNull();
+  });
+
+  it('leaves the sound\'s share to the pictures when there is no sound', () => {
+    expect(videoPlan(1920, 1080, 600, limit, false)).toEqual({ width: 854, height: 480, bitrate: 566_231 });
+  });
+
+  it('says how long a video with sound may be', () => {
+    expect(longestVideo(limit)).toBe(517);
+    expect(videoPlan(1920, 1080, 517, limit, true)).not.toBeNull();
+    expect(videoPlan(1920, 1080, 519, limit, true)).toBeNull();
   });
 });
 
