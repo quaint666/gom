@@ -185,7 +185,7 @@ public class FcmTests(CallFixture app) : IClassFixture<CallFixture>
         var fcm = new GoogleFcmTransport(google, FcmAccount.Parse(CallFixture.FcmAccount), clock);
         var data = new Dictionary<string, string> { ["t"] = "call", ["id"] = "abc" };
 
-        Assert.Equal(200, (await fcm.SendAsync("device-1", data, 45, default)).Status);
+        Assert.Equal(200, (await fcm.SendAsync("device-1", data, 45, high: true, default)).Status);
         var (login, form) = google.Seen[0];
         Assert.Equal("https://oauth2.googleapis.com/token", login.RequestUri!.ToString());
         Assert.Contains("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer", form);
@@ -203,12 +203,22 @@ public class FcmTests(CallFixture app) : IClassFixture<CallFixture>
 
         // The login is kept: a second message within the hour asks for none.
         clock.Advance(TimeSpan.FromMinutes(50));
-        await fcm.SendAsync("device-1", data, 45, default);
+        await fcm.SendAsync("device-1", data, 45, high: true, default);
         Assert.Equal(3, google.Seen.Count);
         // Five minutes before it runs out, a new one.
         clock.Advance(TimeSpan.FromMinutes(5));
-        await fcm.SendAsync("device-1", data, 45, default);
+        await fcm.SendAsync("device-1", data, 45, high: true, default);
         Assert.Equal("https://oauth2.googleapis.com/token", google.Seen[3].Request.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task A_message_that_shows_nothing_new_goes_at_normal_priority()
+    {
+        var google = new FakeGoogle();
+        var fcm = new GoogleFcmTransport(google, FcmAccount.Parse(CallFixture.FcmAccount), new FakeClock());
+        await fcm.SendAsync("d", new Dictionary<string, string> { ["t"] = "recall" }, 60, high: false, default);
+        using var json = JsonDocument.Parse(google.Seen[1].Body);
+        Assert.Equal("NORMAL", json.RootElement.GetProperty("message").GetProperty("android").GetProperty("priority").GetString());
     }
 
     [Fact]
@@ -218,8 +228,8 @@ public class FcmTests(CallFixture app) : IClassFixture<CallFixture>
         var fcm = new GoogleFcmTransport(google, FcmAccount.Parse(CallFixture.FcmAccount), new FakeClock());
         var data = new Dictionary<string, string> { ["t"] = "call" };
         google.SendAnswers.Enqueue(HttpStatusCode.Unauthorized);
-        Assert.Equal(401, (await fcm.SendAsync("d", data, 45, default)).Status);
-        await fcm.SendAsync("d", data, 45, default);
+        Assert.Equal(401, (await fcm.SendAsync("d", data, 45, high: true, default)).Status);
+        await fcm.SendAsync("d", data, 45, high: true, default);
         Assert.Equal(["oauth2.googleapis.com", "fcm.googleapis.com", "oauth2.googleapis.com", "fcm.googleapis.com"], google.Seen.Select(s => s.Request.RequestUri!.Host));
     }
 }

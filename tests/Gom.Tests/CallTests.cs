@@ -63,14 +63,14 @@ public sealed class CallFixture : AppFixture
 /// <summary>FCM, faked: keeps every message, and answers what a test tells it to for a token (200 when nothing is said).</summary>
 public sealed class FakeFcm : IFcmTransport
 {
-    public sealed record Sent(string Token, IReadOnlyDictionary<string, string> Data, int Ttl);
+    public sealed record Sent(string Token, IReadOnlyDictionary<string, string> Data, int Ttl, bool High);
 
     public ConcurrentQueue<Sent> All { get; } = new();
     public ConcurrentDictionary<string, Func<FcmResult>> Answers { get; } = new();
 
-    public Task<FcmResult> SendAsync(string token, IReadOnlyDictionary<string, string> data, int ttlSeconds, CancellationToken ct)
+    public Task<FcmResult> SendAsync(string token, IReadOnlyDictionary<string, string> data, int ttlSeconds, bool high, CancellationToken ct)
     {
-        All.Enqueue(new Sent(token, data, ttlSeconds));
+        All.Enqueue(new Sent(token, data, ttlSeconds, high));
         return Task.FromResult(Answers.TryGetValue(token, out var answer) ? answer() : new FcmResult(200));
     }
 
@@ -835,6 +835,7 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
             var ring = await app.Fcm.Next(token);
             Assert.Equal(new Dictionary<string, string> { ["t"] = "call", ["id"] = id.ToString() }, ring.Data);
             Assert.Equal(45, ring.Ttl);
+            Assert.True(ring.High);
         }
         await Task.Delay(200);
         Assert.Empty(app.Fcm.To(p.AppA));   // never the caller's

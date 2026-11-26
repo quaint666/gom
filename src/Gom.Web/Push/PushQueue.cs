@@ -18,7 +18,7 @@ public sealed record PushJob(Guid ConversationId, long Seq, Guid SenderId, strin
 /// Messages waiting for their notifications, handed over after the commit. Bounded: when it is full a notification is dropped, never
 /// the send (the message is in the database, and open devices have it already).
 /// </summary>
-public sealed class PushQueue(IOptions<PushOptions> options, ILogger<PushQueue> log)
+public sealed class PushQueue(IOptions<PushOptions> options, FcmAccount fcm, ILogger<PushQueue> log)
 {
     private readonly Channel<PushJob> _jobs = Channel.CreateBounded<PushJob>(new BoundedChannelOptions(Math.Max(1, options.Value.QueueSize))
     {
@@ -26,7 +26,8 @@ public sealed class PushQueue(IOptions<PushOptions> options, ILogger<PushQueue> 
         FullMode = BoundedChannelFullMode.Wait,   // with Wait, TryWrite says no when full, so a drop can be logged
     });
 
-    public bool Enabled { get; } = options.Value.Enabled;
+    /// <summary>Browsers (Web Push keys set), the Android app (an FCM account set), or both.</summary>
+    public bool Enabled { get; } = options.Value.Enabled || fcm.Enabled;
 
     public ChannelReader<PushJob> Reader => _jobs.Reader;
 

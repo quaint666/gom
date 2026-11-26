@@ -64,14 +64,17 @@ public sealed record FcmResult(int Status, TimeSpan? RetryAfter = null)
     public bool Busy => Status is 429 or 503;
 }
 
-/// <summary>Sends one data message to one app. Tests put a fake in its place.</summary>
+/// <summary>
+/// Sends one data message to one app. <paramref name="high"/>: it may wake a sleeping phone, and must lead to a notification the person
+/// sees, or FCM lowers the app's priority. Tests put a fake in its place.
+/// </summary>
 public interface IFcmTransport
 {
-    Task<FcmResult> SendAsync(string token, IReadOnlyDictionary<string, string> data, int ttlSeconds, CancellationToken ct);
+    Task<FcmResult> SendAsync(string token, IReadOnlyDictionary<string, string> data, int ttlSeconds, bool high, CancellationToken ct);
 }
 
 /// <summary>
-/// FCM's HTTP v1 API: high priority, data only (the app words its own notification, so Google never sees a name or a message), and an
+/// FCM's HTTP v1 API: data only (the app words its own notification, so Google never sees a name or a message), and an
 /// access token from the service account, kept until five minutes before it runs out.
 /// </summary>
 public sealed class GoogleFcmTransport(IHttpClientFactory clients, FcmAccount account, TimeProvider clock) : IFcmTransport
@@ -106,7 +109,7 @@ public sealed class GoogleFcmTransport(IHttpClientFactory clients, FcmAccount ac
         finally { _gate.Release(); }
     }
 
-    public async Task<FcmResult> SendAsync(string token, IReadOnlyDictionary<string, string> data, int ttlSeconds, CancellationToken ct)
+    public async Task<FcmResult> SendAsync(string token, IReadOnlyDictionary<string, string> data, int ttlSeconds, bool high, CancellationToken ct)
     {
         var message = new
         {
@@ -114,7 +117,7 @@ public sealed class GoogleFcmTransport(IHttpClientFactory clients, FcmAccount ac
             {
                 token,
                 data,
-                android = new { priority = "HIGH", ttl = ttlSeconds.ToString(CultureInfo.InvariantCulture) + "s" },
+                android = new { priority = high ? "HIGH" : "NORMAL", ttl = ttlSeconds.ToString(CultureInfo.InvariantCulture) + "s" },
             },
         };
         using var request = new HttpRequestMessage(HttpMethod.Post, $"https://fcm.googleapis.com/v1/projects/{Uri.EscapeDataString(account.ProjectId)}/messages:send")

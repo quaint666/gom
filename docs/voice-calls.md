@@ -201,7 +201,9 @@ video, recording, iPhone native.
    with Google's login written by hand (no Google package), and the call pushes; **4b** messages and the owner's notices by
    FCM too. Settled while building 4a: a call is refused (`cannot_take_calls`) unless the person called has the app on a
    live session; a ringing call that ends without being answered on a device is pushed to its apps as `call-end` with how
-   it ended, which is also their missed-call notification (Web Push still tells browsers).
+   it ended, which is also their missed-call notification (Web Push still tells browsers). Settled while building 4b: a
+   message wakes the app with `message`, its conversation and its id (high priority), a recall with `recall` (normal
+   priority, only to apps at the "words" level), the owner's notices with `owner` and their kind (normal priority).
 4. **Server, phones:** registering FCM tokens, sending with FCM's HTTP v1 API, the call and cancel pushes with their
    expiry, a fake FCM in tests.
 5. **Android, the shell:** the project, the web view locked to Gom, the bridge, the session, FCM registration, CI

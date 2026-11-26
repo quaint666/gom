@@ -90,6 +90,6 @@ public sealed class CallPusher(CallPushQueue queue, IServiceScopeFactory scopes,
     private async Task<FcmResult?> SendOnceAsync(string token, Dictionary<string, string> data, CallPush job, CancellationToken ct)
     {
         var ttl = job.Ring ? (int)Math.Ceiling((job.Until - clock.GetUtcNow()).TotalSeconds) : StopSeconds;
-        return ttl <= 0 ? null : await fcm.SendAsync(token, data, ttl, ct);
+        return ttl <= 0 ? null : await fcm.SendAsync(token, data, ttl, high: true, ct);
     }
 }
