@@ -2,6 +2,7 @@ package io.github.quaint666.gom.calls
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.util.Log
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -72,13 +73,15 @@ private class RtcConnection(
     }
     /** Completed when the addresses are all gathered; a new one for each gathering (a restart gathers again). */
     @Volatile private var gathered = CompletableDeferred<Unit>()
+    /** Whether it ever connected, for the log when it closes. */
+    @Volatile private var connected = false
 
     private val pc: PeerConnection? = factory.createPeerConnection(config, object : PeerConnection.Observer {
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
             when (state) {
-                PeerConnection.PeerConnectionState.CONNECTED -> link(Link.CONNECTED)
-                PeerConnection.PeerConnectionState.DISCONNECTED -> link(Link.DOWN)
-                PeerConnection.PeerConnectionState.FAILED -> link(Link.FAILED)
+                PeerConnection.PeerConnectionState.CONNECTED -> { connected = true; logChosen("connected"); link(Link.CONNECTED) }
+                PeerConnection.PeerConnectionState.DISCONNECTED -> { Log.i(CallLog.TAG, "down"); link(Link.DOWN) }
+                PeerConnection.PeerConnectionState.FAILED -> { logChosen("failed"); link(Link.FAILED) }
                 else -> Unit
             }
         }
@@ -115,6 +118,7 @@ private class RtcConnection(
 
     override suspend fun answer(offer: String): String {
         val pc = pc ?: return ""
+        Log.i(CallLog.TAG, "offer there: ${CallLog.kinds(offer)}")
         set { pc.setRemoteDescription(it, SessionDescription(SessionDescription.Type.OFFER, offer)) }
         val answer = create { pc.createAnswer(it, audioOnly) }
         return local(pc, answer)
@@ -122,6 +126,7 @@ private class RtcConnection(
 
     override suspend fun accept(answer: String) {
         val pc = pc ?: return
+        Log.i(CallLog.TAG, "answer there: ${CallLog.kinds(answer)}")
         set { pc.setRemoteDescription(it, SessionDescription(SessionDescription.Type.ANSWER, answer)) }
     }
 
@@ -133,6 +138,7 @@ private class RtcConnection(
     override fun mute(on: Boolean) { track.setEnabled(!on) }
 
     override fun close() {
+        if (!connected) Log.i(CallLog.TAG, "closed before it connected")
         pc?.dispose()
         track.dispose()
         source.dispose()
@@ -145,8 +151,18 @@ private class RtcConnection(
         if (description == null) return ""
         gathered = CompletableDeferred()
         set { pc.setLocalDescription(it, description) }
-        withTimeoutOrNull(CallProtocol.GATHER_MS) { gathered.await() }
-        return pc.localDescription?.description.orEmpty()
+        val complete = withTimeoutOrNull(CallProtocol.GATHER_MS) { gathered.await() } != null
+        val sdp = pc.localDescription?.description.orEmpty()
+        Log.i(CallLog.TAG, "${description.type.canonicalForm()} here: ${CallLog.kinds(sdp)}${if (complete) "" else " (still gathering after ${CallProtocol.GATHER_MS} ms)"}")
+        return sdp
+    }
+
+    /** Writes which pair of addresses the connection uses, or tried last. */
+    private fun logChosen(what: String) {
+        pc?.getStats { report ->
+            val stats = report.statsMap.mapValues { (_, s) -> CallLog.Stat(s.type, s.members) }
+            Log.i(CallLog.TAG, "$what: ${CallLog.chosen(stats) ?: "no pair chosen"}")
+        }
     }
 
     private suspend fun create(make: (SdpObserver) -> Unit): SessionDescription? = suspendCancellableCoroutine { k ->

@@ -24,6 +24,7 @@ class ProtocolTest {
         assertEquals(constant(call, "RECONNECT_AFTER_MS"), CallProtocol.RECONNECT_AFTER_MS)
         assertEquals(constant(call, "RECONNECT_EVERY_MS"), CallProtocol.RECONNECT_EVERY_MS)
         assertEquals(constant(call, "GIVE_UP_MS"), CallProtocol.GIVE_UP_MS)
+        assertEquals(constant(call, "CONNECT_MS"), CallProtocol.CONNECT_MS)
         assertEquals(constant(call, "RENEW_BEFORE_S"), CallProtocol.RENEW_BEFORE_S)
     }
 

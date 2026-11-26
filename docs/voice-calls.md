@@ -176,7 +176,10 @@ the app's way.
    stays down about 2 s or fails, so the two never offer at once.
 9. At 2 h 50 min the page asks for a fresh relay login, applies it and restarts (decision 22).
 10. A microphone refused: "Gom cần micro để gọi" with how to allow it; the call does not start, or a ringing one is declined.
-11. With no relay set up, a direct connection only (decision 24); if that fails, "Không kết nối được".
+11. With no relay set up, a direct connection only (decision 24); if that fails, "Không kết nối được". An answered call that
+    has not connected after 30 s (`CONNECT_MS`) ends the same way and is hung up, rather than "connecting" for ever (a network
+    whose NAT blocks direct paths, with no relay reached: seen on a full-tunnel VPN, 2026-11-26). The app writes the kinds of
+    address each side offered and the pair it chose to the phone's log (`adb logcat -s GomCall`), never the addresses.
 12. The screens: one row of three in a call (speaker, end, mic; the web has no speaker choice), a minimise arrow, and the call
     bar across the top of the chat page (name, time, a crossed mic when muted, a red end button; a tap brings the call back).
     Someone calling can minimise while it rings; an incoming call comes full size. Rule 16 of `design/design-notes.md`,
