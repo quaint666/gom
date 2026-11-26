@@ -9,6 +9,7 @@ import { createLive } from './chat/live.js';
 import { limits } from './limits.js';
 import { mountJoin } from './pages/join.js';
 import { mountReset } from './pages/reset.js';
+import { mountPrivacy } from './pages/privacy.js';
 import { mountSettings } from './pages/settings.js';
 import { createPusher } from './push.js';
 import { attachPull, canPullList } from './pull.js';
@@ -172,6 +173,7 @@ if (root) {
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
     case 'group': mountGroup(root, api, go, token); break;
+    case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? ''); break;
   }
 }
 

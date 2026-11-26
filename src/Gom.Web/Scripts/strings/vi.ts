@@ -8,7 +8,7 @@ export const vi = {
   /** Each page's title before " · Gom", by its script's name; a page not listed is just "Gom". */
   titles: {
     signin: 'Đăng nhập', join: 'Lời mời', signup: 'Xin tham gia', reset: 'Đặt lại mật khẩu', settings: 'Cài đặt', friends: 'Bạn bè',
-    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng',
+    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng', privacy: 'Chính sách quyền riêng tư',
   },
   /** The emoji panel's groups (emoji-data.ts) and the sticker packs (stickers.ts), by key. */
   emojiGroups: {
@@ -218,6 +218,7 @@ export const vi = {
     installRow: 'Cài Gom lên màn hình chính',
     installSummary: 'Mở như một ứng dụng',
     reloadRow: 'Tải lại Gom',
+    policyRow: 'Chính sách quyền riêng tư',
     reloadSummary: (version: string | null): string => version === null ? 'Lấy bản mới nhất' : `Phiên bản ${version} · lấy bản mới nhất`,
     pushSummaryOff: 'Tắt',
     pushSummaryNone: 'Không có trên thiết bị này',
@@ -411,6 +412,7 @@ export const vi = {
     signIn: 'Đăng nhập',
     password: 'Mật khẩu',
     invitedOnly: 'Chưa có tài khoản? Gom chỉ dành cho người được mời.',
+    policy: 'Chính sách quyền riêng tư',
     noAccount: 'Chưa có tài khoản?',
     askToJoin: 'Xin tham gia',
     showPassword: 'Hiện mật khẩu',
@@ -639,6 +641,57 @@ export const vi = {
     muteFor4h: 'Trong 4 giờ',
     muteTill8: 'Cho đến 8:00 sáng',
     muteAlways: 'Cho đến khi được mở lại',
+  },
+  /** The public privacy policy (/privacy), required by Google Play; anyone can read it, signed in or not. */
+  privacy: {
+    title: 'Chính sách quyền riêng tư',
+    updated: (date: string) => `Cập nhật ngày ${date}`,
+    /** Who runs this Gom, from the server's configuration (Site:Operator); this when it is not set. */
+    operatorFallback: 'người quản trị trang này',
+    intro: (operator: string) => `Gom là ứng dụng nhắn tin riêng cho gia đình và bạn bè, do ${operator} vận hành. Đây không phải dịch vụ của một công ty: Gom không có quảng cáo, không bán dữ liệu và không đưa dữ liệu của bạn cho ai để quảng cáo. Trang này nói Gom lưu gì, ai thấy được, lưu bao lâu và bạn xóa thế nào.`,
+    sections: [
+      { heading: 'Gom lưu những gì', items: [
+        'Tài khoản: Gom ID, tên hiển thị, mật khẩu (chỉ lưu dạng đã băm, không ai đọc lại được), ảnh đại diện nếu bạn đặt, ngôn ngữ và giao diện bạn chọn, và lời giới thiệu nếu bạn xin tham gia.',
+        'Bạn bè, nhóm và những người bạn đã chặn.',
+        'Những gì bạn gửi: tin nhắn, ảnh, video, tệp, nhãn dán, cảm xúc và tin ghim, cùng vị trí bạn đã đọc tới trong mỗi cuộc trò chuyện.',
+        'Phiên đăng nhập: loại thiết bị (ví dụ "Chrome trên Android") và thời điểm đăng nhập, dùng gần nhất. Gom không lưu địa chỉ IP cùng tài khoản; địa chỉ IP chỉ được giữ tạm trong bộ nhớ để chặn việc dò mật khẩu và gửi yêu cầu tham gia ồ ạt.',
+        'Thông báo: địa chỉ trình duyệt cấp để gửi thông báo tới thiết bị của bạn, và mức chi tiết bạn chọn.',
+        'Ứng dụng Android: mã mà Firebase cấp cho điện thoại để đánh thức nó khi có tin nhắn hay cuộc gọi.',
+        'Cuộc gọi thoại (ứng dụng Android): ai gọi ai, lúc nào, bao lâu và kết thúc thế nào. Gom không ghi âm cuộc gọi.',
+      ] },
+      { heading: 'Ai thấy được', items: [
+        'Tin nhắn trong một cuộc trò chuyện chỉ những người trong cuộc trò chuyện đó thấy.',
+        'Người vận hành quản lý máy chủ, nên về kỹ thuật có thể truy cập dữ liệu lưu trên đó. Tin nhắn được mã hóa trên đường truyền (HTTPS) nhưng không được mã hóa đầu cuối. Người vận hành không đọc tin nhắn của bạn, trừ khi cần để sửa lỗi hoặc khi pháp luật buộc.',
+        'Trang quản trị của người vận hành cho thấy danh sách thành viên, lời giới thiệu của người xin tham gia, và dung lượng theo nhóm hay theo người gửi; không cho thấy ai nhắn riêng với ai.',
+      ] },
+      { heading: 'Dịch vụ bên ngoài', items: [
+        'Thông báo trên trình duyệt đi qua dịch vụ đẩy của hãng làm trình duyệt (Google, Mozilla, Apple hoặc Microsoft). Nội dung được mã hóa cho riêng thiết bị của bạn; dịch vụ đó không đọc được.',
+        'Ứng dụng Android dùng Firebase Cloud Messaging của Google để đánh thức điện thoại. Gom chỉ gửi qua đó mã số của tin nhắn hay cuộc gọi; ứng dụng tự lấy nội dung từ Gom.',
+        'Cuộc gọi đi thẳng giữa hai điện thoại khi có thể; khi không, âm thanh được chuyển tiếp qua Cloudflare. Âm thanh được mã hóa nên Cloudflare không nghe được; Cloudflare thấy địa chỉ IP và thời gian kết nối.',
+        'Google Play phát hành ứng dụng Android và có chính sách riêng.',
+        'Gom không dùng công cụ phân tích, theo dõi hay quảng cáo nào.',
+      ] },
+      { heading: 'Giữ an toàn', items: [
+        'Mọi kết nối tới Gom đều dùng HTTPS. Mật khẩu chỉ được lưu dạng đã băm. Phiên đăng nhập nằm trong một cookie mà mã của trang không đọc được.',
+        'Chỉ người được mời hoặc được người vận hành duyệt mới vào được Gom.',
+        'Dữ liệu được sao lưu định kỳ để không mất khi máy chủ hỏng.',
+      ] },
+      { heading: 'Lưu bao lâu và xóa thế nào', items: [
+        'Dữ liệu được giữ cho đến khi bạn hoặc người vận hành xóa.',
+        'Thu hồi một tin nhắn là xóa nó với mọi người. "Xóa hội thoại" chỉ xóa ở phía bạn; người khác vẫn thấy.',
+        'Bạn có thể xóa tài khoản trong Cài đặt › Tài khoản. Tên hiển thị, mật khẩu, ảnh đại diện, bạn bè, danh sách chặn và thông báo bị xóa ngay, mọi thiết bị bị đăng xuất. Gom ID được giữ lại để không ai dùng lại. Tin nhắn bạn đã gửi vẫn ở lại trong cuộc trò chuyện của người khác dưới tên "Tài khoản đã xóa", vì đó cũng là lịch sử của họ; muốn xóa tin nào, hãy thu hồi trước khi xóa tài khoản.',
+        'Người vận hành có thể dọn tin nhắn, ảnh và tệp cũ để giải phóng chỗ.',
+        'Bản sao lưu được thay mới định kỳ, nên dữ liệu đã xóa cũng hết khỏi bản sao lưu sau một thời gian.',
+      ] },
+      { heading: 'Quyền của bạn', items: [
+        'Bạn có thể xem và sửa tên và ảnh đại diện, xem và đăng xuất các thiết bị, tắt xác nhận đã đọc, và xóa tài khoản bất cứ lúc nào.',
+        'Muốn hỏi, sửa hay xóa dữ liệu khác, hãy liên hệ người vận hành.',
+      ] },
+      { heading: 'Khi chính sách thay đổi', items: [
+        'Ngày cập nhật ở đầu trang đổi theo. Thay đổi lớn sẽ được báo trong Gom.',
+      ] },
+    ],
+    home: 'Về Gom',
   },
 };
 

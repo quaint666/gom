@@ -129,7 +129,7 @@ video, recording, iPhone native.
     release needs a closed test with 12 testers for 14 days, for personal accounts made after 13 November 2023
     [verified: Play Console Help].
 39. Play App Signing: Google holds the signing key; H keeps the upload key, never in the repository.
-40. A public privacy policy page at **`/privacy`, in Vietnamese** [H], also linked from Settings. Play requires one.
+40. A public privacy policy page at **`/privacy`**, in Vietnamese and English (the page's language, as every page) [H, 2026-11-26; first planned in Vietnamese only], linked from Settings and from sign-in. Play requires one, naming who is behind the app and a way to ask about privacy: the name comes from configuration (`Site__Operator`), the way to ask is a contact form.
 41. Play declarations to prepare: Data safety; the phoneCall foreground service with a short video; the full-screen
     notification permission (a calling app keeps it; Android 14+ grants it by default and the Play Store removes it
     from apps that are not calling or alarm apps [verified: AOSP docs]); the target Android version Play requires each

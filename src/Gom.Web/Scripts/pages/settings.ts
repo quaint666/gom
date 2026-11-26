@@ -251,6 +251,8 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       <ul class="nav"><li><button type="button" data-reload-app @click=${() => app.reload()}>
         <span class="lead-i">${icons.reload()}</span><span class="t"><b>${say.settings.reloadRow}</b><small>${say.settings.reloadSummary(app.version)}</small></span>
         </button></li></ul>`}
+    <ul class="nav"><li><a href="/privacy" data-policy-link><span class="lead-i">${icons.shield()}</span><span class="t"><b>${say.settings.policyRow}</b></span>
+      <span class="chev">${icons.chevron()}</span></a></li></ul>
     <button class="btn secondary signout" type="button" data-signout @click=${signOut}>${icons.signOut()}${say.common.signOut}</button>`;
 
   /** The parts, each in the DOM and shown only when it is the one open (the owner's two are mounted when opened). */
