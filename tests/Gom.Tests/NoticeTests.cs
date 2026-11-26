@@ -169,4 +169,51 @@ public class NoticeTests(CallFixture app) : IClassFixture<CallFixture>
         Assert.True(state.GetProperty("subscribed").GetBoolean());
         Assert.Equal("nothing", state.GetProperty("level").GetString());
     }
+
+    private const string Offer = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
+
+    /// <summary>A calls B, whose app is registered at <paramref name="level"/> (so B can take calls).</summary>
+    private async Task<((User A, string CA, User B, string CB, Guid Chat) P, Guid Call)> Ringing(string level)
+    {
+        var p = await Pair();
+        await app.App(p.CB, level);
+        using var r = await app.Call(HttpMethod.Post, "/api/calls", new { conversationId = p.Chat, clientId = Guid.NewGuid(), sdp = Offer, v = Gom.Web.Chat.CallEndpoints.ProtocolVersion }, p.CA);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        return (p, (await AppFixture.Json(r)).GetProperty("id").GetGuid());
+    }
+
+    [Fact]
+    public async Task A_call_ringing_names_the_caller_and_opens_the_chat_and_nothing_names_nobody()
+    {
+        var (p, call) = await Ringing("words");
+        var (status, n) = await Notice(p.CB, $"call={call}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal((p.A.DisplayName, "Cuộc gọi đến", $"/c/{p.Chat}", p.Chat.ToString()), Parts(n));
+
+        var (hidden, hiddenCall) = await Ringing("nothing");
+        var (_, h) = await Notice(hidden.CB, $"call={hiddenCall}");
+        Assert.Equal(("Gom", "Cuộc gọi đến"), (h.GetProperty("title").GetString(), h.GetProperty("body").GetString()));
+    }
+
+    [Fact]
+    public async Task A_call_the_caller_gave_up_on_is_a_missed_call()
+    {
+        var (p, call) = await Ringing("name");
+        using (var r = await app.Call(HttpMethod.Post, $"/api/calls/{call}/hangup", null, p.CA)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        var (status, n) = await Notice(p.CB, $"call={call}");
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal((p.A.DisplayName, "Cuộc gọi nhỡ", $"/c/{p.Chat}", p.Chat.ToString()), Parts(n));
+    }
+
+    [Fact]
+    public async Task A_call_is_worded_only_for_the_person_called_while_it_rings_or_once_missed()
+    {
+        var (p, call) = await Ringing("words");
+        Assert.Equal(HttpStatusCode.NotFound, (await Notice(p.CA, $"call={call}")).Status);   // the caller: nothing to notify
+        var (_, cs) = await app.Member();
+        Assert.Equal(HttpStatusCode.NotFound, (await Notice(cs, $"call={call}")).Status);
+        Assert.Equal(HttpStatusCode.NotFound, (await Notice(p.CB, $"call={Guid.NewGuid()}")).Status);
+        using (var r = await app.Call(HttpMethod.Post, $"/api/calls/{call}/decline", null, p.CB)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await Notice(p.CB, $"call={call}")).Status);   // declined: not missed
+    }
 }

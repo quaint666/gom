@@ -106,9 +106,10 @@ public static class PushEndpoints
     /// <summary>
     /// The words of a notification for the Android app (docs/voice-calls.md, decision 43): FCM brings it only ids, and it asks here, with
     /// its session, so Google never sees a name or words. <c>c</c> and <c>m</c>: a message (one taken back says so); <c>owner</c>
-    /// "join" or "contact": the owner's notices. Anything this person cannot see is a 404, and the app then shows its own plain line.
+    /// "join" or "contact": the owner's notices; <c>call</c>: a call ringing for this person, or one they missed (decision 8: "nothing"
+    /// names nobody, so the lock screen shows no name). Anything this person cannot see is a 404, and the app then shows its own plain line.
     /// </summary>
-    private static async Task<IResult> Notice(Guid? c, Guid? m, string? owner, HttpContext http, GomDbContext db, FcmAccount fcm, CancellationToken ct)
+    private static async Task<IResult> Notice(Guid? c, Guid? m, string? owner, Guid? call, HttpContext http, GomDbContext db, FcmAccount fcm, CancellationToken ct)
     {
         if (!fcm.Enabled) return Results.NotFound();
         var me = GomClaims.User(http.User);
@@ -125,6 +126,16 @@ public static class PushEndpoints
             var newest = level == PushLevel.Nothing ? null : await db.Users.AsNoTracking().Where(u => u.RequestedAt != null && u.RefusedAt == null)
                 .OrderByDescending(u => u.RequestedAt).Select(u => u.DisplayName).FirstOrDefaultAsync(ct);
             return Results.Ok(new NoticeDto("Gom", newest is null ? say.JoinRequestUnnamed : say.JoinRequest(newest), "/settings/owner", "join-requests"));
+        }
+
+        if (call is { } callId)
+        {
+            var k = await db.Calls.AsNoTracking().Where(k => k.Id == callId && k.CalleeId == me)
+                .Join(db.Users, k => k.CallerId, u => u.Id, (k, u) => new { k.ConversationId, k.State, k.Outcome, u.DisplayName }).SingleOrDefaultAsync(ct);
+            var words = k?.State == CallState.Ringing ? say.IncomingCall
+                : k?.State == CallState.Ended && k.Outcome is CallOutcome.Missed or CallOutcome.Busy ? say.MissedCall : null;
+            if (k is null || words is null) return Results.NotFound();
+            return Results.Ok(new NoticeDto(level == PushLevel.Nothing ? "Gom" : k.DisplayName, words, $"/c/{k.ConversationId}", k.ConversationId.ToString()));
         }
 
         if (c is not { } chat || m is not { } id) return Error("invalid_notice");

@@ -19,6 +19,8 @@ public sealed class ServerText
     public required string JoinRequestUnnamed { get; init; }
     /// <summary>A call nobody answered (or that found them busy): the caller's name is the title, at the levels that name people.</summary>
     public required string MissedCall { get; init; }
+    /// <summary>A call ringing on the Android app: the caller's name is the title, at the levels that name people.</summary>
+    public required string IncomingCall { get; init; }
     /// <summary>The owner's notification of a message from the privacy page's form.</summary>
     public required string ContactMessage { get; init; }
     public required Func<int, string> SentPictures { get; init; }
@@ -38,6 +40,7 @@ public sealed class ServerText
         JoinRequestUnnamed = "Có người xin tham gia Gom",
         ContactMessage = "Có thư liên hệ mới",
         MissedCall = "Cuộc gọi nhỡ",
+        IncomingCall = "Cuộc gọi đến",
         SentPictures = n => $"Đã gửi {n} ảnh",
         SentFiles = n => $"Đã gửi {n} file",
         SentPicturesAndFiles = (pictures, files) => $"Đã gửi {pictures} ảnh và {files} file",
@@ -55,6 +58,7 @@ public sealed class ServerText
         JoinRequestUnnamed = "Someone asks to join Gom",
         ContactMessage = "New message from the contact form",
         MissedCall = "Missed call",
+        IncomingCall = "Incoming call",
         SentPictures = n => n == 1 ? "Sent a picture" : $"Sent {n} pictures",
         SentFiles = n => n == 1 ? "Sent a file" : $"Sent {n} files",
         SentPicturesAndFiles = (pictures, files) => $"Sent {Count(pictures, "picture", "pictures")} and {Count(files, "file", "files")}",
