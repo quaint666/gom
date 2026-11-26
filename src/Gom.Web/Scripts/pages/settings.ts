@@ -138,7 +138,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
           <button class="btn secondary small" type="button" data-avatar-cancel ?disabled=${busy} @click=${() => { picked = null; update(); }}>${say.common.cancel}</button>
         </div>`}
       <b>${u.displayName}</b><small>@${u.gomId}</small>
-      ${picked === null && u.uploads && u.avatar ? html`<button class="linkish" type="button" data-avatar-remove ?disabled=${busy} @click=${() => void removePicture()}>${say.settings.removePicture}</button>` : nothing}
+      ${picked === null && u.uploads && u.avatar ? html`<button class="btn secondary small" type="button" data-avatar-remove ?disabled=${busy} @click=${() => void removePicture()}>${say.settings.removePicture}</button>` : nothing}
       <p class="hint" role="status" data-avatar-status>${pictureStatus}</p>
     </div>`;
 

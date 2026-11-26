@@ -44,11 +44,20 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   const memberRow = (m: Member) => html`
     <li class="li" data-member=${m.gomId}>
       <div class="t"><b>${m.displayName}${m.isOwner ? html`<span class="tag">${say.owner.ownerTag}</span>` : nothing}${m.deleted ? html`<span class="tag">${say.owner.deletedTag}</span>` : m.disabled ? html`<span class="tag">${say.owner.disabledTag}</span>` : nothing}</b><small>@${m.gomId}</small></div>
-      ${m.isOwner || m.disabled ? nothing : html`<button class="btn secondary small" type="button" @click=${() => makeReset(m.gomId)}>${say.owner.makeReset}</button>`}
-      ${m.isOwner || m.deleted ? nothing : m.disabled
-        ? html`<button class="btn secondary small" type="button" data-enable @click=${() => setDisabled(m.gomId, false)}>${say.owner.enable}</button>`
-        : html`<button class="btn secondary small" type="button" data-disable @click=${() => setDisabled(m.gomId, true)}>${say.owner.disable}</button>`}
+      ${m.isOwner || m.deleted ? nothing : html`
+        <details class="row-acts" data-member-actions>
+          <summary class="ib" aria-label=${say.friends.optionsFor(m.displayName)}>${icons.more()}</summary>
+          <div class="row-acts-list">
+            ${m.disabled ? nothing : html`<button type="button" data-reset @click=${(e: Event) => { shut(e); makeReset(m.gomId); }}>${say.owner.makeReset}</button>`}
+            ${m.disabled
+              ? html`<button type="button" data-enable @click=${(e: Event) => { shut(e); void setDisabled(m.gomId, false); }}>${say.owner.enable}</button>`
+              : html`<button type="button" class="danger-item" data-disable @click=${(e: Event) => { shut(e); void setDisabled(m.gomId, true); }}>${say.owner.disable}</button>`}
+          </div>
+        </details>`}
     </li>`;
+
+  /** Closes the row's actions once one is chosen. */
+  const shut = (e: Event) => { (e.currentTarget as HTMLElement).closest('details')?.removeAttribute('open'); };
 
   const linkBox = () => link === null ? nothing : html`
     <div class="card">
