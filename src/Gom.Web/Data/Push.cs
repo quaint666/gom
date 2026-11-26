@@ -19,3 +19,16 @@ public class PushSubscription
     public PushLevel Level { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
+
+/// <summary>
+/// One Android app's wake-up address (an FCM registration token) and its notification level. Like a browser's subscription it belongs
+/// to one sign-in session, so signing out ends it; the app registers again at every start (docs/voice-calls.md, decisions 25 and 44).
+/// </summary>
+public class FcmDevice
+{
+    public Guid Id { get; set; }
+    public Guid SessionId { get; set; }
+    public string Token { get; set; } = "";
+    public PushLevel Level { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}

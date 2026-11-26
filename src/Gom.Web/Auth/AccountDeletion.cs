@@ -92,6 +92,7 @@ public static class AccountDeletion
             await db.Links.Where(l => (l.CreatedBy == me || l.TargetUserId == me) && l.ConsumedAt == null && l.RevokedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(l => l.RevokedAt, (DateTimeOffset?)now), ct);
             await db.PushSubscriptions.Where(p => db.Sessions.Any(s => s.Id == p.SessionId && s.UserId == me)).ExecuteDeleteAsync(ct);
+            await db.FcmDevices.Where(d => db.Sessions.Any(s => s.Id == d.SessionId && s.UserId == me)).ExecuteDeleteAsync(ct);
             await db.Sessions.Where(s => s.UserId == me && s.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, (DateTimeOffset?)now), ct);
             await tx.CommitAsync(ct);
         }

@@ -27,6 +27,8 @@ Voice calls (Android app, `docs/voice-calls.md`) are off until `Calls__Enabled` 
 
 A call's relay is Cloudflare Realtime TURN: set `Turn__KeyId` and `Turn__ApiToken` to a TURN key's ID and secret (both or neither; with only one the app refuses to start). Without them a phone gets a direct connection only, which fails between some networks. `Turn__LoginHours` (3) is how long a relay login lasts before a long call asks for a fresh one.
 
+The Android app is woken through Firebase Cloud Messaging: set `Fcm__ServiceAccount` to a Firebase service account's JSON key file, base64-encoded (`base64 -w0 key.json`); an unreadable value stops the app at start. Without it no app is woken, and nobody can be called (a call needs the person called to have the app signed in).
+
 The first start needs an owner account: set `Owner__GomId` and `Owner__Password` (10 characters or more) once, on an empty database, then remove the password from the configuration. Apply the database migrations first (`dotnet dotnet-ef database update --project src/Gom.Web`); the app does not do it for you.
 
 Decisions and their reasons are in `docs/decisions.md`; what comes next is in `docs/next-session.md`. The mockups and design notes are in `design/`.

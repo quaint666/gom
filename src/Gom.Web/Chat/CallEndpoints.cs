@@ -36,9 +36,12 @@ public sealed class CallLimiter(SendLimiter bucket)
 /// call fails; a call already connected goes on phone to phone.
 /// Also the relay logins handed out: a device asks for one before it calls or answers, and the call it then starts or answers claims
 /// it; each call's logins are taken back when it ends, and one no call claimed soon is taken back by the sweep.
+/// And the wake-ups for the person called's apps (FCM), which ring and stop ringing a phone with Gom closed.
 /// </summary>
-public sealed class CallRelay(ConnectionRegistry registry, TurnRevoker revoker)
+public sealed class CallRelay(ConnectionRegistry registry, TurnRevoker revoker, Push.CallPushQueue pushes)
 {
+    public void Wake(Push.CallPush job) => pushes.Enqueue(job);
+
     public sealed record Descriptions(string? Offer, string? Answer, int Rev, Guid? LastFrom, string? LastType, string? LastSdp);
 
     private readonly ConcurrentDictionary<Guid, Descriptions> _calls = new();
@@ -190,14 +193,23 @@ public static class CallEndpoints
         return db.Friendships.AnyAsync(f => f.UserLow == low && f.UserHigh == high && f.Status == FriendStatus.Accepted, ct);
     }
 
-    /// <summary>The friend I may call in this chat, or why there is none: not my chat, not one-to-one, or no longer friends.</summary>
-    private static async Task<(Guid Peer, IResult? Refused)> Callee(GomDbContext db, Guid conversation, Guid me, CancellationToken ct)
+    /// <summary>
+    /// The friend I may call in this chat, or why there is none: not my chat, not one-to-one, no longer friends, or they have no device
+    /// that can take a call (the Android app, signed in: docs/voice-calls.md; web pages take calls later).
+    /// </summary>
+    private static async Task<(Guid Peer, IResult? Refused)> Callee(GomDbContext db, Guid conversation, Guid me, DateTimeOffset now, CancellationToken ct)
     {
         var access = await Access.Of(db, conversation, me, ct);
         if (access is null) return (default, Results.NotFound());
         if (access.Kind != ConversationKind.Direct) return (default, Error(StatusCodes.Status400BadRequest, "invalid_call"));
         var peer = await db.Members.Where(m => m.ConversationId == conversation && m.UserId != me).Select(m => m.UserId).SingleAsync(ct);
         if (!await Friends(db, me, peer, ct)) return (default, Error(StatusCodes.Status403Forbidden, "not_friends"));
+        var reachable = await (
+            from s in db.Sessions
+            where s.UserId == peer && s.RevokedAt == null && s.ExpiresAt > now
+            join d in db.FcmDevices on s.Id equals d.SessionId
+            select d.Id).AnyAsync(ct);
+        if (!reachable) return (default, Error(StatusCodes.Status409Conflict, "cannot_take_calls"));
         return (peer, null);
     }
 
@@ -242,7 +254,7 @@ public static class CallEndpoints
         if (await db.Calls.AsNoTracking().SingleOrDefaultAsync(k => k.CallerId == me && k.ClientId == clientId, ct) is { } again)
             return await Described(db, again, me, session, relay, o, ct);
 
-        var (peer, refused) = await Callee(db, conversation, me, ct);
+        var (peer, refused) = await Callee(db, conversation, me, clock.GetUtcNow(), ct);
         if (refused is not null) return refused;
 
         // They are calling me at this moment: that call is the one, so this device shows it as incoming.
@@ -288,6 +300,7 @@ public static class CallEndpoints
         relay.Claim(call.Id, me, session);
         var caller = await db.Users.Where(u => u.Id == me).Select(u => new MessageEndpoints.PersonDto(u.Id, u.DisplayName)).SingleAsync(ct);
         relay.Send(peer, Frames.CallIncoming(call.Id, conversation, caller));
+        relay.Wake(new Push.CallPush(call.Id, peer, Ring: true, Until: now.AddSeconds(o.RingSeconds)));
         return Results.Ok(Describe(call, me, session, relay, o, caller.DisplayName));
     }
 
@@ -312,7 +325,7 @@ public static class CallEndpoints
         }
         else if (request.ConversationId is { } conversation)
         {
-            if ((await Callee(db, conversation, me, ct)).Refused is { } refused) return refused;
+            if ((await Callee(db, conversation, me, clock.GetUtcNow(), ct)).Refused is { } refused) return refused;
         }
         else return Error(StatusCodes.Status400BadRequest, "missing_fields");
 
@@ -369,6 +382,7 @@ public static class CallEndpoints
         relay.Claim(id, me, session);
         relay.Send(call.CallerId, Frames.CallAccepted(id, call.ConversationId, sdp), onlySession: call.CallerSessionId);
         relay.Send(me, Frames.CallAnsweredElsewhere(id, call.ConversationId), exceptSession: session);
+        relay.Wake(new Push.CallPush(id, me, Ring: false, Until: now, Outcome: "answered", ExceptSession: session));
         var now2 = await db.Calls.AsNoTracking().SingleAsync(k => k.Id == id, ct);
         return await Described(db, now2, me, session, relay, o, ct);
     }
@@ -472,6 +486,8 @@ public static class CallEndpoints
         var frame = Frames.CallEnded(id, call.ConversationId, Name(outcome));
         relay.Send(call.CallerId, frame);
         relay.Send(call.CalleeId, frame);
+        // A phone still ringing from a push stops (and says "missed" when it was); an answered call's other devices were told at the answer.
+        if (call.AnsweredAt is null) relay.Wake(new Push.CallPush(id, call.CalleeId, Ring: false, Until: at, Outcome: Name(outcome)));
         await Notices.Publish(db, live, notice, ct);
         if (outcome is CallOutcome.Missed or CallOutcome.Busy)
         {

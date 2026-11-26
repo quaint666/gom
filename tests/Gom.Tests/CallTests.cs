@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Gom.Web.Chat;
 using Gom.Web.Chat.Live;
 using Gom.Web.Data;
+using Gom.Web.Push;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +22,25 @@ public sealed class CallFixture : AppFixture
     /// <summary>Where relay logins come from in tests: a fake Cloudflare.</summary>
     public FakeTurn Turn { get; } = new();
 
+    /// <summary>Where the apps' wake-ups go in tests: a fake FCM.</summary>
+    public FakeFcm Fcm { get; } = new();
+
+    /// <summary>A Firebase service account's key file, made up for the tests (base64, as the setting takes it).</summary>
+    public static readonly RSA FcmKey = RSA.Create(2048);
+    public static readonly string FcmAccount = Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(new
+    {
+        type = "service_account", project_id = "gom-test", client_email = "sender@gom-test.iam.gserviceaccount.com", private_key = FcmKey.ExportPkcs8PrivateKeyPem(),
+    }));
+
+    /// <summary>Registers the Android app on this session (so its person can take calls); returns the app's token.</summary>
+    public async Task<string> App(string cookie, string? level = null)
+    {
+        var token = "fcm-" + Guid.NewGuid().ToString("N");
+        using var r = await Call(HttpMethod.Put, "/api/push/fcm", new { token, level }, cookie);
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, r.StatusCode);
+        return token;
+    }
+
     protected override void Settings(IWebHostBuilder b)
     {
         b.UseSetting("Calls:Enabled", "true");
@@ -28,11 +49,43 @@ public sealed class CallFixture : AppFixture
         b.UseSetting("Push:Subject", PushFixture.Subject);
         b.UseSetting("Turn:KeyId", "test-key");
         b.UseSetting("Turn:ApiToken", "test-token");
+        b.UseSetting("Fcm:ServiceAccount", FcmAccount);
         b.ConfigureServices(s =>
         {
             s.RemoveAll<ITurnClient>();
             s.AddSingleton<ITurnClient>(Turn);
+            s.RemoveAll<IFcmTransport>();
+            s.AddSingleton<IFcmTransport>(Fcm);
         });
+    }
+}
+
+/// <summary>FCM, faked: keeps every message, and answers what a test tells it to for a token (200 when nothing is said).</summary>
+public sealed class FakeFcm : IFcmTransport
+{
+    public sealed record Sent(string Token, IReadOnlyDictionary<string, string> Data, int Ttl, bool High);
+
+    public ConcurrentQueue<Sent> All { get; } = new();
+    public ConcurrentDictionary<string, Func<FcmResult>> Answers { get; } = new();
+
+    public Task<FcmResult> SendAsync(string token, IReadOnlyDictionary<string, string> data, int ttlSeconds, bool high, CancellationToken ct)
+    {
+        All.Enqueue(new Sent(token, data, ttlSeconds, high));
+        return Task.FromResult(Answers.TryGetValue(token, out var answer) ? answer() : new FcmResult(200));
+    }
+
+    public List<Sent> To(string token) => All.Where(s => s.Token == token).ToList();
+
+    /// <summary>Waits for the nth message to this app (they are sent off the request path).</summary>
+    public async Task<Sent> Next(string token, int already = 0)
+    {
+        for (var i = 0; i < 150; i++)
+        {
+            var sent = To(token);
+            if (sent.Count > already) return sent[already];
+            await Task.Delay(20);
+        }
+        throw new TimeoutException($"no message {already + 1} to {token}");
     }
 }
 
@@ -85,14 +138,15 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
     private const string Offer = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
     private const string Answer = "v=0\r\no=- 3 4 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n";
 
-    private sealed record Pair(User A, string CA, User B, string CB, Guid Chat);
+    /// <param name="AppA">The Android app's token on A's first session (each has the app, so each can be called).</param>
+    private sealed record Pair(User A, string CA, User B, string CB, Guid Chat, string AppA, string AppB);
 
     private async Task<Pair> Friends()
     {
         var (a, ca) = await app.Member();
         var (b, cb) = await app.Member();
         await app.Befriend(a, b);
-        return new Pair(a, ca, b, cb, await app.OpenChat(ca, b.GomId));
+        return new Pair(a, ca, b, cb, await app.OpenChat(ca, b.GomId), await app.App(ca), await app.App(cb));
     }
 
     private Task<HttpResponseMessage> Start(string cookie, Guid chat, Guid? clientId = null, string sdp = Offer, int v = CallEndpoints.ProtocolVersion) =>
@@ -438,6 +492,7 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
         // and the caller is free again at once
         var (d, cd) = await app.Member();
         await app.Befriend(c, d);
+        await app.App(cd);
         using var next = await Start(cc, await app.OpenChat(cc, d.GomId));
         Assert.Equal("ringing", (await AppFixture.Json(next)).GetProperty("state").GetString());
     }
@@ -447,8 +502,9 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
     {
         var p = await Friends();
         await Ringing(p);
-        var (c, _) = await app.Member();
+        var (c, cc) = await app.Member();
         await app.Befriend(p.A, c);
+        await app.App(cc);
         using var r = await Start(p.CA, await app.OpenChat(p.CA, c.GomId));
         Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
         Assert.Equal("in_call", await ErrorOf(r));
@@ -764,5 +820,114 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
     {
         var factory = app.Factory.WithWebHostBuilder(b => b.UseSetting("Turn:ApiToken", ""));
         Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+    }
+
+    // ---- Waking the app (FCM; docs/voice-calls.md, decisions 25 to 27) ----
+
+    [Fact]
+    public async Task A_call_wakes_every_app_of_the_person_called_with_only_its_id_for_as_long_as_it_rings()
+    {
+        var p = await Friends();
+        var tablet = await app.App(await app.SignIn(p.B.GomId, userAgent: "Tablet"));
+        var id = await Ringing(p);
+        foreach (var token in new[] { p.AppB, tablet })
+        {
+            var ring = await app.Fcm.Next(token);
+            Assert.Equal(new Dictionary<string, string> { ["t"] = "call", ["id"] = id.ToString() }, ring.Data);
+            Assert.Equal(45, ring.Ttl);
+            Assert.True(ring.High);
+        }
+        await Task.Delay(200);
+        Assert.Empty(app.Fcm.To(p.AppA));   // never the caller's
+    }
+
+    [Fact]
+    public async Task Answering_stops_the_other_apps_ringing_and_not_the_one_that_answered()
+    {
+        var p = await Friends();
+        var tablet = await app.App(await app.SignIn(p.B.GomId, userAgent: "Tablet"));
+        var id = await Answered(p);
+        var stop = await app.Fcm.Next(tablet, 1);
+        Assert.Equal(new Dictionary<string, string> { ["t"] = "call-end", ["id"] = id.ToString(), ["outcome"] = "answered" }, stop.Data);
+        Assert.Equal(CallPusher.StopSeconds, stop.Ttl);
+
+        using (await app.Call(Post, $"/api/calls/{id}/hangup", cookie: p.CA)) { }
+        await Task.Delay(300);
+        Assert.Single(app.Fcm.To(p.AppB));   // only its ring: an answered call's end is not pushed
+        Assert.Equal(2, app.Fcm.To(tablet).Count);
+    }
+
+    [Theory]
+    [InlineData("caller", "missed")]
+    [InlineData("callee", "declined")]
+    public async Task A_call_that_ends_while_ringing_stops_the_apps_ringing_and_says_how(string who, string outcome)
+    {
+        var p = await Friends();
+        var id = await Ringing(p);
+        if (who == "caller") using (await app.Call(Post, $"/api/calls/{id}/hangup", cookie: p.CA)) { }
+        else using (await app.Call(Post, $"/api/calls/{id}/decline", cookie: p.CB)) { }
+        var stop = await app.Fcm.Next(p.AppB, 1);
+        Assert.Equal("call-end", stop.Data["t"]);
+        Assert.Equal(outcome, stop.Data["outcome"]);
+    }
+
+    [Fact]
+    public async Task Someone_busy_is_not_rung_but_their_app_hears_of_the_missed_call()
+    {
+        var p = await Friends();
+        await Answered(p);
+        var (c, cc) = await app.Member();
+        await app.Befriend(c, p.B);
+        using (await Start(cc, await app.OpenChat(cc, p.B.GomId))) { }
+        var next = await app.Fcm.Next(p.AppB, 1);
+        Assert.Equal("call-end", next.Data["t"]);
+        Assert.Equal("busy", next.Data["outcome"]);
+        await Task.Delay(200);
+        Assert.Equal(2, app.Fcm.To(p.AppB).Count);
+    }
+
+    [Fact]
+    public async Task An_app_fcm_says_is_gone_is_forgotten()
+    {
+        var p = await Friends();
+        app.Fcm.Answers[p.AppB] = () => new FcmResult(404);
+        await Ringing(p);
+        await app.Fcm.Next(p.AppB);
+        for (var i = 0; i < 50 && await AppCount(p.CB) > 0; i++) await Task.Delay(20);
+        Assert.Equal(0, await AppCount(p.CB));
+    }
+
+    private async Task<int> AppCount(string cookie)
+    {
+        await using var db = app.Db.NewContext();
+        var gomId = (await AppFixture.Json(await app.Call(Get, "/api/me", cookie: cookie))).GetProperty("gomId").GetString();
+        return await (from u in db.Users where u.GomId == gomId join s in db.Sessions on u.Id equals s.UserId join d in db.FcmDevices on s.Id equals d.SessionId select d).CountAsync();
+    }
+
+    [Fact]
+    public async Task A_ring_fcm_is_too_busy_for_is_tried_once_more_after_the_wait_it_asks()
+    {
+        var p = await Friends();
+        var answers = 0;
+        app.Fcm.Answers[p.AppB] = () => Interlocked.Increment(ref answers) == 1 ? new FcmResult(503, TimeSpan.FromMilliseconds(200)) : new FcmResult(200);
+        await Ringing(p);
+        var again = await app.Fcm.Next(p.AppB, 1);
+        Assert.Equal("call", again.Data["t"]);
+    }
+
+    [Fact]
+    public async Task Someone_with_no_app_signed_in_cannot_be_called()
+    {
+        var (a, ca) = await app.Member();
+        var (b, cb) = await app.Member();
+        await app.Befriend(a, b);
+        var chat = await app.OpenChat(ca, b.GomId);
+        using (var r = await Start(ca, chat)) { Assert.Equal(HttpStatusCode.Conflict, r.StatusCode); Assert.Equal("cannot_take_calls", await ErrorOf(r)); }
+        using (var r = await app.Call(Post, "/api/calls/relay", new { conversationId = chat }, ca)) Assert.Equal("cannot_take_calls", await ErrorOf(r));
+
+        // an app on a session that was signed out does not count
+        await app.App(cb);
+        using (await app.Call(Delete, "/api/session", cookie: cb)) { }
+        using (var r = await Start(ca, chat)) Assert.Equal("cannot_take_calls", await ErrorOf(r));
     }
 }

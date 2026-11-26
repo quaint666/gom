@@ -103,6 +103,13 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddHostedService<ContactJanitor>();
 builder.Services.AddSingleton<PushQueue>();
+builder.Services.AddSingleton(FcmAccount.Parse(builder.Configuration["Fcm:ServiceAccount"]));
+builder.Services.AddHttpClient(GoogleFcmTransport.Client, c => c.Timeout = TimeSpan.FromSeconds(10))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddSingleton<IFcmTransport, GoogleFcmTransport>();
+builder.Services.AddSingleton<CallPushQueue>();
+builder.Services.AddSingleton<CallPusher>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CallPusher>());
 builder.Services.AddHttpClient(HttpPushTransport.Client)
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddSingleton<IPushTransport, HttpPushTransport>();

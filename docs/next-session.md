@@ -28,7 +28,7 @@ Each is discussed first (design, decisions, what cannot be verified), then built
    decisions, the Cloudflare and Android facts, what H does and the PR order are in **`docs/voice-calls.md`**; read it
    first. Its PR 1 went as three stacked pull requests (2026-11-26): 1a the call mockups (screens 21 to 30) with pull down
    to reload on the chat list, 1b the `/privacy` page in both languages, 1c its contact form. PR 2 is split: 2a the server's
-   calls (the pull request after #138), 2b the call lines on the web (both merged), and PR 3 the relay (Cloudflare TURN logins). Next: PR 4, phones (FCM). `Site__Operator` is set on the server [stated: the
+   calls (the pull request after #138), 2b the call lines on the web (both merged), PR 3 the relay (Cloudflare TURN logins), and PR 4 in two: 4a the app's registration and call pushes, 4b messages by FCM (both opened 2026-11-26, not merged). Next: PR 5, the Android shell. `Site__Operator` is set on the server [stated: the
    operations session, 2026-11-26].
 2. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
    with the link or text ready, then asks which conversation. Gom-only: Peekbox and Bloomy already call
