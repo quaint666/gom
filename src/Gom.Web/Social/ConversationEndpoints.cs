@@ -210,11 +210,13 @@ public static class ConversationEndpoints
                         u.Id, u.GomId, u.DisplayName, u.AvatarId, Deleted = u.DeletedAt != null,
                         Friend = db.Friendships.Any(f => ((f.UserLow == me && f.UserHigh == u.Id) || (f.UserLow == u.Id && f.UserHigh == me)) && f.Status == FriendStatus.Accepted),
                     }).FirstOrDefault(),
-                Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq && x.Seq > m.ClearedSeq && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).OrderByDescending(x => x.Seq)
+                Last = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.JoinedSeq && x.Seq > m.ClearedSeq && (x.Notice == null || x.Notice == NoticeKind.Call) && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).OrderByDescending(x => x.Seq)
                     .Join(db.Users, x => x.SenderId, u => u.Id, (x, u) => new
                     {
                         x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.Sticker, x.CreatedAt, Deleted = x.DeletedAt != null, SenderId = u.Id, u.DisplayName,
                         Attached = db.Attachments.Where(a => a.MessageId == x.Id).OrderBy(a => a.Position).Select(a => (int?)a.Kind).FirstOrDefault(),
+                        // A call's line is the last thing too (Notices: a call is the one notice that is).
+                        Call = db.Calls.Where(k => k.MessageId == x.Id).Select(k => new { k.CallerId, k.Outcome, k.CreatedAt, k.AnsweredAt, k.EndedAt }).FirstOrDefault(),
                     }).FirstOrDefault(),
                 // A notice is not unread, except a call this person missed (rang out, or found them busy).
                 Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null
@@ -251,6 +253,7 @@ public static class ConversationEndpoints
                 attachment = r.Last.Attached is { } kind ? Uploads.AttachmentEndpoints.KindName((AttachmentKind)kind) : null,
                 sticker = r.Last.Deleted ? null : r.Last.Sticker,
                 sender = new { id = r.Last.SenderId, displayName = r.Last.DisplayName },
+                call = r.Last.Call is { } k ? Chat.CallNoticeDto.Of(k.CallerId, k.Outcome, k.CreatedAt, k.AnsweredAt, k.EndedAt) : null,
             },
         }));
     }

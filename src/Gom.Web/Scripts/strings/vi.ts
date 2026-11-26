@@ -401,6 +401,18 @@ export const vi = {
     refuse: 'Từ chối',
     remove: 'Xóa',
   },
+  /** A voice call's line in the chat and the list, worded for whoever reads it (design-notes rule 16). */
+  calls: {
+    voiceCall: 'Cuộc gọi thoại',
+    noAnswer: 'Không trả lời',
+    declinedByThem: 'Cuộc gọi bị từ chối',
+    busy: 'Máy bận',
+    missed: 'Cuộc gọi nhỡ',
+    youDeclined: 'Bạn đã từ chối',
+    failed: 'Không kết nối được',
+    incoming: 'Cuộc gọi đến',
+    outgoing: 'Cuộc gọi đi',
+  },
   notices: {
     today: 'Hôm nay',
     yesterday: 'Hôm qua',

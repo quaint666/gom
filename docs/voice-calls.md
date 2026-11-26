@@ -184,7 +184,7 @@ video, recording, iPhone native.
 1. **Design:** mockups in `design/` for the incoming call, the call screen, the call ended state and the chat rows;
    a rule in `design-notes.md`; the `/privacy` page.
 2. **Server, calls** (2a, 2026-11-26): the `calls` table (migration `Calls`), the call states, the REST steps, socket frames,
-   the chat line, the endings in section 2, the rate limit, the protocol version, the switch. Tests. **2b, web:** the call
+   the chat line, the endings in section 2, the rate limit, the protocol version, the switch. Tests. **2b, web** (2026-11-26): the call
    lines drawn in the chat and the list (mockups 29 and 30), and the missed-call notification. Settled while designing 2a
    (H, 2026-11-26): the server decides which answer wins (no "select answer" step as in Matrix); each offer and answer carries
    all its addresses (no trickle ICE: one message, about a second slower to start); offers and answers stay in memory only;

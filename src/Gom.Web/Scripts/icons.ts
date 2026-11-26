@@ -20,6 +20,11 @@ export const lock = () => icon('M6 11h12v9H6z', 'M8.5 11V8a3.5 3.5 0 017 0v3');
 export const shield = () => icon('M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z', 'M9 12l2 2 4-4');
 export const disk = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 3v9l6.4 6.4');
 export const phone = () => icon('M8 3h8v18H8z', 'M11 18h2');
+/** A handset: a voice call. */
+export const call = () => icon('M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z');
+/** A call that came in, and one that went out. */
+export const callIn = () => icon('M17 7L7 17', 'M7 9v8h8');
+export const callOut = () => icon('M7 17L17 7', 'M9 7h8v8');
 export const reload = () => icon('M20 12a8 8 0 1 1-2.3-5.6', 'M20 4v5h-5');
 export const camera = () => icon('M4 8h3l2-3h6l2 3h3v11H4z', 'M12 10a3 3 0 100 6 3 3 0 000-6z');
 export const gear = () => icon(

@@ -9,9 +9,10 @@ namespace Gom.Web.Push;
 /// them, and its id. <paramref name="Recalled"/>: it was taken back, so a notification showing its words is replaced.
 /// <paramref name="JoinRequest"/>: not a message but someone asking to join (the sender), told to the owner.
 /// <paramref name="Contact"/>: not a message but a note from the privacy page's form, told to the owner (never its words).
+/// <paramref name="MissedCall"/>: a call the person called missed (the sender is the caller), told to them even in a muted chat.
 /// </summary>
 public sealed record PushJob(Guid ConversationId, long Seq, Guid SenderId, string SenderName, int Images, int Files, bool Sticker = false,
-    string Text = "", Guid MessageId = default, bool Recalled = false, bool JoinRequest = false, int Videos = 0, bool Contact = false);
+    string Text = "", Guid MessageId = default, bool Recalled = false, bool JoinRequest = false, int Videos = 0, bool Contact = false, bool MissedCall = false);
 
 /// <summary>
 /// Messages waiting for their notifications, handed over after the commit. Bounded: when it is full a notification is dropped, never

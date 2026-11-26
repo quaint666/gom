@@ -56,6 +56,7 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         var db = scope.ServiceProvider.GetRequiredService<GomDbContext>();
         var now = clock.GetUtcNow();
         if (job.JoinRequest || job.Contact) { await TellOwnerAsync(db, job, now, ct); return; }
+        if (job.MissedCall) { await TellMissedAsync(db, job, now, ct); return; }
         var chat = await db.Conversations.AsNoTracking().Where(c => c.Id == job.ConversationId).Select(c => new { c.Kind, c.Title }).SingleOrDefaultAsync(ct);
         if (chat is null) return;
 
@@ -82,6 +83,30 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
                 : d.Level == PushLevel.Nothing ? new { c = job.ConversationId, m = job.MessageId, title = "Gom", body = say.NewMessage, recalled = false }
                 : new { c = job.ConversationId, m = job.MessageId, title, body, recalled = false };
             await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, payload, job.Recalled ? "normal" : "high", topic, now, ct);
+        }
+    }
+
+    /// <summary>
+    /// A missed call: the person called hears of it on every device, even in a muted chat (mute is for messages; docs/voice-calls.md,
+    /// decision 7), at their level ("nothing" names nobody). A tap opens the chat, as a message's does.
+    /// </summary>
+    private async Task TellMissedAsync(GomDbContext db, PushJob job, DateTimeOffset now, CancellationToken ct)
+    {
+        var devices = await (
+            from m in db.Members
+            where m.ConversationId == job.ConversationId && m.UserId != job.SenderId
+            join u in db.Users on m.UserId equals u.Id
+            where u.DisabledAt == null
+            join s in db.Sessions on m.UserId equals s.UserId
+            where s.RevokedAt == null && s.ExpiresAt > now
+            join p in db.PushSubscriptions on s.Id equals p.SessionId
+            select new { p.Id, p.Endpoint, p.P256dh, p.Auth, p.Level, u.Language }).AsNoTracking().ToListAsync(ct);
+        var topic = Base64Url.EncodeToString(job.ConversationId.ToByteArray());
+        foreach (var d in devices)
+        {
+            var say = ServerText.For(d.Language);
+            var title = d.Level == PushLevel.Nothing ? "Gom" : job.SenderName;
+            await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, new { c = job.ConversationId, m = job.MessageId, title, body = say.MissedCall, recalled = false }, "high", topic, now, ct);
         }
     }
 

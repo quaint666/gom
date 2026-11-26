@@ -1,4 +1,4 @@
-import type { ChatMessage, Failure, MediaItem } from '../api.js';
+import type { CallLine, ChatMessage, Failure, MediaItem } from '../api.js';
 import { say } from '../say.js';
 
 /** A message as the thread shows it: stored, or still on its way (no sequence number yet). */
@@ -124,6 +124,31 @@ export function buildThread(
 
 const dayFormat = new Intl.DateTimeFormat(say.locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
 
+/** How long a call lasted: 3:05, or 1:02:09 past an hour (the same in every language). */
+export function callLength(seconds: number): string {
+  const h = Math.floor(seconds / 3600), m = Math.floor(seconds / 60) % 60, s = seconds % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** A call this person missed: it rang out, or found them busy (only the person called misses a call). */
+export const missedByMe = (call: CallLine, me: string): boolean => call.callerId !== me && (call.outcome === 'missed' || call.outcome === 'busy');
+
+/** A call's line in words, as whoever reads it sees it: the caller and the person called are told different things (design-notes rule 16). */
+export function callTitle(call: CallLine, me: string): string {
+  const mine = call.callerId === me;
+  switch (call.outcome) {
+    case 'completed': return say.calls.voiceCall;
+    case 'missed': return mine ? say.calls.noAnswer : say.calls.missed;
+    case 'declined': return mine ? say.calls.declinedByThem : say.calls.youDeclined;
+    case 'busy': return mine ? say.calls.busy : say.calls.missed;
+    case 'failed': return say.calls.failed;
+  }
+}
+
+/** The list's preview of a call: its words, and how long for one that was answered. */
+export const callPreview = (call: CallLine, me: string): string =>
+  call.outcome === 'completed' ? `${say.calls.voiceCall} · ${callLength(call.seconds)}` : callTitle(call, me);
+
 /** A notice in words, from the point of view of whoever reads it ("Bạn" and "bạn" for yourself). */
 export function noticeText(m: ChatMessage, me: string): string {
   const notice = m.notice;
@@ -139,5 +164,6 @@ export function noticeText(m: ChatMessage, me: string): string {
     // The owner did it, but it is not about anyone: no name.
     case 'filesTrimmed': return say.notices.filesTrimmed(notice.before ? dayFormat.format(new Date(notice.before)) : '');
     case 'messagesTrimmed': return say.notices.messagesTrimmed(notice.before ? dayFormat.format(new Date(notice.before)) : '');
+    case 'call': return notice.call ? callPreview(notice.call, me) : '';
   }
 }

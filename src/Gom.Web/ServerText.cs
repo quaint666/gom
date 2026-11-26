@@ -17,6 +17,8 @@ public sealed class ServerText
     /// <summary>The owner's notification of a request to join: with the name, and without (the "nothing" level).</summary>
     public required Func<string, string> JoinRequest { get; init; }
     public required string JoinRequestUnnamed { get; init; }
+    /// <summary>A call nobody answered (or that found them busy): the caller's name is the title, at the levels that name people.</summary>
+    public required string MissedCall { get; init; }
     /// <summary>The owner's notification of a message from the privacy page's form.</summary>
     public required string ContactMessage { get; init; }
     public required Func<int, string> SentPictures { get; init; }
@@ -35,6 +37,7 @@ public sealed class ServerText
         JoinRequest = name => $"{name} xin tham gia Gom",
         JoinRequestUnnamed = "Có người xin tham gia Gom",
         ContactMessage = "Có thư liên hệ mới",
+        MissedCall = "Cuộc gọi nhỡ",
         SentPictures = n => $"Đã gửi {n} ảnh",
         SentFiles = n => $"Đã gửi {n} file",
         SentPicturesAndFiles = (pictures, files) => $"Đã gửi {pictures} ảnh và {files} file",
@@ -51,6 +54,7 @@ public sealed class ServerText
         JoinRequest = name => $"{name} asks to join Gom",
         JoinRequestUnnamed = "Someone asks to join Gom",
         ContactMessage = "New message from the contact form",
+        MissedCall = "Missed call",
         SentPictures = n => n == 1 ? "Sent a picture" : $"Sent {n} pictures",
         SentFiles = n => n == 1 ? "Sent a file" : $"Sent {n} files",
         SentPicturesAndFiles = (pictures, files) => $"Sent {Count(pictures, "picture", "pictures")} and {Count(files, "file", "files")}",

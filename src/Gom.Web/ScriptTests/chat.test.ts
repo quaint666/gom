@@ -5406,3 +5406,45 @@ describe('chat: a reload by itself (a new version)', () => {
     expect(h.busy()).toBe(false);
   });
 });
+
+describe('call lines (mockups 29 and 30)', () => {
+  const callMsg = (seq: number, from: 'mom' | 'minh', outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed', seconds = 0): ChatMessage => ({
+    ...msg(seq, from, ''),
+    notice: { type: 'call', target: null, call: { callerId: from === 'mom' ? 'u-mom' : 'u-minh', outcome, startedAt: at(8, 12), seconds } },
+  });
+
+  it('draws each call as a card on the side of whoever called, worded for the reader, a missed one marked', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [callMsg(1, 'minh', 'completed', 185), callMsg(2, 'mom', 'missed'), callMsg(3, 'minh', 'missed')] } });
+    await flush();
+    const cards = [...root.querySelectorAll<HTMLElement>('[data-call-line]')];
+    expect(cards.map((c) => [c.classList.contains('out') ? 'out' : 'in', text(c.querySelector('b')!)])).toEqual([
+      ['in', 'Cuộc gọi thoại'], ['out', 'Không trả lời'], ['in', 'Cuộc gọi nhỡ'],
+    ]);
+    expect(text(cards[0]!)).toContain(`3:05 · ${clock(at(8, 12))}`);
+    expect(text(cards[0]!)).toContain('Cuộc gọi đến');   // which way, for a screen reader
+    expect(cards.map((c) => c.querySelector('.call-card')!.classList.contains('missed'))).toEqual([false, false, true]);
+    expect(root.querySelector('[data-call-line] button')).toBeNull();   // no "Gọi lại" on the web
+  });
+
+  it('shows a call as the last thing in the list, a missed one in red', async () => {
+    const missed = callMsg(4, 'minh', 'missed');
+    start({ chats: [chat(C1, 'Minh', { lastSeq: 4, unread: 1, lastMessage: { seq: 4, body: '', createdAt: missed.createdAt, sender: missed.sender, call: missed.notice!.call } })] });
+    await flush();
+    const pv = rows()[0]!.querySelector('.pv')!;
+    expect(text(pv)).toBe('Cuộc gọi nhỡ');
+    expect(pv.classList.contains('missed-call')).toBe(true);
+  });
+
+  it('moves a chat up and counts it unread when a missed call arrives, but not for a call the reader made', async () => {
+    const h = start({ chats: [chat(C2, 'An', { lastSeq: 1, lastMessage: { seq: 1, body: 'hi', createdAt: at(11), sender: { id: 'u-an', displayName: 'An' } } }), chat(C1, 'Minh')] });
+    await flush();
+    h.handlers().event(C1, created(callMsg(1, 'minh', 'missed')));
+    await flush();
+    expect(rows()[0]!.dataset['chat']).toBe(C1);
+    expect(text(rows()[0]!.querySelector('.badge')!)).toBe('1');
+    h.handlers().event(C1, created(callMsg(2, 'mom', 'missed')));
+    await flush();
+    expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Không trả lời');
+    expect(text(rows()[0]!.querySelector('.badge')!)).toBe('1');
+  });
+});

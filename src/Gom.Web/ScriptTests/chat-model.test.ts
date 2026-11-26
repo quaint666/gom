@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ChatMessage } from '../Scripts/api.js';
-import { AVATAR_TONES, avatarTone, buildThread, clock, dayLabel, initials, listTime, mergeMessages, noticeText, type Shown } from '../Scripts/chat/model.js';
+import type { CallLine, ChatMessage } from '../Scripts/api.js';
+import { AVATAR_TONES, avatarTone, buildThread, callLength, callPreview, callTitle, clock, dayLabel, initials, listTime, mergeMessages, missedByMe, noticeText, type Shown } from '../Scripts/chat/model.js';
 
 // Noon UTC is the same calendar day in every time zone from -11 to +11, so day grouping is the same wherever the tests run.
 const at = (day: number, hh = 12, mm = 0) => new Date(Date.UTC(2026, 11, day, hh, mm)).toISOString();
@@ -166,5 +166,35 @@ describe('notices in a thread', () => {
     expect(noticeText(notice(1, 'me', 'renamed', undefined, 'Nhà mình'), 'me')).toBe('Bạn đã đổi tên nhóm thành "Nhà mình"');
     expect(noticeText(notice(1, 'lan', 'restyled'), 'me')).toBe('lan đã đổi màu và hình nền của cuộc trò chuyện');
     expect(noticeText(msg(1, 'lan', at(10, 1)), 'me')).toBe('');
+  });
+});
+
+describe('call lines', () => {
+  const line = (outcome: CallLine['outcome'], callerId = 'u-a', seconds = 0): CallLine => ({ callerId, outcome, startedAt: '2026-12-10T08:12:00Z', seconds });
+
+  it('word each ending for whoever reads it', () => {
+    const table = (['completed', 'missed', 'declined', 'busy', 'failed'] as const).map((o) => [o, callTitle(line(o), 'u-a'), callTitle(line(o), 'u-b')]);
+    expect(table).toEqual([
+      ['completed', 'Cuộc gọi thoại', 'Cuộc gọi thoại'],
+      ['missed', 'Không trả lời', 'Cuộc gọi nhỡ'],
+      ['declined', 'Cuộc gọi bị từ chối', 'Bạn đã từ chối'],
+      ['busy', 'Máy bận', 'Cuộc gọi nhỡ'],
+      ['failed', 'Không kết nối được', 'Không kết nối được'],
+    ]);
+  });
+
+  it('count a call as missed only for the person called, when it rang out or found them busy', () => {
+    expect(missedByMe(line('missed'), 'u-b')).toBe(true);
+    expect(missedByMe(line('busy'), 'u-b')).toBe(true);
+    expect(missedByMe(line('missed'), 'u-a')).toBe(false);
+    expect(missedByMe(line('declined'), 'u-b')).toBe(false);
+  });
+
+  it('say how long, past an hour too', () => {
+    expect(callLength(0)).toBe('0:00');
+    expect(callLength(185)).toBe('3:05');
+    expect(callLength(3729)).toBe('1:02:09');
+    expect(callPreview(line('completed', 'u-a', 185), 'u-b')).toBe('Cuộc gọi thoại · 3:05');
+    expect(callPreview(line('missed'), 'u-b')).toBe('Cuộc gọi nhỡ');
   });
 });

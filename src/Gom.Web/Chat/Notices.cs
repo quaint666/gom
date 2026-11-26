@@ -8,7 +8,12 @@ namespace Gom.Web.Chat;
 public sealed record NoticeDto(string Type, MessageEndpoints.PersonDto? Target, string? Title, DateTimeOffset? Before = null, CallNoticeDto? Call = null);
 
 /// <summary>A call's line in the chat: who called, how it ended, when it began, and how long it lasted once answered (seconds).</summary>
-public sealed record CallNoticeDto(Guid CallerId, string Outcome, DateTimeOffset StartedAt, int Seconds);
+public sealed record CallNoticeDto(Guid CallerId, string Outcome, DateTimeOffset StartedAt, int Seconds)
+{
+    /// <summary>From a call's row: its length counts from the answer, so a call never answered lasted nothing.</summary>
+    public static CallNoticeDto Of(Guid callerId, CallOutcome? outcome, DateTimeOffset createdAt, DateTimeOffset? answeredAt, DateTimeOffset? endedAt) =>
+        new(callerId, CallEndpoints.Name(outcome ?? CallOutcome.Failed), createdAt, answeredAt is { } a && endedAt is { } e && e > a ? (int)(e - a).TotalSeconds : 0);
+}
 
 /// <summary>
 /// Notices: the lines in a group's thread that say who was added, who was taken out, who left, and what the group was renamed to;
@@ -36,8 +41,7 @@ public static class Notices
         if (lines.Count == 0) return [];
         var rows = await db.Calls.AsNoTracking().Where(k => k.MessageId != null && lines.Contains(k.MessageId.Value))
             .Select(k => new { Line = k.MessageId!.Value, k.CallerId, k.Outcome, k.CreatedAt, k.AnsweredAt, k.EndedAt }).ToListAsync(ct);
-        return rows.ToDictionary(r => r.Line, r => new CallNoticeDto(r.CallerId, CallEndpoints.Name(r.Outcome ?? CallOutcome.Failed), r.CreatedAt,
-            r.AnsweredAt is { } a && r.EndedAt is { } e && e > a ? (int)(e - a).TotalSeconds : 0));
+        return rows.ToDictionary(r => r.Line, r => CallNoticeDto.Of(r.CallerId, r.Outcome, r.CreatedAt, r.AnsweredAt, r.EndedAt));
     }
 
     /// <summary>

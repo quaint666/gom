@@ -15,7 +15,13 @@ namespace Gom.Tests;
 /// <summary>The app with calls switched on (they are off by default).</summary>
 public sealed class CallFixture : AppFixture
 {
-    protected override void Settings(IWebHostBuilder b) => b.UseSetting("Calls:Enabled", "true");
+    protected override void Settings(IWebHostBuilder b)
+    {
+        b.UseSetting("Calls:Enabled", "true");
+        b.UseSetting("Push:PublicKey", PushFixture.Keys.Public);
+        b.UseSetting("Push:PrivateKey", PushFixture.Keys.Private);
+        b.UseSetting("Push:Subject", PushFixture.Subject);
+    }
 }
 
 /// <summary>
@@ -86,7 +92,7 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
     {
         using var scope = app.Factory.Services.CreateScope();
         await CallSweeper.RunOnce(scope.ServiceProvider.GetRequiredService<GomDbContext>(), app.Factory.Services.GetRequiredService<CallRelay>(),
-            scope.ServiceProvider.GetRequiredService<LiveDelivery>(), app.Clock.GetUtcNow(), app.Factory.Services.GetRequiredService<IOptions<CallOptions>>().Value, default);
+            scope.ServiceProvider.GetRequiredService<LiveDelivery>(), app.Factory.Services.GetRequiredService<Gom.Web.Push.PushQueue>(), app.Clock.GetUtcNow(), app.Factory.Services.GetRequiredService<IOptions<CallOptions>>().Value, default);
     }
 
     private async Task<WebSocket> Connect(string cookie)
@@ -484,5 +490,75 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
             Assert.Equal(HttpStatusCode.OK, r.StatusCode);
         await using var db = app.Db.NewContext();
         Assert.False(await db.Calls.AnyAsync(k => k.Id == id));
+    }
+
+    // ---- the list and notifications (2b)
+
+    private async Task<JsonElement> Listed(Guid chat, string cookie)
+    {
+        using var r = await app.Call(Get, "/api/conversations", cookie: cookie);
+        return (await AppFixture.Json(r)).EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == chat).Clone();
+    }
+
+    [Fact]
+    public async Task A_call_is_what_last_happened_in_the_list_and_the_chat_rises()
+    {
+        var p = await Friends();
+        var (c, _) = await app.Member();
+        await app.Befriend(p.B, c);
+        var other = await app.OpenChat(p.CB, c.GomId);
+        app.Clock.Advance(TimeSpan.FromMinutes(1));
+        using (await app.Call(Post, $"/api/conversations/{other}/messages", new { body = "Chào", clientId = Guid.NewGuid() }, p.CB)) { }
+        app.Clock.Advance(TimeSpan.FromMinutes(1));
+        var id = await Answered(p);
+        app.Clock.Advance(TimeSpan.FromSeconds(65));
+        using (await app.Call(Post, $"/api/calls/{id}/hangup", cookie: p.CA)) { }
+
+        using var r = await app.Call(Get, "/api/conversations", cookie: p.CB);
+        var list = (await AppFixture.Json(r)).EnumerateArray().ToList();
+        Assert.Equal(p.Chat, list[0].GetProperty("id").GetGuid());   // above the chat that had a message since
+        var call = list[0].GetProperty("lastMessage").GetProperty("call");
+        Assert.Equal("completed", call.GetProperty("outcome").GetString());
+        Assert.Equal(65, call.GetProperty("seconds").GetInt32());
+        Assert.Equal(p.A.Id, call.GetProperty("callerId").GetGuid());
+    }
+
+    [Fact]
+    public async Task A_missed_call_is_told_to_the_person_called_even_in_a_muted_chat_and_names_nobody_at_the_quietest_level()
+    {
+        var p = await Friends();
+        using var loud = new FakeBrowser();
+        using var quiet = new FakeBrowser();
+        var second = await app.SignIn(p.B.GomId, userAgent: "Phone");
+        using (var r = await app.Call(HttpMethod.Put, "/api/push", loud.Subscription("name"), p.CB)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        using (var r = await app.Call(HttpMethod.Put, "/api/push", quiet.Subscription("nothing"), second)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        using (var r = await app.Call(HttpMethod.Put, $"/api/conversations/{p.Chat}/mute", new { muted = true }, p.CB)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        using var mine = new FakeBrowser();
+        using (await app.Call(HttpMethod.Put, "/api/push", mine.Subscription("name"), p.CA)) { }
+
+        var id = await Ringing(p);
+        using (await app.Call(Post, $"/api/calls/{id}/hangup", cookie: p.CA)) { }
+        var note = loud.Read((await app.Push.Next(loud.Endpoint)).Body);
+        Assert.Equal(p.A.DisplayName, note.GetProperty("title").GetString());
+        Assert.Equal("Cuộc gọi nhỡ", note.GetProperty("body").GetString());
+        Assert.Equal(p.Chat, note.GetProperty("c").GetGuid());
+        var hushed = quiet.Read((await app.Push.Next(quiet.Endpoint)).Body);
+        Assert.Equal("Gom", hushed.GetProperty("title").GetString());
+        Assert.DoesNotContain(p.A.DisplayName, hushed.ToString());
+        Assert.Empty(app.Push.To(mine.Endpoint));   // the caller is not told of their own call
+    }
+
+    [Fact]
+    public async Task Declined_and_answered_calls_notify_nobody()
+    {
+        var p = await Friends();
+        using var phone = new FakeBrowser();
+        using (await app.Call(HttpMethod.Put, "/api/push", phone.Subscription("name"), p.CB)) { }
+        var id = await Ringing(p);
+        using (await app.Call(Post, $"/api/calls/{id}/decline", cookie: p.CB)) { }
+        var done = await Answered(p);
+        using (await app.Call(Post, $"/api/calls/{done}/hangup", cookie: p.CA)) { }
+        await Task.Delay(300);
+        Assert.Empty(app.Push.To(phone.Endpoint));
     }
 }
