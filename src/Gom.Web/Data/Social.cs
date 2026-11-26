@@ -89,7 +89,53 @@ public class ConversationMember
 /// <see cref="FilesTrimmed"/> and <see cref="MessagesTrimmed"/>: the owner trimmed pictures and files, or messages, sent before a date
 /// (the date is the notice's body).
 /// </summary>
-public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7 }
+public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7, Call = 8 }
+
+public enum CallState { Ringing = 1, Active = 2, Ended = 3 }
+
+/// <summary>
+/// How a call ended. <see cref="Missed"/>: nobody answered in time, or the caller hung up first. <see cref="Busy"/>: the person called
+/// was in another call (a missed call for them). <see cref="Failed"/>: it could not go on (the server lost what was needed to set it
+/// up, or the two stopped being friends while it rang).
+/// </summary>
+public enum CallOutcome { Completed = 1, Missed = 2, Declined = 3, Busy = 4, Failed = 5 }
+
+/// <summary>
+/// A one-to-one voice call between friends: who, when, how long, how it ended (docs/voice-calls.md, decision 13). Never the audio,
+/// and never what the phones said to set it up (their addresses): that stays in memory (<see cref="Chat.CallRelay"/>).
+/// </summary>
+public class Call
+{
+    public Guid Id { get; set; }
+    public Guid ConversationId { get; set; }
+    public Guid CallerId { get; set; }
+    public Guid CalleeId { get; set; }
+    /// <summary>The caller's device: only it takes part.</summary>
+    public Guid CallerSessionId { get; set; }
+    /// <summary>Chosen by the caller's device, so a retried start is the same call.</summary>
+    public Guid ClientId { get; set; }
+    /// <summary>The call protocol the caller spoke (<see cref="Chat.CallEndpoints.ProtocolVersion"/>).</summary>
+    public int Version { get; set; }
+    public CallState State { get; set; }
+    public CallOutcome? Outcome { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>Which of the callee's devices answered: the only one of theirs that takes part.</summary>
+    public Guid? AnswerSessionId { get; set; }
+    public DateTimeOffset? AnsweredAt { get; set; }
+    public DateTimeOffset? EndedAt { get; set; }
+    /// <summary>When each side last said it is still there, during the call; long silence ends it.</summary>
+    public DateTimeOffset? CallerSeenAt { get; set; }
+    public DateTimeOffset? CalleeSeenAt { get; set; }
+    /// <summary>The line in the chat, written when the call ends.</summary>
+    public Guid? MessageId { get; set; }
+}
+
+/// <summary>Someone in a call that has not ended: one row per person, so nobody is in two calls at once (the key decides, atomically).</summary>
+public class CallParty
+{
+    public Guid UserId { get; set; }
+    public Guid CallId { get; set; }
+}
 
 public class Message
 {

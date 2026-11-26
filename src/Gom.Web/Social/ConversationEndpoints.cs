@@ -216,7 +216,10 @@ public static class ConversationEndpoints
                         x.Seq, Body = x.Body.Length > PreviewChars ? x.Body.Substring(0, PreviewChars) : x.Body, x.Sticker, x.CreatedAt, Deleted = x.DeletedAt != null, SenderId = u.Id, u.DisplayName,
                         Attached = db.Attachments.Where(a => a.MessageId == x.Id).OrderBy(a => a.Position).Select(a => (int?)a.Kind).FirstOrDefault(),
                     }).FirstOrDefault(),
-                Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null && x.Notice == null && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)),
+                // A notice is not unread, except a call this person missed (rang out, or found them busy).
+                Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null
+                    && (x.Notice == null || (x.Notice == NoticeKind.Call && db.Calls.Any(k => k.MessageId == x.Id && k.CalleeId == me && (k.Outcome == CallOutcome.Missed || k.Outcome == CallOutcome.Busy))))
+                    && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)),
             }).ToListAsync(ct);
 
         // Pinned ones first, the latest pin on top. Hidden ones are listed too, marked, so a search can find them; the page leaves them out of view.

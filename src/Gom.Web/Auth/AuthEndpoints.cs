@@ -12,7 +12,7 @@ public static class AuthEndpoints
     {
         app.MapPost("/api/session", SignIn);
         app.MapDelete("/api/session", SignOut).RequireAuthorization("SignedIn");
-        app.MapGet("/api/me", async (HttpContext c, GomDbContext db, Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions> uploads, CancellationToken ct) =>
+        app.MapGet("/api/me", async (HttpContext c, GomDbContext db, Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions> uploads, Microsoft.Extensions.Options.IOptions<Gom.Web.Chat.CallOptions> calls, CancellationToken ct) =>
         {
             var row = await db.Users.Where(u => u.Id == GomClaims.User(c.User)).Select(u => new { u.AvatarId, u.Language, u.Palette, u.Pattern }).SingleAsync(ct);
             return Results.Ok(new
@@ -24,6 +24,8 @@ public static class AuthEndpoints
             readReceipts = c.User.FindFirst(GomClaims.ReadReceipts)!.Value == "true",
             // Whether this server takes pictures and files, so the page does not offer what can only fail.
             uploads = !string.IsNullOrWhiteSpace(uploads.Value.Path),
+            // Whether this server takes voice calls (the app shows the call button only then).
+            calls = calls.Value.Enabled,
             avatar = row.AvatarId,
             // The person's language: a page in another one remembers it and reloads.
             language = row.Language,

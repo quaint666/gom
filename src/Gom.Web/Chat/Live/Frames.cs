@@ -31,4 +31,16 @@ public static class Frames
     public static byte[] Live(Guid conversation, EventDto e) => Json(new { t = "event", c = conversation, @event = e });
     public static byte[] Events(Guid conversation, IReadOnlyList<EventDto> events, bool hasMore) => Json(new { t = "events", c = conversation, events, hasMore });
     public static byte[] Error(string code, Guid? conversation = null) => Json(new { t = "error", c = conversation, error = code });
+
+    // ---- calls (docs/voice-calls.md): every call frame is {"t": "call", "id", "c", "kind", ...}. A page that does not take calls ignores them.
+    /// <summary>"Someone is calling you": to every device of the person called.</summary>
+    public static byte[] CallIncoming(Guid call, Guid conversation, MessageEndpoints.PersonDto from) => Json(new { t = "call", id = call, c = conversation, kind = "incoming", from });
+    /// <summary>"They answered", with their answer: to the caller's device only.</summary>
+    public static byte[] CallAccepted(Guid call, Guid conversation, string sdp) => Json(new { t = "call", id = call, c = conversation, kind = "accepted", sdp });
+    /// <summary>"You answered on another device": to the person's other devices, which stop ringing.</summary>
+    public static byte[] CallAnsweredElsewhere(Guid call, Guid conversation) => Json(new { t = "call", id = call, c = conversation, kind = "answered_elsewhere" });
+    /// <summary>"The call is over", and how: to every device of both.</summary>
+    public static byte[] CallEnded(Guid call, Guid conversation, string outcome) => Json(new { t = "call", id = call, c = conversation, kind = "ended", outcome });
+    /// <summary>A new offer or answer mid-call (a network change): to the other side's device only.</summary>
+    public static byte[] CallSdp(Guid call, Guid conversation, string type, string sdp, int rev) => Json(new { t = "call", id = call, c = conversation, kind = "sdp", type, sdp, rev });
 }

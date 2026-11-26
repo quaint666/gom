@@ -94,6 +94,8 @@ public static class MessageTrim
                 await db.Pins.Where(p => ids.Contains(p.MessageId)).ExecuteDeleteAsync(ct);
                 await db.Hides.Where(h => ids.Contains(h.MessageId)).ExecuteDeleteAsync(ct);
                 await db.Events.Where(e => ids.Contains(e.MessageId)).ExecuteDeleteAsync(ct);
+                // A call's record goes with its line (docs/voice-calls.md, decision 16).
+                await db.Calls.Where(k => k.MessageId != null && ids.Contains(k.MessageId.Value)).ExecuteDeleteAsync(ct);
                 await db.Messages.Where(m => ids.Contains(m.Id)).ExecuteDeleteAsync(ct);
                 notice = await Notices.Write(db, conversation, owner, NoticeKind.MessagesTrimmed, null, rule.Before.ToString("O"), now, ct);
                 await tx.CommitAsync(ct);

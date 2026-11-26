@@ -80,6 +80,14 @@ builder.Services.AddSingleton<ImageLimiter>(sp =>
 builder.Services.AddHostedService<AttachmentJanitor>();
 builder.Services.Configure<PushOptions>(builder.Configuration.GetSection("Push"));
 builder.Services.Configure<ContactOptions>(builder.Configuration.GetSection("Contact"));
+builder.Services.Configure<CallOptions>(builder.Configuration.GetSection("Calls"));
+builder.Services.AddSingleton<CallRelay>();
+builder.Services.AddSingleton(sp =>
+{
+    var o = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<CallOptions>>().Value;
+    return new CallLimiter(new SendLimiter(sp.GetRequiredService<TimeProvider>(), o.CallBurst, 1.0 / Math.Max(1, o.SecondsBetweenCalls)));
+});
+builder.Services.AddHostedService<CallJanitor>();
 builder.Services.AddHostedService<ContactJanitor>();
 builder.Services.AddSingleton<PushQueue>();
 builder.Services.AddHttpClient(HttpPushTransport.Client)
@@ -139,6 +147,7 @@ app.MapAuth();
 app.MapLinks();
 app.MapSignUp();
 app.MapContact();
+app.MapCalls();
 app.MapAccount();
 app.MapFriends();
 app.MapConversations();
