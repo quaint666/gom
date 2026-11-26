@@ -138,10 +138,10 @@ const prepareVideo: ChatDeps['prepareVideo'] = async (file, onProgress, maxBytes
 };
 
 /**
- * Voice calls, in a browser that has WebRTC and a microphone API; not in the Android app yet, which has no microphone permission
- * and will ring by its own means (docs/voice-calls.md, 2b). Only the chat page takes calls: it tells the server so on its socket.
+ * Voice calls, in a browser that has WebRTC and a microphone API (docs/voice-calls.md, 2b). Only the chat page takes calls: it tells
+ * the server so on its socket. In the Android app the app makes and takes them natively, and the page's buttons only ask it to.
  */
-const calls: Calls | undefined = port === undefined && typeof RTCPeerConnection === 'function' && navigator.mediaDevices?.getUserMedia !== undefined
+const webCalls: Calls | undefined = port === undefined && typeof RTCPeerConnection === 'function' && navigator.mediaDevices?.getUserMedia !== undefined
   && document.body.dataset['page'] === 'home' ? (() => {
     const host = document.createElement('div');
     host.className = 'call-host';
@@ -167,6 +167,7 @@ const calls: Calls | undefined = port === undefined && typeof RTCPeerConnection 
     addEventListener('pagehide', () => made.leaving());
     return made;
   })() : undefined;
+const calls: Calls | undefined = webCalls ?? appPusher?.calls;
 
 const chatDeps = (): ChatDeps => ({
   clearNotifications: (conversation) => pusher.clear(conversation),
@@ -174,7 +175,7 @@ const chatDeps = (): ChatDeps => ({
   ...(appPusher === undefined ? {} : (({ onKeyboardImage }) => ({ keyboardImages: onKeyboardImage }))(appPusher)),
   prepareVideo,
   ...(calls === undefined ? {} : { calls }),
-  live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?page=${limits().pageVersion}${calls === undefined ? '' : '&calls=1'}`,
+  live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?page=${limits().pageVersion}${webCalls === undefined ? '' : '&calls=1'}`,
     { ...handlers, version: (v) => updates.heard(v), tooOld: () => { handlers.tooOld?.(); updates.tooOld(); } }),
   nav: { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), back: () => history.back(), onPop: (callback) => addEventListener('popstate', callback) },
   now: () => new Date(),

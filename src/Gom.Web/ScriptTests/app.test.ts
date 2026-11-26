@@ -128,6 +128,33 @@ describe('app: pictures from the keyboard', () => {
   });
 });
 
+describe('app: calls through the app', () => {
+  it('offers calls only once the app says it makes them, and then asks the app to call', async () => {
+    const f = fakePort();
+    const { calls } = createAppPusher(f.port);
+    expect(calls.ready()).toBe(false);
+    await calls.start('c1', { name: 'Minh' });
+    expect(f.of('call')).toEqual([]);   // nothing asked of an app that has not said it takes calls
+    f.answer(hello());
+    expect(calls.ready()).toBe(false);   // an app from before calls
+    f.answer(hello({ calls: true }));
+    expect(calls.ready()).toBe(true);
+    await calls.start('c1', { name: 'Minh', avatar: '/api/avatars/a.webp' });
+    await calls.start('c2', { name: 'Lan' });
+    expect(f.of('call')).toEqual([{ t: 'call', c: 'c1', name: 'Minh', avatar: '/api/avatars/a.webp' }, { t: 'call', c: 'c2', name: 'Lan', avatar: null }]);
+  });
+
+  it('leaves the call to the app: frames, reloads and closing the page are none of the page\'s business', () => {
+    const f = fakePort();
+    const { calls } = createAppPusher(f.port);
+    f.answer(hello({ calls: true }));
+    calls.frame({ kind: 'ended', id: 'k', c: 'c1', outcome: 'missed' });
+    calls.leaving();
+    expect(calls.busy()).toBe(false);
+    expect(f.sent.filter((m) => m['t'] !== 'hello' && m['t'] !== 'theme')).toEqual([]);
+  });
+});
+
 describe('app: the server side of its registration', () => {
   it('registers and forgets the app at its own address, with the id as the token', async () => {
     const fetchFn = vi.fn(async () => new Response(null, { status: 204 }));

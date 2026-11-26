@@ -47,7 +47,7 @@ export interface ChatDeps {
    * is picked. Without it every video goes as it is.
    */
   prepareVideo?(file: File, onProgress: (fraction: number) => void, maxBytes: number): Promise<PreparedVideo | null>;
-  /** Voice calls, on a page that takes them (not in the Android app yet); offered only when the server has calls on. */
+  /** Voice calls: the page's own, or the Android app's; offered only when the server has calls on and they are ready. */
   calls?: Calls;
 }
 
@@ -641,9 +641,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="btn secondary small" type="button" data-discard @click=${() => discard(m.conversationId, m.clientId)}>${say.chat.discard}</button></div>` : nothing}`;
   };
 
-  /** Whether this chat can be called from here: calls on, this page takes them, and a one-to-one chat with a friend (their ID is there only then). */
+  /** Whether this chat can be called from here: calls on, ready here, and a one-to-one chat with a friend (their ID is there only then). */
   const callable = (c: Conversation | undefined): c is Conversation =>
-    me?.calls === true && deps.calls !== undefined && c?.kind === 'direct' && c.peer !== null && !c.peer.deleted && c.peer.gomId !== null;
+    me?.calls === true && deps.calls?.ready() === true && c?.kind === 'direct' && c.peer !== null && !c.peer.deleted && c.peer.gomId !== null;
   const callIn = (c: Conversation) => { void deps.calls?.start(c.id, { name: c.title ?? c.peer?.displayName ?? '', avatar: c.peer?.avatar }); };
 
   /** A call's line (mockup 29): a card on the side of whoever called, worded for the reader, a missed one in red with "Gọi lại". */

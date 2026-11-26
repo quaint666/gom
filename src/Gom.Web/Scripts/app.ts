@@ -1,3 +1,4 @@
+import type { CallPeer, Calls } from './calls/call.js';
 import type { DeviceSubscription, Pusher } from './push.js';
 
 /**
@@ -13,6 +14,9 @@ import type { DeviceSubscription, Pusher } from './push.js';
  *   for an `enable`, `{t: 'fid', fid}` when FCM gives the app a new installation id, and `{t: 'image', type, data}` (base64) for
  *   a picture or GIF the keyboard put into a text field (Gboard's GIF button; added after protocol 1 shipped, which pages that
  *   do not know it simply ignore).
+ * - Calls, added after protocol 1 shipped (docs/voice-calls.md, PR 6): an app that takes calls says `calls: true` in its hello, and
+ *   the page's call buttons then send `{t: 'call', c, name, avatar}` (call the friend of this chat). The app makes the call itself,
+ *   natively; an app that does not know the message ignores it, and an older app never says `calls`, so the page offers no call.
  */
 export const APP_PROTOCOL = 1;
 
@@ -33,6 +37,8 @@ export interface AppHello {
   permission: NotificationPermission;
   /** Its FCM installation id, once it has registered. */
   fid?: string;
+  /** Whether this app makes and takes voice calls (it then has the microphone, Android's call system and FCM ringing). */
+  calls?: boolean;
 }
 
 /** The app's object, when this page runs inside it. */
@@ -77,6 +83,8 @@ export interface AppPusher extends Pusher {
   onRegistration(callback: (subscription: DeviceSubscription) => void): void;
   /** Called with each picture the keyboard hands over. */
   onKeyboardImage(callback: (file: File) => void): void;
+  /** Calls made by the app: the page's call buttons ask it, and offer a call only once the app has said it takes them. */
+  calls: Calls;
 }
 
 /**
@@ -143,6 +151,16 @@ export function createAppPusher(port: AppPort, w: Window & typeof globalThis = w
       if (fid) callback({ app: fid });
     },
     onKeyboardImage(callback) { images.push(callback); },
+    calls: {
+      ready: () => hello?.calls === true,
+      async start(conversation: string, peer: CallPeer) {
+        if (hello?.calls === true) send({ t: 'call', c: conversation, name: peer.name, avatar: peer.avatar ?? null });
+      },
+      // The app has its own socket during a call and rings by FCM: the page's frames, reloads and closing are not the call's.
+      frame: () => undefined,
+      busy: () => false,
+      leaving: () => undefined,
+    },
   };
 }
 
