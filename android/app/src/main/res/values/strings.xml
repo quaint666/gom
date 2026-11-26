@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vietnamese first, as Gom's pages; English in values-en. The app's name comes from the build (app/build.gradle.kts). -->
+<resources>
+    <string name="channel_messages">Tin nhắn</string>
+    <string name="channel_owner">Thông báo</string>
+    <string name="new_message">Tin nhắn mới</string>
+    <string name="new_notice">Có thông báo mới</string>
+    <string name="not_configured">Bản này được dựng mà không có địa chỉ máy chủ (gom.&lt;flavour&gt;.baseUrl).</string>
+</resources>

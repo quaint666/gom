@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only what shows before the page draws (it then sends its own colours over the bridge, so a palette change needs nothing
+     here): Gom's green, from wwwroot/icon.svg, and the page background, from gom.css's page background (bg). -->
+<resources>
+    <color name="gom">#3F6B57</color>
+    <color name="page">#F7F5EF</color>
+</resources>

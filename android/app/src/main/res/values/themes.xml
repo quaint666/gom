@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Light by day and dark at night (values-night), so the web view's prefers-color-scheme follows the phone: Android 13+ reads it
+     from the app theme's isLightTheme, which these two parents set. -->
+<resources>
+    <style name="Theme.Gom" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/page</item>
+        <item name="android:colorAccent">@color/gom</item>
+    </style>
+</resources>

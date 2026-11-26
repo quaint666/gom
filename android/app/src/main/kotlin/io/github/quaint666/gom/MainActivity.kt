@@ -1,0 +1,264 @@
+package io.github.quaint666.gom
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.URLUtil
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.net.toUri
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
+
+/**
+ * Gom in a web view, and only Gom (docs/voice-calls.md, decision 31): its own pages load inside, every other address opens in
+ * the browser. Around it, what a browser would give the page: picking files, downloads, full-screen video, the back button, and
+ * the system bars in the page's colours. Notifications go through [Bridge] and [Registration].
+ */
+class MainActivity : ComponentActivity() {
+    private val origins = GomApp.origins
+    private lateinit var root: FrameLayout
+    private lateinit var top: View
+    private lateinit var web: WebView
+    private lateinit var bridge: Bridge
+    private var picking: ValueCallback<Array<Uri>>? = null
+    private var fullScreen: View? = null
+
+    private val pick = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        val clips = data?.clipData
+        val chosen = when {
+            result.resultCode != RESULT_OK -> null
+            clips != null -> Array(clips.itemCount) { clips.getItemAt(it).uri }
+            else -> WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+        }
+        picking?.onReceiveValue(chosen)   // always answered, or the page's file input stops working
+        picking = null
+    }
+
+    private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        Registration.markAsked(this)
+        if (granted) register() else bridge.send(ToPage.denied)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        if (!origins.configured) {
+            // A build made without gom.<flavour>.baseUrl: say so rather than show an empty page.
+            setContentView(TextView(this).apply { setText(R.string.not_configured); setPadding(48, 160, 48, 48) })
+            return
+        }
+        root = FrameLayout(this)
+        top = View(this)
+        web = WebView(this)
+        root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        root.addView(top, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
+        setContentView(root)
+        paint(getColor(R.color.gom), getColor(R.color.page))
+
+        // The page sits between the system bars and above the keyboard; the strip under the status bar takes the page's colour.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
+            top.updateLayoutParams { height = bars.top }
+            root.updatePadding(left = bars.left, right = bars.right, bottom = maxOf(bars.bottom, keyboard.bottom))
+            web.updateLayoutParams<FrameLayout.LayoutParams> { topMargin = bars.top }
+            WindowInsetsCompat.CONSUMED
+        }
+
+        setUp()
+        bridge = Bridge(origins.origin) { message, from -> onPage(message, from) }
+        bridge.attach(web)
+        Registration.listener = { fid -> bridge.send(ToPage.fid(fid)) }
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when {
+                    fullScreen != null -> web.webChromeClient?.onHideCustomView()
+                    web.canGoBack() -> web.goBack()
+                    else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
+                }
+            }
+        })
+
+        if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) web.loadUrl(start(intent))
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (origins.configured) web.loadUrl(start(intent))
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (origins.configured) web.saveState(outState)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        CookieManager.getInstance().flush()   // the session is kept even if Android stops the app now
+    }
+
+    override fun onDestroy() {
+        if (origins.configured) {
+            Registration.listener = null
+            web.destroy()
+        }
+        super.onDestroy()
+    }
+
+    /** Where a notification's tap points, when it is Gom's; else the start page. */
+    private fun start(intent: Intent?): String {
+        val asked = intent?.data?.toString()
+        return if (asked != null && origins.isGom(asked)) asked else origins.page(null)
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")   // Gom is a JavaScript app; only its own origin loads, and the bridge is origin-bound
+    private fun setUp() {
+        web.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            mediaPlaybackRequiresUserGesture = true
+            setSupportMultipleWindows(false)
+        }
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(web, false)
+
+        web.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val url = request.url.toString()
+                if (origins.loadsInside(url)) return false
+                outside(request.url)
+                return true
+            }
+
+            // The page's renderer died (Android reclaimed it): start again rather than let the app close.
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                recreate()
+                return true
+            }
+        }
+
+        web.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
+                picking?.onReceiveValue(null)
+                picking = callback
+                val intent = params.createIntent()
+                if (params.mode == FileChooserParams.MODE_OPEN_MULTIPLE) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                return try { pick.launch(intent); true } catch (_: ActivityNotFoundException) { picking = null; false }
+            }
+
+            // A video's own full-screen button.
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                fullScreen?.let { onHideCustomView() }
+                fullScreen = view
+                (window.decorView as ViewGroup).addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                WindowCompat.getInsetsController(window, view).apply {
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+
+            override fun onHideCustomView() {
+                val view = fullScreen ?: return
+                (window.decorView as ViewGroup).removeView(view)
+                fullScreen = null
+                WindowCompat.getInsetsController(window, root).show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+
+        // A file from Gom is saved by Android's download manager, with the session, into Downloads.
+        web.setDownloadListener { url, userAgent, disposition, mime, _ ->
+            if (!origins.isGom(url)) { outside(url.toUri()); return@setDownloadListener }
+            val name = URLUtil.guessFileName(url, disposition, mime)
+            val request = DownloadManager.Request(url.toUri())
+                .addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url).orEmpty())
+                .addRequestHeader("User-Agent", userAgent)
+                .setMimeType(mime)
+                .setTitle(name)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+            getSystemService(DownloadManager::class.java).enqueue(request)
+        }
+    }
+
+    private fun outside(uri: Uri) {
+        try { startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (_: ActivityNotFoundException) { /* nothing on the phone opens it */ }
+    }
+
+    private fun onPage(message: FromPage, from: Bridge) {
+        when (message) {
+            is FromPage.Hello -> from.send(ToPage.hello(appVersion(), GomApp.push, permission(), Registration.fid(this)))
+            FromPage.Enable -> enable()
+            FromPage.Disable -> Registration.unregister(this)
+            is FromPage.Clear -> Notices.clear(this, message.conversation)
+            is FromPage.Theme -> paint(message.bar ?: getColor(R.color.gom), message.page ?: getColor(R.color.page))
+        }
+    }
+
+    /**
+     * As the browser asks: Android's question first, then FCM. Android 12 has no question (notifications are on unless the person
+     * turned them off in its settings), so there only that switch counts.
+     */
+    private fun enable() {
+        when {
+            !GomApp.push -> bridge.send(ToPage.failed)
+            NotificationManagerCompat.from(this).areNotificationsEnabled() -> register()
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> bridge.send(ToPage.denied)
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED -> register()
+            else -> askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    private fun register() = Registration.register(this) { fid -> bridge.send(if (fid != null) ToPage.enabled(fid) else ToPage.failed) }
+
+    /** Android's answer, in the browser's words: a "no" after the question was asked is "denied", as a browser's block is. */
+    private fun permission(): String = when {
+        NotificationManagerCompat.from(this).areNotificationsEnabled() -> "granted"
+        Registration.asked(this) || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> "denied"
+        else -> "default"
+    }
+
+    private fun appVersion(): String = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+
+    /** The status bar's strip takes the page's main colour, the rest its background; the icons are dark or light to suit. */
+    private fun paint(bar: Int, page: Int) {
+        top.setBackgroundColor(bar)
+        root.setBackgroundColor(page)
+        window.decorView.setBackgroundColor(page)
+        WindowCompat.getInsetsController(window, root).apply {
+            isAppearanceLightStatusBars = Colors.isLight(bar)
+            isAppearanceLightNavigationBars = Colors.isLight(page)
+        }
+    }
+}
