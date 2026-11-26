@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<title>Gom: voice calls (ringing, lock screen, in call, ended, chat rows)</title>
+<title>Gom: voice calls (ringing, lock screen, in call, ended, chat rows, the web, the call bar)</title>
 <style>
 @font-face{font-family:"Be Vietnam Pro";font-weight:400;font-display:swap;src:url("fonts/BeVietnamPro-Regular.woff2") format("woff2")}
 @font-face{font-family:"Be Vietnam Pro";font-weight:600;font-display:swap;src:url("fonts/BeVietnamPro-SemiBold.woff2") format("woff2")}
@@ -255,6 +255,32 @@ h3{margin:0;font-size:22px;font-weight:700}
 .rb.hang i svg{transform:rotate(135deg)}
 .rb.answer i svg,.rb.hang i svg{width:32px;height:32px}
 .gap28{height:28px}
+/* one row in a call, left to right: speaker (or the headset's name), end, mic; a filled button is on (H, 2026-11-26) */
+.ctl.row3{gap:36px;align-items:flex-end}
+.rb.blank{visibility:hidden}.rb.blank::before{content:"";width:64px;height:64px}
+/* minimise: the call becomes the bar at the top of the chat page */
+.call{position:relative}
+.call .mini{position:absolute;left:10px;top:14px;width:48px;height:48px;border:0;border-radius:50%;background:transparent;color:var(--text);display:grid;place-items:center}
+.call .mini svg{width:26px;height:26px}
+/* the web: a page in a phone's browser, and a card over the chat on a computer */
+.urlbar{display:flex;align-items:center;gap:8px;margin:6px 10px 0;height:36px;border-radius:18px;background:var(--surface);border:1px solid var(--border);padding:0 14px;font-size:13px;color:var(--muted)}
+.urlbar svg{width:15px;height:15px}
+.webnote{font-size:13px;color:var(--muted);margin:0 0 18px}
+.callcard{width:380px;background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:0 16px 48px rgba(0,0,0,.3);overflow:hidden}
+.callcard .call{padding:0 24px 26px}
+.callcard .call .who{margin-top:26px}
+.callcard .call .av.xl{width:96px;height:96px;font-size:34px}
+.callcard .gap{height:36px}
+/* the call bar: the call goes on while the person uses the chat; a tap brings the call back */
+.callbar{display:flex;align-items:center;gap:10px;min-height:48px;padding:0 8px 0 16px;background:var(--btn);color:var(--on-btn);font-size:15px}
+.callbar svg{width:18px;height:18px}
+.callbar .cb-w{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+.callbar .cb-w b{font-weight:600}
+.callbar .cb-w span{opacity:.9;font-variant-numeric:tabular-nums}
+.callbar .cb-end{width:36px;height:36px;border-radius:50%;border:0;background:var(--hang);color:var(--on-hang);display:grid;place-items:center}
+.callbar .cb-end svg{transform:rotate(135deg)}
+.frame.desktop.barred{grid-template-rows:auto 1fr}
+.frame.desktop.barred .callbar{grid-column:1/-1}
 /* the sheet for where the sound goes */
 .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:18px 18px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.25);padding:8px 0 26px;z-index:3}
 .sheet .grab{width:36px;height:4px;border-radius:2px;background:var(--border);margin:4px auto 10px}
@@ -329,6 +355,7 @@ h3{margin:0;font-size:22px;font-weight:700}
 <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></symbol>
 <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H11l-4 4v-4H4z"/></symbol>
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
 </defs></svg>
 
 <div class="meta">
@@ -338,7 +365,7 @@ h3{margin:0;font-size:22px;font-weight:700}
     <button type="button" data-set="dark" aria-pressed="false">Dark</button>
   </div>
 </div>
-<div class="sub">The call screens are native (Android app, Jetpack Compose), drawn here in Gom's look. Screen 24 is Android's own notification: only its words, picture and buttons are Gom's, and One UI draws it its own way. Sample names and times.</div>
+<div class="sub">Screens 21 to 30 are the Android app's, drawn in Gom's look; whether the app draws them natively or in its web view waits on a test on a Samsung phone. Screens 31 to 35 are the web's: calls work while a Gom page is open. Screen 24 is Android's own notification: only its words, picture and buttons are Gom's, and One UI draws it its own way. Sample names and times.</div>
 
 <h2 class="cap">Ringing</h2>
 <div class="row" id="r1"></div>
@@ -346,6 +373,8 @@ h3{margin:0;font-size:22px;font-weight:700}
 <div class="row" id="r2"></div>
 <h2 class="cap">After, and in the chat</h2>
 <div class="row" id="r3"></div>
+<h2 class="cap">On the web, and the call bar</h2>
+<div class="row" id="r4"></div>
 
 <script>
 const I = n => `<svg class="i"><use href="#i-${n}"/></svg>`;
@@ -357,11 +386,17 @@ const sbar = (t='18:42') => `<div class="sbar"><span>${t}</span><span>4G ▮▮�
 const app = (words='Cuộc gọi thoại Gom') => `<div class="app">${I('logo')}<span>${words}</span></div>`;
 const rb = (icon, label, cls='') => `<div class="rb ${cls}"><i>${I(icon)}</i><span>${label}</span></div>`;
 const who = (av, cls, name, state, stateCls='') => `<div class="who"><div class="av xl ${cls}">${av}</div><div class="name">${name}</div><div class="state ${stateCls}">${state}</div></div>`;
-/* With a headset connected the second button names where the sound goes and opens a choice (26); without one it is a speaker switch. */
-const inCallCtl = (mute, speaker, route=null) => `<div class="ctl">${rb(mute?'micoff':'mic', mute?'Bật mic':'Tắt mic', mute?'on':'')}${route?rb('bt',route):rb('speaker','Loa ngoài',speaker?'on':'')}</div><div class="gap28"></div><div class="ctl">${rb('call','Kết thúc','hang')}</div>`;
+/* One row, left to right: the speaker (with a headset connected, its name, opening the choice in 26), end, the mic. Labels stay
+   the same; a filled button is on (H, 2026-11-26). The web cannot choose the speaker: its slot stays empty, so end keeps its place. */
+const spk = (speaker, route) => route ? rb('bt', route) : rb('speaker','Loa ngoài', speaker?'on':'');
+const mic = (mute) => rb(mute?'micoff':'mic', 'Tắt mic', mute?'on':'');
+const inCallCtl = (mute, speaker, route=null) => `<div class="ctl row3">${spk(speaker, route)}${rb('call','Kết thúc','hang')}${mic(mute)}</div>`;
+const webCtl = (mute) => `<div class="ctl row3"><div class="rb blank"></div>${rb('call','Kết thúc','hang')}${mic(mute)}</div>`;
+/* Minimise: the call becomes the bar at the top of the chat page (34, 35); Android's back does the same. */
+const head = () => `<button class="mini" aria-label="Thu nhỏ">${I('down')}</button>${app()}`;
 
 /* 21: calling someone */
-const outgoing = `${sbar()}<div class="call">${app()}${who('M','a1','Mẹ','Đang đổ chuông…')}<div class="grow"></div>${inCallCtl(false,false)}</div>`;
+const outgoing = `${sbar()}<div class="call">${head()}${who('M','a1','Mẹ','Đang đổ chuông…')}<div class="grow"></div>${inCallCtl(false,false)}</div>`;
 
 /* 22, 23: ringing over the lock screen (Gom's own full-screen screen) */
 const lockRing = (hidden) => `${sbar('')}<div class="call"><div class="clock">18:42</div><div class="date">Thứ Năm, 26 tháng 11</div>
@@ -380,14 +415,14 @@ const banner = `${sbar()}<div class="under"><section class="list-pane" style="fl
     <div class="bt"><span class="dec">${I('call')}Từ chối</span><span class="ans">${I('call')}Trả lời</span></div></div>`;
 
 /* 25: talking; 26: choosing where the sound goes; 27: the network changed */
-const talking = `${sbar()}<div class="call">${app()}${who('M','a1','Mẹ','03:05')}<div class="grow"></div>${inCallCtl(true,true)}</div>`;
-const routes = `${sbar()}<div class="call">${app()}${who('M','a1','Mẹ','03:05')}<div class="grow"></div>${inCallCtl(false,false,'Galaxy Buds')}</div>
+const talking = `${sbar()}<div class="call">${head()}${who('M','a1','Mẹ','03:05')}<div class="grow"></div>${inCallCtl(true,true)}</div>`;
+const routes = `${sbar()}<div class="call">${head()}${who('M','a1','Mẹ','03:05')}<div class="grow"></div>${inCallCtl(false,false,'Galaxy Buds')}</div>
   <div class="dim-layer" style="z-index:2"></div>
   <div class="sheet"><div class="grab"></div><h4>Nghe bằng</h4>
     <div class="opt">${I('ear')}<span>Điện thoại</span></div>
     <div class="opt">${I('speaker')}<span>Loa ngoài</span></div>
     <div class="opt sel">${I('bt')}<span>Galaxy Buds</span><span class="tick">${I('check')}</span></div></div>`;
-const reconnecting = `${sbar()}<div class="call">${app()}${who('M','a1','Mẹ',`${S('wifioff',16)}Đang kết nối lại…`,'warn')}<div class="grow"></div>
+const reconnecting = `${sbar()}<div class="call">${head()}${who('M','a1','Mẹ',`${S('wifioff',16)}Đang kết nối lại…`,'warn')}<div class="grow"></div>
   <p class="note">Mạng vừa đổi. Cuộc gọi vẫn giữ, tiếng sẽ trở lại khi kết nối xong.</p>${inCallCtl(false,false)}</div>`;
 
 /* 28: just ended (closes by itself after a moment) */
@@ -417,6 +452,22 @@ const missedList = `<section class="list-pane" style="flex:1;border:0">${listHea
     ['Cô Lan','CL','a3',`${S('out',15)}Cuộc gọi thoại · 12:40`,'','<div class="itm-r"><span>Hôm qua</span></div>'],
     ['Bạn cấp 3','BC','a4','Minh đã gửi một hình ảnh','','<div class="itm-r"><span>T3</span></div>']])}</section>`;
 
+/* 31 to 35: the web (and the app's web view later). 31: in a phone's browser; 32: on a computer, a card over the chat;
+   33: ringing on a computer (with a sound and the tab's title); 34, 35: the call bar */
+const webPhone = `${sbar()}<div class="urlbar">${I('lock')}<span>gom.example</span></div><div class="call">${head()}${who('M','a1','Mẹ','03:05')}<div class="grow"></div>
+  <p class="webnote">Giữ Gom trên màn hình trong lúc gọi.</p>${webCtl(false)}</div>`;
+const deskList = `<section class="list-pane">${listHead}<div class="search">${I('search')}<span>Tìm kiếm</span></div>${plainList}</section>`;
+const ghostMsgs = `<div class="ghost"><div class="gb"></div><div class="gb o"></div><div class="gb"></div><div class="gb o"></div></div>`;
+/* on a computer the list stays beside the thread, so its header has no back arrow */
+const deskThread = `<section class="thread-pane">${tHead.replace(/<button class="ib back"[^>]*>.*?<\/button>/,'')}${ghostMsgs}${composer}</section>`;
+const webDesk = `${deskList}${deskThread}<div class="scrim"><div class="callcard"><div class="call">${head()}${who('M','a1','Mẹ','03:05')}<div class="gap"></div>${webCtl(true)}</div></div></div>`;
+const webRing = `${deskList}${deskThread}<div class="scrim"><div class="callcard"><div class="call">${app()}${who('M','a1','Mẹ','Cuộc gọi thoại đến')}<div class="gap"></div>
+  <div class="ctl wide">${rb('call','Từ chối','hang')}${rb('call','Trả lời','answer')}</div></div></div></div>`;
+const callbar = (mute) => `<div class="callbar" role="button" aria-label="Quay lại cuộc gọi"><div class="cb-w">${I('call')}<b>Mẹ</b><span>· 03:05</span>${mute?I('micoff'):''}</div>
+  <button class="cb-end" aria-label="Kết thúc">${I('call')}</button></div>`;
+const phoneBar = `${sbar()}${callbar(true)}<section class="thread-pane" style="flex:1">${tHead}${ghostMsgs}${composer}</section>`;
+const deskBar = `${callbar(false)}${deskList}${deskThread}`;
+
 function render(th){
   document.getElementById('r1').innerHTML =
     W('21 Calling (ringing on the other side)', F(th,'phone',outgoing)) +
@@ -424,13 +475,19 @@ function render(th){
     W('23 Incoming on the lock screen, name shown', F(th,'phone',lockRing(false))) +
     W('24 Incoming while the phone is in use (Android draws it)', F(th,'phone',banner));
   document.getElementById('r2').innerHTML =
-    W('25 In a call (muted, on the speaker)', F(th,'phone',talking)) +
+    W('25 In a call (muted, on the speaker; minimise at the top left)', F(th,'phone',talking)) +
     W('26 Where the sound goes (Bluetooth connected)', F(th,'phone',routes)) +
     W('27 The network changed: reconnecting', F(th,'phone',reconnecting));
   document.getElementById('r3').innerHTML =
     W('28 Call ended', F(th,'phone',ended)) +
     W('29 Call rows in the thread, call button in the header', F(th,'phone',thread)) +
     W('30 A missed call in the list', F(th,'phone',missedList));
+  document.getElementById('r4').innerHTML =
+    W('31 Web: in a call in a phone\'s browser (no speaker choice)', F(th,'phone',webPhone)) +
+    W('32 Web: in a call on a computer (muted)', F(th,'desktop',webDesk)) +
+    W('33 Web: ringing on a computer', F(th,'desktop',webRing)) +
+    W('34 The call bar on a phone (muted): tap to go back to the call', F(th,'phone',phoneBar)) +
+    W('35 The call bar on a computer', F(th,'desktop barred',deskBar));
 }
 function setTheme(t){
   document.body.dataset.th=t;
