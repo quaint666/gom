@@ -95,7 +95,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(Appearance.Patterns.Skip(1), PatternRule().Matches(css).Select(m => m.Groups[1].Value));   // plain has none
         foreach (var code in Appearance.Patterns.Skip(1))
         {
-            Assert.Contains($"url(\"/patterns/{code}.svg\")", css);
+            Assert.Matches($@"url\(""/patterns/{code}\.svg(\?v=\d+)?""\)", css);
             var svg = System.Xml.Linq.XElement.Parse(Source("wwwroot", "patterns", code + ".svg"));
             Assert.NotNull(svg.Attribute("width"));   // the tile's size comes from the file
             // Attributes only: a tile never depends on how a browser treats a <style> or style="" inside an image under the page's CSP.

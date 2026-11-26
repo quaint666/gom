@@ -236,14 +236,15 @@ button.th-title:hover b { text-decoration: underline; }
    its own under the scrolling messages, so it never scrolls and never takes a press. Gone in forced colours, where it is decoration. */
 .backdrop { position: relative; flex: 1; min-block-size: 0; display: flex; flex-direction: column; }
 .backdrop:not([data-pattern="plain"])::before { content: ""; position: absolute; inset: 0; background-color: var(--pat); mask-image: var(--pattern); mask-repeat: repeat; pointer-events: none; }
+/* A tile is cached for a week under its address (Program.cs): one that is redrawn gets ?v=N here, or browsers keep the old one. */
 .backdrop[data-pattern="dots"] { --pattern: url("/patterns/dots.svg"); }
 .backdrop[data-pattern="tiles"] { --pattern: url("/patterns/tiles.svg"); }
 .backdrop[data-pattern="waves"] { --pattern: url("/patterns/waves.svg"); }
-.backdrop[data-pattern="bamboo"] { --pattern: url("/patterns/bamboo.svg"); }
-.backdrop[data-pattern="clouds"] { --pattern: url("/patterns/clouds.svg"); }
+.backdrop[data-pattern="bamboo"] { --pattern: url("/patterns/bamboo.svg?v=2"); }
+.backdrop[data-pattern="clouds"] { --pattern: url("/patterns/clouds.svg?v=2"); }
 .backdrop[data-pattern="grid"] { --pattern: url("/patterns/grid.svg"); }
 .backdrop[data-pattern="weave"] { --pattern: url("/patterns/weave.svg"); }
-.backdrop[data-pattern="lotus"] { --pattern: url("/patterns/lotus.svg"); }
+.backdrop[data-pattern="lotus"] { --pattern: url("/patterns/lotus.svg?v=2"); }
 .backdrop[data-pattern="nonla"] { --pattern: url("/patterns/nonla.svg"); }
 .backdrop[data-pattern="drum"] { --pattern: url("/patterns/drum.svg"); }
 .backdrop[data-pattern="blossom"] { --pattern: url("/patterns/blossom.svg"); }
@@ -795,12 +796,15 @@ button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(-
 .settings { min-block-size: 100dvh; }
 .settings-pane .bar .ib { display: inline-grid; }
 .part { display: flex; flex-direction: column; gap: 14px; }
+/* Nothing in a column shrinks to fit it (a list with overflow: hidden would be cut): the column scrolls instead. */
+.settings .page > *, .part > * { flex-shrink: 0; }
 .part[hidden] { display: none; }
 @media (max-width: 899.98px) {
   .settings[data-open=""] .settings-pane, .settings:not([data-open=""]) .settings-menu { display: none; }
 }
 @media (min-width: 900px) {
-  .settings { display: grid; grid-template-columns: 360px minmax(0, 1fr); block-size: 100dvh; }
+  /* Fixed to the window, as the chat is: the menu and the pane scroll, never the page behind them. */
+  .settings { position: fixed; inset: 0; display: grid; grid-template-columns: 360px minmax(0, 1fr); }
   .settings-menu { display: flex; flex-direction: column; min-block-size: 0; border-inline-end: 1px solid var(--border); }
   .settings-menu .page { max-inline-size: none; margin: 0; padding: 16px; overflow-y: auto; flex: 1; }
   .settings-pane { display: flex; flex-direction: column; min-block-size: 0; overflow-y: auto; }
