@@ -9,8 +9,10 @@ import { createLive } from './chat/live.js';
 import { limits } from './limits.js';
 import { mountJoin } from './pages/join.js';
 import { mountReset } from './pages/reset.js';
+import { mountPrivacy } from './pages/privacy.js';
 import { mountSettings } from './pages/settings.js';
 import { createPusher } from './push.js';
+import { attachPull, canPullList } from './pull.js';
 import { mountSignIn } from './pages/signin.js';
 import { mountSignUp } from './pages/signup.js';
 import { language, pageTitle, rememberLanguage } from './say.js';
@@ -151,12 +153,27 @@ if (root) {
     case 'join': mountJoin(root, api, go, token); break;
     case 'signup': mountSignUp(root, api, go); break;
     case 'reset': mountReset(root, api, go, token); break;
-    case 'home': mountChat(root, api, go, chatDeps()); break;
+    case 'home': {
+      mountChat(root, api, go, chatDeps());
+      // Pull the list down on a phone to reload. Only the chat page's own question decides (not a focused field: the search box
+      // being filled in is no reason to refuse a pull the person asked for).
+      const pullHost = document.createElement('div');
+      document.body.append(pullHost);
+      attachPull({
+        area: root, host: pullHost,
+        canStart: (target) => canPullList(target, root, (el) => getComputedStyle(el).display !== 'none'),
+        busy: () => pageBusy(),
+        reload: () => location.reload(),
+        later: (fn, ms) => { window.setTimeout(fn, ms); },
+      });
+      break;
+    }
     case 'settings': mountSettings(root, api, go, installer, pusher, { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) }, { version: versionOf(ownScript), reload: () => { void reloadFresh(); } }); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
     case 'group': mountGroup(root, api, go, token); break;
+    case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? '', api); break;
   }
 }
 

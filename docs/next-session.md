@@ -26,7 +26,9 @@ Each is discussed first (design, decisions, what cannot be verified), then built
 
 1. **Voice calls and the Android app** (the next conversation starts here [stated: H, 2026-11-26]). The plan, its
    decisions, the Cloudflare and Android facts, what H does and the PR order are in **`docs/voice-calls.md`**; read it
-   first. Next step: its PR 1 (mockups and the `/privacy` page), shown to H before it is built.
+   first. Its PR 1 went as three stacked pull requests (2026-11-26): 1a the call mockups (screens 21 to 30) with pull down
+   to reload on the chat list, 1b the `/privacy` page in both languages, 1c its contact form. Next step: PR 2, the server's
+   calls (discuss first). Before Play: set `Site__Operator` on the server.
 2. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
    with the link or text ready, then asks which conversation. Gom-only: Peekbox and Bloomy already call
    `navigator.share` **[stated: their sessions, 2026-11-25]**. Works only where Gom is installed **[inferred]**; to check

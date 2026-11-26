@@ -79,6 +79,8 @@ builder.Services.AddSingleton<ImageLimiter>(sp =>
 });
 builder.Services.AddHostedService<AttachmentJanitor>();
 builder.Services.Configure<PushOptions>(builder.Configuration.GetSection("Push"));
+builder.Services.Configure<ContactOptions>(builder.Configuration.GetSection("Contact"));
+builder.Services.AddHostedService<ContactJanitor>();
 builder.Services.AddSingleton<PushQueue>();
 builder.Services.AddHttpClient(HttpPushTransport.Client)
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
@@ -136,6 +138,7 @@ app.UseAuthorization();
 app.MapAuth();
 app.MapLinks();
 app.MapSignUp();
+app.MapContact();
 app.MapAccount();
 app.MapFriends();
 app.MapConversations();
@@ -157,10 +160,12 @@ using (var reader = new StreamReader(app.Environment.WebRootFileProvider.GetFile
 var limits = Pages.Limits(
     app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Chat.ChatOptions>>().Value,
     app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions>>().Value,
-    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Auth.AuthOptions>>().Value);
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Auth.AuthOptions>>().Value,
+    app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<ContactOptions>>().Value);
+var site = app.Configuration.GetSection("Site").Get<SiteOptions>() ?? new SiteOptions();
 foreach (var page in Pages.All)
 {
-    var html = Assets.Apply(Pages.Render(shell, page, limits), fingerprints);
+    var html = Assets.Apply(Pages.Render(shell, page, limits, site), fingerprints);
     app.MapMethods(page.Route, ["GET", "HEAD"], () => Results.Content(html, "text/html; charset=utf-8"));
 }
 foreach (var (from, to) in Pages.Moved) app.MapMethods(from, ["GET", "HEAD"], () => Results.Redirect(to));

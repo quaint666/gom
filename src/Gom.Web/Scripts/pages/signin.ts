@@ -29,6 +29,7 @@ export function mountSignIn(root: HTMLElement, api: Api, go: (path: string) => v
         <button class="btn" type="submit" ?disabled=${busy}>${say.account.signIn}</button>
       </form>
       <p class="foot" data-sign-in-foot>${open ? html`${say.account.noAccount} <a href="/sign-up" data-ask-to-join>${say.account.askToJoin}</a>` : say.account.invitedOnly}</p>
+      <p class="foot"><a href="/privacy" data-policy-link>${say.account.policy}</a></p>
     </div>`;
   const update = () => render(view(), root);
 

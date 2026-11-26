@@ -595,6 +595,24 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
     }
 
     [Fact]
+    public async Task The_owner_hears_of_a_contact_message_without_its_words_and_the_tap_opens_the_owner_s_page()
+    {
+        var (_, owner) = await app.Owner();
+        using var phone = new FakeBrowser();
+        await Subscribe(owner, phone, "words");
+        app.Clock.Advance(TimeSpan.FromDays(1));
+        using var r = await app.Call(HttpMethod.Post, "/api/contact", new { body = "Xin xóa ảnh của tôi", replyTo = "an@example.com" });
+        Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        var sent = await app.Push.Next(phone.Endpoint);
+        var note = phone.Read(sent.Body);
+        Assert.Equal("Có thư liên hệ mới", note.GetProperty("body").GetString());
+        Assert.Equal("owner", note.GetProperty("open").GetString());
+        Assert.Equal("contact", sent.Headers["Topic"]);
+        Assert.DoesNotContain("Xin xóa", note.ToString());        // the words stay on the owner's page, even at the "words" level
+        Assert.DoesNotContain("an@example.com", note.ToString());
+    }
+
+    [Fact]
     public async Task Each_device_hears_in_its_person_s_language()
     {
         var p = await Pair();

@@ -174,3 +174,34 @@ describe('owner page', () => {
     expect(root.querySelectorAll('[data-invite]').length).toBe(8);
   });
 });
+
+describe('contact messages', () => {
+  const note = { id: 'c1', body: 'Xin xóa ảnh\ncủa tôi', replyTo: 'an@example.com', createdAt: '2026-12-01T09:00:00Z' };
+
+  it('lists what was written from the privacy page, with how to answer and how long it is kept', async () => {
+    mountOwner(root, api({ contactMessages: vi.fn(async () => ok({ messages: [note, { ...note, id: 'c2', replyTo: null }] })) }), vi.fn(), 'https://gom.test');
+    await flush();
+    expect(text(root)).toContain('Thư liên hệ');
+    expect(text(root)).toContain('Thư tự xóa sau 180 ngày');
+    expect(text(root.querySelector('[data-contact="c1"]')!)).toContain('liên lạc: an@example.com');
+    expect(root.querySelector('[data-contact="c1"] .request-note')?.textContent).toBe('Xin xóa ảnh\ncủa tôi');
+    expect(text(root.querySelector('[data-contact="c2"]')!)).not.toContain('liên lạc');
+  });
+
+  it('deletes one and asks again', async () => {
+    const list = vi.fn(async () => ok({ messages: [note] }));
+    const a = api({ contactMessages: list });
+    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-contact="c1"] [data-delete-contact]')!.click();
+    await flush();
+    expect(a.deleteContact).toHaveBeenCalledWith('c1');
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows nothing about them when there are none', async () => {
+    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    await flush();
+    expect(text(root)).not.toContain('Thư liên hệ');
+  });
+});

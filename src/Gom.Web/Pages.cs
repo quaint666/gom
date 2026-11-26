@@ -56,13 +56,14 @@ public static class Pages
         new("/groups/new", "newgroup"),
         new("/groups/{id}", "group"),
         new("/add/{gomId}", "add"),
+        new("/privacy", "privacy"),
     ];
 
     /// <summary>
     /// The limits a page shows or enforces before asking (a field's maxlength, "at most 60 characters"), as JSON. Some can be
     /// changed in the configuration, so they are read from it, never copied.
     /// </summary>
-    public static string Limits(ChatOptions chat, UploadOptions uploads, AuthOptions auth) => JsonSerializer.Serialize(new
+    public static string Limits(ChatOptions chat, UploadOptions uploads, AuthOptions auth, ContactOptions contact) => JsonSerializer.Serialize(new
     {
         messageChars = chat.MaxChars,
         attachments = uploads.MaxPerMessage,
@@ -87,15 +88,29 @@ public static class Pages
         inviteDefaultDays = auth.InviteDays,
         inviteDefaultUses = auth.InviteMaxUses,
         pageVersion = PageVersion,
+        contactChars = ContactEndpoints.MaxChars,
+        contactReplyChars = ContactEndpoints.ReplyMaxChars,
+        contactKeepDays = contact.KeepDays,
     });
 
     /// <summary>The shell made into one page, each value escaped for HTML text or a quoted attribute.</summary>
-    public static string Render(string shell, Page page, string limits) => shell
+    public static string Render(string shell, Page page, string limits, SiteOptions site) => shell
         .Replace("{page}", Escape(page.Name), StringComparison.Ordinal)
-        .Replace("{limits}", Escape(limits), StringComparison.Ordinal);
+        .Replace("{limits}", Escape(limits), StringComparison.Ordinal)
+        .Replace("{operator}", Escape(site.Operator.Trim()), StringComparison.Ordinal);
 
     // Only what HTML needs (WebUtility.HtmlEncode would also write "·" as "&#183;").
     private static string Escape(string text) =>
         text.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal)
             .Replace(">", "&gt;", StringComparison.Ordinal).Replace("\"", "&quot;", StringComparison.Ordinal);
+}
+
+/// <summary>About the site itself, as its public pages say it (configuration section "Site").</summary>
+public sealed class SiteOptions
+{
+    /// <summary>
+    /// Who runs this Gom, named in the privacy policy (Google Play wants the policy to say who is behind the app). Empty: the policy
+    /// says "the person who runs this site". Configuration only: the repository is public.
+    /// </summary>
+    public string Operator { get; set; } = "";
 }

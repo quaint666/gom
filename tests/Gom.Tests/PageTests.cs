@@ -12,6 +12,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         { "/", "home" }, { "/c/6f1d0b5e-0000-4000-8000-000000000000", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/sign-up", "signup" }, { "/reset/some-token", "reset" },
         { "/settings", "settings" }, { "/friends", "friends" }, { "/groups/new", "newgroup" }, { "/groups/6f1d0b5e-0000-4000-8000-000000000000", "group" }, { "/add/some_id", "add" },
         { "/settings/profile", "settings" }, { "/settings/appearance", "settings" }, { "/settings/account", "settings" }, { "/settings/owner", "settings" }, { "/settings/storage", "settings" },
+        { "/privacy", "privacy" },
     };
 
     [Theory]
@@ -75,7 +76,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
     private static async Task<JsonElement> LimitsOf(HttpClient client, string path)
     {
         var html = await (await client.GetAsync(path)).Content.ReadAsStringAsync();
-        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\" data-video-script=\"/js/video(\\.[0-9a-f]{10})?\\.js\">");
+        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\" data-operator=\"[^\"]*\" data-video-script=\"/js/video(\\.[0-9a-f]{10})?\\.js\">");
         Assert.True(attribute.Success);   // the video converter's address, fingerprinted when the build made a copy
         return JsonDocument.Parse(WebUtility.HtmlDecode(attribute.Groups[1].Value)).RootElement.Clone();
     }
@@ -108,6 +109,25 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         Assert.Equal(7, l.GetProperty("inviteDefaultDays").GetInt32());
         Assert.Equal(10, l.GetProperty("inviteDefaultUses").GetInt32());
         Assert.Equal(1, l.GetProperty("pageVersion").GetInt32());
+        Assert.Equal(2000, l.GetProperty("contactChars").GetInt32());
+        Assert.Equal(200, l.GetProperty("contactReplyChars").GetInt32());
+        Assert.Equal(180, l.GetProperty("contactKeepDays").GetInt32());
+    }
+
+    /// <summary>The privacy policy names who runs this Gom: from the configuration only (the repository is public), escaped.</summary>
+    [Fact]
+    public async Task The_operator_named_in_the_configuration_reaches_the_privacy_page_escaped()
+    {
+        using var named = factory.WithWebHostBuilder(b => b.UseSetting("Site:Operator", " An & \"Bình\" <x> "));
+        var html = await (await named.CreateClient().GetAsync("/privacy")).Content.ReadAsStringAsync();
+        Assert.Contains("data-operator=\"An &amp; &quot;Bình&quot; &lt;x&gt;\"", html);
+    }
+
+    [Fact]
+    public async Task With_no_operator_set_the_privacy_page_gets_none()
+    {
+        var html = await (await factory.CreateClient().GetAsync("/privacy")).Content.ReadAsStringAsync();
+        Assert.Contains("data-operator=\"\"", html);
     }
 
     [Fact]
