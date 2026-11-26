@@ -143,7 +143,8 @@ jobs:
           docker run -d --name "$CI_NAME-web" --network "$CI_NAME" --memory=256m --memory-swap=256m \
             -e ConnectionStrings__Default="Host=$CI_NAME-pg;Username=gom;Password=$PG_PASSWORD;Database=gom" \
             -e ForwardedHeaders__Hops=2 -e 'AllowedHosts=gom-staging.example;localhost' -e Auth__AllowedOrigins__0=https://gom-staging.example \
-            -e Logging__LogLevel__Default=Debug -e Logging__LogLevel__Microsoft.AspNetCore=Debug -e Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command=Information \
+            -e Owner__GomId=ci_owner -e Owner__Password=ci-only-password-not-a-secret \
+            -e Logging__LogLevel__Default=Debug -e Logging__LogLevel__Microsoft.EntityFrameworkCore=Warning \
             "$APP_IMAGE:$TAG" >/dev/null || true
           sleep 15
           docker inspect -f 'again: status={{.State.Status}} exit={{.State.ExitCode}}' "$CI_NAME-web" || true
