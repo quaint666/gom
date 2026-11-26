@@ -12,7 +12,6 @@ import android.net.Uri
 import android.os.PowerManager
 import android.telecom.DisconnectCause
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -74,7 +73,15 @@ class CallService : LifecycleService() {
         val i = intent ?: return START_NOT_STICKY
         when (i.action) {
             // Checked before starting (dial, ring), so the service always shows the call it was started for.
-            DIAL -> engine.start(i.getStringExtra(EXTRA_CONVERSATION).orEmpty(), Peer(i.getStringExtra(EXTRA_NAME).orEmpty(), i.getStringExtra(EXTRA_AVATAR)))
+            DIAL -> {
+                val conversation = i.getStringExtra(EXTRA_CONVERSATION).orEmpty()
+                val peer = Peer(i.getStringExtra(EXTRA_NAME).orEmpty(), i.getStringExtra(EXTRA_AVATAR))
+                // Android wants the call shown at once for every start it was asked for, also while a call is on (then that one).
+                val now = engine.view.value
+                if (now == null || now.phase == Phase.ENDED) show(ongoing(CallView(null, conversation, peer, mine = true, phase = Phase.OUTGOING)), IN_CALL)
+                else changed(now, now)
+                engine.start(conversation, peer)
+            }
             RING -> ring(i.getStringExtra(EXTRA_ID).orEmpty())
             ANSWER -> answer(fromTelecom = false)
             HANG_UP -> engine.hangUp()
@@ -93,7 +100,8 @@ class CallService : LifecycleService() {
 
     /** A push says a call rings: shown at once (FCM's rule, and Android's for a foreground service), then worded and checked. */
     private fun ring(id: String) {
-        if (engine.view.value != null) return   // in a call already: the server made this one busy
+        // In a call already: the server made this one busy. Android still wants the call shown for this start: the one that is on.
+        engine.view.value?.let { changed(it, it); return }
         words = null
         locked.value = getString(R.string.call_voice)   // nobody named until the server says the level allows it
         show(ringing(Peer(getString(R.string.call_voice))), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
@@ -113,7 +121,7 @@ class CallService : LifecycleService() {
         val v = engine.view.value ?: return
         if (v.phase != Phase.INCOMING) return
         if (!hasMic()) { engine.hangUp(); return }   // the call screen asks for it first; a headset's button cannot
-        show(ongoing(v), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        show(ongoing(v), IN_CALL)
         socket.open()
         engine.answer()
         if (!fromTelecom) lifecycleScope.launch { control?.answer(CallAttributesCompat.CALL_TYPE_AUDIO_CALL) }
@@ -122,6 +130,8 @@ class CallService : LifecycleService() {
     /** Follows the call: the notification, the socket, Android's call system, and the service's own end. */
     private fun changed(before: CallView?, v: CallView?) {
         if (v == null) {
+            // The first "no call" is where the service starts, before it is asked anything: nothing has ended.
+            if (before == null) return
             socket.close()
             disconnect(before)
             stop()
@@ -132,7 +142,7 @@ class CallService : LifecycleService() {
             Phase.INCOMING -> show(ringing(v.peer), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
             Phase.OUTGOING, Phase.CONNECTING, Phase.ACTIVE -> {
                 if (v.mine) socket.open()
-                show(ongoing(v), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                show(ongoing(v), IN_CALL)
                 if (v.phase == Phase.ACTIVE && before?.phase != Phase.ACTIVE && v.mine) lifecycleScope.launch { control?.setActive() }
             }
             Phase.ENDED -> { socket.close(); disconnect(v) }
@@ -250,15 +260,10 @@ class CallService : LifecycleService() {
         PendingIntent.getService(this, action.hashCode(), Intent(this, CallService::class.java).setAction(action), PendingIntent.FLAG_IMMUTABLE)
 
     private fun show(notification: Notification, type: Int) {
+        // Every time, not only when the type changes: each start Android was asked for must be answered with startForeground.
         val allowed = if (hasMic()) type else type and ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE.inv()
-        if (foreground == allowed) { notify(notification); return }
         ServiceCompat.startForeground(this, CALL_ID, notification, allowed)
         foreground = allowed
-    }
-
-    @Suppress("MissingPermission")   // a call's notification is the foreground service's: Android shows it without the permission
-    private fun notify(notification: Notification) = NotificationManagerCompat.from(this).let {
-        try { it.notify(CALL_ID, notification) } catch (_: SecurityException) { }
     }
 
     private fun hasMic() = hasMic(this)
@@ -287,6 +292,8 @@ class CallService : LifecycleService() {
         private const val CALL_ID = 2
         private const val OPEN = 3
         private const val ANSWERING = 4
+        /** A call going on: the call itself, and the microphone (allowed after a tap). */
+        private const val IN_CALL = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         /** A call longer than this keeps the screen-off lock only until then (a lock is never held for ever). */
         private const val EAR_MAX_MS = 6 * 60 * 60 * 1000L
 
@@ -341,6 +348,9 @@ class CallService : LifecycleService() {
             if (!CallProtocol.isId(conversation) || !hasMic(context)) return
             ContextCompat.startForegroundService(context, Intent(context, CallService::class.java).setAction(DIAL)
                 .putExtra(EXTRA_CONVERSATION, conversation).putExtra(EXTRA_NAME, name).putExtra(EXTRA_AVATAR, avatar))
+            // The call screen comes up with it, as the page's does when it calls.
+            context.startActivity(Intent(context, CallActivity::class.java).setAction(CallActivity.DIALLING)
+                .putExtra(CallActivity.EXTRA_NAME, name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
 
         /** FCM says a call rings (a high-priority push lets the app start a foreground service from the background). */
