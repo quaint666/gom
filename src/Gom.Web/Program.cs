@@ -136,10 +136,11 @@ app.MapAttachments();
 app.MapAvatars();
 app.MapReceipts();
 app.MapPush();
-app.MapSocket();
+// The fingerprinted names of the files pages load; the page script's fingerprint is the version the socket tells each page.
+var fingerprints = Assets.Load(app.Environment.WebRootFileProvider, app.Logger);
+app.MapSocket(Assets.Version(fingerprints));
 
 // Every page is one shell with its title, script and limits filled in (see Pages), made once at start-up.
-var fingerprints = Assets.Load(app.Environment.WebRootFileProvider, app.Logger);
 string shell;
 using (var reader = new StreamReader(app.Environment.WebRootFileProvider.GetFileInfo("pages/shell.html").CreateReadStream())) shell = reader.ReadToEnd();
 var limits = Pages.Limits(

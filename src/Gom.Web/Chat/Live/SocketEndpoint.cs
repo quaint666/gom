@@ -30,11 +30,13 @@ public static class SocketEndpoint
         }
     }
 
-    public static void MapSocket(this IEndpointRouteBuilder app) =>
-        app.MapGet("/ws", Handle).RequireAuthorization();
+    /// <summary>Maps /ws. <paramref name="version"/> is the pages' version (<see cref="Assets.Version"/>), told to each connection when it is ready.</summary>
+    public static void MapSocket(this IEndpointRouteBuilder app, string? version) =>
+        app.MapGet("/ws", (HttpContext http, ConnectionRegistry registry, IServiceScopeFactory scopes, IOptions<ChatOptions> options,
+            TimeProvider clock, ILoggerFactory loggers) => Handle(http, registry, scopes, options, clock, loggers, version)).RequireAuthorization();
 
     private static async Task<IResult> Handle(HttpContext http, ConnectionRegistry registry, IServiceScopeFactory scopes,
-        IOptions<ChatOptions> options, TimeProvider clock, ILoggerFactory loggers)
+        IOptions<ChatOptions> options, TimeProvider clock, ILoggerFactory loggers, string? version)
     {
         if (!http.WebSockets.IsWebSocketRequest) return Results.BadRequest(new { error = "websocket_required" });
 
@@ -51,7 +53,7 @@ public static class SocketEndpoint
         var lost = "";
         try
         {
-            connection.TryEnqueue(Frames.Ready());
+            connection.TryEnqueue(Frames.Ready(version));
             await ReceiveLoop(socket, connection, scopes, o, new SyncBucket(clock, o.SyncBurst, o.SyncPerSecond), http.RequestAborted);
         }
         catch (WebSocketException) { lost = "line lost, no close frame"; }

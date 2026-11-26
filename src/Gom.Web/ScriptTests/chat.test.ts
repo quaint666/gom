@@ -40,9 +40,13 @@ interface Harness {
   timers: { ms: number; fn: () => void; live: boolean }[];
   outbox: { items: OutboxItem[]; saves: number };
   notes: ReturnType<typeof vi.fn>;
+  /** The words kept for a reload, as "<gomId>:<conversation>" → words. */
+  drafts: Map<string, string>;
+  /** The page's answer to "would a reload lose something?", once it has handed it over. */
+  busy: () => boolean;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo'] } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; drafts?: Map<string, string> } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(me)),
@@ -70,7 +74,14 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
   let n = 0;
   const timers: Harness['timers'] = [];
   const outbox: Harness['outbox'] = { items: opts.outbox ?? [], saves: 0 };
+  const drafts = opts.drafts ?? new Map<string, string>();
+  let busy: () => boolean = () => { throw new Error('not handed over'); };
   const deps: ChatDeps = {
+    drafts: (gomId) => ({
+      load: (c) => drafts.get(`${gomId}:${c}`) ?? '',
+      save: (c, words) => { if (words === '') drafts.delete(`${gomId}:${c}`); else drafts.set(`${gomId}:${c}`, words); },
+    }),
+    holdReload: (check) => { busy = check; },
     timer: {
       set: (fn, ms) => {
         const entry = { ms, live: true, fn: () => { if (!entry.live) return; entry.live = false; fn(); } };
@@ -91,7 +102,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}),
   };
   mountChat(root, api, go, deps);
-  return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes };
+  return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes, drafts, busy: () => busy() };
 }
 
 const rows = () => [...root.querySelectorAll<HTMLElement>('[data-chat]')];
@@ -5315,5 +5326,62 @@ describe('chat: an account still waiting to be let in', () => {
     expect(root.querySelector('[data-waiting="pending"]')).not.toBeNull();
     expect(h.api.conversations).not.toHaveBeenCalled();
     expect(h.live.start).not.toHaveBeenCalled();
+  });
+});
+
+describe('chat: a reload by itself (a new version)', () => {
+  const base = [msg(1, 'minh', 'tin của Minh'), msg(2, 'mom', 'tin của mẹ')];
+  const open = (extra: Record<string, unknown> = {}, drafts?: Map<string, string>) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: base }, api: extra, ...(drafts ? { drafts } : {}) });
+  const field = () => root.querySelector<HTMLTextAreaElement>('.composer textarea')!;
+
+  it('keeps words typed and not sent, for this person, and puts them back after the reload', async () => {
+    const h = open();
+    await flush();
+    compose('Con đang gõ dở');
+    expect(h.drafts.get(`mom:${C1}`)).toBe('Con đang gõ dở');
+    // The reload: a new page on the same tab's storage.
+    root = document.createElement('div');
+    document.body.replaceChildren(root);
+    open({}, h.drafts);
+    await flush();
+    expect(field().value).toBe('Con đang gõ dở');
+  });
+
+  it('forgets the words once they are sent', async () => {
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(3, 'mom', body, at(10), c), clientId }));
+    const h = open({ send });
+    await flush();
+    compose('gửi luôn');
+    submitForm();
+    await flush();
+    expect(send).toHaveBeenCalled();
+    expect(h.drafts.has(`mom:${C1}`)).toBe(false);
+  });
+
+  it('does not keep the words of a sent message being changed, and holds the reload then', async () => {
+    const h = open();
+    await flush();
+    expect(h.busy()).toBe(false);
+    root.querySelector(`[data-msg="id2"]`)!.querySelector<HTMLButtonElement>('button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    compose('tin của mẹ, sửa');
+    expect(h.drafts.has(`mom:${C1}`)).toBe(false);
+    expect(h.busy()).toBe(true);
+  });
+
+  it('holds the reload while files are picked and not sent', async () => {
+    const h = open({ upload: vi.fn(async () => ok({ id: 'p1', kind: 'image', name: 'a.jpg', size: 3, width: 40, height: 30 } as Attachment)) });
+    await flush();
+    const input = root.querySelector<HTMLInputElement>('input[name="files"]')!;
+    Object.defineProperty(input, 'files', { value: [new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' })], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(h.busy()).toBe(true);
+    root.querySelector<HTMLButtonElement>('[data-tray-remove]')!.click();
+    await flush();
+    expect(h.busy()).toBe(false);
   });
 });

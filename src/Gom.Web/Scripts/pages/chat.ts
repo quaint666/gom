@@ -31,6 +31,10 @@ export interface ChatDeps {
   timer: { set(fn: () => void, ms: number): number; clear(id: number): void };
   /** Messages written but not yet delivered, kept for this person across a reload. */
   outbox(gomId: string): { load(): OutboxItem[]; save(items: OutboxItem[]): void };
+  /** Words typed in a conversation's message field and not sent yet, kept across a reload of this tab (not after it is closed). */
+  drafts?(gomId: string): { load(conversation: string): string; save(conversation: string, text: string): void };
+  /** Hands over a question the update watcher asks before reloading by itself: true while a reload would lose something. */
+  holdReload?(busy: () => boolean): void;
   /** Closes this device's notifications of a conversation once it is on screen. */
   clearNotifications?(conversation: string): void;
   /** This device's notifications, for the one-time "turn them on" banner. */
@@ -161,6 +165,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let notice = '';
   let offline = false;
   let outbox: ReturnType<ChatDeps['outbox']> | null = null;
+  let drafts: ReturnType<NonNullable<ChatDeps['drafts']>> | null = null;
   let live: LiveControl | null = null;
   let scrollAnchor: number | null = null;
   /** `at` is where it was asked for (the pointer or the button), so a mouse gets it there; a finger always gets the sheet at the bottom. */
@@ -241,7 +246,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function threadOf(id: string): Thread {
     let t = threads.get(id);
     if (t === undefined) {
-      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, pins: [], pinsOpen: false, editing: null, draft: '', tray: [], replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
+      t = { messages: [], pending: [], hasMore: false, loading: false, loaded: false, lastReadAtOpen: 0, unreadAtOpen: 0, jump: false, below: 0, pins: [], pinsOpen: false, editing: null, draft: drafts?.load(id) ?? '', tray: [], replying: null, stick: true, cursor: 0, reads: { enabled: false, seqs: new Map() }, flushing: false, retryTimer: null, failures: 0, attempts: new Map() };
       threads.set(id, t);
     }
     return t;
@@ -1020,7 +1025,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
               <input class="file-input" type="file" name="files" multiple tabindex="-1" aria-hidden="true"
                 @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
             <div class="field">
-            <textarea name="message" rows="1" aria-label=${say.chat.typeMessage} placeholder=${say.chat.typeMessage} autocomplete="off" enterkeyhint="enter"
+            <textarea name="message" rows="1" data-kept aria-label=${say.chat.typeMessage} placeholder=${say.chat.typeMessage} autocomplete="off" enterkeyhint="enter"
               .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}
               @focus=${() => { if (picker !== null) { picker = null; update(); } }}></textarea>
             ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label=${say.chat.picker} aria-expanded=${picker !== null ? 'true' : 'false'}
@@ -1105,7 +1110,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const field = root.querySelector<HTMLTextAreaElement>('.composer textarea');
     if (field === null) return;
     field.setRangeText(emoji, field.selectionStart, field.selectionEnd, 'end');
-    threadOf(id).draft = field.value;
+    setDraft(id, field.value);
     rememberEmoji(emoji);
     update();
   }
@@ -1287,7 +1292,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function onDraft(e: Event): void {
     const field = e.target as HTMLTextAreaElement;
-    if (openId !== null) threadOf(openId).draft = field.value;
+    if (openId !== null) setDraft(openId, field.value);
+  }
+
+  /** The words in the message field, kept for a reload too; not while they are a sent message's being changed. */
+  function setDraft(id: string, text: string): void {
+    const t = threadOf(id);
+    t.draft = text;
+    if (t.editing === null) drafts?.save(id, text);
   }
 
   function onKey(e: KeyboardEvent): void {
@@ -2261,7 +2273,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const ready = t.tray.filter((i) => i.state === 'done' && i.attachment !== undefined).map((i) => i.attachment!);
     if ((body === '' && ready.length === 0) || me === null) return;
     if (t.tray.some((i) => i.state !== 'done')) return;   // still going up, or failed: remove or retry it first
-    t.draft = '';
+    setDraft(id, '');
     t.tray = [];
     await post(id, { body, ...(ready.length > 0 ? { attachments: ready } : {}) });
   }
@@ -2466,6 +2478,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     }
     me = result.data;
     outbox = deps.outbox(me.gomId);
+    drafts = deps.drafts?.(me.gomId) ?? null;
+    for (const [id, t] of threads) if (t.draft === '' && t.editing === null) t.draft = drafts?.load(id) ?? '';
+    // A reload loses files picked but not sent, and a change being made to a sent message; typed words are kept (drafts).
+    deps.holdReload?.(() => [...threads.values()].some((t) => t.tray.length > 0 || t.editing !== null));
     live = deps.live(handlers);
     live.start();
     await refreshList();

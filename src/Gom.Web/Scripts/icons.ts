@@ -20,6 +20,7 @@ export const lock = () => icon('M6 11h12v9H6z', 'M8.5 11V8a3.5 3.5 0 017 0v3');
 export const shield = () => icon('M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z', 'M9 12l2 2 4-4');
 export const disk = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 3v9l6.4 6.4');
 export const phone = () => icon('M8 3h8v18H8z', 'M11 18h2');
+export const reload = () => icon('M20 12a8 8 0 1 1-2.3-5.6', 'M20 4v5h-5');
 export const camera = () => icon('M4 8h3l2-3h6l2 3h3v11H4z', 'M12 10a3 3 0 100 6 3 3 0 000-6z');
 export const gear = () => icon(
   'M12 15a3 3 0 100-6 3 3 0 000 6z',

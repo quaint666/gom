@@ -46,6 +46,16 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+// "Tải lại Gom" in Settings: drop every kept file and fetch the ones kept from the start again, then answer so the page reloads.
+self.addEventListener('message', (event) => {
+  if (event.data !== 'refresh') return;
+  event.waitUntil(caches.keys()
+    .then((names) => Promise.all(names.map((n) => caches.delete(n))))
+    .then(() => caches.open(STATIC)).then((cache) => cache.addAll(KEPT))
+    .catch(() => undefined)
+    .then(() => event.ports[0]?.postMessage('done')));
+});
+
 // A notification. The server encrypts for this browser only, and writes the words (who and where, the kind of message, and its
 // words where this device chose them). Every push must show something, or a browser may take the permission away, so a push that
 // cannot be read still says "Tin nhắn mới". One conversation keeps one notification: a new one replaces it (tag) and makes a

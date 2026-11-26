@@ -55,6 +55,19 @@ describe('live socket', () => {
     expect(h.state).toHaveBeenLastCalledWith(true);
   });
 
+  it('passes on the version the server names when ready, and nothing when it names none', () => {
+    const h = { ...handlers(), version: vi.fn() };
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept();
+    last().say({ t: 'ready', v: null });
+    expect(h.version).not.toHaveBeenCalled();
+    last().drop();
+    fireTimer();
+    last().accept();
+    last().say({ t: 'ready', v: 'bf066b7453' });
+    expect(h.version).toHaveBeenCalledWith('bf066b7453');
+  });
+
   it('tells the page which catch-up was turned away as too fast, and ignores other error frames', () => {
     const h = handlers();
     createLive('ws://x/ws', h, deps()).start();

@@ -31,6 +31,8 @@ export interface LiveHandlers {
   ended(): void;
   /** Another window took this one's place: stop trying (or two windows would take turns forever). */
   replaced(): void;
+  /** The version of the pages the server hands out, told on every connect (after a deploy, the first reconnect tells the new one). */
+  version?(version: string): void;
 }
 
 export interface LiveControl {
@@ -99,10 +101,10 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
     s.onmessage = (e) => {
       if (socket !== s) return;
       lastFrameAt = deps.now();
-      let frame: { t?: unknown; c?: unknown; u?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown; m?: unknown; error?: unknown };
+      let frame: { t?: unknown; v?: unknown; c?: unknown; u?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown; m?: unknown; error?: unknown };
       try { frame = JSON.parse(e.data) as typeof frame; } catch { return; }
       if (typeof frame !== 'object' || frame === null) return;
-      if (frame.t === 'ready') { ready = true; attempt = 0; handlers.state(true); }
+      if (frame.t === 'ready') { ready = true; attempt = 0; handlers.state(true); if (typeof frame.v === 'string') handlers.version?.(frame.v); }
       else if (frame.t === 'event' && typeof frame.c === 'string') handlers.event(frame.c, frame.event as ChatEvent);
       else if (frame.t === 'conversations') handlers.conversations();
       else if (frame.t === 'read' && typeof frame.c === 'string' && typeof frame.u === 'string' && typeof frame.seq === 'number') handlers.read(frame.c, frame.u, frame.seq);

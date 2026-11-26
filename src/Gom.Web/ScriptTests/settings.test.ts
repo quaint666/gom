@@ -116,6 +116,30 @@ describe('settings: the parts and their addresses', () => {
   });
 });
 
+describe('settings: reloading Gom', () => {
+  it('shows the version and reloads from the menu', async () => {
+    const reload = vi.fn();
+    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: 'bf066b7453', reload });
+    await flush();
+    const row = root.querySelector<HTMLButtonElement>('[data-reload-app]')!;
+    expect(text(row)).toContain('Tải lại Gom');
+    expect(text(row)).toContain('Phiên bản bf066b7453 · lấy bản mới nhất');
+    row.click();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('says only "get the latest" without a version, and has no row when the page gives no way to reload', async () => {
+    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: null, reload: vi.fn() });
+    await flush();
+    expect(text(root.querySelector('[data-reload-app]')!)).toContain('Lấy bản mới nhất');
+    const other = document.createElement('div');
+    document.body.append(other);
+    mountSettings(other, api(), vi.fn(), undefined, undefined, fakeNav('/settings'));
+    await flush();
+    expect(other.querySelector('[data-reload-app]')).toBeNull();
+  });
+});
+
 describe('settings: inside the parts', () => {
   it('lists blocked people under Quyền riêng tư, and unblocks one', async () => {
     const unblock = vi.fn(async () => ok(undefined));

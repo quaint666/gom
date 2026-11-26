@@ -214,6 +214,8 @@ export const en: Strings = {
     storageSummary: 'Pictures, videos, files and messages',
     installRow: 'Add Gom to your home screen',
     installSummary: 'Open it like an app',
+    reloadRow: 'Reload Gom',
+    reloadSummary: (version: string | null): string => version === null ? 'Get the latest version' : `Version ${version} · get the latest`,
     pushSummaryOff: 'Off',
     pushSummaryNone: 'Not available on this device',
     pushSummary: { words: 'On · Shows the message', name: 'On · Shows the sender', nothing: 'On · Only "New message"' },
@@ -457,6 +459,7 @@ export const en: Strings = {
   },
   app: {
     newVersion: 'A new version of Gom is ready.',
+    reloadsItself: 'Gom reloads by itself when you switch away.',
     reload: 'Reload',
     noPushService: 'This browser has no push service, so Gom cannot send notifications here. Some Chromium-based browsers (such as Helium) removed it; Chrome, Edge and Firefox all have one.',
   },

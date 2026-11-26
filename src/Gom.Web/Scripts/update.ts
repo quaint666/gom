@@ -12,38 +12,71 @@ export interface UpdateDeps {
   every(fn: () => void, ms: number): void;
   /** Calls fn each time the tab is shown again. */
   onShown(fn: () => void): void;
-  /** Tells the person a new version is there. */
+  /** Calls fn each time the tab is hidden (another tab, another app, the screen off). */
+  onHidden(fn: () => void): void;
+  visible(): boolean;
+  /** True while a reload would lose something: files waiting to be sent, a message being changed, a field being filled in. */
+  busy(): boolean;
+  /** Tells the person a new version is there (again, when the tab is shown and it has not reloaded yet). */
   announce(): void;
+  reload(): void;
+  /** When this tab last reloaded by itself, kept across that reload; null when it never has. */
+  reloadedAt: { get(): number | null; set(at: number): void };
+  /** The version this page runs (its script's fingerprint); null when it has none, and then only the probe can tell. */
+  own: string | null;
 }
 
 /** How often a page that stays open asks. */
 const EVERY_MS = 10 * 60 * 1000;
 /** A tab shown again asks at once, unless it asked less than this long ago. */
 const MIN_GAP_MS = 60 * 1000;
+/** A tab that reloaded by itself this recently does not do it again: if the new page still looks old, the bar asks instead of a loop. */
+const AUTO_GAP_MS = 5 * 60 * 1000;
 
 /**
- * Notices a new version being deployed while this page is open. The page asks about its own script: the first answer is
- * what it is running, and a later answer that differs (a new ETag) or a 404 (a file that has gone) means a new version.
- * Not being able to ask (offline, a server error) says nothing. It asks once, again every ten minutes, and when the tab is shown
- * again; once it has spoken it stops. It never reloads anything itself: a reload would lose what is being typed.
+ * Notices a new version being deployed while this page is open, and moves to it when that loses nothing.
+ *
+ * Two ways to notice. The live connection (chat pages) is told the server's version each time it connects, and a deploy restarts
+ * the server, so the page hears within seconds (`heard`). Every page also asks about its own script: the first answer is what it
+ * is running, and a later answer that differs (a new ETag) or a 404 (a file that has gone) means a new version. Not being able to
+ * ask (offline, a server error) says nothing. It asks once, again every ten minutes, and when the tab is shown again.
+ *
+ * Once it knows, it reloads while the tab is hidden, or as the tab is shown again, unless something would be lost (`busy`); a
+ * tab in view shows the bar instead, and the bar comes back each time the tab is shown until the reload happens.
  */
-export function watchForUpdate(deps: UpdateDeps): { check(): Promise<void> } {
+export function watchForUpdate(deps: UpdateDeps): { check(): Promise<void>; heard(version: string): void } {
   let baseline: string | null | undefined;
   let lastAt = Number.NEGATIVE_INFINITY;
-  let announced = false;
+  let stale = false;
   let asking = false;
 
+  /** Reloads if that loses nothing and this tab has not just done so; says whether it did. */
+  function reloadQuietly(): boolean {
+    if (deps.busy()) return false;
+    const last = deps.reloadedAt.get();
+    if (last !== null && deps.now() - last < AUTO_GAP_MS) return false;
+    deps.reloadedAt.set(deps.now());
+    deps.reload();
+    return true;
+  }
+
+  function found(): void {
+    if (stale) return;
+    stale = true;
+    if (deps.visible() || !reloadQuietly()) deps.announce();
+  }
+
   async function check(): Promise<void> {
-    if (announced || asking) return;
+    if (stale || asking) return;
     asking = true;
     lastAt = deps.now();
     try {
       const answer = await deps.probe();
       if (answer === null) return;
-      if (answer.status === 404) { announced = true; deps.announce(); return; }
+      if (answer.status === 404) { found(); return; }
       if (answer.status < 200 || answer.status >= 300) return;
       if (baseline === undefined) { baseline = answer.etag; return; }
-      if (baseline !== null && answer.etag !== null && answer.etag !== baseline) { announced = true; deps.announce(); }
+      if (baseline !== null && answer.etag !== null && answer.etag !== baseline) found();
     } finally {
       asking = false;
     }
@@ -51,16 +84,28 @@ export function watchForUpdate(deps: UpdateDeps): { check(): Promise<void> } {
 
   void check();
   deps.every(() => { void check(); }, EVERY_MS);
-  deps.onShown(() => { if (deps.now() - lastAt >= MIN_GAP_MS) void check(); });
-  return { check };
+  deps.onHidden(() => { if (stale) reloadQuietly(); });
+  deps.onShown(() => {
+    if (stale) { if (!reloadQuietly()) deps.announce(); return; }
+    if (deps.now() - lastAt >= MIN_GAP_MS) void check();
+  });
+  return {
+    check,
+    heard(version) { if (deps.own !== null && version !== deps.own) found(); },
+  };
 }
 
-/** The bar at the top of the page: a new version is there, reload when it suits, or leave it. */
+/** The version in this page's script name (main.<version>.js), or null for a plain name. */
+export function versionOf(scriptPath: string): string | null {
+  return /\/main\.([0-9a-f]+)\.js$/.exec(scriptPath)?.[1] ?? null;
+}
+
+/** The bar at the top of the page: a new version is there, reload now, or leave it until the tab is shown again (or reloads by itself). */
 export function showUpdateBar(host: HTMLElement, reload: () => void): void {
   const close = (): void => { render(nothing, host); };
   render(html`
     <div class="updatebar" role="status" data-update>
-      <span>${say.app.newVersion}</span>
+      <span><b>${say.app.newVersion}</b><small>${say.app.reloadsItself}</small></span>
       <button class="btn small" type="button" data-update-reload @click=${reload}>${say.app.reload}</button>
       <button class="btn secondary small" type="button" data-update-later @click=${close}>${say.chat.later}</button>
     </div>`, host);
