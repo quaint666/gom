@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -17,11 +18,14 @@ import android.webkit.RenderProcessGoneDetail
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -37,6 +41,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import io.github.quaint666.gom.calls.CallService
+import io.github.quaint666.gom.calls.Readiness
 
 /**
  * Gom in a web view, and only Gom (docs/voice-calls.md, decision 31): its own pages load inside, every other address opens in
@@ -49,6 +54,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var top: View
     private lateinit var web: GomWebView
     private lateinit var bridge: Bridge
+    private lateinit var offline: View
     private var picking: ValueCallback<Array<Uri>>? = null
     private var fullScreen: View? = null
 
@@ -94,6 +100,8 @@ class MainActivity : ComponentActivity() {
         web = GomWebView(this).apply { onImage = { content -> keyboardImage(content) } }
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(top, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
+        offline = offlineView()
+        root.addView(offline, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
         paint(getColor(R.color.gom), getColor(R.color.page))
 
@@ -135,6 +143,33 @@ class MainActivity : ComponentActivity() {
         if (origins.configured) web.saveState(outState)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // What could stop calls ringing here, said once each (calls/Readiness.kt).
+        if (origins.configured) Readiness.next(this)?.let { Readiness.show(this, it) }
+    }
+
+    /** "Can't reach Gom", over the page, with a button that loads it again. */
+    private fun offlineView(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setPadding(64, 64, 64, 64)
+        setBackgroundColor(getColor(R.color.page))
+        visibility = View.GONE
+        isClickable = true   // nothing under it is touched
+        addView(TextView(context).apply {
+            setText(R.string.offline_title); textSize = 20f; setTextColor(getColor(R.color.call_text)); gravity = Gravity.CENTER
+        })
+        addView(TextView(context).apply {
+            setText(R.string.offline_text); textSize = 15f; setTextColor(getColor(R.color.call_muted)); gravity = Gravity.CENTER
+            setPadding(0, 16, 0, 32)
+        })
+        addView(Button(context).apply {
+            setText(R.string.offline_retry)
+            setOnClickListener { offline.visibility = View.GONE; web.reload() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
     override fun onPause() {
         super.onPause()
         CookieManager.getInstance().flush()   // the session is kept even if Android stops the app now
@@ -174,6 +209,11 @@ class MainActivity : ComponentActivity() {
                 if (origins.loadsInside(url)) return false
                 outside(request.url)
                 return true
+            }
+
+            // Gom could not be reached (no network, the server away): the app's own words and a retry, not the web view's error page.
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) offline.visibility = View.VISIBLE
             }
 
             // The page's renderer died (Android reclaimed it): start again rather than let the app close.

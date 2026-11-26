@@ -44,4 +44,13 @@
     <string name="call_error_network">Không kết nối được. Kiểm tra mạng rồi thử lại.</string>
     <string name="call_error_other">Chưa gọi được. Hãy thử lại.</string>
     <string name="call_unlock_to_see">Mở khóa để xem ai gọi</string>
+    <string name="ready_full_screen_title">Để cuộc gọi hiện toàn màn hình</string>
+    <string name="ready_full_screen_text">Android đang tắt quyền hiện cuộc gọi toàn màn hình của Gom, nên khi máy khóa, cuộc gọi đến chỉ hiện như một thông báo nhỏ. Hãy bật "Cho phép thông báo toàn màn hình" cho Gom.</string>
+    <string name="ready_sleep_title">Để Gom luôn đổ chuông</string>
+    <string name="ready_sleep_text">Điện thoại có thể cho Gom "ngủ" để tiết kiệm pin, và khi đó cuộc gọi sẽ không đổ chuông. Trong trang của Gom, chọn Pin rồi chọn Không hạn chế. Trên điện thoại Samsung, vào thêm Cài đặt › Chăm sóc thiết bị › Pin › Giới hạn sử dụng nền, và thêm Gom vào Ứng dụng không bao giờ ngủ.</string>
+    <string name="ready_open_settings">Mở cài đặt</string>
+    <string name="ready_later">Để sau</string>
+    <string name="offline_title">Không kết nối được với Gom</string>
+    <string name="offline_text">Kiểm tra mạng rồi thử lại.</string>
+    <string name="offline_retry">Thử lại</string>
 </resources>
