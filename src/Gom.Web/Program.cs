@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 // "--vapid-keys" prints a new key pair for notifications (Push:PublicKey and Push:PrivateKey) and stops; nothing else starts.
 if (args.Contains("--vapid-keys"))
@@ -40,8 +41,11 @@ if (proxyHops > 0)
     });
 
 // Everything environment-specific comes from configuration, never from code.
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("ConnectionStrings:Default is not set.");
+// GSS (Kerberos) encryption is never used, and Npgsql tries it first by default through the image's libgssapi_krb5, which
+// crashed the process now and then (CI's crash report, 2026-11-26). Off in code, whatever the setting says.
+var connectionString = new NpgsqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("ConnectionStrings:Default is not set."))
+    { GssEncryptionMode = GssEncryptionMode.Disable }.ConnectionString;
 
 builder.Services.AddDbContext<GomDbContext>(options => options.UseNpgsql(connectionString));
 
