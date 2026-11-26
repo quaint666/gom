@@ -39,6 +39,8 @@ export interface ChatDeps {
   clearNotifications?(conversation: string): void;
   /** This device's notifications, for the one-time "turn them on" banner. */
   pusher?: Pusher;
+  /** In the Android app: hands over each picture or GIF the keyboard puts into a text field (Gboard's GIF button). */
+  keyboardImages?(callback: (file: File) => void): void;
   /**
    * Makes a picked video smaller on this device (`onProgress` from 0 to 1); null when this device cannot. Loaded only when a video
    * is picked. Without it every video goes as it is.
@@ -2200,6 +2202,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
     pumpTray(id);
   }
+
+  // A keyboard's picture goes where a pasted one would: into the open conversation, only while its message box has the focus.
+  deps.keyboardImages?.((file) => {
+    if (openId === null || !uploadsOn()) return;
+    const box = root.querySelector('textarea[name="message"]');
+    if (box === null || root.ownerDocument.activeElement !== box) return;
+    addFiles(openId, [file]);
+  });
 
   function onPaste(e: ClipboardEvent): void {
     const files = [...(e.clipboardData?.files ?? [])];

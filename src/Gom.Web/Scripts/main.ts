@@ -11,7 +11,7 @@ import { mountJoin } from './pages/join.js';
 import { mountReset } from './pages/reset.js';
 import { mountPrivacy } from './pages/privacy.js';
 import { mountSettings } from './pages/settings.js';
-import { appPort, createAppPusher } from './app.js';
+import { appPort, createAppPusher, type AppPusher } from './app.js';
 import { createPusher, type Pusher } from './push.js';
 import { attachPull, canPullList } from './pull.js';
 import { mountSignIn } from './pages/signin.js';
@@ -108,8 +108,10 @@ async function reloadFresh(): Promise<void> {
  * server whenever it is new to this tab, so an id FCM changed while the app was closed is put right the next time it opens.
  */
 const port = appPort();
+let appPusher: AppPusher | undefined;
 const pusher: Pusher = port === undefined ? createPusher() : (() => {
-  const app = createAppPusher(port);
+  const l = limits();
+  const app = createAppPusher(port, window, Math.max(l.imageBytes, l.animatedBytes));
   app.onRegistration((sub) => void (async () => {
     const KEY = 'gom.appRegistration';
     if (!('app' in sub)) return;
@@ -119,6 +121,7 @@ const pusher: Pusher = port === undefined ? createPusher() : (() => {
     const result = await api.setPush(sub, state.data.level);
     if (result.ok) try { sessionStorage.setItem(KEY, sub.app); } catch { /* sent again next time */ }
   })());
+  appPusher = app;
   return app;
 })();
 /**
@@ -135,6 +138,7 @@ const prepareVideo: ChatDeps['prepareVideo'] = async (file, onProgress, maxBytes
 const chatDeps = (): ChatDeps => ({
   clearNotifications: (conversation) => pusher.clear(conversation),
   pusher,
+  ...(appPusher === undefined ? {} : (({ onKeyboardImage }) => ({ keyboardImages: onKeyboardImage }))(appPusher)),
   prepareVideo,
   live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?page=${limits().pageVersion}`,
     { ...handlers, version: (v) => updates.heard(v), tooOld: () => { handlers.tooOld?.(); updates.tooOld(); } }),

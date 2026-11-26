@@ -46,7 +46,7 @@ interface Harness {
   busy: () => boolean;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; drafts?: Map<string, string> } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages'] } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(me)),
@@ -100,6 +100,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     clearNotifications: notes,
     ...(opts.pusher ? { pusher: opts.pusher } : {}),
     ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}),
+    ...(opts.keyboardImages ? { keyboardImages: opts.keyboardImages } : {}),
   };
   mountChat(root, api, go, deps);
   return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes, drafts, busy: () => busy() };
@@ -3713,6 +3714,21 @@ describe('chat: pictures and files', () => {
     area.dispatchEvent(filePaste);
     await flush();
     expect(filePaste.defaultPrevented).toBe(true);
+    expect(upload).toHaveBeenCalledOnce();
+  });
+
+  it('takes a GIF from the app\'s keyboard into the open conversation, only while its message box has the focus', async () => {
+    const upload = vi.fn(async () => ok(att('g1')));
+    let hand: (file: File) => void = () => { throw new Error('not handed over'); };
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [] }, api: { upload }, keyboardImages: (callback) => { hand = callback; } });
+    await flush();
+    const gif = new File([new Uint8Array([71, 73, 70])], 'keyboard.gif', { type: 'image/gif' });
+    hand(gif);   // the box does not have the focus: it went elsewhere (search, a dialog)
+    await flush();
+    expect(upload).not.toHaveBeenCalled();
+    root.querySelector<HTMLTextAreaElement>('textarea[name="message"]')!.focus();
+    hand(gif);
+    await flush();
     expect(upload).toHaveBeenCalledOnce();
   });
 
