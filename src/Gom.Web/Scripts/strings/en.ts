@@ -399,6 +399,17 @@ export const en: Strings = {
     refuse: 'Refuse',
     remove: 'Delete',
   },
+  calls: {
+    voiceCall: 'Voice call',
+    noAnswer: 'No answer',
+    declinedByThem: 'Call declined',
+    busy: 'Busy',
+    missed: 'Missed call',
+    youDeclined: 'You declined',
+    failed: "Couldn't connect",
+    incoming: 'Incoming call',
+    outgoing: 'Outgoing call',
+  },
   notices: {
     today: 'Today',
     yesterday: 'Yesterday',

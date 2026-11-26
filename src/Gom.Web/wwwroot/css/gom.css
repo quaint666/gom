@@ -757,6 +757,20 @@ select:focus-visible { outline-offset: 0; }
 .invite small { display: block; color: var(--muted); }
 
 /* a line in a group's thread: who was added, who left, a new name */
+.call-row { display: flex; margin-block: 4px; }
+.call-row.out { justify-content: flex-end; }
+/* A call's line (mockup 29): a card like a bubble, on the side of whoever called; one the reader missed is in the error colours, with words, never colour alone. */
+.call-card { display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px; border-radius: 16px; min-inline-size: 200px; max-inline-size: min(520px, 78%); }
+.in .call-card { background: var(--surface); border: 1px solid var(--border); }
+.out .call-card { background: var(--out); border: 1px solid transparent; }
+.call-i { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--tint); color: var(--tint-text); flex: none; }
+.call-card.missed .call-i { background: var(--err-bg); color: var(--err-text); }
+.call-card.missed b { color: var(--err-text); }
+.call-t { display: flex; flex-direction: column; min-inline-size: 0; }
+.call-t small { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 13px; }
+.call-t small .i { inline-size: 14px; block-size: 14px; }
+.pv .i { inline-size: 15px; block-size: 15px; vertical-align: -2px; margin-inline-end: 3px; }
+.pv.missed-call { color: var(--err-text); font-weight: 600; }
 .notice-row { align-self: center; max-inline-size: min(90%, 480px); margin-block: 8px; padding: 4px 12px; border-radius: 12px; background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--muted); font-size: 13px; text-align: center; overflow-wrap: anywhere; }
 
 /* The bar that says a new version is there: over the top of whatever page is open. */

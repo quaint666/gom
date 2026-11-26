@@ -142,7 +142,7 @@ public static class CallEndpoints
         return Results.Ok(Describe(k, me, session, relay, o, name));
     }
 
-    private static async Task<IResult> Start(StartRequest request, HttpContext http, GomDbContext db, CallLimiter limiter, CallRelay relay, LiveDelivery live,
+    private static async Task<IResult> Start(StartRequest request, HttpContext http, GomDbContext db, CallLimiter limiter, CallRelay relay, LiveDelivery live, Push.PushQueue push,
         TimeProvider clock, IOptions<CallOptions> options, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
@@ -200,7 +200,7 @@ public static class CallEndpoints
                 call.State = CallState.Ringing;
                 db.Calls.Add(call);
                 await db.SaveChangesAsync(ct);
-                await EndAsync(db, relay, live, call.Id, CallOutcome.Busy, now, ct);
+                await EndAsync(db, relay, live, push, call.Id, CallOutcome.Busy, now, ct);
                 var busy = await db.Calls.AsNoTracking().SingleAsync(k => k.Id == call.Id, ct);
                 return await Described(db, busy, me, session, relay, o, ct);
             }
@@ -225,7 +225,7 @@ public static class CallEndpoints
     /// <summary>A call that rang past its time is missed, whatever arrives after; the janitor would end it within seconds anyway.</summary>
     private static bool RangOut(Call k, DateTimeOffset now, CallOptions o) => k.State == CallState.Ringing && now - k.CreatedAt >= TimeSpan.FromSeconds(o.RingSeconds);
 
-    private static async Task<IResult> Accept(Guid id, AnswerRequest request, HttpContext http, GomDbContext db, CallRelay relay, LiveDelivery live, TimeProvider clock,
+    private static async Task<IResult> Accept(Guid id, AnswerRequest request, HttpContext http, GomDbContext db, CallRelay relay, LiveDelivery live, Push.PushQueue push, TimeProvider clock,
         IOptions<CallOptions> options, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
@@ -236,10 +236,10 @@ public static class CallEndpoints
         var call = await Mine(db, id, me, ct);
         if (call is null || call.CalleeId != me) return Results.NotFound();
         var now = clock.GetUtcNow();
-        if (call.State == CallState.Ringing && RangOut(call, now, o)) { await EndAsync(db, relay, live, id, CallOutcome.Missed, now, ct); return Error(StatusCodes.Status409Conflict, "call_ended"); }
-        if (call.State == CallState.Ringing && !await Friends(db, call.CallerId, me, ct)) { await EndAsync(db, relay, live, id, CallOutcome.Failed, now, ct); return Error(StatusCodes.Status403Forbidden, "not_friends"); }
+        if (call.State == CallState.Ringing && RangOut(call, now, o)) { await EndAsync(db, relay, live, push, id, CallOutcome.Missed, now, ct); return Error(StatusCodes.Status409Conflict, "call_ended"); }
+        if (call.State == CallState.Ringing && !await Friends(db, call.CallerId, me, ct)) { await EndAsync(db, relay, live, push, id, CallOutcome.Failed, now, ct); return Error(StatusCodes.Status403Forbidden, "not_friends"); }
         // Without the caller's offer (the server restarted while it rang) there is nothing to answer: the call fails, and is tried again.
-        if (call.State == CallState.Ringing && relay.Of(id)?.Offer is null) { await EndAsync(db, relay, live, id, CallOutcome.Failed, now, ct); return Error(StatusCodes.Status409Conflict, "call_ended"); }
+        if (call.State == CallState.Ringing && relay.Of(id)?.Offer is null) { await EndAsync(db, relay, live, push, id, CallOutcome.Failed, now, ct); return Error(StatusCodes.Status409Conflict, "call_ended"); }
 
         // The first device to answer wins; the others hear it was answered elsewhere.
         var won = await db.Calls.Where(k => k.Id == id && k.State == CallState.Ringing).ExecuteUpdateAsync(s => s
@@ -257,12 +257,12 @@ public static class CallEndpoints
         return await Described(db, now2, me, session, relay, o, ct);
     }
 
-    private static async Task<IResult> Decline(Guid id, HttpContext http, GomDbContext db, CallRelay relay, LiveDelivery live, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> Decline(Guid id, HttpContext http, GomDbContext db, CallRelay relay, LiveDelivery live, Push.PushQueue push, TimeProvider clock, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var call = await Mine(db, id, me, ct);
         if (call is null || call.CalleeId != me) return Results.NotFound();
-        if (call.State == CallState.Ringing) await EndAsync(db, relay, live, id, CallOutcome.Declined, clock.GetUtcNow(), ct);
+        if (call.State == CallState.Ringing) await EndAsync(db, relay, live, push, id, CallOutcome.Declined, clock.GetUtcNow(), ct);
         return Results.NoContent();
     }
 
@@ -270,7 +270,7 @@ public static class CallEndpoints
     /// Either side ends it. While it rings: the caller giving up makes it a missed call; the person called hanging up declines it.
     /// Once answered: only a device in the call can end it (another of the callee's devices has nothing to hang up). Ended already: nothing.
     /// </summary>
-    private static async Task<IResult> HangUp(Guid id, HttpContext http, GomDbContext db, CallRelay relay, LiveDelivery live, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> HangUp(Guid id, HttpContext http, GomDbContext db, CallRelay relay, LiveDelivery live, Push.PushQueue push, TimeProvider clock, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var session = GomClaims.Session(http.User);
@@ -280,10 +280,10 @@ public static class CallEndpoints
         switch (call.State)
         {
             case CallState.Ringing:
-                await EndAsync(db, relay, live, id, me == call.CallerId ? CallOutcome.Missed : CallOutcome.Declined, now, ct);
+                await EndAsync(db, relay, live, push, id, me == call.CallerId ? CallOutcome.Missed : CallOutcome.Declined, now, ct);
                 break;
             case CallState.Active when session == call.CallerSessionId || session == call.AnswerSessionId:
-                await EndAsync(db, relay, live, id, CallOutcome.Completed, now, ct);
+                await EndAsync(db, relay, live, push, id, CallOutcome.Completed, now, ct);
                 break;
             case CallState.Active:
                 return Error(StatusCodes.Status403Forbidden, "not_in_call");
@@ -332,7 +332,7 @@ public static class CallEndpoints
     /// notice does. <paramref name="at"/> is when it ended (for a call that went silent, when it was last heard from). False when it had
     /// ended already.
     /// </summary>
-    public static async Task<bool> EndAsync(GomDbContext db, CallRelay relay, LiveDelivery live, Guid id, CallOutcome outcome, DateTimeOffset at, CancellationToken ct)
+    public static async Task<bool> EndAsync(GomDbContext db, CallRelay relay, LiveDelivery live, Push.PushQueue push, Guid id, CallOutcome outcome, DateTimeOffset at, CancellationToken ct)
     {
         Message notice;
         Call call;
@@ -348,6 +348,8 @@ public static class CallEndpoints
             call = await db.Calls.AsNoTracking().SingleAsync(k => k.Id == id, ct);
             notice = await Notices.Write(db, call.ConversationId, call.CallerId, NoticeKind.Call, null, "", at, ct);
             await db.Calls.Where(k => k.Id == id).ExecuteUpdateAsync(s => s.SetProperty(k => k.MessageId, notice.Id), ct);
+            // Unlike other notices, a call's line is what last happened here: the conversation rises in the list.
+            await db.Conversations.Where(c => c.Id == call.ConversationId).ExecuteUpdateAsync(s => s.SetProperty(c => c.LastMessageAt, at), ct);
             await tx.CommitAsync(ct);
         }
         relay.Forget(id);
@@ -355,6 +357,11 @@ public static class CallEndpoints
         relay.Send(call.CallerId, frame);
         relay.Send(call.CalleeId, frame);
         await Notices.Publish(db, live, notice, ct);
+        if (outcome is CallOutcome.Missed or CallOutcome.Busy)
+        {
+            var caller = await db.Users.Where(u => u.Id == call.CallerId).Select(u => u.DisplayName).SingleAsync(ct);
+            push.Enqueue(new Push.PushJob(call.ConversationId, notice.Seq, call.CallerId, caller, 0, 0, MessageId: notice.Id, MissedCall: true));
+        }
         return true;
     }
 
@@ -386,19 +393,19 @@ public static class CallEndpoints
 /// </summary>
 public static class CallSweeper
 {
-    public static async Task<int> RunOnce(GomDbContext db, CallRelay relay, LiveDelivery live, DateTimeOffset now, CallOptions o, CancellationToken ct)
+    public static async Task<int> RunOnce(GomDbContext db, CallRelay relay, LiveDelivery live, Push.PushQueue push, DateTimeOffset now, CallOptions o, CancellationToken ct)
     {
         var count = 0;
         var rangOut = now.AddSeconds(-o.RingSeconds);
         foreach (var id in await db.Calls.Where(k => k.State == CallState.Ringing && k.CreatedAt <= rangOut).Select(k => k.Id).ToListAsync(ct))
-            if (await CallEndpoints.EndAsync(db, relay, live, id, CallOutcome.Missed, now, ct)) count++;
+            if (await CallEndpoints.EndAsync(db, relay, live, push, id, CallOutcome.Missed, now, ct)) count++;
 
         var silent = now.AddSeconds(-o.SilentSeconds);
         foreach (var k in await db.Calls.Where(k => k.State == CallState.Active && (k.CallerSeenAt <= silent || k.CalleeSeenAt <= silent))
                      .Select(k => new { k.Id, k.CallerSeenAt, k.CalleeSeenAt }).ToListAsync(ct))
         {
             var last = k.CallerSeenAt < k.CalleeSeenAt ? k.CallerSeenAt!.Value : k.CalleeSeenAt!.Value;
-            if (await CallEndpoints.EndAsync(db, relay, live, k.Id, CallOutcome.Completed, last, ct)) count++;
+            if (await CallEndpoints.EndAsync(db, relay, live, push, k.Id, CallOutcome.Completed, last, ct)) count++;
         }
 
         var broken = await (
@@ -412,7 +419,7 @@ public static class CallSweeper
             where !friends || !people || !callerDevice || !calleeDevice
             select new { k.Id, k.State }).ToListAsync(ct);
         foreach (var k in broken)
-            if (await CallEndpoints.EndAsync(db, relay, live, k.Id, k.State == CallState.Active ? CallOutcome.Completed : CallOutcome.Failed, now, ct)) count++;
+            if (await CallEndpoints.EndAsync(db, relay, live, push, k.Id, k.State == CallState.Active ? CallOutcome.Completed : CallOutcome.Failed, now, ct)) count++;
         return count;
     }
 }
@@ -431,6 +438,7 @@ public sealed class CallJanitor(IServiceScopeFactory scopes, IOptions<CallOption
                 {
                     await using var scope = scopes.CreateAsyncScope();
                     await CallSweeper.RunOnce(scope.ServiceProvider.GetRequiredService<GomDbContext>(), relay, scope.ServiceProvider.GetRequiredService<LiveDelivery>(),
+                        scope.ServiceProvider.GetRequiredService<Push.PushQueue>(),
                         clock.GetUtcNow(), options.Value, stop);
                 }
                 catch (Exception e) when (e is not OperationCanceledException) { log.LogWarning(e, "Ending stale calls failed; it will be tried again"); }

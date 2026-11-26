@@ -81,14 +81,16 @@ export interface MediaItem { attachment: Attachment; messageId: string; seq: num
  * A line in a thread that says what happened (who was added or taken out, who left, a new name; or, in any conversation, that the
  * owner trimmed pictures and files, or messages, sent before `before`): not something anyone wrote.
  */
-export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled'; target?: Sender | null; title?: string | null; before?: string | null }
+/** A voice call's line: who called, how it ended, when it began, and how long it lasted once answered. */
+export interface CallLine { callerId: string; outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed'; startedAt: string; seconds: number }
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
   /** Set when the message is one sticker (its code): then it has no words and no files. */
   sticker?: string | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
-export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'video' | 'file' | null; sticker?: string | null }
+export interface LastMessage { seq: number; body: string; createdAt: string; sender: Sender; deleted?: boolean; attachment?: 'image' | 'video' | 'file' | null; sticker?: string | null; call?: CallLine | null }
 /** How much a notification on this device says: who and where, or only "Tin nhắn mới". */
 export type PushLevel = 'words' | 'name' | 'nothing';
 export interface PushState { key: string; subscribed: boolean; level: PushLevel }

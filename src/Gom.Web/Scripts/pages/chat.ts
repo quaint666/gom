@@ -3,9 +3,9 @@ import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, Result, User } from '../api.js';
+import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, Result, User, CallLine } from '../api.js';
 import { linkify } from '../linkify.js';
-import { avatarTone, buildThread, clock, initials, listTime, mergeMedia, mergeMessages, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
+import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, initials, listTime, mergeMedia, mergeMessages, missedByMe, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { avatarUrl, errorBox } from '../ui.js';
@@ -265,6 +265,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const last = c.lastMessage;
     if (last === null) return say.chat.noMessagesYet;
     if (last.deleted) return recalledText(last.sender.id === me?.id, c.kind === 'group' ? last.sender.displayName : null);
+    if (last.call) return callPreview(last.call, me?.id ?? '');
     const who = last.sender.id === me?.id ? `${say.common.you}: ` : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
     return who + (last.body !== '' ? last.body : last.sticker ? say.chat.sentSticker : last.attachment === 'image' ? say.chat.sentPicture : last.attachment === 'video' ? say.chat.sentVideo : last.attachment === 'file' ? say.chat.sentFile : '');
   }
@@ -277,7 +278,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${avatar(c.title ?? '?', c.peer?.avatar)}
       <div class="im">
         <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label=${say.chat.pinnedMark}>${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.palette ? html`<span class="look-dot" data-palette=${c.palette} role="img" aria-label=${say.chat.ownLook}></span>` : nothing}${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
-        <div class="l2"><span class="pv">${preview(c)}</span>
+        <div class="l2"><span class="pv ${c.lastMessage?.call && missedByMe(c.lastMessage.call, me?.id ?? '') ? 'missed-call' : ''}">${c.lastMessage?.call ? (c.lastMessage.call.callerId === me?.id ? icons.callOut() : icons.callIn()) : nothing}${preview(c)}</span>
           ${isMuted(c) ? html`<span class="mute-mark" role="img" aria-label=${say.chat.mutedMark}>${icons.bellOff()}</span>` : nothing}
           ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label=${say.chat.unreadCount(c.unread)}>${c.unread > 99 ? '99+' : c.unread}</span>`
             : c.markedUnread ? html`<span class="badge dot ${isMuted(c) ? 'muted' : ''}" data-marked-unread role="img" aria-label=${say.chat.markUnread}></span>` : nothing}</div>
@@ -635,9 +636,24 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="btn secondary small" type="button" data-discard @click=${() => discard(m.conversationId, m.clientId)}>${say.chat.discard}</button></div>` : nothing}`;
   };
 
+  /**
+   * A call's line (mockup 29): a card on the side of whoever called, worded for the reader, a missed one in red. No "Gọi lại" yet:
+   * a page cannot call; the Android app will offer it through its bridge (docs/voice-calls.md, PR 5).
+   */
+  const callCard = (m: Shown, call: CallLine) => {
+    const mine = call.callerId === me?.id;
+    return html`<div class="call-row ${mine ? 'out' : 'in'}" data-call-line=${m.id} data-outcome=${call.outcome}>
+      <div class="call-card ${missedByMe(call, me?.id ?? '') ? 'missed' : ''}">
+        <span class="call-i">${icons.call()}</span>
+        <span class="call-t"><b>${callTitle(call, me?.id ?? '')}</b>
+          <small>${mine ? icons.callOut() : icons.callIn()}<span class="sr-only">${mine ? say.calls.outgoing : say.calls.incoming}</span>${call.outcome === 'completed' ? `${callLength(call.seconds)} · ` : ''}${clock(call.startedAt)}</small></span>
+      </div></div>`;
+  };
+
   const threadItem = (item: ThreadItem, group: boolean, seenText: (msg: Shown) => string | null, tick: (msg: Shown) => Tick) => {
     if (item.kind === 'day') return html`<div class="day">${item.label}</div>`;
     if (item.kind === 'new') return html`<div class="newdiv"><span>${say.chat.newMessages(item.count)}</span></div>`;
+    if (item.kind === 'notice' && item.msg.notice?.call) return callCard(item.msg, item.msg.notice.call);
     if (item.kind === 'notice') return html`<div class="notice-row" data-notice=${item.msg.id} role="status"><span>${noticeText(item.msg, me?.id ?? '')}</span></div>`;
     return bubble(item, group, seenText(item.msg), tick(item.msg));
   };
@@ -1461,12 +1477,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       } else if (event.kind === 'updated') {
         // The same message changed (its reactions, its words): the preview follows its words, nothing else about the list moves.
         if (c.lastMessage?.seq === message.seq) c.lastMessage = { ...c.lastMessage, body: message.body.slice(0, limits().listPreviewChars) };
-      } else if (!message.notice) {   // a notice says what happened; it is not what was last said, and nothing to read
+      } else if (!message.notice || message.notice.call) {   // a notice says what happened; it is not what was last said, and nothing to read (a call is both)
+        const call = message.notice?.call ?? null;
         c.lastMessage = {
           seq: message.seq, body: message.body.slice(0, limits().listPreviewChars),
-          createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true, attachment: message.attachments?.[0]?.kind ?? null, sticker: message.sticker ?? null,
+          createdAt: message.createdAt, sender: message.sender, deleted: message.deleted === true, attachment: message.attachments?.[0]?.kind ?? null, sticker: message.sticker ?? null, call,
         };
-        if (message.sender.id !== me?.id && message.deleted !== true && !(conversation === openId && deps.visible())) c.unread++;
+        const toRead = call ? missedByMe(call, me?.id ?? '') : message.sender.id !== me?.id && message.deleted !== true;
+        if (toRead && !(conversation === openId && deps.visible())) c.unread++;
         c.hidden = false;   // something new was said: a hidden conversation is back, as the server has it
         chats = [c, ...(chats ?? []).filter((x) => x !== c)];
       }
