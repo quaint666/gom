@@ -143,6 +143,18 @@ describe('owner: switching members off and on', () => {
     expect(text(root.querySelector('[data-member="lan"]')!)).toContain('Đã khóa');
   });
 
+  it('keeps the actions for a member behind a closed "⋯" that closes again once one is chosen', async () => {
+    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    await flush();
+    const actions = root.querySelector<HTMLDetailsElement>('[data-member="minh"] details[data-member-actions]')!;
+    expect(actions.open).toBe(false);
+    expect(actions.querySelector('summary')!.getAttribute('aria-label')).toBe('Tùy chọn cho Minh');
+    expect(root.querySelector('[data-member="boss"] details')).toBeNull();
+    actions.open = true;
+    actions.querySelector<HTMLButtonElement>('button[data-disable]')!.click();
+    expect(actions.open).toBe(false);
+  });
+
   it('disables a member and reloads the list', async () => {
     const a = api();
     mountOwner(root, a, vi.fn(), 'https://gom.test');

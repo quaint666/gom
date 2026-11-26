@@ -93,19 +93,19 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
     <h2 class="section">${say.storage.trimMessages}</h2>
     <div class="card" data-mtrim>
       <div class="field"><label for="mtrim-day">${say.storage.sentBefore}</label>
-        <input id="mtrim-day" name="mtrim-day" type="date" max=${isoDay(new Date())} .value=${mtrim.day} @change=${(e: Event) => mchoose({ day: (e.target as HTMLInputElement).value })}></div>
+        <div class="input"><input id="mtrim-day" name="mtrim-day" type="date" max=${isoDay(new Date())} .value=${mtrim.day} @change=${(e: Event) => mchoose({ day: (e.target as HTMLInputElement).value })}></div></div>
       <div class="field"><label for="mtrim-where">${say.storage.where}</label>
         <select id="mtrim-where" name="mtrim-where" @change=${(e: Event) => mchoose({ where: (e.target as HTMLSelectElement).value })}>${places(s, mtrim.where)}</select></div>
       <button class="btn secondary" type="button" data-mtrim-preview ?disabled=${mtrim.day === '' || mtrim.busy} @click=${() => void mpreview()}>${say.storage.preview}</button>
       ${mtrim.preview === null ? nothing : mtrim.preview.messages === 0 && total(mtrim.preview) === 0
         ? html`<p class="hint" data-mtrim-none>${say.storage.noMessageMatches}</p>`
-        : html`
+        : html`<div class="confirm-zone">
           <p data-mtrim-summary>${say.storage.willDeleteMessages(mcounted(mtrim.preview), mtrim.preview.conversations)}</p>
           <p class="hint">${say.storage.messagesNote}</p>
           <div class="field"><label for="mtrim-confirm">${say.storage.typeToConfirm(CONFIRM)}</label>
-            <input id="mtrim-confirm" name="mtrim-confirm" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" .value=${mtrim.typed}
-              @input=${(e: Event) => { mtrim.typed = (e.target as HTMLInputElement).value; update(); }}></div>
-          <button class="btn danger" type="button" data-mtrim-confirm ?disabled=${mtrim.typed !== CONFIRM || mtrim.busy} @click=${() => void runMessageTrim()}>${say.storage.deleteForever}</button>`}
+            <div class="input"><input id="mtrim-confirm" name="mtrim-confirm" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" .value=${mtrim.typed}
+              @input=${(e: Event) => { mtrim.typed = (e.target as HTMLInputElement).value; update(); }}></div></div>
+          <button class="btn danger" type="button" data-mtrim-confirm ?disabled=${mtrim.typed !== CONFIRM || mtrim.busy} @click=${() => void runMessageTrim()}>${say.storage.deleteForever}</button></div>`}
       ${mtrim.done === '' ? nothing : html`<p class="hint" role="status" data-mtrim-done>${mtrim.done}</p>`}
     </div>`;
 
@@ -113,7 +113,7 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
     <h2 class="section">${say.storage.trimFiles}</h2>
     <div class="card" data-trim>
       <div class="field"><label for="trim-day">${say.storage.sentBefore}</label>
-        <input id="trim-day" name="trim-day" type="date" max=${isoDay(new Date())} .value=${trim.day} @change=${(e: Event) => choose({ day: (e.target as HTMLInputElement).value })}></div>
+        <div class="input"><input id="trim-day" name="trim-day" type="date" max=${isoDay(new Date())} .value=${trim.day} @change=${(e: Event) => choose({ day: (e.target as HTMLInputElement).value })}></div></div>
       <div class="field"><label for="trim-kind">${say.storage.kind}</label>
         <select id="trim-kind" name="trim-kind" @change=${(e: Event) => choose({ kind: (e.target as HTMLSelectElement).value as TrimRule['kind'] })}>
           <option value="all" ?selected=${trim.kind === 'all'}>${say.storage.picturesAndFiles}</option>
@@ -124,18 +124,18 @@ export function mountStorage(root: HTMLElement, api: Api, go: (path: string) => 
         <select id="trim-where" name="trim-where" @change=${(e: Event) => choose({ where: (e.target as HTMLSelectElement).value })}>
           ${places(s, trim.where)}</select></div>
       <div class="field"><label for="trim-min">${say.storage.largerThan}</label>
-        <input id="trim-min" name="trim-min" type="number" min="0" step="0.1" inputmode="decimal" placeholder=${say.storage.anySize} .value=${trim.minMb}
-          @change=${(e: Event) => choose({ minMb: (e.target as HTMLInputElement).value })}></div>
+        <div class="input"><input id="trim-min" name="trim-min" type="number" min="0" step="0.1" inputmode="decimal" placeholder=${say.storage.anySize} .value=${trim.minMb}
+          @change=${(e: Event) => choose({ minMb: (e.target as HTMLInputElement).value })}></div></div>
       <button class="btn secondary" type="button" data-trim-preview ?disabled=${trim.day === '' || trim.busy} @click=${() => void preview()}>${say.storage.preview}</button>
       ${trim.preview === null ? nothing : total(trim.preview) === 0
         ? html`<p class="hint" data-trim-none>${say.storage.noFileMatches}</p>`
-        : html`
+        : html`<div class="confirm-zone">
           <p data-trim-summary>${say.storage.willDeleteFiles(counted(trim.preview), trim.preview.conversations)}</p>
           <p class="hint">${say.storage.filesNote}</p>
           <div class="field"><label for="trim-confirm">${say.storage.typeToConfirm(CONFIRM)}</label>
-            <input id="trim-confirm" name="trim-confirm" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" .value=${trim.typed}
-              @input=${(e: Event) => { trim.typed = (e.target as HTMLInputElement).value; update(); }}></div>
-          <button class="btn danger" type="button" data-trim-confirm ?disabled=${trim.typed !== CONFIRM || trim.busy} @click=${() => void runTrim()}>${say.storage.deleteForever}</button>`}
+            <div class="input"><input id="trim-confirm" name="trim-confirm" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" .value=${trim.typed}
+              @input=${(e: Event) => { trim.typed = (e.target as HTMLInputElement).value; update(); }}></div></div>
+          <button class="btn danger" type="button" data-trim-confirm ?disabled=${trim.typed !== CONFIRM || trim.busy} @click=${() => void runTrim()}>${say.storage.deleteForever}</button></div>`}
       ${trim.done === '' ? nothing : html`<p class="hint" role="status" data-trim-done>${trim.done}</p>`}
     </div>`;
 
