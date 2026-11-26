@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="page">#121513</color>
+    <color name="call_surface">#1B201C</color>
+    <color name="call_text">#EEF0EA</color>
+    <color name="call_muted">#AEB5AC</color>
+    <color name="call_border">#343B36</color>
+    <color name="call_tint">#1D2B24</color>
+    <color name="call_link">#9EC3A5</color>
+    <color name="call_warn_bg">#3A3118</color>
+    <color name="call_warn_text">#EBD3A6</color>
+    <color name="call_warn_border">#6B5A2A</color>
 </resources>

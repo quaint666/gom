@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 /** A build setting from ~/.gradle/gradle.properties or -P: the server's address and the Firebase values never live in the repository. */
@@ -27,6 +28,7 @@ android {
     }
 
     buildFeatures {
+        compose = true
         buildConfig = true
         resValues = true
     }
@@ -52,6 +54,14 @@ android {
         buildConfigField("String", "FIREBASE_APP_ID", literal(setting(prefix + "firebase.appId")))
         buildConfigField("String", "FIREBASE_API_KEY", literal(setting(prefix + "firebase.apiKey")))
         buildConfigField("String", "FIREBASE_SENDER_ID", literal(setting(prefix + "firebase.senderId")))
+    }
+
+    buildTypes {
+        // WebRTC brings its native code for four kinds of processor; a debug build keeps the phones' (arm64) and the emulator's
+        // (x86_64), so it stays small. A release keeps all four, and Play gives each phone only its own.
+        debug {
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        }
     }
 
     compileOptions {
@@ -84,10 +94,25 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.core)
     implementation(libs.androidx.webkit)
+    // Calls (docs/voice-calls.md, PR 6): Android's call system, the service that keeps a call going, and the call's own socket.
+    implementation(libs.androidx.core.telecom)
+    implementation(libs.androidx.lifecycle.service)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.okhttp)
+    implementation(libs.webrtc)
+    // The call screens (6c): Compose without Material, drawn in Gom's own look.
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.ui)
+    implementation(libs.androidx.activity.compose)
+    // Previews of the call screens (src/debug, `android preview render`), in debug builds only.
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.tooling.preview)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)
     // Android's own org.json is only a stub in local unit tests.
     testImplementation(libs.json)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

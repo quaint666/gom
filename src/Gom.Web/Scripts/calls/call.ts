@@ -60,6 +60,8 @@ export interface CallDeps {
 }
 
 export interface Calls {
+  /** Whether a call can be made from here now (always on a page; in the Android app, once the app has said it takes calls). */
+  ready(): boolean;
   /** Calls the friend of this one-to-one chat. Does nothing while a call is on. */
   start(conversation: string, peer: CallPeer): Promise<void>;
   /** A call frame from the socket. */
@@ -428,6 +430,7 @@ export function createCalls(deps: CallDeps): Calls {
   }
 
   return {
+    ready: () => true,
     start,
     frame(f) {
       const c = cur;

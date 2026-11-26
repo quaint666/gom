@@ -5443,7 +5443,7 @@ describe('call lines (mockups 29 and 30)', () => {
     expect(root.querySelector('[data-call-line] button')).toBeNull();   // no "Gọi lại" where calls are off
   });
 
-  const fakeCalls = () => ({ start: vi.fn(async () => undefined), frame: vi.fn(), busy: vi.fn(() => false), leaving: vi.fn() });
+  const fakeCalls = (ready = true) => ({ ready: vi.fn(() => ready), start: vi.fn(async () => undefined), frame: vi.fn(), busy: vi.fn(() => false), leaving: vi.fn() });
 
   it('a friend\'s chat has a call button, and a missed call "Gọi lại", where this page takes calls', async () => {
     const calls = fakeCalls();
@@ -5456,17 +5456,18 @@ describe('call lines (mockups 29 and 30)', () => {
     expect(calls.start).toHaveBeenCalledTimes(2);
   });
 
-  it('no call button in a group, with someone no longer a friend, when the server has calls off, or on a page that takes none', async () => {
-    const cases: Array<[Conversation, boolean, boolean]> = [
-      [chat(C1, 'Nhà', { kind: 'group', peer: null, memberCount: 3 }), true, true],
-      [chat(C1, 'Minh', { peer: { id: 'u-minh', gomId: null, displayName: 'Minh' } }), true, true],
-      [chat(C1, 'Minh'), false, true],
-      [chat(C1, 'Minh'), true, false],
+  it('no call button in a group, with someone no longer a friend, when the server has calls off, on a page that takes none, or in an app that makes none', async () => {
+    const cases: Array<[Conversation, boolean, 'ready' | 'none' | 'not ready']> = [
+      [chat(C1, 'Nhà', { kind: 'group', peer: null, memberCount: 3 }), true, 'ready'],
+      [chat(C1, 'Minh', { peer: { id: 'u-minh', gomId: null, displayName: 'Minh' } }), true, 'ready'],
+      [chat(C1, 'Minh'), false, 'ready'],
+      [chat(C1, 'Minh'), true, 'none'],
+      [chat(C1, 'Minh'), true, 'not ready'],
     ];
-    for (const [c, on, page] of cases) {
+    for (const [c, on, here] of cases) {
       root = document.createElement('div');
       document.body.replaceChildren(root);
-      start({ path: `/c/${C1}`, chats: [c], history: { [C1]: [callMsg(1, 'minh', 'missed')] }, callsOn: on, ...(page ? { calls: fakeCalls() } : {}) });
+      start({ path: `/c/${C1}`, chats: [c], history: { [C1]: [callMsg(1, 'minh', 'missed')] }, callsOn: on, ...(here === 'none' ? {} : { calls: fakeCalls(here === 'ready') }) });
       await flush();
       expect(root.querySelector('[data-call-start]')).toBeNull();
       expect(root.querySelector('[data-call-back]')).toBeNull();

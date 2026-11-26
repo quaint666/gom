@@ -250,12 +250,22 @@ Not known yet: whether Chrome and Samsung Internet on Android play a web call th
    **5b** the `android/` project and its CI. Package ids `io.github.quaint666.gom` and `io.github.quaint666.gom.staging`;
    settings (base address, Firebase values) from Gradle properties outside the repository.
 6. **Android, calls:** `core-telecom`, the WebRTC library, the phoneCall foreground service, the incoming full-screen
-   screen, the call screen, ICE restart, renewing logins.
+   screen, the call screen, ICE restart, renewing logins. Split in five (H, 2026-11-26): **6a** the page's call buttons ask the
+   app (its hello says `calls: true`; the bridge's `{t: 'call'}`); **6b** the app's call engine (Telecom, the call service, the
+   ringing notification, the call steps, a socket only during a call, the `call` and `call-end` pushes); **6c** the call screens
+   (Compose, mockups 21 to 28, screen off at the ear); **6d** the sound (WebRTC, relay logins, restart after a network change,
+   renewing logins, routes through Telecom); **6e** readiness (Samsung's sleeping apps, full-screen ringing turned off, a screen
+   for no connection). Settled then: WebRTC `io.github.webrtc-sdk:android` (BSD; Google publishes no build, GetStream's last
+   release was September 2025), `core-telecom` 1.1.0, OkHttp for the call socket; the call service is `phoneCall` while ringing
+   and adds `microphone` once the person answers or calls (Android lets the microphone start only after a tap); the call
+   screens are in the phone's language, as the app's notifications; the call protocol and timings are copied in Kotlin and a
+   test checks them against the page's; with full-screen ringing turned off a call rings as a banner;
+   `Calls:AppsTakeCalls` is turned on only once all five are in.
 7. **Android, release:** the Samsung sleep guide, the update check, the Play listing and declarations.
 8. **Web calls** (section 2b; H, 2026-11-26), before 6: **8a** the mockups (screens 31 to 35, the one-row buttons, the call
    bar); **8b** the server: who can take a call; **8c** the page: calling, ringing, answering, the call screen; **8d** the page:
-   the call bar, the network-change restart, renewing relay logins. Then a release. Then a test APK on a Samsung phone,
-   never merged, decides whether the app's calls run in its web view or natively (6).
+   the call bar, the network-change restart, renewing relay logins. The test APK once planned here, to try calls in the app's web
+   view, was dropped: the app's calls are native, as planned in section 1 (H, 2026-11-26).
 
 ## 6. Checklist for each app build (on a Samsung phone)
 

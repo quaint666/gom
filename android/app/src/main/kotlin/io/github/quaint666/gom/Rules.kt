@@ -45,6 +45,8 @@ sealed interface FromPage {
     data object Disable : FromPage
     data class Clear(val conversation: String) : FromPage
     data class Theme(val bar: Int?, val page: Int?) : FromPage
+    /** Call the friend of this chat (sent only once the app's hello said it takes calls). */
+    data class Call(val conversation: String, val name: String, val avatar: String?) : FromPage
 
     companion object {
         /** Null for anything the protocol does not know: it is ignored, never guessed at. */
@@ -56,6 +58,9 @@ sealed interface FromPage {
                 "disable" -> Disable
                 "clear" -> m.optString("c").takeIf { it.isNotEmpty() }?.let { Clear(it) }
                 "theme" -> Theme(Colors.parse(m.optString("bar")), Colors.parse(m.optString("page")))
+                "call" -> m.optString("c").takeIf { io.github.quaint666.gom.calls.CallProtocol.isId(it) }?.let { c ->
+                    Call(c, m.optString("name"), m.optString("avatar").takeIf { it.startsWith("/") && !it.startsWith("//") })
+                }
                 else -> null
             }
         }
@@ -66,9 +71,10 @@ sealed interface FromPage {
 object ToPage {
     const val PROTOCOL = 1
 
-    fun hello(app: String, push: Boolean, permission: String, fid: String?): String = JSONObject()
+    /** [calls]: this build makes and takes calls, so the page offers them (added after protocol 1, as `image` was). */
+    fun hello(app: String, push: Boolean, permission: String, fid: String?, calls: Boolean = false): String = JSONObject()
         .put("t", "hello").put("v", PROTOCOL).put("app", app).put("push", push).put("permission", permission)
-        .apply { if (!fid.isNullOrEmpty()) put("fid", fid) }.toString()
+        .apply { if (!fid.isNullOrEmpty()) put("fid", fid) }.apply { if (calls) put("calls", true) }.toString()
 
     fun enabled(fid: String): String = JSONObject().put("t", "enabled").put("fid", fid).toString()
     fun fid(fid: String): String = JSONObject().put("t", "fid").put("fid", fid).toString()
@@ -135,7 +141,7 @@ sealed interface Push {
     companion object {
         private val id = Regex("^[0-9a-fA-F-]{36}$")
 
-        /** Null for calls (PR 6) and anything unknown or malformed. Ids are checked, since they go into an address. */
+        /** Null for calls ([io.github.quaint666.gom.calls.CallPush]) and anything unknown or malformed. Ids are checked, since they go into an address. */
         fun parse(data: Map<String, String>): Push? {
             val c = data["c"]?.takeIf { id.matches(it) }
             val m = data["m"]?.takeIf { id.matches(it) }

@@ -9,6 +9,7 @@ import android.webkit.CookieManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
+import io.github.quaint666.gom.calls.CallService
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -25,7 +26,7 @@ object Notices {
 
     /** A message or an owner's notice: worded by the server, or the app's own plain line when it cannot be (a 404, no network). */
     fun show(context: Context, push: Push) {
-        val notice = fetch(push.noticePath) ?: when (push) {
+        val notice = words(push.noticePath) ?: when (push) {
             is Push.Message -> Notice("Gom", context.getString(R.string.new_message), "/c/${push.conversation}", push.conversation)
             is Push.Owner -> Notice("Gom", context.getString(R.string.new_notice), "/settings/owner", if (push.kind == "join") "join-requests" else "contact")
             is Push.Recall -> return
@@ -41,12 +42,18 @@ object Notices {
         val shown = context.getSystemService(NotificationManager::class.java).activeNotifications
             .firstOrNull { it.tag == push.conversation && it.id == ID } ?: return
         if (shown.notification.extras.getString(MESSAGE_ID) != push.message) return
-        val notice = fetch(push.noticePath) ?: return
+        val notice = words(push.noticePath) ?: return
         post(context, notice, MESSAGES, push.message, silent = true)
     }
 
     /** Closes a conversation's notification, when the page opens it. */
     fun clear(context: Context, conversation: String) = NotificationManagerCompat.from(context).cancel(conversation, ID)
+
+    /** A call nobody answered here (a `call-end` push said "missed" or "busy"): worded by the server, a tap opening the chat. */
+    fun missedCall(context: Context, call: String) {
+        val notice = words("/api/push/notice?call=$call") ?: return
+        post(context, notice, CallService.MISSED_CALLS, null, silent = false)
+    }
 
     private fun post(context: Context, notice: Notice, channel: String, message: String?, silent: Boolean) {
         val manager = NotificationManagerCompat.from(context)
@@ -75,8 +82,8 @@ object Notices {
     private fun notify(manager: NotificationManagerCompat, tag: String, notification: Notification) =
         try { manager.notify(tag, ID, notification) } catch (_: SecurityException) { /* the permission went in between */ }
 
-    /** The words, asked for with the web view's cookies (the session, and any sign-in in front of the server). */
-    private fun fetch(path: String): Notice? {
+    /** The words, asked for with the web view's cookies (the session, and any sign-in in front of the server). Blocks: not on the main thread. */
+    fun words(path: String): Notice? {
         val origins = GomApp.origins
         if (!origins.configured) return null
         return try {
