@@ -15,6 +15,8 @@ const SERVER_CODE_LIST = [
   'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
   'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette', 'invalid_pattern',
   'update_required', 'invalid_contact', 'contact_full',
+  'cannot_take_calls', 'in_call', 'call_waiting', 'too_many_calls', 'call_ended', 'call_answered', 'not_in_call', 'invalid_call', 'invalid_sdp',
+  'unsupported_version',
 ] as const;
 
 /** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
@@ -28,7 +30,7 @@ export type Result<T> = { ok: true; data: T } | Failure;
 /** `avatar` is the id of the profile picture (at /api/avatars/{avatar}); none means the initials. */
 /** `standing`: a member, or someone who asked to join and is waiting ("pending") or was refused. */
 export type Standing = 'member' | 'pending' | 'refused';
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean }
 /** Someone asking to join, as the owner sees them. */
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 /** A message to the owner from the privacy page's form. */
@@ -82,6 +84,13 @@ export interface MediaItem { attachment: Attachment; messageId: string; seq: num
  * owner trimmed pictures and files, or messages, sent before `before`): not something anyone wrote.
  */
 /** A voice call's line: who called, how it ended, when it began, and how long it lasted once answered. */
+/** The servers a device's call connection may use: `relay` false means a direct connection only; `seconds` is how long the login lasts. */
+export interface CallServers { iceServers: RTCIceServer[]; relay: boolean; seconds: number }
+/** A call as one of its two people sees it; `offer` and `answer` only reach the devices that need them. */
+export interface CallInfo {
+  id: string; conversationId: string; state: 'ringing' | 'active' | 'ended'; outcome: CallLine['outcome'] | null; callerId: string; calleeId: string;
+  caller: { id: string; displayName: string }; offer: string | null; answer: string | null; ringSeconds: number; aliveSeconds: number;
+}
 export interface CallLine { callerId: string; outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed'; startedAt: string; seconds: number }
 export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
@@ -193,6 +202,19 @@ export interface Api {
   openDirect(gomId: string): Promise<Result<{ id: string }>>;
   history(conversation: string, before?: number): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean; lastSeq: number }>>;
   recall(conversation: string, message: string): Promise<Result<void>>;
+  /** The servers for a call's connection: before calling (the chat) or answering (the call), or again during a long call. */
+  callServers(about: { conversationId: string } | { callId: string }): Promise<Result<CallServers>>;
+  /** Calls the friend of a one-to-one chat with this offer; `clientId` makes a retry the same call. */
+  startCall(conversation: string, clientId: string, offer: string): Promise<Result<CallInfo>>;
+  getCall(id: string): Promise<Result<CallInfo>>;
+  acceptCall(id: string, answer: string): Promise<Result<CallInfo>>;
+  declineCall(id: string): Promise<Result<void>>;
+  /** Ends the call; `leaving` lets the request finish while the page closes. */
+  hangUp(id: string, leaving?: boolean): Promise<Result<void>>;
+  /** A new offer or answer mid-call (a restart of the connection). */
+  callSdp(id: string, type: 'offer' | 'answer', sdp: string): Promise<Result<{ rev: number }>>;
+  /** "Still here", every `aliveSeconds` while in a call. */
+  callAlive(id: string): Promise<Result<void>>;
   /** How far the other members have read. Empty, with `enabled: false`, when you have hidden yours. */
   reads(conversation: string): Promise<Result<{ enabled: boolean; reads: { userId: string; seq: number }[] }>>;
   setReceipts(enabled: boolean): Promise<Result<void>>;
@@ -278,18 +300,22 @@ export interface ApiHooks {
   onTooOld?: () => void;
 }
 
+/** The call protocol the page speaks (the server's CallEndpoints.ProtocolVersion; a test checks the two match). */
+export const CALL_PROTOCOL = 1;
+
 /** Every request says which code number the page runs (the server's Pages.PageVersionHeader; a test checks the two match). */
 const PAGE_VERSION_HEADER = 'Gom-Page-Version';
 const pageVersion = (): string => String(limits().pageVersion);
 
 export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest(), hooks: ApiHooks = {}): Api {
-  async function call<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Result<T>> {
+  async function call<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS, keepalive = false): Promise<Result<T>> {
     let response: Response;
     try {
       response = await fetchFn(path, {
         method,
         credentials: 'same-origin',
         signal: AbortSignal.timeout(timeoutMs),
+        ...(keepalive ? { keepalive } : {}),
         ...(body === undefined ? { headers: { [PAGE_VERSION_HEADER]: pageVersion() } }
           : body instanceof Blob ? { headers: { 'Content-Type': 'application/octet-stream', [PAGE_VERSION_HEADER]: pageVersion() }, body }
           : { headers: { 'Content-Type': 'application/json', [PAGE_VERSION_HEADER]: pageVersion() }, body: JSON.stringify(body) }),
@@ -429,6 +455,14 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     setPalette: (chosen) => call('PUT', '/api/me/palette', { palette: chosen }),
     setPattern: (chosen) => call('PUT', '/api/me/pattern', { pattern: chosen }),
     recall: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`),
+    callServers: (about) => call('POST', '/api/calls/relay', about),
+    startCall: (conversation, clientId, offer) => call('POST', '/api/calls', { conversationId: conversation, clientId, sdp: offer, v: CALL_PROTOCOL }),
+    getCall: (id) => call('GET', `/api/calls/${enc(id)}`),
+    acceptCall: (id, answer) => call('POST', `/api/calls/${enc(id)}/accept`, { sdp: answer, v: CALL_PROTOCOL }),
+    declineCall: (id) => call('POST', `/api/calls/${enc(id)}/decline`),
+    hangUp: (id, leaving = false) => call('POST', `/api/calls/${enc(id)}/hangup`, undefined, REQUEST_TIMEOUT_MS, leaving),
+    callSdp: (id, type, sdp) => call('POST', `/api/calls/${enc(id)}/sdp`, { type, sdp }),
+    callAlive: (id) => call('POST', `/api/calls/${enc(id)}/alive`),
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
     media: (conversation, kind, before) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}`),
     copyAttachment: (conversation, from) => call('POST', `/api/conversations/${enc(conversation)}/attachments/copy`, { from }),

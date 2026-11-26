@@ -771,6 +771,45 @@ select:focus-visible { outline-offset: 0; }
 .call-t small .i { inline-size: 14px; block-size: 14px; }
 .pv .i { inline-size: 15px; block-size: 15px; vertical-align: -2px; margin-inline-end: 3px; }
 .pv.missed-call { color: var(--err-text); font-weight: 600; }
+.call-back { align-self: stretch; margin-inline-start: 4px; padding: 0 0 0 10px; border: 0; border-inline-start: 1px solid var(--border); background: none; color: var(--link); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+
+/* A voice call (mockups 31 to 33): over the whole page on a phone, a card over the chat on a computer. One row of round buttons; the web
+   has no speaker choice, so the left place stays empty and end keeps the middle. Red ends or declines; the button colour answers. */
+.call-screen { --hang: #B3261E; position: fixed; inset: 0; z-index: 40; display: flex; background: var(--bg); color: var(--text); }
+.call-box { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: max(26px, env(safe-area-inset-top)) 24px max(34px, env(safe-area-inset-bottom)); background: linear-gradient(180deg, var(--tint) 0%, var(--bg) 62%); }
+.call-app { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--muted); }
+.call-app .i { inline-size: 16px; block-size: 16px; color: var(--link); }
+.call-who { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-block-start: 40px; }
+.call-who .av.xl { inline-size: 120px; block-size: 120px; font-size: 42px; }
+.call-who h2 { margin: 0; font-size: 28px; line-height: 1.2; overflow-wrap: anywhere; }
+.call-state { margin: 0; font-size: 16px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.call-state.problem { max-inline-size: 320px; color: var(--err-text); font-size: 15px; }
+.call-grow { flex: 1; }
+.call-note { margin: 0 0 18px; max-inline-size: 300px; font-size: 13px; color: var(--muted); }
+.call-ctl { display: flex; justify-content: center; align-items: flex-end; gap: 36px; inline-size: 100%; }
+.call-ctl.wide { justify-content: space-between; max-inline-size: 320px; }
+.rb { display: flex; flex-direction: column; align-items: center; gap: 8px; min-inline-size: 76px; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.rb-i { display: grid; place-items: center; inline-size: 64px; block-size: 64px; border-radius: 50%; background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.rb-i .i { inline-size: 28px; block-size: 28px; }
+.rb[aria-pressed="true"] .rb-i { background: var(--text); color: var(--bg); border-color: var(--text); }
+.rb.hang .rb-i, .rb.answer .rb-i { inline-size: 72px; block-size: 72px; border: 0; color: #FFFFFF; }
+.rb.hang .rb-i { background: var(--hang); }
+.rb.answer .rb-i { background: var(--btn); }
+.rb.hang .rb-i .i { transform: rotate(135deg); }
+.rb.hang .rb-i .i, .rb.answer .rb-i .i { inline-size: 32px; block-size: 32px; }
+.rb:hover .rb-i { filter: brightness(.95); }
+.rb:focus-visible { outline: none; }
+.rb:focus-visible .rb-i { outline: 3px solid var(--ring); outline-offset: 3px; }
+.rb.blank { visibility: hidden; }
+.rb.blank::before { content: ""; inline-size: 64px; block-size: 64px; }
+@media (min-width: 900px) {
+  .call-screen { place-items: center; align-items: center; justify-content: center; background: rgb(20 26 22 / .45); }
+  .call-box { flex: none; inline-size: 380px; padding: 22px 24px 26px; border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 16px 48px rgb(0 0 0 / .3); background-color: var(--surface); }
+  .call-who { margin-block-start: 26px; }
+  .call-who .av.xl { inline-size: 96px; block-size: 96px; font-size: 34px; }
+  .call-grow { flex: none; block-size: 36px; }
+}
 .notice-row { align-self: center; max-inline-size: min(90%, 480px); margin-block: 8px; padding: 4px 12px; border-radius: 12px; background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--muted); font-size: 13px; text-align: center; overflow-wrap: anywhere; }
 
 /* The bar that says a new version is there: over the top of whatever page is open. */

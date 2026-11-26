@@ -22,6 +22,9 @@ export const disk = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 3v9l6.4 
 export const phone = () => icon('M8 3h8v18H8z', 'M11 18h2');
 /** A handset: a voice call. */
 export const call = () => icon('M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z');
+/** The microphone, and the microphone off (muted). */
+export const mic = () => icon('M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z', 'M5 11a7 7 0 0014 0', 'M12 18v3');
+export const micOff = () => icon('M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z', 'M5 11a7 7 0 0014 0', 'M12 18v3', 'M3 3l18 18');
 /** A call that came in, and one that went out. */
 export const callIn = () => icon('M17 7L7 17', 'M7 9v8h8');
 export const callOut = () => icon('M7 17L17 7', 'M9 7h8v8');

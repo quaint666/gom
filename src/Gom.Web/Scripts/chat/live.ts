@@ -1,5 +1,27 @@
 import type { ChatEvent } from '../api.js';
 
+/** A voice call's news (the server's Frames.Call*): it rings here, it was answered (with the answer), answered on another device, ended, or a new offer or answer mid-call. */
+export type CallFrame =
+  | { kind: 'incoming'; id: string; c: string; from: { id: string; displayName: string } }
+  | { kind: 'accepted'; id: string; c: string; sdp: string }
+  | { kind: 'answered_elsewhere'; id: string; c: string }
+  | { kind: 'ended'; id: string; c: string; outcome: string }
+  | { kind: 'sdp'; id: string; c: string; type: 'offer' | 'answer'; sdp: string; rev: number };
+
+/** The frame, if it is a call frame with every part it needs; anything else is null. */
+export function callFrame(frame: Record<string, unknown>): CallFrame | null {
+  const { kind, id, c } = frame;
+  if (typeof id !== 'string' || typeof c !== 'string') return null;
+  const from = frame['from'] as { id?: unknown; displayName?: unknown } | null | undefined;
+  if (kind === 'incoming' && typeof from?.id === 'string' && typeof from.displayName === 'string') return { kind, id, c, from: { id: from.id, displayName: from.displayName } };
+  if (kind === 'accepted' && typeof frame['sdp'] === 'string') return { kind, id, c, sdp: frame['sdp'] };
+  if (kind === 'answered_elsewhere') return { kind, id, c };
+  if (kind === 'ended' && typeof frame['outcome'] === 'string') return { kind, id, c, outcome: frame['outcome'] };
+  if (kind === 'sdp' && (frame['type'] === 'offer' || frame['type'] === 'answer') && typeof frame['sdp'] === 'string' && typeof frame['rev'] === 'number')
+    return { kind, id, c, type: frame['type'], sdp: frame['sdp'], rev: frame['rev'] };
+  return null;
+}
+
 /** The part of a WebSocket we use, so tests can stand in for it. */
 export interface SocketLike {
   onopen: (() => void) | null;
@@ -35,6 +57,8 @@ export interface LiveHandlers {
   version?(version: string): void;
   /** The server no longer works with this page's code (closed with 4426): stop trying, the page must reload. */
   tooOld?(): void;
+  /** A voice call's news, on a page that takes calls. */
+  call?(frame: CallFrame): void;
 }
 
 export interface LiveControl {
@@ -115,6 +139,7 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
       else if (frame.t === 'cleared' && typeof frame.c === 'string' && typeof frame.seq === 'number') handlers.cleared(frame.c, frame.seq);
       else if (frame.t === 'error' && frame.error === 'slow_down' && typeof frame.c === 'string') handlers.slow(frame.c);
       else if (frame.t === 'events' && typeof frame.c === 'string' && Array.isArray(frame.events)) handlers.events(frame.c, frame.events as ChatEvent[], frame.hasMore === true);
+      else if (frame.t === 'call') { const call = callFrame(frame as Record<string, unknown>); if (call !== null) handlers.call?.(call); }
     };
     s.onclose = (e) => {
       if (socket !== s) return;
