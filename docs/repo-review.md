@@ -55,7 +55,8 @@ the owner approves. Then fix in small batches, one branch and pull request each,
     else is only ever a download with a safe type; size, pixel and per-person limits; who may fetch what (the uploader
     before it is in a message, then members who were in the conversation when it was said and did not hide it); a file's
     bytes deleted only after its row's commit; the cleanup of uploads nobody sent.
-12. **Notifications.** The RFC 8291 encryption against the RFC's worked example; a notification never carries the words;
+12. **Notifications.** The RFC 8291 encryption against the RFC's worked example; a notification carries no more than its
+    device chose (the words, the names, or only "Tin nhắn mới"), and a message taken back replaces it;
     who is pushed (not the sender, not muted, not removed, not someone who joined or cleared after it; a device with Gom open
     is pushed too, by H's choice); a 404 or 410 deletes the subscription; a slow push service never delays a send; only
     known push hosts are accepted; a browser with no push service (Helium) gets words, not a switch that never finishes.
@@ -69,6 +70,14 @@ the owner approves. Then fix in small batches, one branch and pull request each,
     the open row and under a mouse; the one-second press, and the click that ends it.
 15. **Stickers.** The page's packs, the server's list and the files agree; no sticker ever offered is dropped (sent ones
     must still draw); each SVG is upstream's, with no script or outside reference.
+16. **Settings and looks.** Each part's address, the owner's parts refused to a member by the server as well as the page;
+    every colour's text pairs at 4.5 to 1 or better in both themes; backgrounds readable under grey text; a redrawn tile
+    under a new `?v=`.
+17. **Versions.** The socket's "ready" names the version the pages are built from; a page reloads by itself only when
+    nothing would be lost, and never in a loop; typed words kept per person in `sessionStorage` only; `Pages.PageVersion`
+    raised for a change older pages cannot use, and what they send meanwhile kept in the outbox.
+18. **Videos and requests to join.** A video streamed to disk within its limit, kept as sent, with the sender's still
+    picture; a request to join seen only by the owner until approved, and a waiting account able to do nothing else.
 
 **Deployment items** (keep listing until fixed): forwarded headers (`ForwardedHeaders__Hops` matches the proxies in
 front; checked live on 2026-11-25), reverse proxy WebSocket upgrade, the proxy's request body limit for files,
@@ -88,6 +97,8 @@ the uploads backup copied as a mirror.
   published build on HTTPS too (`dotnet dev-certs https -ep <scratch>/dev.pfx`, `Kestrel__Certificates__Default__Path`)
   and let the WebDriver session accept it (`acceptInsecureCerts`). MiniBrowser has no headless mode: run
   WebKitWebDriver under `xvfb-run -a` with `LIBGL_ALWAYS_SOFTWARE=1`, in its own process group.
+- Playwright's own WebKit is the easier way when it runs: its build needs Ubuntu 24.04 libraries, so on another
+  distribution run it in an Ubuntu 24.04 container, over HTTPS for the same cookie reason.
 - Headless Firefox reports no hover device, so it takes the phone path of every `(hover: hover) and (pointer: fine)`
   rule; say so rather than reading it as a bug.
 - Races need several requests at once (8 to 30), from the published build and in a test: the second review found a
