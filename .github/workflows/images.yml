@@ -132,9 +132,12 @@ jobs:
           echo "websocket upgrade from another site: $WS"
           [ "$WS" = 403 ]
 
+      # Why it stopped, when it did: a process killed for memory leaves no line in its own log.
       - name: Show the web logs if something above failed
         if: failure()
-        run: docker logs "$CI_NAME-web" 2>&1 | tail -40 || true
+        run: |
+          docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "$CI_NAME-web" || true
+          docker logs "$CI_NAME-web" 2>&1 | tail -80 || true
 
       - name: Log in and push the image (main only)
         if: github.ref == 'refs/heads/main'
