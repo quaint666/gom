@@ -241,9 +241,9 @@ class CallEngine(
         state.value = c.view
     }
 
-    /** Calls the friend of this one-to-one chat. Does nothing while a call is on. */
+    /** Calls the friend of this one-to-one chat. Does nothing while a call is on; one that has ended gives way ("Call back"). */
     fun start(conversation: String, peer: Peer) {
-        if (cur != null) return
+        cur?.let { if (it.view.phase != Phase.ENDED) return; release(it) }
         val c = Current(CallView(null, conversation, peer, mine = true, phase = Phase.OUTGOING))
         begin(c)
         scope.launch { dial(c) }

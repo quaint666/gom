@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 /** A build setting from ~/.gradle/gradle.properties or -P: the server's address and the Firebase values never live in the repository. */
@@ -27,6 +28,7 @@ android {
     }
 
     buildFeatures {
+        compose = true
         buildConfig = true
         resValues = true
     }
@@ -89,6 +91,14 @@ dependencies {
     implementation(libs.androidx.lifecycle.service)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+    // The call screens (6c): Compose without Material, drawn in Gom's own look.
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.ui)
+    implementation(libs.androidx.activity.compose)
+    // Previews of the call screens (src/debug, `android preview render`), in debug builds only.
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.tooling.preview)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
 

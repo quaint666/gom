@@ -279,4 +279,15 @@ class CallEngineTest {
         assertEquals(listOf("mute true"), s.connection.did)
         assertTrue(s.view!!.muted)
     }
+
+    @Test
+    fun an_ended_call_gives_way_to_calling_back_but_a_call_in_progress_does_not() = runTest {
+        val s = inCall(mine = true)
+        s.engine.start(chat, Peer("Lan"))
+        assertEquals("Minh", s.view!!.peer.name)   // in a call: a second one is not started
+        s.engine.frame(Frame.Ended(id, "completed"))
+        s.engine.start(chat, Peer("Minh"))
+        assertEquals(Phase.OUTGOING, s.view!!.phase)
+        assertNull(s.view!!.ending)
+    }
 }

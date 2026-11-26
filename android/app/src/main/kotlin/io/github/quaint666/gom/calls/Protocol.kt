@@ -142,3 +142,11 @@ sealed interface CallPush {
         }
     }
 }
+
+/** A call's length as the page writes it (`callLength` in `chat/model.ts`): 3:05, or 1:02:03 past an hour. */
+fun callLength(seconds: Long): String {
+    val h = seconds / 3600
+    val m = seconds / 60 % 60
+    val s = seconds % 60
+    return if (h > 0) String.format(java.util.Locale.ROOT, "%d:%02d:%02d", h, m, s) else String.format(java.util.Locale.ROOT, "%d:%02d", m, s)
+}

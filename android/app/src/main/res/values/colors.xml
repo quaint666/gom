@@ -4,4 +4,16 @@
 <resources>
     <color name="gom">#3F6B57</color>
     <color name="page">#F7F5EF</color>
+    <!-- The call screens' colours: gom.css's tokens of the same names (call_ and the token), light here and dark in values-night;
+         a unit test (ColorsTest) keeps them the same. Gom's green (gom) is the answer button, page is the background. -->
+    <color name="call_surface">#FFFFFF</color>
+    <color name="call_text">#1F2A24</color>
+    <color name="call_muted">#4A5650</color>
+    <color name="call_border">#DAD6C9</color>
+    <color name="call_tint">#E3EFE7</color>
+    <color name="call_link">#3F6B57</color>
+    <color name="call_warn_bg">#FFF1CC</color>
+    <color name="call_warn_text">#7A4F00</color>
+    <color name="call_warn_border">#E3C77A</color>
+    <color name="call_hang">#B3261E</color>
 </resources>

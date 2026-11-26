@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: the call screens' previews (calls/CallPreviewActivity), opened with adb. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".calls.CallPreviewActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Gom" />
+    </application>
+</manifest>

@@ -9,26 +9,28 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.Uri
+import android.os.PowerManager
 import android.telecom.DisconnectCause
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import androidx.core.net.toUri
 import androidx.core.telecom.CallAttributesCompat
 import androidx.core.telecom.CallControlScope
+import androidx.core.telecom.CallEndpointCompat
 import androidx.core.telecom.CallException
 import androidx.core.telecom.CallsManager
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import io.github.quaint666.gom.GomApp
-import io.github.quaint666.gom.MainActivity
 import io.github.quaint666.gom.Notice
 import io.github.quaint666.gom.Notices
 import io.github.quaint666.gom.R
 import java.util.UUID
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -47,6 +49,8 @@ class CallService : LifecycleService() {
     /** The words for the ringing notification (`GET /api/push/notice?call=`): no name at the "nothing" level. */
     private var words: Notice? = null
     private var foreground = 0
+    /** Turns the screen off while the phone is at the ear (the earpiece in use, a call going on). */
+    private var ear: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -56,9 +60,12 @@ class CallService : LifecycleService() {
         socket = CallSocket(origin, lifecycleScope, engine::frame, engine::resync)
         calls = CallsManager(this)
         try { calls.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE) } catch (_: UnsupportedOperationException) { /* no Telecom: the call goes on without it */ }
+        ear = getSystemService(PowerManager::class.java)
+            .takeIf { it.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK) }
+            ?.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "gom:call")
         lifecycleScope.launch {
             var last: CallView? = null
-            engine.view.collect { v -> changed(last, v); last = v }
+            engine.view.collect { v -> changed(last, v); last = v; shown.value = v; earLock() }
         }
     }
 
@@ -72,6 +79,8 @@ class CallService : LifecycleService() {
             ANSWER -> answer(fromTelecom = false)
             HANG_UP -> engine.hangUp()
             MUTE -> engine.mute(i.getBooleanExtra(EXTRA_ON, false))
+            ROUTE -> route(i.getStringExtra(EXTRA_ID).orEmpty())
+            CLOSE -> engine.close()
             ENDED -> {
                 val id = i.getStringExtra(EXTRA_ID).orEmpty()
                 if (engine.view.value?.id == id) engine.ended(id, i.getStringExtra(EXTRA_OUTCOME).orEmpty())
@@ -86,12 +95,15 @@ class CallService : LifecycleService() {
     private fun ring(id: String) {
         if (engine.view.value != null) return   // in a call already: the server made this one busy
         words = null
+        locked.value = getString(R.string.call_voice)   // nobody named until the server says the level allows it
         show(ringing(Peer(getString(R.string.call_voice))), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
         lifecycleScope.launch {
             val server = HttpCallServer(GomApp.origins.origin)
             val info = (server.get(id) as? Reply.Ok)?.data
             if (info == null || info.state != "ringing") { if (engine.view.value == null) stop(); return@launch }
             words = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Notices.words("/api/push/notice?call=$id") }
+            // At the "nothing" level the server's title names nobody: the lock screen then shows no name (decision 8).
+            locked.value = words.let { if (it == null) getString(R.string.call_voice) else it.title.takeIf { t -> t != info.callerName } }
             engine.ringing(id, info.conversation, Peer(info.callerName))
         }
     }
@@ -100,7 +112,7 @@ class CallService : LifecycleService() {
     private fun answer(fromTelecom: Boolean) {
         val v = engine.view.value ?: return
         if (v.phase != Phase.INCOMING) return
-        if (!hasMic()) { engine.hangUp(); return }   // 6c asks for the microphone on the call screen
+        if (!hasMic()) { engine.hangUp(); return }   // the call screen asks for it first; a headset's button cannot
         show(ongoing(v), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         socket.open()
         engine.answer()
@@ -145,9 +157,28 @@ class CallService : LifecycleService() {
                 ) {
                     control = this
                     launch { isMuted.collect { muted -> if (engine.view.value?.muted != muted) engine.mute(muted) } }
+                    launch { availableEndpoints.collect { list -> endpoints = list; routes.value = Routes(list.map(::routeOf), routes.value.current) } }
+                    launch { currentCallEndpoint.collect { now -> routes.value = routes.value.copy(current = routeOf(now)); earLock() } }
                 }
             } catch (_: CallException) { control = null }
         }
+    }
+
+    private var endpoints: List<CallEndpointCompat> = emptyList()
+
+    /** Where the sound goes: through Android's call system, which Google asks of calling apps (not AudioManager directly). */
+    private fun route(id: String) {
+        val endpoint = endpoints.firstOrNull { it.identifier.toString() == id } ?: return
+        lifecycleScope.launch { control?.requestEndpointChange(endpoint) }
+    }
+
+    /** The screen goes off at the ear only while the earpiece plays a call that goes on. */
+    private fun earLock() {
+        val lock = ear ?: return
+        val v = engine.view.value
+        val want = v != null && v.phase in setOf(Phase.OUTGOING, Phase.CONNECTING, Phase.ACTIVE) && routes.value.current?.kind == RouteKind.EARPIECE
+        if (want && !lock.isHeld) lock.acquire(EAR_MAX_MS)
+        else if (!want && lock.isHeld) lock.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY)
     }
 
     private fun disconnect(v: CallView?) {
@@ -162,27 +193,29 @@ class CallService : LifecycleService() {
         lifecycleScope.launch { try { scope.disconnect(DisconnectCause(cause)) } catch (_: IllegalStateException) { } }
     }
 
-    private fun person(peer: Peer, hidden: Boolean): Person = Person.Builder()
-        .setName(if (hidden) words?.title ?: getString(R.string.call_voice) else peer.name).setImportant(true).build()
+    private fun person(peer: Peer): Person = Person.Builder().setName(peer.name).setImportant(true).build()
 
+    /**
+     * Ringing: the name once unlocked; on the lock screen only what the person's notification level allows (decision 8), which is
+     * the server's title ("Gom" at "nothing").
+     */
     private fun ringing(peer: Peer): Notification {
-        val name = words?.title ?: peer.name
+        val hidden = locked.value
         val public = NotificationCompat.Builder(this, CALLS).setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(words?.title ?: getString(R.string.call_voice)).setContentText(getString(R.string.call_incoming)).build()
+            .setContentTitle(hidden ?: getString(R.string.call_voice)).setContentText(getString(R.string.call_incoming)).build()
         return NotificationCompat.Builder(this, CALLS)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(getColor(R.color.gom))
-            .setContentTitle(name)
+            .setContentTitle(peer.name)
             .setContentText(getString(R.string.call_incoming))
-            .setStyle(NotificationCompat.CallStyle.forIncomingCall(person(peer, hidden = words?.title != null && words?.title != peer.name),
-                pending(HANG_UP), pending(ANSWER)))
+            .setStyle(NotificationCompat.CallStyle.forIncomingCall(person(peer), pending(HANG_UP), screen(CallActivity.ANSWER)))
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setVisibility(if (hidden == null) NotificationCompat.VISIBILITY_PUBLIC else NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
-            .setFullScreenIntent(open(), true)
-            .setContentIntent(open())
+            .setFullScreenIntent(screen(null), true)
+            .setContentIntent(screen(null))
             .build()
             .apply { flags = flags or Notification.FLAG_INSISTENT }   // the ringtone repeats until answered or stopped
     }
@@ -198,21 +231,19 @@ class CallService : LifecycleService() {
             v.ringing -> R.string.call_ringing
             else -> R.string.call_calling
         }))
-        .setStyle(NotificationCompat.CallStyle.forOngoingCall(person(v.peer, hidden = false), pending(HANG_UP)))
+        .setStyle(NotificationCompat.CallStyle.forOngoingCall(person(v.peer), pending(HANG_UP)))
         .setCategory(NotificationCompat.CATEGORY_CALL)
         .setOngoing(true)
         .setSilent(true)
         .apply { v.connectedAt?.let { setUsesChronometer(true).setWhen(it).setShowWhen(true) } }
-        .setContentIntent(open())
+        .setContentIntent(screen(null))
         .build()
 
-    /** A tap on the call: the app, on the chat with them (6c: the call screen). */
-    private fun open(): PendingIntent {
-        val conversation = engine.view.value?.conversation
-        val intent = Intent(this, MainActivity::class.java).setAction(Intent.ACTION_VIEW)
-            .setData(GomApp.origins.page(conversation?.let { "/c/$it" }).toUri())
+    /** The call screen, over the lock screen; [action] [CallActivity.ANSWER] answers once the microphone is allowed. */
+    private fun screen(action: String?): PendingIntent {
+        val intent = Intent(this, CallActivity::class.java).setAction(action ?: Intent.ACTION_MAIN)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        return PendingIntent.getActivity(this, OPEN, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        return PendingIntent.getActivity(this, if (action == null) OPEN else ANSWERING, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     private fun pending(action: String): PendingIntent =
@@ -235,6 +266,10 @@ class CallService : LifecycleService() {
     override fun onDestroy() {
         running = false
         socket.close()
+        if (ear?.isHeld == true) ear?.release()
+        shown.value = null
+        locked.value = null
+        routes.value = Routes()
         super.onDestroy()
     }
 
@@ -251,12 +286,17 @@ class CallService : LifecycleService() {
         const val MISSED_CALLS = "missed_calls"
         private const val CALL_ID = 2
         private const val OPEN = 3
+        private const val ANSWERING = 4
+        /** A call longer than this keeps the screen-off lock only until then (a lock is never held for ever). */
+        private const val EAR_MAX_MS = 6 * 60 * 60 * 1000L
 
         private const val DIAL = "io.github.quaint666.gom.call.DIAL"
         private const val RING = "io.github.quaint666.gom.call.RING"
         private const val ANSWER = "io.github.quaint666.gom.call.ANSWER"
         private const val HANG_UP = "io.github.quaint666.gom.call.HANG_UP"
         private const val MUTE = "io.github.quaint666.gom.call.MUTE"
+        private const val ROUTE = "io.github.quaint666.gom.call.ROUTE"
+        private const val CLOSE = "io.github.quaint666.gom.call.CLOSE"
         private const val ENDED = "io.github.quaint666.gom.call.ENDED"
         private const val EXTRA_ID = "id"
         private const val EXTRA_CONVERSATION = "conversation"
@@ -270,6 +310,27 @@ class CallService : LifecycleService() {
 
         /** Whether this build makes and takes calls; the page offers calls only then (its hello says so). */
         const val AVAILABLE = false
+
+        private val shown = MutableStateFlow<CallView?>(null)
+        private val locked = MutableStateFlow<String?>(null)
+        private val routes = MutableStateFlow(Routes())
+
+        /** The call here, for the call screen; null when there is none. */
+        val view: StateFlow<CallView?> = shown
+        /** What the lock screen may say instead of the caller's name ("Gom" at the "nothing" level); null when it may name them. */
+        val lockedTitle: StateFlow<String?> = locked
+        /** Where the sound can go, and where it goes now. */
+        val sound: StateFlow<Routes> = routes
+
+        private fun command(context: Context, action: String, extra: Intent.() -> Unit = {}) {
+            if (running) context.startService(Intent(context, CallService::class.java).setAction(action).apply(extra))
+        }
+
+        fun answer(context: Context) = command(context, ANSWER)
+        fun hangUp(context: Context) = command(context, HANG_UP)
+        fun mute(context: Context, on: Boolean) = command(context, MUTE) { putExtra(EXTRA_ON, on) }
+        fun route(context: Context, id: String) = command(context, ROUTE) { putExtra(EXTRA_ID, id) }
+        fun close(context: Context) = command(context, CLOSE)
 
         /** Whether the service runs (a call is on here, ringing or not). */
         @Volatile var running = false

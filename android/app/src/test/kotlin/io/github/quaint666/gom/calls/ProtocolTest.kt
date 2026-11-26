@@ -76,4 +76,11 @@ class ProtocolTest {
         assertNull(CallPush.parse(mapOf("t" to "call", "id" to "1/../x")))
         assertNull(CallPush.parse(mapOf("t" to "message", "id" to id)))
     }
+
+    @Test
+    fun a_calls_length_is_written_as_the_page_writes_it() {
+        assertEquals("0:07", callLength(7))
+        assertEquals("3:05", callLength(185))
+        assertEquals("1:02:03", callLength(3723))
+    }
 }
