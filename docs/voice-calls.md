@@ -207,7 +207,10 @@ video, recording, iPhone native.
 4. **Server, phones:** registering FCM tokens, sending with FCM's HTTP v1 API, the call and cancel pushes with their
    expiry, a fake FCM in tests.
 5. **Android, the shell:** the project, the web view locked to Gom, the bridge, the session, FCM registration, CI
-   build, notification channels. No calls yet.
+   build, notification channels. No calls yet. Split in two (H, 2026-11-26): **5a** the server and the page (FCM sent to
+   the installation id, `GET /api/push/notice` for the app's words, Settings working through the app, the bridge's protocol 1);
+   **5b** the `android/` project and its CI. Package ids `io.github.quaint666.gom` and `io.github.quaint666.gom.staging`;
+   settings (base address, Firebase values) from Gradle properties outside the repository.
 6. **Android, calls:** `core-telecom`, the WebRTC library, the phoneCall foreground service, the incoming full-screen
    screen, the call screen, ICE restart, renewing logins.
 7. **Android, release:** the Samsung sleep guide, the update check, the Play listing and declarations.

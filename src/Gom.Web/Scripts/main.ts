@@ -11,7 +11,8 @@ import { mountJoin } from './pages/join.js';
 import { mountReset } from './pages/reset.js';
 import { mountPrivacy } from './pages/privacy.js';
 import { mountSettings } from './pages/settings.js';
-import { createPusher } from './push.js';
+import { appPort, createAppPusher } from './app.js';
+import { createPusher, type Pusher } from './push.js';
 import { attachPull, canPullList } from './pull.js';
 import { mountSignIn } from './pages/signin.js';
 import { mountSignUp } from './pages/signup.js';
@@ -102,7 +103,24 @@ async function reloadFresh(): Promise<void> {
   location.reload();
 }
 
-const pusher = createPusher();
+/**
+ * Inside the Android app, notifications are the app's (FCM); in a browser, the browser's. The app's registration is sent to the
+ * server whenever it is new to this tab, so an id FCM changed while the app was closed is put right the next time it opens.
+ */
+const port = appPort();
+const pusher: Pusher = port === undefined ? createPusher() : (() => {
+  const app = createAppPusher(port);
+  app.onRegistration((sub) => void (async () => {
+    const KEY = 'gom.appRegistration';
+    if (!('app' in sub)) return;
+    try { if (sessionStorage.getItem(KEY) === sub.app) return; } catch { /* not remembered: sent again */ }
+    const state = await api.pushState();
+    if (!state.ok) return;
+    const result = await api.setPush(sub, state.data.level);
+    if (result.ok) try { sessionStorage.setItem(KEY, sub.app); } catch { /* sent again next time */ }
+  })());
+  return app;
+})();
 /**
  * The video converter, fetched the first time a video is picked: its address is on the page (`data-video-script`, the server's
  * fingerprinted name), so a new version is a new name. Typed from the module itself; nothing of it is bundled here.

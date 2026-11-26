@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="channel_messages">Messages</string>
+    <string name="channel_owner">Notices</string>
+    <string name="new_message">New message</string>
+    <string name="new_notice">New notice</string>
+    <string name="not_configured">This build was made without a server address (gom.&lt;flavour&gt;.baseUrl).</string>
+</resources>

@@ -1,6 +1,6 @@
 # Gom
 
-A small web chat for family and friends, joined by invite or by asking and being approved by the owner, with message history kept on the server so it is there on every device. Web only for now. The UI is in Vietnamese, with English as each person's choice; code and docs are in English.
+A small web chat for family and friends, joined by invite or by asking and being approved by the owner, with message history kept on the server so it is there on every device. On the web, and as an Android app (`android/`) that is being built. The UI is in Vietnamese, with English as each person's choice; code and docs are in English.
 
 Status: in use by the family, in production and on a staging host. Built: accounts, invites and requests to join (when the owner opens them), friends and blocking, profile pictures, one-to-one and group chat (roles, removal, approval, bans) with live delivery, offline sending, replies, forwarding, pins, reactions, editing, taking a message back, delete for me, search as you type (in one conversation or all of them), videos (made smaller on the sending device, up to 45 MB), mute (for a while or until turned back on), a menu on each conversation (pin to the top, mark unread, hide, delete the conversation for yourself), read receipts, pictures and files, notifications (Web Push), emoji and 432 stickers in eleven packs (one of them 256 flags), moving pictures (GIFs), sixteen colours, fifteen backgrounds and pure black to choose from (a conversation may have its own colour and background), deleting your own account, Settings as a menu with an address per part, open pages that move to a new version by themselves (typed words kept across the reload), and for the owner a storage page that trims old pictures, files and messages. Not yet: sharing into Gom from other apps, a webhook that posts alerts into a group, link cards, two-step sign-in for the owner, and the load test.
 
@@ -34,6 +34,23 @@ The first start needs an owner account: set `Owner__GomId` and `Owner__Password`
 Decisions and their reasons are in `docs/decisions.md`; what comes next is in `docs/next-session.md`. The mockups and design notes are in `design/`.
 
 The font (Be Vietnam Pro, in `wwwroot/fonts/`) is under the SIL Open Font License 1.1, and the stickers (still images from Google's Noto Emoji, its `2D/svg` folder, in `wwwroot/stickers/`) under the Apache License 2.0, except the flags, which are in the public domain; the licence text sits beside each.
+
+## The Android app
+
+`android/` is the Android app: Gom's pages in a web view, with notifications through Firebase Cloud Messaging (calls come later; `docs/voice-calls.md`). It needs the Android SDK (`ANDROID_HOME`, or `android/local.properties` with `sdk.dir=…`) and a JDK 17 or newer; the Gradle wrapper fetches the rest.
+
+There are two flavours, `prod` (`io.github.quaint666.gom`) and `staging` (`io.github.quaint666.gom.staging`, installed beside it). Each reads its settings from Gradle properties, normally in `~/.gradle/gradle.properties` and never in this repository:
+
+```
+gom.prod.baseUrl=https://…                # the server, https only
+gom.prod.alsoAllow=…                      # optional: one more host whose pages may load in the app (a sign-in in front of the server)
+gom.prod.firebase.projectId=…             # the Firebase Android app's values; without all four, the build has no notifications
+gom.prod.firebase.appId=…
+gom.prod.firebase.apiKey=…
+gom.prod.firebase.senderId=…
+```
+
+and the same with `gom.staging.`. Then `cd android && ./gradlew assembleStagingDebug` builds `app/build/outputs/apk/staging/debug/app-staging-debug.apk`. `./gradlew lintProdDebug testProdDebugUnitTest` is what CI runs (with a placeholder address and no Firebase values). Signing a release for Google Play comes later.
 
 ## On a server
 

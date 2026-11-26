@@ -9,6 +9,7 @@
 design
 docs
 tests
+android
 **/*.md
 CLAUDE.local.md
 # Built by the "assets" stage; a local copy could be stale.

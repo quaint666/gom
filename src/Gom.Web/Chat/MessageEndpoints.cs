@@ -156,9 +156,7 @@ public static class MessageEndpoints
         var dto = ToDto(message, sender, reply, null, (await MessageAttachments.For(db, [message.Id], ct)).GetValueOrDefault(message.Id));
         await live.PublishAsync(db, dto.Seq, "created", dto, parentSeq);
         await live.ReadChangedAsync(db, id, me, dto.Seq);   // writing something means you have read what came before it
-        var files = dto.Attachments ?? [];
-        push.Enqueue(new Push.PushJob(id, dto.Seq, me, dto.Sender.DisplayName, files.Count(a => a.Kind == "image"), files.Count(a => a.Kind == "file"), message.Sticker is not null,
-            Replies.Snippet(message.Body), message.Id, Videos: files.Count(a => a.Kind == "video")));
+        push.Enqueue(Push.PushJob.From(message, dto.Sender.DisplayName, dto.Attachments));
         return Results.Ok(dto);
     }
 

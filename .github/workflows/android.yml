@@ -1,0 +1,40 @@
+# Gom's Android app (android/).
+#
+# Every pull request and push to main that touches the app lints it, runs its unit tests and builds both flavours' debug
+# APKs. It holds no secrets: the server's address is a placeholder and the Firebase values are left out, so these builds have
+# notifications off and are for checking only, never for a phone. The builds people install are made outside CI (README).
+# setup-gradle also checks the committed Gradle wrapper against Gradle's published checksums.
+
+name: android
+
+on:
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: Lint, unit tests and debug builds
+        run: >
+          ./gradlew --no-daemon lintProdDebug lintStagingDebug testProdDebugUnitTest assembleProdDebug assembleStagingDebug
+          -Pgom.prod.baseUrl=https://gom.example -Pgom.staging.baseUrl=https://gom-staging.example
