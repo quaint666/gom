@@ -789,3 +789,90 @@ button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(-
 .avatar-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .avatar-row .btn { display: inline-flex; align-items: center; justify-content: center; margin: 0; }   /* "Đổi ảnh" is a label: no gap under it, as .card label has */
 .avatar-preview { inline-size: 72px; block-size: 72px; border-radius: 50%; object-fit: cover; object-position: center; flex: none; }
+
+/* Settings: a menu, and one part at a time on a phone (with a way back); on a wide screen the menu beside the open part.
+   Every part is in the page and only the open one is shown, so a part keeps what was typed when another is opened. */
+.settings { min-block-size: 100dvh; }
+.settings-pane .bar .ib { display: inline-grid; }
+.part { display: flex; flex-direction: column; gap: 14px; }
+.part[hidden] { display: none; }
+@media (max-width: 899.98px) {
+  .settings[data-open=""] .settings-pane, .settings:not([data-open=""]) .settings-menu { display: none; }
+}
+@media (min-width: 900px) {
+  .settings { display: grid; grid-template-columns: 360px minmax(0, 1fr); block-size: 100dvh; }
+  .settings-menu { display: flex; flex-direction: column; min-block-size: 0; border-inline-end: 1px solid var(--border); }
+  .settings-menu .page { max-inline-size: none; margin: 0; padding: 16px; overflow-y: auto; flex: 1; }
+  .settings-pane { display: flex; flex-direction: column; min-block-size: 0; overflow-y: auto; }
+  .settings-pane .page { max-inline-size: 560px; inline-size: 100%; }
+  .settings-pane .bar .ib { display: none; }   /* the menu is right there */
+}
+
+/* The menu's rows: an icon, the title and what it is set to now, and a way in. */
+.nav { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.nav a, .nav button { display: flex; align-items: center; gap: 14px; inline-size: 100%; min-block-size: 58px; padding: 8px 14px; border: 0; border-block-end: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; text-align: start; text-decoration: none; cursor: pointer; }
+.nav li:last-child a, .nav li:last-child button { border-block-end: 0; }
+.lead-i { inline-size: 34px; block-size: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; background: var(--tint); color: var(--link); }
+.lead-i .i { inline-size: 20px; block-size: 20px; }
+.nav .t, a.profile .t { flex: 1; min-inline-size: 0; }
+.nav .t b { display: block; font-weight: 600; }
+.nav .t small { display: block; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chev { inline-size: 30px; block-size: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--muted); }
+.chev .i { inline-size: 16px; block-size: 16px; }
+a.profile { color: inherit; text-decoration: none; }
+.signout { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.signout .i { inline-size: 18px; block-size: 18px; }
+/* Pressed (a phone too): a deeper tint, the icon a little smaller. Keyboard: a ring inside the row. */
+.nav a:active, .nav button:active, a.profile:active { background: color-mix(in srgb, var(--btn) 16%, var(--surface)); }
+.nav a:active .lead-i, .nav button:active .lead-i { transform: scale(.94); }
+.nav a:active .chev, .nav button:active .chev, a.profile:active .chev { background: var(--btn); color: var(--on-btn); }
+.nav a:focus-visible, .nav button:focus-visible, a.profile:focus-visible { outline: 3px solid var(--ring); outline-offset: -3px; border-radius: 14px; }
+/* The open part, beside the menu on a wide screen: tinted, a bar in the colour, its icon filled. A phone never shows both. */
+@media (min-width: 900px) {
+  .nav a[aria-current="page"], a.profile[aria-current="page"] { background: color-mix(in srgb, var(--btn) 13%, var(--surface)); box-shadow: inset 4px 0 0 var(--btn); }
+  .nav a[aria-current="page"] .t b { color: var(--link); }
+  .nav a[aria-current="page"] .lead-i { background: var(--btn); color: var(--on-btn); }
+  .nav a[aria-current="page"] .chev, a.profile[aria-current="page"] .chev { visibility: hidden; }
+}
+/* Hover, only where there is a mouse (a tap would leave it stuck): the row tints, its title takes the colour, the arrow's disc fills. */
+@media (hover: hover) {
+  .nav a:hover, .nav button:hover, a.profile:hover { background: color-mix(in srgb, var(--btn) 7%, var(--surface)); }
+  .nav a:hover .t b, .nav button:hover .t b { color: var(--link); }
+  .nav a:hover .chev, .nav button:hover .chev, a.profile:hover .chev { background: var(--btn); color: var(--on-btn); }
+  .choice:hover:not(:has(input:checked)), .pick:hover { border-color: var(--btn); background: color-mix(in srgb, var(--btn) 5%, var(--surface)); }
+  .swatch:hover .dot { transform: scale(1.12); box-shadow: 0 0 0 3px color-mix(in srgb, var(--btn) 25%, transparent); }
+  .pattern-tile:hover:not(:has(input:checked)) { border-color: var(--btn); }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .chev, .swatch .dot { transition: background-color .15s var(--ease), color .15s var(--ease), transform .15s var(--ease); }
+  .nav a:hover .chev, .nav button:hover .chev, a.profile:hover .chev { transform: translateX(2px); }
+}
+
+/* Hồ sơ: the picture big with a camera on it, then the name, the Gom ID and the friend link. */
+.me { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 20px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; text-align: center; }
+.me b { font-size: 20px; overflow-wrap: anywhere; } .me small { color: var(--muted); }
+.me-pic { position: relative; margin-block-end: 6px; }
+.me-pic .av { inline-size: 96px; block-size: 96px; font-size: 36px; }
+.me-cam { position: absolute; inset-inline-end: -4px; inset-block-end: -4px; inline-size: 36px; block-size: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--btn); color: var(--on-btn); border: 3px solid var(--surface); cursor: pointer; }
+.me-cam .i { inline-size: 16px; block-size: 16px; }
+.me-cam:has(+ input:focus-visible) { outline: 3px solid var(--ring); outline-offset: 2px; }
+.me .avatar-preview { inline-size: 96px; block-size: 96px; }
+.linkish { border: 0; background: none; color: var(--link); font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; padding: 4px; }
+.kv { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.kv > li { display: flex; align-items: center; gap: 12px; min-block-size: 58px; padding: 8px 14px; border-block-end: 1px solid var(--border); }
+.kv > li:last-child { border-block-end: 0; }
+.kv .t { flex: 1; min-inline-size: 0; } .kv .t small { display: block; color: var(--muted); font-size: 13px; } .kv .t b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.kv-edit { flex: 1; }
+.kv-edit summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+.kv-edit summary::-webkit-details-marker { display: none; }
+.kv-edit[open] summary { margin-block-end: 8px; }
+.kv-edit form { display: flex; flex-direction: column; gap: 6px; padding-block-end: 6px; }
+.kv-i { color: var(--muted); } .kv-i .i { inline-size: 18px; block-size: 18px; }
+/* Deleting the account: closed until asked for. */
+.danger-zone { gap: 10px; }
+.danger-zone summary { list-style: none; text-align: center; }
+.danger-zone summary::-webkit-details-marker { display: none; }
+.danger-zone form { display: flex; flex-direction: column; gap: 6px; }
+/* The owner's own pages inside a part: the pane has the bar and the room. */
+.embed .bar { display: none; }
+.embed .page { max-inline-size: none; padding: 0; }

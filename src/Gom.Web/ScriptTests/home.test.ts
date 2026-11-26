@@ -51,17 +51,18 @@ describe('settings page', () => {
   it('shows the owner tools link only to the owner', async () => {
     mountSettings(root, api(), vi.fn());
     await flush();
-    expect(root.querySelector('a[href="/owner"]')).toBeNull();
+    expect(root.querySelector('a[href="/settings/owner"]')).toBeNull();
     const ownerRoot = document.createElement('div');
     mountSettings(ownerRoot, api({ me: vi.fn(async () => ok({ ...me, isOwner: true })) }), vi.fn());
     await flush();
-    expect(ownerRoot.querySelector('a[href="/owner"]')).not.toBeNull();
+    expect(ownerRoot.querySelector('a[href="/settings/owner"]')).not.toBeNull();
+    expect(ownerRoot.querySelector('a[href="/settings/storage"]')).not.toBeNull();
   });
 
   it('goes to sign-in when the session is gone', async () => {
     const go = vi.fn();
     mountSettings(root, fakeApi({ me: vi.fn(async () => fail('unauthorized', 401)) }), go);
     await flush();
-    expect(go).toHaveBeenCalledWith('/sign-in');
+    expect(go).toHaveBeenCalledWith('/sign-in?next=%2Fsettings');
   });
 });

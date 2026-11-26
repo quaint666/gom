@@ -151,6 +151,7 @@ foreach (var page in Pages.All)
     var html = Assets.Apply(Pages.Render(shell, page, limits), fingerprints);
     app.MapMethods(page.Route, ["GET", "HEAD"], () => Results.Content(html, "text/html; charset=utf-8"));
 }
+foreach (var (from, to) in Pages.Moved) app.MapMethods(from, ["GET", "HEAD"], () => Results.Redirect(to));
 
 // 200 only when the database answers; a monitor or a proxy can poll this.
 app.MapMethods("/healthz", ["GET", "HEAD"], async (GomDbContext db, CancellationToken ct) =>

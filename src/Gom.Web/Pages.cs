@@ -16,6 +16,19 @@ public static class Pages
     /// <summary>An address and the script for it. Its title is set by the script, in the page's language ("Gom" until then).</summary>
     public sealed record Page(string Route, string Name);
 
+    /// <summary>
+    /// The parts of Settings, each at /settings/{code} (a phone shows one at a time, a wide screen the menu beside it); the owner's two
+    /// are only for the owner, whose API checks it again. Scripts/pages/settings.ts lists the same codes; a test keeps them together.
+    /// </summary>
+    public static readonly IReadOnlyList<string> SettingsSections = ["profile", "notifications", "appearance", "privacy", "account", "owner", "storage"];
+
+    /// <summary>Addresses that moved, kept so old links and bookmarks still land: the owner's pages are now parts of Settings.</summary>
+    public static readonly IReadOnlyDictionary<string, string> Moved = new Dictionary<string, string>
+    {
+        ["/owner"] = "/settings/owner",
+        ["/owner/storage"] = "/settings/storage",
+    };
+
     public static readonly IReadOnlyList<Page> All =
     [
         new("/", "home"),
@@ -25,12 +38,12 @@ public static class Pages
         new("/sign-up", "signup"),
         new("/reset/{token}", "reset"),
         new("/settings", "settings"),
+        // Only the known parts: any other /settings/... is not found.
+        new($"/settings/{{section:regex(^({string.Join('|', SettingsSections)})$)}}", "settings"),
         new("/friends", "friends"),
         new("/groups/new", "newgroup"),
         new("/groups/{id}", "group"),
         new("/add/{gomId}", "add"),
-        new("/owner", "owner"),
-        new("/owner/storage", "storage"),
     ];
 
     /// <summary>

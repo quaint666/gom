@@ -79,7 +79,7 @@ describe('settings: install button', () => {
     await flush();
     target.dispatchEvent(offer().event);
     await flush();
-    expect(root.querySelector('[data-install]')).not.toBeNull();
+    expect(root.querySelector('[data-install-button]')).not.toBeNull();
   });
 
   it('installs on tap, then replaces the card with a short confirmation', async () => {

@@ -10,7 +10,8 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
     public static TheoryData<string, string> Pages => new()
     {
         { "/", "home" }, { "/c/6f1d0b5e-0000-4000-8000-000000000000", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/sign-up", "signup" }, { "/reset/some-token", "reset" },
-        { "/settings", "settings" }, { "/friends", "friends" }, { "/groups/new", "newgroup" }, { "/groups/6f1d0b5e-0000-4000-8000-000000000000", "group" }, { "/add/some_id", "add" }, { "/owner", "owner" }, { "/owner/storage", "storage" },
+        { "/settings", "settings" }, { "/friends", "friends" }, { "/groups/new", "newgroup" }, { "/groups/6f1d0b5e-0000-4000-8000-000000000000", "group" }, { "/add/some_id", "add" },
+        { "/settings/profile", "settings" }, { "/settings/appearance", "settings" }, { "/settings/account", "settings" }, { "/settings/owner", "settings" }, { "/settings/storage", "settings" },
     };
 
     [Theory]
@@ -24,6 +25,41 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         var html = await response.Content.ReadAsStringAsync();
         Assert.Contains($"data-page=\"{page}\"", html);
         Assert.Contains("<html lang=\"vi\">", html);
+    }
+
+    /// <summary>Only the parts Settings has get a page; any other address under it is not found, so nothing guesses at one.</summary>
+    [Theory]
+    [InlineData("/settings/nope")]
+    [InlineData("/settings/profile/more")]
+    [InlineData("/settings/..%2Fowner")]
+    public async Task An_unknown_part_of_settings_is_not_found(string path)
+    {
+        using var response = await factory.CreateClient().GetAsync(path);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    /// <summary>The owner's pages moved into Settings: an old link or bookmark is sent on, not lost.</summary>
+    [Theory]
+    [InlineData("/owner", "/settings/owner")]
+    [InlineData("/owner/storage", "/settings/storage")]
+    public async Task The_owners_old_addresses_lead_to_their_part_of_settings(string from, string to)
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        using var response = await client.GetAsync(from);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal(to, response.Headers.Location?.OriginalString);
+    }
+
+    /// <summary>The server and the page know the same parts of Settings, in the same order.</summary>
+    [Fact]
+    public void The_server_and_the_settings_page_know_the_same_parts()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
+        var source = File.ReadAllText(Path.Combine(dir!.FullName, "src", "Gom.Web", "Scripts", "pages", "settings.ts"));
+        var list = Regex.Match(source, @"export const SECTIONS = \[([^\]]*)\]");
+        Assert.True(list.Success, "SECTIONS not found in settings.ts");
+        Assert.Equal(Gom.Web.Pages.SettingsSections, Regex.Matches(list.Groups[1].Value, "'([a-z]+)'").Select(m => m.Groups[1].Value));
     }
 
     /// <summary>The title is the page's to set, in its language (the script's string tables); until then every page is "Gom".</summary>
