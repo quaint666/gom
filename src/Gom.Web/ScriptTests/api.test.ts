@@ -106,6 +106,48 @@ describe('api', () => {
   });
 });
 
+describe('api: voice calls', () => {
+  it('sends each call step to its address, with the protocol version on a start and an answer', async () => {
+    const fetchFn = vi.fn(async () => new Response(null, { status: 204 }));
+    const api = createApi(fetchFn as unknown as typeof fetch);
+    await api.callServers({ conversationId: 'c1' });
+    await api.callServers({ callId: 'k1' });
+    await api.startCall('c1', 'client-1', 'v=0 offer');
+    await api.getCall('k1');
+    await api.acceptCall('k1', 'v=0 answer');
+    await api.declineCall('k1');
+    await api.hangUp('k1');
+    await api.callSdp('k1', 'offer', 'v=0 again');
+    await api.callAlive('k1');
+    const calls = (fetchFn.mock.calls as unknown as [string, RequestInit][]).map(([url, init]) => [init.method, url, init.body ? JSON.parse(init.body as string) : undefined]);
+    expect(calls).toEqual([
+      ['POST', '/api/calls/relay', { conversationId: 'c1' }],
+      ['POST', '/api/calls/relay', { callId: 'k1' }],
+      ['POST', '/api/calls', { conversationId: 'c1', clientId: 'client-1', sdp: 'v=0 offer', v: 1 }],
+      ['GET', '/api/calls/k1', undefined],
+      ['POST', '/api/calls/k1/accept', { sdp: 'v=0 answer', v: 1 }],
+      ['POST', '/api/calls/k1/decline', undefined],
+      ['POST', '/api/calls/k1/hangup', undefined],
+      ['POST', '/api/calls/k1/sdp', { type: 'offer', sdp: 'v=0 again' }],
+      ['POST', '/api/calls/k1/alive', undefined],
+    ]);
+  });
+
+  it('a hang-up as the page closes is let finish after it (keepalive); others are not', async () => {
+    const fetchFn = vi.fn(async () => new Response(null, { status: 204 }));
+    const api = createApi(fetchFn as unknown as typeof fetch);
+    await api.hangUp('k1', true);
+    await api.hangUp('k1');
+    const inits = (fetchFn.mock.calls as unknown as [string, RequestInit][]).map(([, init]) => init.keepalive);
+    expect(inits).toEqual([true, undefined]);
+  });
+
+  it('says in words why a call could not be made', () => {
+    expect(errorText({ ok: false, status: 409, error: 'cannot_take_calls' })).toBe('Người này đang không mở Gom nên chưa nhận được cuộc gọi. Hãy thử lại sau.');
+    expect(errorText({ ok: false, status: 409, error: 'in_call' })).toBe('Bạn đang trong một cuộc gọi khác.');
+  });
+});
+
 describe('api: uploading a picture or a file', () => {
   class FakeXhr {
     method = ''; url = ''; headers: Record<string, string> = {}; withCredentials = false; sent: unknown = null;

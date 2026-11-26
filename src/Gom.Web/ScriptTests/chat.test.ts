@@ -46,10 +46,10 @@ interface Harness {
   busy: () => boolean;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages'] } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages']; calls?: ChatDeps['calls']; callsOn?: boolean } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
-    me: vi.fn(async () => ok(me)),
+    me: vi.fn(async () => ok(opts.callsOn ? { ...me, calls: true } : me)),
     // A fresh copy each time, as a real server gives: the page changes what it is handed.
     conversations: vi.fn(async () => ok(structuredClone(opts.chats ?? []))),
     history: vi.fn(async (id: string) => ok({ messages: [...(history[id] ?? [])].reverse(), hasMore: opts.hasMore ?? false, lastSeq: opts.lastSeq?.[id] ?? Math.max(0, ...(history[id] ?? []).map((m) => m.seq)) })),
@@ -101,6 +101,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     ...(opts.pusher ? { pusher: opts.pusher } : {}),
     ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}),
     ...(opts.keyboardImages ? { keyboardImages: opts.keyboardImages } : {}),
+    ...(opts.calls ? { calls: opts.calls } : {}),
   };
   mountChat(root, api, go, deps);
   return { api, handlers: () => captured!, live, nav, go, visible, coarse, timers, outbox, notes, drafts, busy: () => busy() };
@@ -5439,7 +5440,49 @@ describe('call lines (mockups 29 and 30)', () => {
     expect(text(cards[0]!)).toContain(`3:05 · ${clock(at(8, 12))}`);
     expect(text(cards[0]!)).toContain('Cuộc gọi đến');   // which way, for a screen reader
     expect(cards.map((c) => c.querySelector('.call-card')!.classList.contains('missed'))).toEqual([false, false, true]);
-    expect(root.querySelector('[data-call-line] button')).toBeNull();   // no "Gọi lại" on the web
+    expect(root.querySelector('[data-call-line] button')).toBeNull();   // no "Gọi lại" where calls are off
+  });
+
+  const fakeCalls = () => ({ start: vi.fn(async () => undefined), frame: vi.fn(), busy: vi.fn(() => false), leaving: vi.fn() });
+
+  it('a friend\'s chat has a call button, and a missed call "Gọi lại", where this page takes calls', async () => {
+    const calls = fakeCalls();
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [callMsg(1, 'minh', 'missed'), callMsg(2, 'minh', 'completed', 60)] }, calls, callsOn: true });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-call-start]')!.click();
+    expect(calls.start).toHaveBeenCalledWith(C1, { name: 'Minh', avatar: undefined });
+    expect(root.querySelectorAll('[data-call-back]')).toHaveLength(1);   // only on the missed one
+    root.querySelector<HTMLButtonElement>('[data-call-back]')!.click();
+    expect(calls.start).toHaveBeenCalledTimes(2);
+  });
+
+  it('no call button in a group, with someone no longer a friend, when the server has calls off, or on a page that takes none', async () => {
+    const cases: Array<[Conversation, boolean, boolean]> = [
+      [chat(C1, 'Nhà', { kind: 'group', peer: null, memberCount: 3 }), true, true],
+      [chat(C1, 'Minh', { peer: { id: 'u-minh', gomId: null, displayName: 'Minh' } }), true, true],
+      [chat(C1, 'Minh'), false, true],
+      [chat(C1, 'Minh'), true, false],
+    ];
+    for (const [c, on, page] of cases) {
+      root = document.createElement('div');
+      document.body.replaceChildren(root);
+      start({ path: `/c/${C1}`, chats: [c], history: { [C1]: [callMsg(1, 'minh', 'missed')] }, callsOn: on, ...(page ? { calls: fakeCalls() } : {}) });
+      await flush();
+      expect(root.querySelector('[data-call-start]')).toBeNull();
+      expect(root.querySelector('[data-call-back]')).toBeNull();
+    }
+  });
+
+  it('hands call frames to the calls, and holds a reload while a call is on', async () => {
+    const calls = fakeCalls();
+    const h = start({ chats: [chat(C1, 'Minh')], calls, callsOn: true });
+    await flush();
+    const frame = { kind: 'ended' as const, id: 'k', c: C1, outcome: 'missed' };
+    h.handlers().call!(frame);
+    expect(calls.frame).toHaveBeenCalledWith(frame);
+    expect(h.busy()).toBe(false);
+    calls.busy.mockReturnValue(true);
+    expect(h.busy()).toBe(true);
   });
 
   it('shows a call as the last thing in the list, a missed one in red', async () => {

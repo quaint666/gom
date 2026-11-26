@@ -89,6 +89,16 @@ export function errorText(failure: Failure): string {
     case 'update_required': return say.errors.updateRequired;
     case 'invalid_endpoint': return say.errors.invalidEndpoint;
     case 'invalid_keys': return say.errors.invalidKeys;
+    case 'cannot_take_calls': return say.errors.cannotTakeCalls;
+    case 'in_call': return say.errors.inCall;
+    case 'call_waiting': return say.errors.callWaiting;
+    case 'too_many_calls': return say.errors.tooManyCalls;
+    case 'call_ended': return say.errors.callEnded;
+    case 'call_answered': return say.errors.callAnswered;
+    case 'not_in_call': return say.errors.notInCall;
+    case 'invalid_call': return say.errors.invalidCall;
+    case 'invalid_sdp': return say.errors.invalidSdp;
+    case 'unsupported_version': return say.errors.unsupportedVersion;
     case 'network': return say.errors.network;
     case 'server': return say.errors.server;
     default: return say.errors.other;

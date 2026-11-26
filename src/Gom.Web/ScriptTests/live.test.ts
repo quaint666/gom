@@ -277,6 +277,33 @@ describe('live socket: pinned messages', () => {
   });
 });
 
+describe('live socket: voice calls', () => {
+  it('hands each call frame on with its parts, and drops one missing a part', () => {
+    const h = { ...handlers(), call: vi.fn() };
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept(); last().say({ t: 'ready' });
+    const from = { id: 'u-mom', displayName: 'Mẹ' };
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'incoming', from });
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'accepted', sdp: 'v=0' });
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'answered_elsewhere' });
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'ended', outcome: 'missed' });
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'sdp', type: 'offer', sdp: 'v=0', rev: 2 });
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'incoming' });                 // no caller
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'incoming', from: { id: 5 } });  // a caller without a name
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'accepted' });                 // no answer
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'sdp', type: 'x', sdp: 'v=0', rev: 2 });
+    last().say({ t: 'call', c: 'c1', kind: 'ended', outcome: 'missed' });          // no id
+    last().say({ t: 'call', id: 'k', c: 'c1', kind: 'other' });
+    expect(h.call.mock.calls.map((c) => c[0])).toEqual([
+      { kind: 'incoming', id: 'k', c: 'c1', from },
+      { kind: 'accepted', id: 'k', c: 'c1', sdp: 'v=0' },
+      { kind: 'answered_elsewhere', id: 'k', c: 'c1' },
+      { kind: 'ended', id: 'k', c: 'c1', outcome: 'missed' },
+      { kind: 'sdp', id: 'k', c: 'c1', type: 'offer', sdp: 'v=0', rev: 2 },
+    ]);
+  });
+});
+
 describe('live socket: a connection that has gone silent', () => {
   const up = () => {
     const h = handlers();
