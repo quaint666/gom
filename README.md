@@ -25,6 +25,8 @@ The privacy policy (`/privacy`, which Google Play asks for) names who runs this 
 
 Voice calls (Android app, `docs/voice-calls.md`) are off until `Calls__Enabled` is `true`; then `/api/calls` answers and `/api/me` says `calls: true`. `Calls__RingSeconds` (45) is how long a call rings, `Calls__AliveSeconds` (30) how often a phone in a call says it is still there, `Calls__SilentSeconds` (90) how long a silent side is waited for, and `Calls__CallBurst` (3) and `Calls__SecondsBetweenCalls` (20) how fast one person may start calls.
 
+A call's relay is Cloudflare Realtime TURN: set `Turn__KeyId` and `Turn__ApiToken` to a TURN key's ID and secret (both or neither; with only one the app refuses to start). Without them a phone gets a direct connection only, which fails between some networks. `Turn__LoginHours` (3) is how long a relay login lasts before a long call asks for a fresh one.
+
 The first start needs an owner account: set `Owner__GomId` and `Owner__Password` (10 characters or more) once, on an empty database, then remove the password from the configuration. Apply the database migrations first (`dotnet dotnet-ef database update --project src/Gom.Web`); the app does not do it for you.
 
 Decisions and their reasons are in `docs/decisions.md`; what comes next is in `docs/next-session.md`. The mockups and design notes are in `design/`.

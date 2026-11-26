@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -8,6 +9,7 @@ using Gom.Web.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Gom.Tests;
@@ -15,12 +17,61 @@ namespace Gom.Tests;
 /// <summary>The app with calls switched on (they are off by default).</summary>
 public sealed class CallFixture : AppFixture
 {
+    /// <summary>Where relay logins come from in tests: a fake Cloudflare.</summary>
+    public FakeTurn Turn { get; } = new();
+
     protected override void Settings(IWebHostBuilder b)
     {
         b.UseSetting("Calls:Enabled", "true");
         b.UseSetting("Push:PublicKey", PushFixture.Keys.Public);
         b.UseSetting("Push:PrivateKey", PushFixture.Keys.Private);
         b.UseSetting("Push:Subject", PushFixture.Subject);
+        b.UseSetting("Turn:KeyId", "test-key");
+        b.UseSetting("Turn:ApiToken", "test-token");
+        b.ConfigureServices(s =>
+        {
+            s.RemoveAll<ITurnClient>();
+            s.AddSingleton<ITurnClient>(Turn);
+        });
+    }
+}
+
+/// <summary>Cloudflare's credentials API, faked: each login has its own name, and every login taken back is kept to look at.</summary>
+public sealed class FakeTurn : ITurnClient
+{
+    private int _count;
+    public ConcurrentQueue<(int Seconds, string Tag, string Name)> Issued { get; } = new();
+    public ConcurrentQueue<string> Revoked { get; } = new();
+    /// <summary>Cloudflare not answering.</summary>
+    public bool Down { get; set; }
+
+    public Task<IReadOnlyList<IceServer>> IssueAsync(int seconds, string tag, CancellationToken ct)
+    {
+        if (Down) throw new HttpRequestException("the relay is down");
+        var name = "login-" + Interlocked.Increment(ref _count);
+        Issued.Enqueue((seconds, tag, name));
+        // As Cloudflare answers, with a port 53 address added (its docs say it may give one).
+        return Task.FromResult<IReadOnlyList<IceServer>>([
+            new(["stun:stun.cloudflare.com:3478", "stun:stun.cloudflare.com:53"]),
+            new(["turn:turn.cloudflare.com:3478?transport=udp", "turn:turn.cloudflare.com:53?transport=udp", "turns:turn.cloudflare.com:443?transport=tcp"], name, "secret-" + name),
+        ]);
+    }
+
+    public Task RevokeAsync(string username, CancellationToken ct)
+    {
+        Revoked.Enqueue(username);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Whether this login is taken back within a second (that happens off the request path).</summary>
+    public async Task<bool> RevokedSoon(string name)
+    {
+        for (var i = 0; i < 50; i++)
+        {
+            if (Revoked.Contains(name)) return true;
+            await Task.Delay(20);
+        }
+        return false;
     }
 }
 
@@ -560,5 +611,158 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
         using (await app.Call(Post, $"/api/calls/{done}/hangup", cookie: p.CA)) { }
         await Task.Delay(300);
         Assert.Empty(app.Push.To(phone.Endpoint));
+    }
+
+    // ---- The relay (docs/voice-calls.md, decisions 21 to 24) ----
+
+    private async Task<JsonElement> Login(string cookie, object request)
+    {
+        using var r = await app.Call(Post, "/api/calls/relay", request, cookie);
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        return await AppFixture.Json(r);
+    }
+
+    private static string NameOf(JsonElement login) =>
+        login.GetProperty("iceServers").EnumerateArray().Single(s => s.TryGetProperty("username", out _)).GetProperty("username").GetString()!;
+
+    [Fact]
+    public async Task Before_calling_a_device_gets_a_relay_login_for_three_hours_without_port_53_and_tagged_with_nothing_about_who()
+    {
+        var p = await Friends();
+        var login = await Login(p.CA, new { conversationId = p.Chat });
+        Assert.True(login.GetProperty("relay").GetBoolean());
+        Assert.Equal(3 * 3600, login.GetProperty("seconds").GetInt32());
+        var urls = login.GetProperty("iceServers").EnumerateArray().SelectMany(s => s.GetProperty("urls").EnumerateArray()).Select(u => u.GetString()!).ToList();
+        Assert.Contains("turns:turn.cloudflare.com:443?transport=tcp", urls);
+        Assert.DoesNotContain(urls, u => u.Contains(":53", StringComparison.Ordinal));
+        var issued = app.Turn.Issued.Single(i => i.Name == NameOf(login));
+        Assert.Equal(3 * 3600, issued.Seconds);
+        Assert.Matches("^[0-9a-f]{32}$", issued.Tag);
+        Assert.DoesNotContain(p.A.Id.ToString("N"), issued.Tag);
+        var again = NameOf(await Login(p.CA, new { conversationId = p.Chat }));
+        Assert.Equal(issued.Tag, app.Turn.Issued.Single(i => i.Name == again).Tag);   // the same person, the same tag
+    }
+
+    [Fact]
+    public async Task Both_sides_logins_are_taken_back_when_the_call_ends()
+    {
+        var p = await Friends();
+        var caller = NameOf(await Login(p.CA, new { conversationId = p.Chat }));
+        var id = await Ringing(p);
+        var callee = NameOf(await Login(p.CB, new { callId = id }));
+        using (var r = await app.Call(Post, $"/api/calls/{id}/accept", new { sdp = Answer, v = CallEndpoints.ProtocolVersion }, p.CB)) Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var fresh = NameOf(await Login(p.CA, new { callId = id }));   // a long call: a fresh login
+        Assert.False(await app.Turn.RevokedSoon(caller));
+        using (await app.Call(Post, $"/api/calls/{id}/hangup", cookie: p.CB)) { }
+        Assert.True(await app.Turn.RevokedSoon(caller));
+        Assert.True(await app.Turn.RevokedSoon(callee));
+        Assert.True(await app.Turn.RevokedSoon(fresh));
+    }
+
+    [Fact]
+    public async Task A_login_no_call_claims_is_taken_back_a_minute_later_and_not_before()
+    {
+        var p = await Friends();
+        var unused = NameOf(await Login(p.CA, new { conversationId = p.Chat }));
+        app.Clock.Advance(TimeSpan.FromSeconds(59));
+        await Sweep();
+        Assert.False(await app.Turn.RevokedSoon(unused));
+        app.Clock.Advance(TimeSpan.FromSeconds(2));
+        await Sweep();
+        Assert.True(await app.Turn.RevokedSoon(unused));
+    }
+
+    [Fact]
+    public async Task A_login_for_a_device_that_lost_the_race_to_answer_is_taken_back_and_the_winners_is_kept()
+    {
+        var p = await Friends();
+        var id = await Ringing(p);
+        var phone = await app.SignIn(p.B.GomId, userAgent: "Phone");
+        var winner = NameOf(await Login(p.CB, new { callId = id }));
+        var loser = NameOf(await Login(phone, new { callId = id }));
+        using (await app.Call(Post, $"/api/calls/{id}/accept", new { sdp = Answer, v = CallEndpoints.ProtocolVersion }, p.CB)) { }
+        using (var r = await app.Call(Post, $"/api/calls/{id}/accept", new { sdp = Answer, v = CallEndpoints.ProtocolVersion }, phone)) Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
+        app.Clock.Advance(TimeSpan.FromSeconds(61));
+        using (await app.Call(Post, $"/api/calls/{id}/alive", cookie: p.CA)) { }
+        using (await app.Call(Post, $"/api/calls/{id}/alive", cookie: p.CB)) { }
+        await Sweep();
+        Assert.True(await app.Turn.RevokedSoon(loser));
+        Assert.DoesNotContain(winner, app.Turn.Revoked);
+    }
+
+    [Fact]
+    public async Task A_login_is_only_for_a_call_I_may_make_one_ringing_for_me_or_one_I_am_in()
+    {
+        var p = await Friends();
+        var (stranger, cs) = await app.Member();
+        await app.Befriend(stranger, p.A);
+        var notFriends = await app.OpenChat(cs, p.A.GomId);
+        await using (var db = app.Db.NewContext())
+        {
+            var (low, high) = Friendship.Order(stranger.Id, p.A.Id);
+            await db.Friendships.Where(f => f.UserLow == low && f.UserHigh == high).ExecuteDeleteAsync();
+        }
+        using (var r = await app.Call(Post, "/api/calls/relay", new { conversationId = notFriends }, cs)) Assert.Equal("not_friends", await ErrorOf(r));
+        using (var g = await app.Call(Post, "/api/conversations/group", new { title = "Nhà", members = new[] { p.B.GomId } }, p.CA))
+        {
+            var group = (await AppFixture.Json(g)).GetProperty("id").GetGuid();
+            using var r = await app.Call(Post, "/api/calls/relay", new { conversationId = group }, p.CA);
+            Assert.Equal("invalid_call", await ErrorOf(r));
+        }
+        using (var r = await app.Call(Post, "/api/calls/relay", new { }, p.CA)) Assert.Equal("missing_fields", await ErrorOf(r));
+
+        var id = await Ringing(p);
+        using (var r = await app.Call(Post, "/api/calls/relay", new { callId = id }, cs)) Assert.Equal(HttpStatusCode.NotFound, r.StatusCode);
+        var otherCaller = await app.SignIn(p.A.GomId, userAgent: "Tablet");
+        using (var r = await app.Call(Post, "/api/calls/relay", new { callId = id }, otherCaller)) Assert.Equal("not_in_call", await ErrorOf(r));
+        using (await app.Call(Post, $"/api/calls/{id}/hangup", cookie: p.CA)) { }
+        using (var r = await app.Call(Post, "/api/calls/relay", new { callId = id }, p.CB)) Assert.Equal("call_ended", await ErrorOf(r));
+        Assert.DoesNotContain(app.Turn.Issued, i => i.Tag == TurnLogins.Tag(stranger.Id, "test-token"));
+    }
+
+    [Fact]
+    public async Task Logins_are_counted_as_calls_are()
+    {
+        var p = await Friends();
+        for (var i = 0; i < 3; i++) await Login(p.CA, new { conversationId = p.Chat });
+        using var r = await app.Call(Post, "/api/calls/relay", new { conversationId = p.Chat }, p.CA);
+        Assert.Equal(HttpStatusCode.TooManyRequests, r.StatusCode);
+        Assert.Equal("too_many_calls", await ErrorOf(r));
+        Assert.NotNull(r.Headers.RetryAfter);
+    }
+
+    [Fact]
+    public async Task When_the_relay_does_not_answer_the_device_gets_a_direct_connection_only_and_is_told()
+    {
+        var p = await Friends();
+        app.Turn.Down = true;
+        try
+        {
+            var login = await Login(p.CA, new { conversationId = p.Chat });
+            Assert.False(login.GetProperty("relay").GetBoolean());
+            var only = Assert.Single(login.GetProperty("iceServers").EnumerateArray());
+            Assert.Equal("stun:stun.cloudflare.com:3478", Assert.Single(only.GetProperty("urls").EnumerateArray()).GetString());
+            Assert.False(only.TryGetProperty("username", out _));
+        }
+        finally { app.Turn.Down = false; }
+    }
+
+    [Fact]
+    public async Task Logins_of_a_call_that_ended_without_this_server_hearing_are_taken_back_by_the_sweep()
+    {
+        var p = await Friends();
+        var id = await Answered(p);
+        var fresh = NameOf(await Login(p.CA, new { callId = id }));
+        await using (var db = app.Db.NewContext())   // ended behind the server's back, as a fresh login racing the hang-up would leave it
+            await db.Calls.Where(k => k.Id == id).ExecuteUpdateAsync(s => s.SetProperty(k => k.State, CallState.Ended).SetProperty(k => k.Outcome, CallOutcome.Completed));
+        await Sweep();
+        Assert.True(await app.Turn.RevokedSoon(fresh));
+    }
+
+    [Fact]
+    public void Half_a_relay_key_stops_the_app_at_start()
+    {
+        var factory = app.Factory.WithWebHostBuilder(b => b.UseSetting("Turn:ApiToken", ""));
+        Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
     }
 }

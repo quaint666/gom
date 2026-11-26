@@ -34,8 +34,10 @@ public sealed class CallLimiter(SendLimiter bucket)
 /// What the two phones say to set a call up (their offers and answers, which hold their network addresses), kept in memory only and
 /// forgotten when the call ends; and the call frames to their devices. A server restart loses what a ringing call needed, and that
 /// call fails; a call already connected goes on phone to phone.
+/// Also the relay logins handed out: a device asks for one before it calls or answers, and the call it then starts or answers claims
+/// it; each call's logins are taken back when it ends, and one no call claimed soon is taken back by the sweep.
 /// </summary>
-public sealed class CallRelay(ConnectionRegistry registry)
+public sealed class CallRelay(ConnectionRegistry registry, TurnRevoker revoker)
 {
     public sealed record Descriptions(string? Offer, string? Answer, int Rev, Guid? LastFrom, string? LastType, string? LastSdp);
 
@@ -49,7 +51,69 @@ public sealed class CallRelay(ConnectionRegistry registry)
         _calls.AddOrUpdate(call, _ => new Descriptions(null, null, 1, from, type, sdp), (_, d) => d with { Rev = d.Rev + 1, LastFrom = from, LastType = type, LastSdp = sdp }).Rev;
 
     public Descriptions? Of(Guid call) => _calls.TryGetValue(call, out var d) ? d : null;
-    public void Forget(Guid call) => _calls.TryRemove(call, out _);
+
+    /// <summary>The call is over: what it needed is forgotten, and its relay logins are taken back.</summary>
+    public void Forget(Guid call)
+    {
+        _calls.TryRemove(call, out _);
+        List<string>? names;
+        lock (_gate) _logins.Remove(call, out names);
+        foreach (var name in names ?? []) revoker.Revoke(name);
+    }
+
+    private readonly Lock _gate = new();
+    private readonly Dictionary<(Guid Person, Guid Session), List<(string Name, DateTimeOffset At)>> _unclaimed = [];
+    private readonly Dictionary<Guid, List<string>> _logins = [];
+
+    /// <summary>A login for a device that is about to call or answer.</summary>
+    public void Issued(Guid person, Guid session, string name, DateTimeOffset at)
+    {
+        lock (_gate)
+        {
+            if (!_unclaimed.TryGetValue((person, session), out var list)) _unclaimed[(person, session)] = list = [];
+            list.Add((name, at));
+        }
+    }
+
+    /// <summary>A fresh login for a device already in the call (a long call).</summary>
+    public void Issued(Guid call, string name)
+    {
+        lock (_gate)
+        {
+            if (!_logins.TryGetValue(call, out var list)) _logins[call] = list = [];
+            list.Add(name);
+        }
+    }
+
+    /// <summary>The device started or answered this call: its waiting logins are the call's now.</summary>
+    public void Claim(Guid call, Guid person, Guid session)
+    {
+        lock (_gate)
+        {
+            if (!_unclaimed.Remove((person, session), out var waiting)) return;
+            if (!_logins.TryGetValue(call, out var list)) _logins[call] = list = [];
+            list.AddRange(waiting.Select(w => w.Name));
+        }
+    }
+
+    /// <summary>Takes back logins given out before <paramref name="before"/> that no call claimed (a call never made, an answer too late).</summary>
+    public int RevokeUnclaimed(DateTimeOffset before)
+    {
+        var gone = new List<string>();
+        lock (_gate)
+            foreach (var key in _unclaimed.Keys.ToList())
+            {
+                var list = _unclaimed[key];
+                gone.AddRange(list.Where(w => w.At < before).Select(w => w.Name));
+                list.RemoveAll(w => w.At < before);
+                if (list.Count == 0) _unclaimed.Remove(key);
+            }
+        foreach (var name in gone) revoker.Revoke(name);
+        return gone.Count;
+    }
+
+    /// <summary>The calls holding logins, so the sweep can take back those of a call that ended without this server hearing of it.</summary>
+    public List<Guid> HoldingLogins() { lock (_gate) return [.. _logins.Keys]; }
 
     /// <summary>To a person's devices: all of them, only one session, or all but one.</summary>
     public void Send(Guid person, byte[] frame, Guid? onlySession = null, Guid? exceptSession = null)
@@ -78,6 +142,9 @@ public static class CallEndpoints
     public sealed record StartRequest(Guid? ConversationId, Guid? ClientId, string? Sdp, int? V);
     public sealed record AnswerRequest(string? Sdp, int? V);
     public sealed record SdpRequest(string? Type, string? Sdp);
+    /// <param name="ConversationId">Before calling: the chat with the friend to call.</param>
+    /// <param name="CallId">Before answering (the call rings for me), or during a long call for a fresh login.</param>
+    public sealed record RelayRequest(Guid? ConversationId, Guid? CallId);
 
     public static void MapCalls(this IEndpointRouteBuilder app)
     {
@@ -85,6 +152,7 @@ public static class CallEndpoints
             .AddEndpointFilter(async (context, next) =>
                 context.HttpContext.RequestServices.GetRequiredService<IOptions<CallOptions>>().Value.Enabled ? await next(context) : Results.NotFound());
         api.MapPost("", Start);
+        api.MapPost("/relay", Relay);
         api.MapGet("/{id:guid}", Get);
         api.MapPost("/{id:guid}/accept", Accept);
         api.MapPost("/{id:guid}/decline", Decline);
@@ -94,6 +162,12 @@ public static class CallEndpoints
     }
 
     private static IResult Error(int status, string error) => Results.Json(new { error }, statusCode: status);
+
+    private static IResult TooMany(HttpContext http, TimeSpan wait)
+    {
+        http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Error(StatusCodes.Status429TooManyRequests, "too_many_calls");
+    }
 
     public static string Name(CallState state) => state switch { CallState.Ringing => "ringing", CallState.Active => "active", _ => "ended" };
 
@@ -114,6 +188,17 @@ public static class CallEndpoints
     {
         var (low, high) = Friendship.Order(a, b);
         return db.Friendships.AnyAsync(f => f.UserLow == low && f.UserHigh == high && f.Status == FriendStatus.Accepted, ct);
+    }
+
+    /// <summary>The friend I may call in this chat, or why there is none: not my chat, not one-to-one, or no longer friends.</summary>
+    private static async Task<(Guid Peer, IResult? Refused)> Callee(GomDbContext db, Guid conversation, Guid me, CancellationToken ct)
+    {
+        var access = await Access.Of(db, conversation, me, ct);
+        if (access is null) return (default, Results.NotFound());
+        if (access.Kind != ConversationKind.Direct) return (default, Error(StatusCodes.Status400BadRequest, "invalid_call"));
+        var peer = await db.Members.Where(m => m.ConversationId == conversation && m.UserId != me).Select(m => m.UserId).SingleAsync(ct);
+        if (!await Friends(db, me, peer, ct)) return (default, Error(StatusCodes.Status403Forbidden, "not_friends"));
+        return (peer, null);
     }
 
     /// <summary>What a device of one of the two may know of a call. The offer and answer go only to the devices that need them.</summary>
@@ -157,21 +242,14 @@ public static class CallEndpoints
         if (await db.Calls.AsNoTracking().SingleOrDefaultAsync(k => k.CallerId == me && k.ClientId == clientId, ct) is { } again)
             return await Described(db, again, me, session, relay, o, ct);
 
-        var access = await Access.Of(db, conversation, me, ct);
-        if (access is null) return Results.NotFound();
-        if (access.Kind != ConversationKind.Direct) return Error(StatusCodes.Status400BadRequest, "invalid_call");
-        var peer = await db.Members.Where(m => m.ConversationId == conversation && m.UserId != me).Select(m => m.UserId).SingleAsync(ct);
-        if (!await Friends(db, me, peer, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
+        var (peer, refused) = await Callee(db, conversation, me, ct);
+        if (refused is not null) return refused;
 
         // They are calling me at this moment: that call is the one, so this device shows it as incoming.
         var crossing = await db.Calls.AsNoTracking().Where(k => k.CallerId == peer && k.CalleeId == me && k.State == CallState.Ringing).Select(k => (Guid?)k.Id).FirstOrDefaultAsync(ct);
         if (crossing is { } theirs) return Results.Json(new { error = "call_waiting", id = theirs }, statusCode: StatusCodes.Status409Conflict);
 
-        if (limiter.TryTake(me) is { } wait)
-        {
-            http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
-            return Error(StatusCodes.Status429TooManyRequests, "too_many_calls");
-        }
+        if (limiter.TryTake(me) is { } wait) return TooMany(http, wait);
 
         var now = clock.GetUtcNow();
         var call = new Call
@@ -200,15 +278,52 @@ public static class CallEndpoints
                 call.State = CallState.Ringing;
                 db.Calls.Add(call);
                 await db.SaveChangesAsync(ct);
+                relay.Claim(call.Id, me, session);
                 await EndAsync(db, relay, live, push, call.Id, CallOutcome.Busy, now, ct);
                 var busy = await db.Calls.AsNoTracking().SingleAsync(k => k.Id == call.Id, ct);
                 return await Described(db, busy, me, session, relay, o, ct);
             }
         }
         relay.Offer(call.Id, sdp);
+        relay.Claim(call.Id, me, session);
         var caller = await db.Users.Where(u => u.Id == me).Select(u => new MessageEndpoints.PersonDto(u.Id, u.DisplayName)).SingleAsync(ct);
         relay.Send(peer, Frames.CallIncoming(call.Id, conversation, caller));
         return Results.Ok(Describe(call, me, session, relay, o, caller.DisplayName));
+    }
+
+    /// <summary>
+    /// The servers for one device's connection, asked for before it builds its offer or answer (every address goes in it at once), and
+    /// again before the login runs out in a long call (<c>seconds</c>). <c>relay</c> false: no relay this time, a direct connection only.
+    /// Only for a call I may make, one ringing for me, or one I am in; counted as calls are.
+    /// </summary>
+    private static async Task<IResult> Relay(RelayRequest request, HttpContext http, GomDbContext db, CallRelay relay, TurnLogins turn, TurnLimiter limiter,
+        TimeProvider clock, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var session = GomClaims.Session(http.User);
+        Guid? inCall = null;
+        if (request.CallId is { } id)
+        {
+            var call = await Mine(db, id, me, ct);
+            if (call is null) return Results.NotFound();
+            if (call.State == CallState.Ended) return Error(StatusCodes.Status409Conflict, "call_ended");
+            if (InIt(call, session)) inCall = id;
+            else if (!(call.State == CallState.Ringing && call.CalleeId == me)) return Error(StatusCodes.Status403Forbidden, "not_in_call");
+        }
+        else if (request.ConversationId is { } conversation)
+        {
+            if ((await Callee(db, conversation, me, ct)).Refused is { } refused) return refused;
+        }
+        else return Error(StatusCodes.Status400BadRequest, "missing_fields");
+
+        if (limiter.TryTake(me) is { } wait) return TooMany(http, wait);
+        var login = await turn.IssueAsync(me, ct);
+        if (login.Username is { } name)
+        {
+            if (inCall is { } call) relay.Issued(call, name);
+            else relay.Issued(me, session, name, clock.GetUtcNow());
+        }
+        return Results.Ok(new { iceServers = login.IceServers, relay = login.Username is not null, seconds = login.Seconds });
     }
 
     /// <summary>The call, for one of its two people (anyone else: not found).</summary>
@@ -251,6 +366,7 @@ public static class CallEndpoints
             return Error(StatusCodes.Status409Conflict, state == CallState.Active ? "call_answered" : "call_ended");
         }
         relay.Answer(id, sdp);
+        relay.Claim(id, me, session);
         relay.Send(call.CallerId, Frames.CallAccepted(id, call.ConversationId, sdp), onlySession: call.CallerSessionId);
         relay.Send(me, Frames.CallAnsweredElsewhere(id, call.ConversationId), exceptSession: session);
         var now2 = await db.Calls.AsNoTracking().SingleAsync(k => k.Id == id, ct);
@@ -396,6 +512,15 @@ public static class CallSweeper
     public static async Task<int> RunOnce(GomDbContext db, CallRelay relay, LiveDelivery live, Push.PushQueue push, DateTimeOffset now, CallOptions o, CancellationToken ct)
     {
         var count = 0;
+        // A login is asked for just before calling or answering; one still unclaimed after a whole ring (and some slack) never will be.
+        relay.RevokeUnclaimed(now.AddSeconds(-(o.RingSeconds + 15)));
+        // Logins of a call that ended without this server knowing (a race with a fresh login, a call deleted with an account).
+        var holding = relay.HoldingLogins();
+        if (holding.Count > 0)
+        {
+            var going = await db.Calls.Where(k => holding.Contains(k.Id) && k.State != CallState.Ended).Select(k => k.Id).ToListAsync(ct);
+            foreach (var id in holding.Except(going)) relay.Forget(id);
+        }
         var rangOut = now.AddSeconds(-o.RingSeconds);
         foreach (var id in await db.Calls.Where(k => k.State == CallState.Ringing && k.CreatedAt <= rangOut).Select(k => k.Id).ToListAsync(ct))
             if (await CallEndpoints.EndAsync(db, relay, live, push, id, CallOutcome.Missed, now, ct)) count++;
