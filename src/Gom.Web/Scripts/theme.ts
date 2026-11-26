@@ -22,7 +22,7 @@ export const chosenScheme = (): Choice => storedScheme() ?? 'system';
 export const chooseScheme = (choice: Choice): void => applyScheme(choice === 'system' ? null : choice);
 
 /** The colours a person can choose, in the order Settings shows them. The codes are Chat/Appearance.cs's (a server test checks). */
-export const PALETTES = ['sage', 'sea', 'lotus', 'turmeric', 'lavender', 'graphite', 'jade', 'indigo', 'plum', 'lacquer', 'coffee', 'moss'] as const;
+export const PALETTES = ['sage', 'sea', 'lotus', 'turmeric', 'lavender', 'graphite', 'jade', 'indigo', 'plum', 'lacquer', 'coffee', 'moss', 'clay', 'sky', 'wine', 'rice'] as const;
 export type Palette = typeof PALETTES[number];
 export const isPalette = (value: unknown): value is Palette => typeof value === 'string' && (PALETTES as readonly string[]).includes(value);
 
@@ -54,7 +54,7 @@ export function syncThemeColor(root: HTMLElement = document.documentElement): vo
 export const PALETTE_STORAGE_KEY = PALETTE_KEY;
 
 /** The backgrounds behind the messages, in the order Settings shows them; "plain" has none. The codes are Chat/Appearance.cs's. */
-export const PATTERNS = ['plain', 'dots', 'tiles', 'waves', 'bamboo', 'clouds', 'grid', 'weave', 'lotus'] as const;
+export const PATTERNS = ['plain', 'dots', 'tiles', 'waves', 'bamboo', 'clouds', 'grid', 'weave', 'lotus', 'nonla', 'drum', 'blossom', 'lantern', 'koi', 'stars'] as const;
 export type Pattern = typeof PATTERNS[number];
 export const isPattern = (value: unknown): value is Pattern => typeof value === 'string' && (PATTERNS as readonly string[]).includes(value);
 

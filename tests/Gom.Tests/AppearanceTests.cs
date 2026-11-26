@@ -76,7 +76,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal("plain", await PatternOf(cookie));
         using (var r = await app.Call(HttpMethod.Put, "/api/me/pattern", new { pattern = "tiles" }, cookie)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
         Assert.Equal("tiles", await PatternOf(await app.SignIn(user.GomId)));
-        foreach (var bad in new[] { "stars", "Tiles", "", null })
+        foreach (var bad in new[] { "hearts", "Tiles", "", null })
         {
             using var r = await app.Call(HttpMethod.Put, "/api/me/pattern", new { pattern = bad }, cookie);
             Assert.Equal("invalid_pattern", (await AppFixture.Json(r)).GetProperty("error").GetString());

@@ -66,7 +66,7 @@ public class ConversationLookTests(AppFixture app) : IClassFixture<AppFixture>
     {
         var g = await Group();
         using (var bad = await SetLook(g.Group, g.CA, "neon", null)) Assert.Equal("invalid_palette", (await AppFixture.Json(bad)).GetProperty("error").GetString());
-        using (var bad = await SetLook(g.Group, g.CA, null, "stars")) Assert.Equal("invalid_pattern", (await AppFixture.Json(bad)).GetProperty("error").GetString());
+        using (var bad = await SetLook(g.Group, g.CA, null, "hearts")) Assert.Equal("invalid_pattern", (await AppFixture.Json(bad)).GetProperty("error").GetString());
         var (_, stranger) = await app.Member();
         using (var r = await SetLook(g.Group, stranger, "sea", null)) Assert.Equal(HttpStatusCode.NotFound, r.StatusCode);
         Assert.Empty(await Restyled(g.Group, g.CA));

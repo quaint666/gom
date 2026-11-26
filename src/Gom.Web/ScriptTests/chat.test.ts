@@ -3408,13 +3408,13 @@ describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
     root.querySelector<HTMLButtonElement>('[data-info-look]')!.click();
     await flush();
     const panel = () => root.querySelector<HTMLElement>('[data-look-panel]')!;
-    expect(panel().querySelectorAll('[data-look-colours] input')).toHaveLength(13);   // each person's own, then twelve
+    expect(panel().querySelectorAll('[data-look-colours] input')).toHaveLength(17);   // each person's own, then sixteen
     expect(panel().querySelector<HTMLInputElement>('[data-look-colours] input[value=""]')!.checked).toBe(true);
     const sea = panel().querySelector<HTMLInputElement>('[data-look-colours] input[value="sea"]')!;
     sea.checked = true; sea.dispatchEvent(new Event('change'));
     panel().querySelector<HTMLButtonElement>('[data-look-tab="pattern"]')!.click();
     await flush();
-    expect(panel().querySelectorAll('[data-look-patterns] input')).toHaveLength(10);
+    expect(panel().querySelectorAll('[data-look-patterns] input')).toHaveLength(16);
     const waves = panel().querySelector<HTMLInputElement>('[data-look-patterns] input[value="waves"]')!;
     waves.checked = true; waves.dispatchEvent(new Event('change'));
     panel().querySelector<HTMLButtonElement>('[data-look-save]')!.click();
