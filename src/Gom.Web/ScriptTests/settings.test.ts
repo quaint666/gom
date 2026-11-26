@@ -119,11 +119,11 @@ describe('settings: the parts and their addresses', () => {
 describe('settings: reloading Gom', () => {
   it('shows the version and reloads from the menu', async () => {
     const reload = vi.fn();
-    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: 'bf066b7453', reload });
+    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: '1.4.2', reload });
     await flush();
     const row = root.querySelector<HTMLButtonElement>('[data-reload-app]')!;
     expect(text(row)).toContain('Tải lại Gom');
-    expect(text(row)).toContain('Phiên bản bf066b7453 · lấy bản mới nhất');
+    expect(text(row)).toContain('Phiên bản v1.4.2 · lấy bản mới nhất');
     row.click();
     expect(reload).toHaveBeenCalledTimes(1);
   });

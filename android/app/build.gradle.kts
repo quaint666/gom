@@ -5,6 +5,11 @@ plugins {
 /** A build setting from ~/.gradle/gradle.properties or -P: the server's address and the Firebase values never live in the repository. */
 fun setting(name: String): String = providers.gradleProperty(name).orNull?.trim().orEmpty()
 
+/** The release this code is: the repository's VERSION file, the same number the server shows (docs/releases.md). */
+val release: String = rootDir.resolve("../VERSION").readText().trim().also {
+    require(Regex("""^\d+\.\d+\.\d+$""").matches(it)) { "VERSION must hold one release number, like 1.2.3" }
+}
+
 /** A Java string literal for BuildConfig. */
 fun literal(value: String): String = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
@@ -18,7 +23,7 @@ android {
         // What Google Play requires since 31 August 2026; 37 waits until Play asks for it (docs/decisions.md).
         targetSdk = 36
         versionCode = setting("gom.versionCode").ifEmpty { "1" }.toInt()
-        versionName = setting("gom.versionName").ifEmpty { "0.1.0" }
+        versionName = release
     }
 
     buildFeatures {

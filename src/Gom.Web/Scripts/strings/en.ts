@@ -219,7 +219,7 @@ export const en: Strings = {
     installSummary: 'Open it like an app',
     reloadRow: 'Reload Gom',
     policyRow: 'Privacy policy',
-    reloadSummary: (version: string | null): string => version === null ? 'Get the latest version' : `Version ${version} · get the latest`,
+    reloadSummary: (version: string | null): string => version === null ? 'Get the latest version' : `Version v${version} · get the latest`,
     pushSummaryOff: 'Off',
     pushSummaryNone: 'Not available on this device',
     pushSummary: { words: 'On · Shows the message', name: 'On · Shows the sender', nothing: 'On · Only "New message"' },

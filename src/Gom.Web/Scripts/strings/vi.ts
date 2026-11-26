@@ -221,7 +221,7 @@ export const vi = {
     installSummary: 'Mở như một ứng dụng',
     reloadRow: 'Tải lại Gom',
     policyRow: 'Chính sách quyền riêng tư',
-    reloadSummary: (version: string | null): string => version === null ? 'Lấy bản mới nhất' : `Phiên bản ${version} · lấy bản mới nhất`,
+    reloadSummary: (version: string | null): string => version === null ? 'Lấy bản mới nhất' : `Phiên bản v${version} · lấy bản mới nhất`,
     pushSummaryOff: 'Tắt',
     pushSummaryNone: 'Không có trên thiết bị này',
     pushSummary: { words: 'Bật · Hiện nội dung tin nhắn', name: 'Bật · Hiện tên người gửi', nothing: 'Bật · Chỉ "Tin nhắn mới"' },

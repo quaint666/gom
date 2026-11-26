@@ -34,6 +34,7 @@ export function sectionOf(path: string): Section | null {
 }
 
 /** The version this page runs, and "Tải lại Gom": a reload that fetches every kept file again. */
+/** `version`: the release the server says it is ("1.0.0", `data-version`), shown as v1.0.0; null when it says none. */
 export interface AppReload { version: string | null; reload(): void }
 
 export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer, pusher?: Pusher, nav?: SettingsNav, app?: AppReload): void {

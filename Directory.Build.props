@@ -11,4 +11,17 @@
          EF1002 CA5351 CA5394    SQL built from strings, a weak hash, Random where it must be random -->
     <WarningsAsErrors>$(WarningsAsErrors);nullable;CS4014;CS8509;CS8524;CS0162;CS1717;CS0472;CS0642;CS0183;CS0252;CS0253;CS0108;CS0114;CS0659;CS0660;CS0661;CS0649;EF1002;CA2200;CA2208;CA2017;CA2021;CA2013;CA2016;CA1849;CA5351;CA5394</WarningsAsErrors>
   </PropertyGroup>
+
+  <!-- The release this code is (docs/releases.md): one number, in VERSION, which the pages show in Settings and the Android app
+       takes as its versionName. Without the commit appended, so the pages show only the number. -->
+  <PropertyGroup>
+    <GomVersion>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</GomVersion>
+    <Version>$(GomVersion)</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <Target Name="GomVersionCheck" BeforeTargets="Build">
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(GomVersion)', '^\d+\.\d+\.\d+$'))"
+      Text="VERSION must hold one release number, like 1.2.3 (docs/releases.md)." />
+  </Target>
 </Project>

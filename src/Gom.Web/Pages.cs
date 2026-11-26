@@ -22,6 +22,11 @@ public static class Pages
     public const int PageVersion = 1;
     public const string PageVersionHeader = "Gom-Page-Version";
 
+    /// <summary>The release this server is ("1.0.0", from the repository's VERSION file through the build), shown in Settings.</summary>
+    public static readonly string Release = typeof(Pages).Assembly
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion;
+
     /// <summary>True for a page that said it is older than <see cref="PageVersion"/>. Saying nothing, or something unreadable, is let through.</summary>
     public static bool TooOld(string? sent) => int.TryParse(sent, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) && n < PageVersion;
 
@@ -97,7 +102,8 @@ public static class Pages
     public static string Render(string shell, Page page, string limits, SiteOptions site) => shell
         .Replace("{page}", Escape(page.Name), StringComparison.Ordinal)
         .Replace("{limits}", Escape(limits), StringComparison.Ordinal)
-        .Replace("{operator}", Escape(site.Operator.Trim()), StringComparison.Ordinal);
+        .Replace("{operator}", Escape(site.Operator.Trim()), StringComparison.Ordinal)
+        .Replace("{version}", Escape(Release), StringComparison.Ordinal);
 
     // Only what HTML needs (WebUtility.HtmlEncode would also write "·" as "&#183;").
     private static string Escape(string text) =>

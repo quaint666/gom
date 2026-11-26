@@ -76,7 +76,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
     private static async Task<JsonElement> LimitsOf(HttpClient client, string path)
     {
         var html = await (await client.GetAsync(path)).Content.ReadAsStringAsync();
-        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\" data-operator=\"[^\"]*\" data-video-script=\"/js/video(\\.[0-9a-f]{10})?\\.js\">");
+        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\" data-operator=\"[^\"]*\" data-version=\"\\d+\\.\\d+\\.\\d+\" data-video-script=\"/js/video(\\.[0-9a-f]{10})?\\.js\">");
         Assert.True(attribute.Success);   // the video converter's address, fingerprinted when the build made a copy
         return JsonDocument.Parse(WebUtility.HtmlDecode(attribute.Groups[1].Value)).RootElement.Clone();
     }
@@ -121,6 +121,18 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         using var named = factory.WithWebHostBuilder(b => b.UseSetting("Site:Operator", " An & \"Bình\" <x> "));
         var html = await (await named.CreateClient().GetAsync("/privacy")).Content.ReadAsStringAsync();
         Assert.Contains("data-operator=\"An &amp; &quot;Bình&quot; &lt;x&gt;\"", html);
+    }
+
+    /// <summary>Settings shows the release number, from the repository's VERSION file: the same number the release is tagged with.</summary>
+    [Fact]
+    public async Task Every_page_carries_the_release_number_from_the_version_file()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
+        var release = (await File.ReadAllTextAsync(Path.Combine(dir!.FullName, "VERSION"))).Trim();
+        Assert.Matches(@"^\d+\.\d+\.\d+$", release);
+        var html = await (await factory.CreateClient().GetAsync("/sign-in")).Content.ReadAsStringAsync();
+        Assert.Contains($"data-version=\"{release}\"", html);
     }
 
     [Fact]
