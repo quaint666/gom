@@ -498,6 +498,10 @@ export const vi = {
     hide: 'Ẩn trò chuyện',
     unhide: 'Bỏ ẩn trò chuyện',
     hiddenToast: 'Đã ẩn cuộc trò chuyện',
+    /** Pulling the list down from its top, on a phone. */
+    pullRelease: 'Thả để tải lại',
+    pullReloading: 'Đang tải lại…',
+    pullBusy: 'Chưa tải lại: còn tệp chưa gửi hoặc tin nhắn đang sửa.',
     clear: 'Xóa hội thoại',
     clearQ: 'Xóa toàn bộ tin nhắn của cuộc trò chuyện này ở phía bạn? Người khác vẫn thấy chúng.',
     pushOffer: 'Bật thông báo để biết khi có tin nhắn mới.',

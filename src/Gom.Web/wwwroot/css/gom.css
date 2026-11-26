@@ -205,6 +205,11 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 /* "Đã ẩn cuộc trò chuyện · Hoàn tác": at the foot of the list (over it, on a wide screen, so the open thread's composer stays clear) */
 .toast { position: fixed; z-index: 30; inset-block-end: max(12px, env(safe-area-inset-bottom)); inset-inline: 12px; margin-inline: auto; max-inline-size: 420px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--tint); color: var(--tint-text); font-size: 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25); }
 @media (min-width: 900px) { .toast { inset-inline: 76px auto; inline-size: 316px; } }
+/* Pull down to reload (pull.ts): a circle that comes down with the finger and turns as it goes, then "Thả để tải lại" once far enough. */
+.pull { position: fixed; z-index: 30; inset-block-start: 0; inset-inline: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; transform: translateY(var(--pull-y, 0)); }
+.pull-dot { display: grid; place-items: center; inline-size: 40px; block-size: 40px; margin-block-start: -44px; border-radius: 50%; background: var(--surface); color: var(--muted); box-shadow: 0 2px 10px rgb(0 0 0 / .2); transform: rotate(var(--pull-turn, 0)); }
+.pull[data-ready="true"] .pull-dot { background: var(--btn); color: var(--on-btn); }
+.pull-label { padding: 2px 10px; border-radius: 10px; background: var(--surface); color: var(--text); font-size: 13px; box-shadow: 0 2px 10px rgb(0 0 0 / .15); }
 .hidden-label { margin: 12px 16px 4px; font-size: 13px; font-weight: 600; color: var(--muted); }   /* "Đã ẩn": hidden ones a search found */
 .row-more { position: absolute; inset-inline-end: 6px; inset-block-start: 4px; inline-size: 36px; block-size: 36px; opacity: 0; background: var(--surface); }
 .row:has(.item.active) .row-more, .row-more:focus-visible, .row-more[aria-expanded="true"] { opacity: 1; }
