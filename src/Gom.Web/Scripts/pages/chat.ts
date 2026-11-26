@@ -18,6 +18,7 @@ import { say } from '../say.js';
 import { mountWaiting } from './waiting.js';
 import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
+import type { Calls } from '../calls/call.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -46,6 +47,8 @@ export interface ChatDeps {
    * is picked. Without it every video goes as it is.
    */
   prepareVideo?(file: File, onProgress: (fraction: number) => void, maxBytes: number): Promise<PreparedVideo | null>;
+  /** Voice calls, on a page that takes them (not in the Android app yet); offered only when the server has calls on. */
+  calls?: Calls;
 }
 
 /** Remembered per device (browser storage) once "Để sau" is tapped: the banner does not come back there. */
@@ -638,17 +641,22 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="btn secondary small" type="button" data-discard @click=${() => discard(m.conversationId, m.clientId)}>${say.chat.discard}</button></div>` : nothing}`;
   };
 
-  /**
-   * A call's line (mockup 29): a card on the side of whoever called, worded for the reader, a missed one in red. No "Gọi lại" yet:
-   * a page cannot call; the Android app will offer it through its bridge (docs/voice-calls.md, PR 5).
-   */
+  /** Whether this chat can be called from here: calls on, this page takes them, and a one-to-one chat with a friend (their ID is there only then). */
+  const callable = (c: Conversation | undefined): c is Conversation =>
+    me?.calls === true && deps.calls !== undefined && c?.kind === 'direct' && c.peer !== null && !c.peer.deleted && c.peer.gomId !== null;
+  const callIn = (c: Conversation) => { void deps.calls?.start(c.id, { name: c.title ?? c.peer?.displayName ?? '', avatar: c.peer?.avatar }); };
+
+  /** A call's line (mockup 29): a card on the side of whoever called, worded for the reader, a missed one in red with "Gọi lại". */
   const callCard = (m: Shown, call: CallLine) => {
     const mine = call.callerId === me?.id;
+    const missed = missedByMe(call, me?.id ?? '');
+    const c = chatOf(m.conversationId);
     return html`<div class="call-row ${mine ? 'out' : 'in'}" data-call-line=${m.id} data-outcome=${call.outcome}>
-      <div class="call-card ${missedByMe(call, me?.id ?? '') ? 'missed' : ''}">
+      <div class="call-card ${missed ? 'missed' : ''}">
         <span class="call-i">${icons.call()}</span>
         <span class="call-t"><b>${callTitle(call, me?.id ?? '')}</b>
           <small>${mine ? icons.callOut() : icons.callIn()}<span class="sr-only">${mine ? say.calls.outgoing : say.calls.incoming}</span>${call.outcome === 'completed' ? `${callLength(call.seconds)} · ` : ''}${clock(call.startedAt)}</small></span>
+        ${missed && callable(c) ? html`<button class="call-back" type="button" data-call-back @click=${() => callIn(c)}>${say.calls.callBack}</button>` : nothing}
       </div></div>`;
   };
 
@@ -998,6 +1006,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
             : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : nothing}</div>`}
+          ${callable(c) ? html`<button class="ib" type="button" data-call-start aria-label=${say.calls.call} @click=${() => callIn(c)}>${icons.call()}</button>` : nothing}
           ${c === undefined ? nothing : html`<button class="ib wide" type="button" data-search aria-label=${say.chat.searchIn} aria-expanded=${searching ? 'true' : 'false'}
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
           <button class="ib wide" type="button" data-mute aria-pressed=${isMuted(c) ? 'true' : 'false'}
@@ -2433,6 +2442,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   // ---- start
 
   const handlers: LiveHandlers = {
+    call: (frame) => deps.calls?.frame(frame),
     state(connected) {
       offline = !connected;
       update();
@@ -2513,7 +2523,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     drafts = deps.drafts?.(me.gomId) ?? null;
     for (const [id, t] of threads) if (t.draft === '' && t.editing === null) t.draft = drafts?.load(id) ?? '';
     // A reload loses files picked but not sent, and a change being made to a sent message; typed words are kept (drafts).
-    deps.holdReload?.(() => [...threads.values()].some((t) => t.tray.length > 0 || t.editing !== null));
+    deps.holdReload?.(() => deps.calls?.busy() === true || [...threads.values()].some((t) => t.tray.length > 0 || t.editing !== null));
     live = deps.live(handlers);
     live.start();
     await refreshList();

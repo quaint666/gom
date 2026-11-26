@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Gom.Web.Chat;
 
 namespace Gom.Tests;
@@ -49,6 +50,15 @@ public class WebCallTests(WebCallFixture app) : IClassFixture<WebCallFixture>
     }
 
     private static async Task<string?> ErrorOf(HttpResponseMessage r) => (await AppFixture.Json(r)).GetProperty("error").GetString();
+
+    [Fact]
+    public void The_page_speaks_the_servers_call_protocol()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
+        var api = File.ReadAllText(Path.Combine(dir!.FullName, "src", "Gom.Web", "Scripts", "api.ts"));
+        Assert.Equal(CallEndpoints.ProtocolVersion, int.Parse(Regex.Match(api, @"export const CALL_PROTOCOL = (\d+);").Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+    }
 
     [Fact]
     public async Task Only_an_open_page_that_takes_calls_makes_its_person_callable()

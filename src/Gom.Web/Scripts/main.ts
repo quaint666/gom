@@ -12,6 +12,8 @@ import { mountReset } from './pages/reset.js';
 import { mountPrivacy } from './pages/privacy.js';
 import { mountSettings } from './pages/settings.js';
 import { appPort, createAppPusher, type AppPusher } from './app.js';
+import { createCalls, type Calls, type PeerLike } from './calls/call.js';
+import { createRing } from './calls/ring.js';
 import { createPusher, type Pusher } from './push.js';
 import { attachPull, canPullList } from './pull.js';
 import { mountSignIn } from './pages/signin.js';
@@ -135,12 +137,44 @@ const prepareVideo: ChatDeps['prepareVideo'] = async (file, onProgress, maxBytes
   return converter.prepareVideo(file, onProgress, maxBytes);
 };
 
+/**
+ * Voice calls, in a browser that has WebRTC and a microphone API; not in the Android app yet, which has no microphone permission
+ * and will ring by its own means (docs/voice-calls.md, 2b). Only the chat page takes calls: it tells the server so on its socket.
+ */
+const calls: Calls | undefined = port === undefined && typeof RTCPeerConnection === 'function' && navigator.mediaDevices?.getUserMedia !== undefined
+  && document.body.dataset['page'] === 'home' ? (() => {
+    const host = document.createElement('div');
+    host.className = 'call-host';
+    document.body.append(host);
+    const sound = document.createElement('audio');
+    sound.autoplay = true;
+    host.after(sound);
+    const ownTitle = document.title;
+    const askBeforeLeaving = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    const made = createCalls({
+      api, host,
+      peer: (config) => new RTCPeerConnection(config) as unknown as PeerLike,
+      mic: () => navigator.mediaDevices.getUserMedia({ audio: true }),
+      play: (stream) => { sound.srcObject = stream; if (stream !== null) void sound.play().catch(() => undefined); },
+      ring: createRing(),
+      title: (text) => { document.title = text ?? ownTitle; },
+      guardLeaving: (on) => { if (on) addEventListener('beforeunload', askBeforeLeaving); else removeEventListener('beforeunload', askBeforeLeaving); },
+      phone: () => matchMedia('(pointer: coarse)').matches,
+      now: () => performance.now(),
+      timer: { set: (fn, ms) => window.setTimeout(fn, ms), clear: (id) => window.clearTimeout(id) },
+      newId: () => crypto.randomUUID(),
+    });
+    addEventListener('pagehide', () => made.leaving());
+    return made;
+  })() : undefined;
+
 const chatDeps = (): ChatDeps => ({
   clearNotifications: (conversation) => pusher.clear(conversation),
   pusher,
   ...(appPusher === undefined ? {} : (({ onKeyboardImage }) => ({ keyboardImages: onKeyboardImage }))(appPusher)),
   prepareVideo,
-  live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?page=${limits().pageVersion}`,
+  ...(calls === undefined ? {} : { calls }),
+  live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?page=${limits().pageVersion}${calls === undefined ? '' : '&calls=1'}`,
     { ...handlers, version: (v) => updates.heard(v), tooOld: () => { handlers.tooOld?.(); updates.tooOld(); } }),
   nav: { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), back: () => history.back(), onPop: (callback) => addEventListener('popstate', callback) },
   now: () => new Date(),

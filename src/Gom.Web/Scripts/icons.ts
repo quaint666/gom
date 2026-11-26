@@ -16,12 +16,17 @@ export const sun = () => icon('M12 8a4 4 0 100 8 4 4 0 000-8z', 'M12 2v2M12 20v2
 export const copy = () => icon('M9 9h10v10H9z', 'M5 15V5h10');
 /** A row that opens a page of its own. */
 export const chevron = () => icon('M9 5l7 7-7 7');
+/** Pointing down: minimise a call to the bar. */
+export const chevronDown = () => icon('M6 9l6 6 6-6');
 export const lock = () => icon('M6 11h12v9H6z', 'M8.5 11V8a3.5 3.5 0 017 0v3');
 export const shield = () => icon('M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z', 'M9 12l2 2 4-4');
 export const disk = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 3v9l6.4 6.4');
 export const phone = () => icon('M8 3h8v18H8z', 'M11 18h2');
 /** A handset: a voice call. */
 export const call = () => icon('M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z');
+/** The microphone, and the microphone off (muted). */
+export const mic = () => icon('M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z', 'M5 11a7 7 0 0014 0', 'M12 18v3');
+export const micOff = () => icon('M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z', 'M5 11a7 7 0 0014 0', 'M12 18v3', 'M3 3l18 18');
 /** A call that came in, and one that went out. */
 export const callIn = () => icon('M17 7L7 17', 'M7 9v8h8');
 export const callOut = () => icon('M7 17L17 7', 'M9 7h8v8');
