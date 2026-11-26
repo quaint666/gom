@@ -16,9 +16,12 @@ using Microsoft.Extensions.Options;
 
 namespace Gom.Tests;
 
-/// <summary>The app with calls switched on (they are off by default).</summary>
-public sealed class CallFixture : AppFixture
+/// <summary>The app with calls switched on (they are off by default), and the Android app taking them.</summary>
+public class CallFixture : AppFixture
 {
+    /// <summary>Whether the Android app takes calls (<c>Calls:AppsTakeCalls</c>); <see cref="WebCallFixture"/> says no.</summary>
+    protected virtual bool AppsTakeCalls => true;
+
     /// <summary>Where relay logins come from in tests: a fake Cloudflare.</summary>
     public FakeTurn Turn { get; } = new();
 
@@ -44,6 +47,7 @@ public sealed class CallFixture : AppFixture
     protected override void Settings(IWebHostBuilder b)
     {
         b.UseSetting("Calls:Enabled", "true");
+        b.UseSetting("Calls:AppsTakeCalls", AppsTakeCalls ? "true" : "false");
         b.UseSetting("Push:PublicKey", PushFixture.Keys.Public);
         b.UseSetting("Push:PrivateKey", PushFixture.Keys.Private);
         b.UseSetting("Push:Subject", PushFixture.Subject);

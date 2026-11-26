@@ -161,7 +161,7 @@ public class DeploymentTests(AppFixture app) : IClassFixture<AppFixture>
     public async Task Every_answer_says_which_features_of_the_device_the_page_may_not_use()
     {
         using var response = await app.Call(HttpMethod.Get, "/sign-in");
-        Assert.Equal("camera=(), microphone=(), geolocation=()", response.Headers.GetValues("Permissions-Policy").Single());
+        Assert.Equal("camera=(), microphone=(self), geolocation=()", response.Headers.GetValues("Permissions-Policy").Single());
     }
 
     [Fact]
