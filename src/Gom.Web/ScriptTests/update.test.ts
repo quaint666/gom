@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { showUpdateBar, watchForUpdate, type Probe, type UpdateDeps } from '../Scripts/update.js';
+import { showUpdateBar, versionOf, watchForUpdate, type Probe, type UpdateDeps } from '../Scripts/update.js';
 import { flush } from './helpers.js';
 
 let clock: number;
@@ -7,19 +7,32 @@ let answers: Array<Probe | null | 'wait'>;
 let released: Array<(p: Probe | null) => void>;
 let tick: () => void;
 let shown: () => void;
+let hidden: () => void;
 let announce: ReturnType<typeof vi.fn>;
+let reload: ReturnType<typeof vi.fn>;
 let probe: ReturnType<typeof vi.fn>;
+let visible: boolean;
+let busy: boolean;
+let reloadedAt: number | null;
 
-function start(): ReturnType<typeof watchForUpdate> {
+function start(own: string | null = 'aaa'): ReturnType<typeof watchForUpdate> {
   const deps: UpdateDeps = {
     probe: probe as never,
     now: () => clock,
     every: (fn) => { tick = fn; },
     onShown: (fn) => { shown = fn; },
+    onHidden: (fn) => { hidden = fn; },
+    visible: () => visible,
+    busy: () => busy,
     announce: announce as never,
+    reload: reload as never,
+    reloadedAt: { get: () => reloadedAt, set: (at) => { reloadedAt = at; } },
+    own,
   };
   return watchForUpdate(deps);
 }
+const hide = () => { visible = false; hidden(); };
+const show = () => { visible = true; shown(); };
 
 const said = (etag: string | null, status = 200): Probe => ({ status, etag });
 
@@ -28,6 +41,10 @@ beforeEach(() => {
   answers = [];
   released = [];
   announce = vi.fn();
+  reload = vi.fn();
+  visible = true;
+  busy = false;
+  reloadedAt = null;
   probe = vi.fn(() => {
     const next = answers.shift();
     if (next === 'wait') return new Promise((resolve) => released.push(resolve));
@@ -117,6 +134,120 @@ describe('noticing a new version', () => {
   });
 });
 
+describe('hearing the version over the live connection', () => {
+  it('knows at once when the server hands out another version, and says so on a tab in view', async () => {
+    answers = [said('"a"')];
+    const w = start('aaa');
+    await flush();
+    w.heard('aaa');
+    expect(announce).not.toHaveBeenCalled();
+    w.heard('bbb');
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+    tick(); await flush();
+    expect(probe).toHaveBeenCalledTimes(1);   // knowing already, it stops asking
+  });
+
+  it('cannot compare without a version of its own (plain names), and leaves it to the probe', async () => {
+    answers = [said('"a"')];
+    const w = start(null);
+    await flush();
+    w.heard('bbb');
+    expect(announce).not.toHaveBeenCalled();
+  });
+});
+
+describe('moving to the new version', () => {
+  it('reloads once the tab is hidden', async () => {
+    answers = [said('"a"')];
+    const w = start();
+    await flush();
+    w.heard('bbb');
+    hide();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(reloadedAt).toBe(clock);
+  });
+
+  it('reloads at once when it finds out while the tab is hidden', async () => {
+    answers = [said('"a"'), said('"b"')];
+    start();
+    await flush();
+    visible = false;
+    tick(); await flush();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('reloads as the tab is shown again, when it could not while hidden', async () => {
+    answers = [said('"a"')];
+    const w = start();
+    await flush();
+    w.heard('bbb');
+    busy = true;
+    hide();
+    expect(reload).not.toHaveBeenCalled();
+    busy = false;
+    show();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('never reloads while something would be lost, and brings the bar back each time the tab is shown', async () => {
+    answers = [said('"a"')];
+    const w = start();
+    await flush();
+    busy = true;
+    w.heard('bbb');
+    hide(); show(); hide(); show();
+    expect(reload).not.toHaveBeenCalled();
+    expect(announce).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not reload by itself twice within a few minutes: the bar asks instead of a loop', async () => {
+    answers = [said('"a"')];
+    reloadedAt = -60_000;   // this tab reloaded by itself a minute ago
+    const w = start();
+    await flush();
+    w.heard('bbb');
+    hide();
+    expect(reload).not.toHaveBeenCalled();
+    show();
+    expect(announce).toHaveBeenCalledTimes(2);
+    clock += 5 * 60_000;
+    hide();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('when the server refuses the page as too old, shows the bar with no "later", also over the gentle one', async () => {
+    answers = [said('"a"')];
+    const w = start();
+    await flush();
+    w.heard('bbb');
+    expect(announce).toHaveBeenLastCalledWith(false);
+    w.tooOld();
+    expect(announce).toHaveBeenLastCalledWith(true);
+    show();
+    busy = true; hide(); show();
+    expect(announce).toHaveBeenLastCalledWith(true);
+  });
+
+  it('reloads a page refused as too old once it is hidden, like any other', async () => {
+    answers = [said('"a"')];
+    const w = start();
+    await flush();
+    busy = true;
+    w.tooOld();
+    expect(announce).toHaveBeenCalledWith(true);
+    busy = false;
+    hide();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the version from the script name', () => {
+    expect(versionOf('/js/main.bf066b7453.js')).toBe('bf066b7453');
+    expect(versionOf('/js/main.js')).toBeNull();
+  });
+});
+
 describe('the bar', () => {
   it('offers to reload, and does not reload by itself', () => {
     const host = document.createElement('div');
@@ -124,9 +255,18 @@ describe('the bar', () => {
     showUpdateBar(host, reload);
     expect(host.querySelector('[data-update]')!.getAttribute('role')).toBe('status');
     expect(host.textContent).toContain('Có bản mới');
+    expect(host.textContent).toContain('Gom tự tải lại khi bạn chuyển sang việc khác.');
     expect(reload).not.toHaveBeenCalled();
     host.querySelector<HTMLButtonElement>('[data-update-reload]')!.click();
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no "later" when the page must reload, and says so as an alert', () => {
+    const host = document.createElement('div');
+    showUpdateBar(host, vi.fn(), true);
+    expect(host.querySelector('[data-update]')!.getAttribute('role')).toBe('alert');
+    expect(host.textContent).toContain('Gom vừa được cập nhật.');
+    expect(host.querySelector('[data-update-later]')).toBeNull();
   });
 
   it('goes away on "later" without reloading', () => {

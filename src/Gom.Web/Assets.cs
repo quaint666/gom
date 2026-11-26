@@ -50,6 +50,16 @@ public static class Assets
         return html;
     }
 
+    /// <summary>
+    /// The version pages run: the fingerprint of the page script, which changes whenever the page code does. Null with plain names
+    /// (no built list), where there is nothing to compare.
+    /// </summary>
+    public static string? Version(IReadOnlyDictionary<string, string> names) =>
+        names.TryGetValue(PageScript, out var copy) ? copy[(PageScript.Length - ".js".Length + 1)..^".js".Length] : null;
+
+    /// <summary>The script every page runs.</summary>
+    public const string PageScript = "/js/main.js";
+
     /// <summary>"/js/main.js" and a hash make "/js/main.&lt;hash&gt;.js".</summary>
     public static string Named(string plain, string hash)
     {

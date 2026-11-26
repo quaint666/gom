@@ -33,7 +33,10 @@ export function sectionOf(path: string): Section | null {
   return (SECTIONS as readonly string[]).includes(code ?? '') ? code as Section : null;
 }
 
-export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer, pusher?: Pusher, nav?: SettingsNav): void {
+/** The version this page runs, and "Tải lại Gom": a reload that fetches every kept file again. */
+export interface AppReload { version: string | null; reload(): void }
+
+export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer, pusher?: Pusher, nav?: SettingsNav, app?: AppReload): void {
   let section: Section | null = sectionOf(nav?.path() ?? '/settings');
   let user: User | null = null;
   let blocked: Person[] = [];
@@ -244,6 +247,10 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
         <span class="lead-i">${icons.phone()}</span><span class="t"><b>${say.settings.installRow}</b><small>${say.settings.installSummary}</small></span>
         <span class="chev">${icons.chevron()}</span></button></li></ul>` : nothing}
     ${installStatus === '' ? nothing : html`<p class="hint" role="status" data-install-status>${installStatus}</p>`}
+    ${app === undefined ? nothing : html`
+      <ul class="nav"><li><button type="button" data-reload-app @click=${() => app.reload()}>
+        <span class="lead-i">${icons.reload()}</span><span class="t"><b>${say.settings.reloadRow}</b><small>${say.settings.reloadSummary(app.version)}</small></span>
+        </button></li></ul>`}
     <button class="btn secondary signout" type="button" data-signout @click=${signOut}>${icons.signOut()}${say.common.signOut}</button>`;
 
   /** The parts, each in the DOM and shown only when it is the one open (the owner's two are mounted when opened). */

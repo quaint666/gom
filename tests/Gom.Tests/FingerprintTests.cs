@@ -88,6 +88,13 @@ public sealed class FingerprintTests : IDisposable
         Assert.Equal(html, Assets.Apply(html, new Dictionary<string, string>()));
     }
 
+    [Fact]
+    public void The_version_is_the_page_scripts_fingerprint_and_none_without_one()
+    {
+        Assert.Equal("abcdef0123", Assets.Version(new Dictionary<string, string> { ["/js/main.js"] = "/js/main.abcdef0123.js", ["/css/gom.css"] = "/css/gom.9999999999.css" }));
+        Assert.Null(Assets.Version(new Dictionary<string, string> { ["/css/gom.css"] = "/css/gom.9999999999.css" }));
+    }
+
     [Theory]
     [InlineData("main.0123456789.js", true)]
     [InlineData("gom.abcdef0123.css", true)]

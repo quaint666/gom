@@ -26,7 +26,8 @@ public static class Frames
     public static byte[] Heartbeat() => Json(new { t = "hb" });
     /// <summary>"The pinned messages of this conversation changed": ask for them again.</summary>
     public static byte[] Pins(Guid conversation) => Json(new { t = "pins", c = conversation });
-    public static byte[] Ready() => Json(new { t = "ready" });
+    /// <summary>"Connected", with the version of the pages this server hands out (null without one): an older page knows to reload.</summary>
+    public static byte[] Ready(string? version) => Json(new { t = "ready", v = version });
     public static byte[] Live(Guid conversation, EventDto e) => Json(new { t = "event", c = conversation, @event = e });
     public static byte[] Events(Guid conversation, IReadOnlyList<EventDto> events, bool hasMore) => Json(new { t = "events", c = conversation, events, hasMore });
     public static byte[] Error(string code, Guid? conversation = null) => Json(new { t = "error", c = conversation, error = code });

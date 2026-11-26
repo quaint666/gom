@@ -84,6 +84,7 @@ export function errorText(failure: Failure): string {
     case 'invalid_language': return say.errors.invalidLanguage;
     case 'invalid_palette': return say.errors.invalidPalette;
     case 'invalid_pattern': return say.errors.invalidPattern;
+    case 'update_required': return say.errors.updateRequired;
     case 'invalid_endpoint': return say.errors.invalidEndpoint;
     case 'invalid_keys': return say.errors.invalidKeys;
     case 'network': return say.errors.network;

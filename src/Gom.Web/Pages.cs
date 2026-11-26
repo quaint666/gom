@@ -13,6 +13,18 @@ namespace Gom.Web;
 /// </summary>
 public static class Pages
 {
+    /// <summary>
+    /// The pages' code number, raised by hand only when a change means pages loaded before it can no longer work with this server (an
+    /// API changed under them). A page carries the number it was served with (<c>data-limits</c>) and sends it with every request
+    /// (<see cref="PageVersionHeader"/>) and on the socket (<c>?page=</c>); a lower one is told "update_required" and reloads. Most
+    /// deploys leave it alone: the version in the socket's "ready" moves those pages over when it loses nothing.
+    /// </summary>
+    public const int PageVersion = 1;
+    public const string PageVersionHeader = "Gom-Page-Version";
+
+    /// <summary>True for a page that said it is older than <see cref="PageVersion"/>. Saying nothing, or something unreadable, is let through.</summary>
+    public static bool TooOld(string? sent) => int.TryParse(sent, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) && n < PageVersion;
+
     /// <summary>An address and the script for it. Its title is set by the script, in the page's language ("Gom" until then).</summary>
     public sealed record Page(string Route, string Name);
 
@@ -74,6 +86,7 @@ public static class Pages
         inviteUses = LinkEndpoints.MaxInviteUses,
         inviteDefaultDays = auth.InviteDays,
         inviteDefaultUses = auth.InviteMaxUses,
+        pageVersion = PageVersion,
     });
 
     /// <summary>The shell made into one page, each value escaped for HTML text or a quoted attribute.</summary>

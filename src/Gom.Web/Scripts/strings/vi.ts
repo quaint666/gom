@@ -137,6 +137,7 @@ export const vi = {
     invalidLanguage: 'Gom chưa có ngôn ngữ này.',
     invalidPalette: 'Gom chưa có màu này.',
     invalidPattern: 'Gom chưa có hình nền này.',
+    updateRequired: 'Gom vừa được cập nhật. Tải lại trang để dùng tiếp.',
     tooManyAttachments: (max: number) => `Mỗi tin nhắn có tối đa ${max} tệp.`,
   },
   settings: {
@@ -216,6 +217,8 @@ export const vi = {
     storageSummary: 'Ảnh, video, tệp và tin nhắn',
     installRow: 'Cài Gom lên màn hình chính',
     installSummary: 'Mở như một ứng dụng',
+    reloadRow: 'Tải lại Gom',
+    reloadSummary: (version: string | null): string => version === null ? 'Lấy bản mới nhất' : `Phiên bản ${version} · lấy bản mới nhất`,
     pushSummaryOff: 'Tắt',
     pushSummaryNone: 'Không có trên thiết bị này',
     pushSummary: { words: 'Bật · Hiện nội dung tin nhắn', name: 'Bật · Hiện tên người gửi', nothing: 'Bật · Chỉ "Tin nhắn mới"' },
@@ -459,6 +462,9 @@ export const vi = {
   },
   app: {
     newVersion: 'Có bản mới của Gom.',
+    reloadsItself: 'Gom tự tải lại khi bạn chuyển sang việc khác.',
+    updated: 'Gom vừa được cập nhật.',
+    reloadToGoOn: 'Tải lại để dùng tiếp. Chữ bạn đang gõ vẫn được giữ.',
     reload: 'Tải lại',
     noPushService: 'Trình duyệt này không có dịch vụ thông báo đẩy, nên Gom không gửi thông báo đến đây được. Một số trình duyệt dựa trên Chromium (như Helium) đã bỏ dịch vụ này; Chrome, Edge và Firefox đều nhận được.',
   },

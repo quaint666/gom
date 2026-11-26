@@ -751,6 +751,8 @@ select:focus-visible { outline-offset: 0; }
 /* The bar that says a new version is there: over the top of whatever page is open. */
 .updatebar { position: fixed; z-index: 40; inset-block-start: max(8px, env(safe-area-inset-top)); inset-inline: 12px; margin-inline: auto; max-inline-size: 420px; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--tint); color: var(--tint-text); font-size: 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25); }
 .updatebar span { flex: 1; }
+.updatebar b { display: block; font-weight: 600; }
+.updatebar small { display: block; margin-block-start: 2px; font-size: 13px; }
 
 /* someone's card: a dialog over the page, a sheet from the bottom on a phone */
 .pcard { inline-size: min(380px, calc(100vw - 32px)); max-block-size: min(640px, calc(100dvh - 32px)); padding: 0 16px 16px; border: 1px solid var(--border); border-radius: 14px;

@@ -20,6 +20,17 @@ describe('api', () => {
     expect(result).toEqual({ ok: true, data: { gomId: 'me', displayName: 'Me', isOwner: false } });
   });
 
+  it('says which page code it runs with every request, and tells the page when the server wants a newer one', async () => {
+    const fetchFn = vi.fn(async () => json({ error: 'update_required' }, 409));
+    const onTooOld = vi.fn();
+    const api = createApi(fetchFn, undefined, { onTooOld });
+    await api.me();
+    await api.signIn('a', 'b');
+    for (const call of fetchFn.mock.calls as unknown as [string, RequestInit][]) expect(new Headers(call[1].headers).get('Gom-Page-Version')).toBe('1');
+    expect(onTooOld).toHaveBeenCalledTimes(2);
+    expect(errorText({ ok: false, status: 409, error: 'update_required' })).toBe('Gom vừa được cập nhật. Tải lại trang để dùng tiếp.');
+  });
+
   it('turns a 401 with an error code into that code', async () => {
     const api = createApi(async () => json({ error: 'invalid_credentials' }, 401));
     expect(await api.signIn('a', 'b')).toEqual({ ok: false, status: 401, error: 'invalid_credentials' });
@@ -123,6 +134,7 @@ describe('api: uploading a picture or a file', () => {
     expect(x.url).toBe(`/api/conversations/c1/attachments?name=${encodeURIComponent('ảnh nghỉ hè.jpg')}`);
     expect(x.withCredentials).toBe(true);
     expect(x.headers['Content-Type']).toBe('application/octet-stream');
+    expect(x.headers['Gom-Page-Version']).toBe('1');
     expect(x.sent).toBe(file);
     expect(seen).toEqual([0.25]);
     expect(result).toEqual({ ok: true, data: { id: 'a1', kind: 'image', name: 'x.webp', size: 3, width: 1, height: 1 } });

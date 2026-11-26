@@ -1,27 +1,32 @@
 # Next session: where things stand and what comes next
 
 Written 2026-11-25, after the session that opened PRs #90 to #100, and brought up to date on 2026-11-26, after #111 to
-#124 were merged and deployed. Claims are marked **[verified]** (seen in
-the code or real output), **[stated]** (someone said so; who is given), or **[inferred]** (reasoned, not tried).
+#133. Claims are marked **[verified]** (seen in the code or real output), **[stated]** (someone said so; who is given),
+or **[inferred]** (reasoned, not tried).
 
 ## 1. Where things stand
 
-- Everything up to #124 is merged and deployed [stated: H, 2026-11-26]. Since #109: one source per value (#111), every
+- Everything up to #131 is merged and deployed [stated: H, 2026-11-26]. Since #109: one source per value (#111), every
   piece of text in one table (#113, #119), the information page on phones (#114), notifications with words (#115),
-  requests to join (#116, #117), English (#118), GIFs, twelve colours, nine backgrounds, pure black and a daily upload
-  cap (#120), a fix for going to a message from the phone's information page (#121), search as you type across every
-  conversation (#122), and videos (#123, #124). Their decisions are in `docs/decisions.md`.
+  requests to join (#116, #117), English (#118), GIFs, pure black and a daily upload cap (#120), a fix for going to a
+  message from the phone's information page (#121), search as you type across every conversation (#122), videos (#123,
+  #124, #126), sixteen colours and fifteen backgrounds with "tossed" motif tiles (#127, #130), Settings as a menu with
+  an address per part (#128, #130), and the owner page's polish (#131). Their decisions are in `docs/decisions.md`.
+- Open, stacked in this order: #132 (open pages move to a new version, typed words kept across a reload, "Tải lại Gom"
+  in Settings), #133 (a minimum page version, `Pages.PageVersion`), and the docs sweep after them.
 - Videos play on H's phone after the deploy [stated: H, 2026-11-26]. The proxy in front allows 50 MB on the upload
   address for them [stated: the operations session, 2026-11-26].
 - H has a Google Play developer account (personal) [stated: H, 2026-11-25].
+- WebKit is tested with Playwright's own build, which needs Ubuntu 24.04 libraries: here it runs in an Ubuntu 24.04
+  Distrobox, over https (a `__Host-` cookie needs it) [verified, 2026-11-26].
 
 ## 2. Work queue (agreed order)
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
-1. **Voice calls**, then the Android app. The plan, its decisions, the Cloudflare and Android facts, what H does and
-   the PR order are in **`docs/voice-calls.md`**; read it first. Next step: its PR 1 (mockups and the `/privacy`
-   page), shown to H before it is built.
+1. **Voice calls and the Android app** (the next conversation starts here [stated: H, 2026-11-26]). The plan, its
+   decisions, the Cloudflare and Android facts, what H does and the PR order are in **`docs/voice-calls.md`**; read it
+   first. Next step: its PR 1 (mockups and the `/privacy` page), shown to H before it is built.
 2. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
    with the link or text ready, then asks which conversation. Gom-only: Peekbox and Bloomy already call
    `navigator.share` **[stated: their sessions, 2026-11-25]**. Works only where Gom is installed **[inferred]**; to check
@@ -62,6 +67,11 @@ Later: a load test at the app's 512 MB memory limit with several people uploadin
 - Gboard's GIF button does not insert into Gom in Chrome, Brave or Firefox for Android [stated: H tried all three]. Chrome
   has an "IME media insertion" flag for it, but Brave does not offer it; the Android app can take the picture itself
   **[inferred]**.
+- An open chat page learns of a deploy when its socket reconnects: about 30 s in a local test, since the reconnect waits
+  grow while the server is down [verified]; other pages within ten minutes or when shown again. Pages loaded before #133
+  send no page version, so `Pages.PageVersion` cannot force them; they still move over through #132.
+- Files picked and not sent, and a change to a sent message, hold the reload by itself (the bar stays); typed words are
+  kept only in the tab that typed them (`sessionStorage`).
 - A video goes within 45 MB: the page lowers its bitrate, then drops to 480p, so about 8½ minutes with sound fit; a longer
   one, or one the device cannot convert that is over 45 MB, fails in the tray and has to be cut first.
 
@@ -76,5 +86,8 @@ Later: a load test at the app's 512 MB memory limit with several people uploadin
 - That a picture still in a browser's one-day cache after a trim does not reappear.
 - Videos beyond H's phone: Samsung Internet, iPhone Safari, HEVC from an iPhone, and how long a long video takes to
   convert on a slower phone (on this Linux PC's Chrome a 4-minute 1080p clip took 35 s, a 6⅔-minute one 57 s **[verified]**).
+- Reloading by itself on a real phone: the checks hid the tab by overriding `visibilityState`; how soon a phone that has
+  slept for hours notices a new version depends on when its browser wakes the tab. The minimum page version was checked
+  in Chrome and Firefox only.
 - Search across every conversation on a long history: one `ILIKE` per word with no index is enough at family size
   **[inferred]**; not measured.

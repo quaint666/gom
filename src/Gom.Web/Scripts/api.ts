@@ -1,4 +1,5 @@
 import type { DeviceSubscription } from './push.js';
+import { limits } from './limits.js';
 import { language, say, type Language } from './say.js';
 /** The error codes the server sends, each once. A code missing here would reach the page as 'unknown' and lose its own words. */
 const SERVER_CODE_LIST = [
@@ -13,6 +14,7 @@ const SERVER_CODE_LIST = [
   'invalid_invite', 'too_large', 'animated_too_large', 'video_too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'daily_upload_limit', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
   'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
   'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette', 'invalid_pattern',
+  'update_required',
 ] as const;
 
 /** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
@@ -261,7 +263,15 @@ export const UPLOAD_STALL_MS = 60_000;
  * What the page does when the server says something about the whole page: `onPending`, this account is a request to join still
  * waiting (show the waiting screen); `onLanguage`, the person's language is not this page's (remember it and load the page again).
  */
-export interface ApiHooks { onPending?: () => void; onLanguage?: (chosen: Language) => void; onPalette?: (chosen: string) => void; onPattern?: (chosen: string) => void }
+export interface ApiHooks {
+  onPending?: () => void; onLanguage?: (chosen: Language) => void; onPalette?: (chosen: string) => void; onPattern?: (chosen: string) => void;
+  /** The server has moved past this page's code ("update_required"): it must reload before asking anything more. */
+  onTooOld?: () => void;
+}
+
+/** Every request says which code number the page runs (the server's Pages.PageVersionHeader; a test checks the two match). */
+const PAGE_VERSION_HEADER = 'Gom-Page-Version';
+const pageVersion = (): string => String(limits().pageVersion);
 
 export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, init), makeXhr: () => XMLHttpRequest = () => new XMLHttpRequest(), hooks: ApiHooks = {}): Api {
   async function call<T>(method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Result<T>> {
@@ -271,8 +281,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
         method,
         credentials: 'same-origin',
         signal: AbortSignal.timeout(timeoutMs),
-        ...(body === undefined ? {} : body instanceof Blob ? { headers: { 'Content-Type': 'application/octet-stream' }, body }
-          : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+        ...(body === undefined ? { headers: { [PAGE_VERSION_HEADER]: pageVersion() } }
+          : body instanceof Blob ? { headers: { 'Content-Type': 'application/octet-stream', [PAGE_VERSION_HEADER]: pageVersion() }, body }
+          : { headers: { 'Content-Type': 'application/json', [PAGE_VERSION_HEADER]: pageVersion() }, body: JSON.stringify(body) }),
       });
     } catch {
       return { ok: false, status: 0, error: 'network' };
@@ -283,6 +294,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     }
     const failed = await failure(response);
     if (failed.error === 'pending_approval') hooks.onPending?.();
+    if (failed.error === 'update_required') hooks.onTooOld?.();
     return failed;
   }
 
@@ -293,6 +305,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       xhr.open('POST', `/api/conversations/${encodeURIComponent(conversation)}/attachments?name=${encodeURIComponent(file.name ?? say.chat.fileFallbackName)}`);
       xhr.withCredentials = true;
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.setRequestHeader(PAGE_VERSION_HEADER, pageVersion());
       // Given up when nothing has moved for a while; every bit of progress starts the wait again.
       let stall = 0;
       const watch = () => { clearTimeout(stall); stall = setTimeout(() => xhr.abort(), UPLOAD_STALL_MS) as unknown as number; };

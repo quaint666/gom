@@ -121,6 +121,22 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task Ready_names_the_version_of_the_pages_this_server_hands_out()
+    {
+        var (_, cookie) = await app.Member();
+        using var ws = await Connect(cookie);
+        var ready = await Next(ws);
+        Assert.Equal("ready", ready.GetProperty("t").GetString());
+        // The page's own script: /js/main.<version>.js on a built site, /js/main.js (and no version) without the list.
+        var page = await app.Factory.CreateClient().GetStringAsync("/sign-in");
+        var script = System.Text.RegularExpressions.Regex.Match(page, "src=\"/js/main(?:\\.([0-9a-f]+))?\\.js\"");
+        Assert.True(script.Success, page);
+        var v = ready.GetProperty("v");
+        if (script.Groups[1].Success) Assert.Equal(script.Groups[1].Value, v.GetString());
+        else Assert.Equal(JsonValueKind.Null, v.ValueKind);
+    }
+
+    [Fact]
     public async Task Without_a_session_the_upgrade_is_refused()
     {
         var client = app.Factory.Server.CreateWebSocketClient();
