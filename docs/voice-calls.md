@@ -33,7 +33,8 @@ A web page cannot make calls work like a phone's:
   audio routing, so no earpiece or Bluetooth choice); a Trusted Web Activity (Chrome's limits apply); React Native,
   Flutter or Compose Multiplatform (a rewrite of the interface, a weaker web version, and calls still need native code
   per platform; Compose Multiplatform's web target is Beta [stated: Kotlin docs]); a fully native app (three codebases).
-- **The web version stays** for iPhone and computers. Calls come to it later, working only while Gom is open.
+- **The web version stays** for iPhone and computers. Calls come to it now, before the app's, working only while Gom is open
+  (section 2b; H, 2026-11-26).
 
 Version 1 is **1:1 voice calls between friends**. Not in version 1: group calls (they need a media server, an SFU),
 video, recording, iPhone native.
@@ -148,6 +149,43 @@ video, recording, iPhone native.
 44. A device that registers for FCM stops its Web Push, so nothing arrives twice. The web half (the words in a
     notification) is built first, for browsers; this half comes with the app.
 
+## 2b. Calls on the web (agreed with H on 2026-11-26)
+
+H asked for web calls alongside the app. One call written in the page could also serve the app, with Kotlin keeping only what
+Android demands (the wake-up and full-screen ringing, Telecom, the phoneCall foreground service, the sound route). One open-source
+project showed a call in an app's web view under Telecom staying up five minutes with the screen off in Doze, on an Android 16
+emulator only (no real microphone, earpiece or Bluetooth) [stated: selfhost-unihub pull request 164, 22 November 2026]; whether
+a web view's call follows `setCommunicationDevice` is not known. So web calls come first, and a test on a Samsung phone decides
+the app's way.
+
+1. A person can be called while one of their pages that takes calls is open: the page says so as its socket connects
+   (`/ws?calls=1`, keeping the socket's rule of taking only "sync"). The app's FCM registration stops counting until the app
+   takes calls; until then the app's web view says nothing, shows no call button and ignores incoming calls (it has no
+   microphone permission). A closed tab does not ring; the missed-call notification still comes.
+2. Every page of the person that takes calls rings (decision 11): answering on one stops the others.
+3. Browsers on phones too, iPhone included; the call says "Giữ Gom trên màn hình trong lúc gọi", since a browser in the
+   background loses the microphone.
+4. `Permissions-Policy` becomes `microphone=(self)` (decision 42).
+5. Only the chat page takes calls; Settings, Friends, a group's page and the others are pages of their own, so going to one
+   ends a call. During a call the page's own update waits, leaving asks first (the browser's question), and a page closed
+   anyway hangs up on its way out so the other side is not left waiting.
+6. A ring made in the page (Web Audio, no sound file) and the tab's title; if the browser blocks the sound until the person has
+   touched the page, the ringing screen is still there.
+7. Each offer and answer waits up to 3 s for its addresses, then goes with what it has (no trickle ICE, as agreed in 2a).
+8. After a network change only the caller restarts the connection (`restartIce()` and a new offer through `/sdp`), when it
+   stays down about 2 s or fails, so the two never offer at once.
+9. At 2 h 50 min the page asks for a fresh relay login, applies it and restarts (decision 22).
+10. A microphone refused: "Gom cần micro để gọi" with how to allow it; the call does not start, or a ringing one is declined.
+11. With no relay set up, a direct connection only (decision 24); if that fails, "Không kết nối được".
+12. The screens: one row of three in a call (speaker, end, mic; the web has no speaker choice), a minimise arrow, and the call
+    bar across the top of the chat page (name, time, a crossed mic when muted, a red end button; a tap brings the call back).
+    Someone calling can minimise while it rings; an incoming call comes full size. Rule 16 of `design/design-notes.md`,
+    screens 21 to 35.
+13. In the app later, if its calls run in the web view, the same bar inside it; outside the app, Android's own ongoing-call
+    notification.
+
+Not known yet: whether Chrome and Samsung Internet on Android play a web call through the earpiece or the speaker.
+
 ## 3. Cloudflare TURN, the facts (docs updated June to November 2026 [verified: developers.cloudflare.com])
 
 - **Price:** $0.05 per GB, counting only what Cloudflare sends to the phones; the first 1,000 GB a month free, shared
@@ -214,7 +252,10 @@ video, recording, iPhone native.
 6. **Android, calls:** `core-telecom`, the WebRTC library, the phoneCall foreground service, the incoming full-screen
    screen, the call screen, ICE restart, renewing logins.
 7. **Android, release:** the Samsung sleep guide, the update check, the Play listing and declarations.
-8. **Later:** calls in the web version.
+8. **Web calls** (section 2b; H, 2026-11-26), before 6: **8a** the mockups (screens 31 to 35, the one-row buttons, the call
+   bar); **8b** the server: who can take a call; **8c** the page: calling, ringing, answering, the call screen; **8d** the page:
+   the call bar, the network-change restart, renewing relay logins. Then a release. Then a test APK on a Samsung phone,
+   never merged, decides whether the app's calls run in its web view or natively (6).
 
 ## 6. Checklist for each app build (on a Samsung phone)
 
