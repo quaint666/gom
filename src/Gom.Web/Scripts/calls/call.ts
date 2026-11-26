@@ -19,20 +19,23 @@ export interface CallPeer { name: string; avatar?: string | null }
 /** The part of RTCPeerConnection a call uses, so tests can stand in for it. */
 export interface PeerLike {
   addTrack(track: MediaStreamTrack, stream: MediaStream): unknown;
-  createOffer(): Promise<RTCSessionDescriptionInit>;
+  createOffer(options?: RTCOfferOptions): Promise<RTCSessionDescriptionInit>;
   createAnswer(): Promise<RTCSessionDescriptionInit>;
   setLocalDescription(description: RTCSessionDescriptionInit): Promise<void>;
   setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void>;
   readonly localDescription: { sdp: string } | null;
   readonly iceGatheringState: string;
   readonly connectionState: string;
+  readonly signalingState: string;
+  setConfiguration(config: RTCConfiguration): void;
+  restartIce?(): void;
   onicegatheringstatechange: (() => void) | null;
   onconnectionstatechange: (() => void) | null;
   ontrack: ((e: { streams: readonly MediaStream[] }) => void) | null;
   close(): void;
 }
 
-export type CallApi = Pick<Api, 'callServers' | 'startCall' | 'getCall' | 'acceptCall' | 'declineCall' | 'hangUp' | 'callAlive'>;
+export type CallApi = Pick<Api, 'callServers' | 'startCall' | 'getCall' | 'acceptCall' | 'declineCall' | 'hangUp' | 'callSdp' | 'callAlive'>;
 
 export interface CallDeps {
   api: CallApi;
@@ -71,6 +74,13 @@ export interface Calls {
 export const GATHER_MS = 3000;
 /** How long the "ended" screen stays before it closes by itself (mockup 28). */
 export const ENDED_MS = 2500;
+/** A connection down this long after a network change is restarted by the caller (agreed with H: about 2 s), then again this often. */
+export const RECONNECT_AFTER_MS = 2000;
+export const RECONNECT_EVERY_MS = 5000;
+/** Down this long, the call is given up. */
+export const GIVE_UP_MS = 60_000;
+/** A relay login is renewed this long before it runs out (3 h logins: at 2 h 50 min; decision 22). */
+export const RENEW_BEFORE_S = 600;
 
 type Phase = 'outgoing' | 'incoming' | 'connecting' | 'active' | 'ended';
 
@@ -91,6 +101,13 @@ interface Current {
   timers: number[];
   /** Hung up before the server gave the call its id: hung up as soon as it does. */
   cancelled: boolean;
+  /** Shrunk to the bar at the top of the chat page (mockups 34, 35). */
+  minimised: boolean;
+  /** When the connection went down (a network change), while it is down. */
+  downSince: number | null;
+  /** The newest mid-call offer or answer taken, so an older one arriving late is ignored. */
+  rev: number;
+  ringSeconds: number;
 }
 
 export function createCalls(deps: CallDeps): Calls {
@@ -100,7 +117,14 @@ export function createCalls(deps: CallDeps): Calls {
 
   const live = (c: Current | null): c is Current => c !== null && c === cur && c.phase !== 'ended';
 
-  function draw(): void { render(cur === null ? nothing : screen(cur), deps.host); }
+  function draw(): void { render(cur === null ? nothing : cur.minimised ? bar(cur) : screen(cur), deps.host); }
+
+  /** Shrinks the call to the bar, or brings it back, and puts the focus on what was opened. */
+  function minimise(c: Current, on: boolean): void {
+    c.minimised = on;
+    draw();
+    deps.host.querySelector<HTMLElement>(on ? '[data-call="open"]' : '[data-call-first]')?.focus();
+  }
 
   function every(c: Current, fn: () => void, ms: number): void {
     const tick = () => { if (!live(c)) return; fn(); c.timers.push(deps.timer.set(tick, ms)); };
@@ -126,6 +150,8 @@ export function createCalls(deps: CallDeps): Calls {
     if (c !== cur || c.phase === 'ended') return;
     release(c);
     if (text === '') { cur = null; draw(); return; }
+    c.minimised = false;
+    c.downSince = null;
     c.phase = 'ended';
     c.status = text;
     c.problem = problem;
@@ -170,25 +196,94 @@ export function createCalls(deps: CallDeps): Calls {
     pc.ontrack = (e) => { if (live(c)) deps.play(e.streams[0] ?? null); };
     pc.onconnectionstatechange = () => {
       if (!live(c)) return;
-      if (pc.connectionState === 'connected' && c.phase !== 'active') {
-        c.phase = 'active';
-        c.connectedAt ??= deps.now();
-        every(c, draw, 1000);
+      const state = pc.connectionState;
+      if (state === 'connected') {
+        c.downSince = null;
+        if (c.phase !== 'active') {
+          c.phase = 'active';
+          c.connectedAt ??= deps.now();
+          every(c, draw, 1000);
+        }
         draw();
-      } else if (pc.connectionState === 'failed') {
+      } else if ((state === 'disconnected' || state === 'failed') && c.phase === 'active') {
+        if (c.downSince !== null) return;
+        c.downSince = deps.now();
+        c.timers.push(deps.timer.set(() => down(c), RECONNECT_AFTER_MS));
+        draw();
+      } else if (state === 'failed') {
         if (c.id !== null) void deps.api.hangUp(c.id);
-        finish(c, c.connectedAt === null ? say.calls.failed : endingText(c, 'completed'));
+        finish(c, say.calls.failed);
       }
     };
     return pc;
   }
 
-  /** Every address in it, or what there is after GATHER_MS. */
-  function gathered(pc: PeerLike): Promise<string> {
+  /**
+   * The connection is still down: the caller restarts it (only the caller, so the two never offer at once), again every
+   * RECONNECT_EVERY_MS, and either side gives up after GIVE_UP_MS.
+   */
+  function down(c: Current): void {
+    if (!live(c) || c.downSince === null) return;
+    if (deps.now() - c.downSince >= GIVE_UP_MS) {
+      if (c.id !== null) void deps.api.hangUp(c.id);
+      finish(c, say.calls.failed);
+      return;
+    }
+    if (c.mine) void restart(c);
+    c.timers.push(deps.timer.set(() => down(c), RECONNECT_EVERY_MS));
+  }
+
+  /** A new offer that gathers every address again (an ICE restart), sent through the server; the answer comes as a frame. */
+  async function restart(c: Current): Promise<void> {
+    const pc = c.pc;
+    if (!live(c) || pc === null || c.id === null || pc.signalingState !== 'stable') return;
+    pc.restartIce?.();
+    await pc.setLocalDescription(await pc.createOffer({ iceRestart: true }));
+    const sdp = await gathered(pc, true);
+    if (live(c) && c.id !== null) await deps.api.callSdp(c.id, 'offer', sdp);
+  }
+
+  /** A mid-call offer (the caller restarted) is answered; an answer (to my restart) is taken. Older ones are ignored. */
+  async function renegotiate(c: Current, type: 'offer' | 'answer', sdp: string, rev: number): Promise<void> {
+    const pc = c.pc;
+    if (!live(c) || pc === null || c.id === null || rev <= c.rev) return;
+    c.rev = rev;
+    if (type === 'answer') {
+      if (c.mine && pc.signalingState === 'have-local-offer') await pc.setRemoteDescription({ type, sdp });
+      return;
+    }
+    if (c.mine) return;
+    await pc.setRemoteDescription({ type, sdp });
+    await pc.setLocalDescription(await pc.createAnswer());
+    const answer = await gathered(pc, true);
+    if (live(c) && c.id !== null) await deps.api.callSdp(c.id, 'answer', answer);
+  }
+
+  /**
+   * Fresh relay logins before the old ones run out (decision 22). Each side renews its own; the caller then restarts the connection
+   * once the other side has surely renewed too (it got its login at most the ringing time later), so the restart uses both.
+   */
+  function renewLater(c: Current, seconds: number): void {
+    const wait = Math.max(seconds / 2, seconds - RENEW_BEFORE_S) * 1000;
+    c.timers.push(deps.timer.set(() => void renew(c), wait));
+  }
+
+  async function renew(c: Current): Promise<void> {
+    if (!live(c) || c.id === null || c.pc === null) return;
+    const servers = await deps.api.callServers({ callId: c.id });
+    if (!live(c) || c.pc === null) return;
+    if (!servers.ok) { c.timers.push(deps.timer.set(() => void renew(c), 60_000)); return; }
+    c.pc.setConfiguration({ iceServers: servers.data.iceServers });
+    renewLater(c, servers.data.seconds);
+    if (c.mine) c.timers.push(deps.timer.set(() => void restart(c), (c.ringSeconds + 15) * 1000));
+  }
+
+  /** Every address in it, or what there is after GATHER_MS. After a restart a "complete" left from before does not count. */
+  function gathered(pc: PeerLike, again = false): Promise<string> {
     return new Promise((resolve) => {
       const done = () => { pc.onicegatheringstatechange = null; deps.timer.clear(t); resolve(pc.localDescription?.sdp ?? ''); };
       const t = deps.timer.set(done, GATHER_MS);
-      if (pc.iceGatheringState === 'complete') { done(); return; }
+      if (!again && pc.iceGatheringState === 'complete') { done(); return; }
       pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') done(); };
     });
   }
@@ -209,7 +304,7 @@ export function createCalls(deps: CallDeps): Calls {
   async function start(conversation: string, peer: CallPeer): Promise<void> {
     if (cur !== null) return;
     const c: Current = { id: null, conversation, peer, mine: true, phase: 'outgoing', status: say.calls.calling, problem: false, muted: false,
-      connectedAt: null, pc: null, stream: null, timers: [], cancelled: false };
+      connectedAt: null, pc: null, stream: null, timers: [], cancelled: false, minimised: false, downSince: null, rev: 0, ringSeconds: 45 };
     begin(c);
     deps.guardLeaving(true);
     const stream = await microphone(c);
@@ -218,6 +313,7 @@ export function createCalls(deps: CallDeps): Calls {
     if (!live(c)) { for (const t of stream.getTracks()) t.stop(); return; }
     if (!servers.ok) { for (const t of stream.getTracks()) t.stop(); failed(c, servers); return; }
     const pc = connect(c, servers.data.iceServers, stream);
+    renewLater(c, servers.data.seconds);
     await pc.setLocalDescription(await pc.createOffer());
     const offer = await gathered(pc);
     if (!live(c)) return;
@@ -226,6 +322,7 @@ export function createCalls(deps: CallDeps): Calls {
     const call = started.data;
     if (c.cancelled || !live(c)) { void deps.api.hangUp(call.id); return; }
     c.id = call.id;
+    c.ringSeconds = call.ringSeconds;
     const early = endedEarly.get(call.id);
     if (call.state === 'ended' || early !== undefined) { finish(c, endingText(c, call.outcome ?? early ?? 'failed')); return; }
     c.status = say.calls.ringing;
@@ -250,6 +347,7 @@ export function createCalls(deps: CallDeps): Calls {
     if (!servers.ok || !info.ok) { for (const t of stream.getTracks()) t.stop(); failed(c, !servers.ok ? servers : info as Failure); return; }
     if (info.data.offer === null) { for (const t of stream.getTracks()) t.stop(); finish(c, info.data.state === 'ended' ? '' : say.calls.failed); return; }
     const pc = connect(c, servers.data.iceServers, stream);
+    renewLater(c, servers.data.seconds);
     await pc.setRemoteDescription({ type: 'offer', sdp: info.data.offer });
     await pc.setLocalDescription(await pc.createAnswer());
     const sdp = await gathered(pc);
@@ -298,18 +396,35 @@ export function createCalls(deps: CallDeps): Calls {
       ${button('mute', c.muted ? icons.micOff() : icons.mic(), say.calls.mute, () => toggleMute(c), { pressed: c.muted })}</div>`;
   }
 
+  /** The line under the name: the time while connected, "reconnecting" while the connection is down, else what is happening. */
+  const statusOf = (c: Current): string => c.downSince !== null ? say.calls.reconnecting
+    : c.phase === 'active' && c.connectedAt !== null ? callLength(Math.round((deps.now() - c.connectedAt) / 1000)) : c.status;
+
+  const going = (c: Current): boolean => c.phase === 'active' || c.phase === 'connecting' || c.phase === 'outgoing';
+
   function screen(c: Current): TemplateResult {
-    const status = c.phase === 'active' && c.connectedAt !== null ? callLength(Math.round((deps.now() - c.connectedAt) / 1000)) : c.status;
+    const down = c.downSince !== null;
     return html`<div class="call-screen" role="dialog" aria-modal="true" aria-label=${c.phase === 'incoming' ? say.calls.incoming : say.calls.voiceCall} data-phase=${c.phase}>
       <div class="call-box">
+        ${going(c) ? html`<button class="call-min" type="button" data-call="minimise" aria-label=${say.calls.minimise} @click=${() => minimise(c, true)}>${icons.chevronDown()}</button>` : nothing}
         <p class="call-app">${icons.logo()}<span>${say.calls.gomCall}</span></p>
         <div class="call-who">${avatar(c.peer.name, false, true, c.peer.avatar)}
           <h2>${c.peer.name}</h2>
-          <p class="call-state ${c.problem ? 'problem' : ''}" role=${c.problem ? 'alert' : 'status'} data-call-state>${status}</p></div>
+          <p class="call-state ${c.problem ? 'problem' : ''} ${down ? 'warn' : ''}" role=${c.problem ? 'alert' : 'status'} data-call-state>${down ? icons.wifiOff() : nothing}${statusOf(c)}</p></div>
         <div class="call-grow"></div>
-        ${deps.phone() && (c.phase === 'active' || c.phase === 'connecting' || c.phase === 'outgoing') ? html`<p class="call-note">${say.calls.keepOpen}</p>` : nothing}
+        ${down ? html`<p class="call-note">${say.calls.reconnectNote}</p>`
+          : deps.phone() && going(c) ? html`<p class="call-note">${say.calls.keepOpen}</p>` : nothing}
         ${controls(c)}
       </div></div>`;
+  }
+
+  /** The call minimised: a bar across the top of the chat page; a tap brings the call back, the red button ends it (mockups 34, 35). */
+  function bar(c: Current): TemplateResult {
+    return html`<div class="call-bar" data-call-bar>
+      <button class="cb-open" type="button" data-call="open" aria-label=${say.calls.backTo(c.peer.name)} @click=${() => minimise(c, false)}>
+        ${icons.call()}<b>${c.peer.name}</b><span>· ${statusOf(c)}</span>${c.muted ? icons.micOff() : nothing}</button>
+      <button class="cb-end" type="button" data-call="bar-hang" aria-label=${say.calls.end} @click=${() => hangUp(c)}>${icons.call()}</button>
+    </div>`;
   }
 
   return {
@@ -319,7 +434,7 @@ export function createCalls(deps: CallDeps): Calls {
       if (f.kind === 'incoming') {
         if (c !== null) return;   // the server makes a second call "busy" for the person already in one
         const next: Current = { id: f.id, conversation: f.c, peer: { name: f.from.displayName }, mine: false, phase: 'incoming', status: say.calls.incoming,
-          problem: false, muted: false, connectedAt: null, pc: null, stream: null, timers: [], cancelled: false };
+          problem: false, muted: false, connectedAt: null, pc: null, stream: null, timers: [], cancelled: false, minimised: false, downSince: null, rev: 0, ringSeconds: 45 };
         begin(next);
         deps.ring.incoming();
         deps.title(say.calls.tabRinging(f.from.displayName));
@@ -335,7 +450,8 @@ export function createCalls(deps: CallDeps): Calls {
         c.status = say.calls.connecting;
         draw();
         void c.pc.setRemoteDescription({ type: 'answer', sdp: f.sdp });
-      } else if (f.kind === 'answered_elsewhere' && c.phase === 'incoming') finish(c, '');
+      } else if (f.kind === 'sdp') void renegotiate(c, f.type, f.sdp, f.rev);
+      else if (f.kind === 'answered_elsewhere' && c.phase === 'incoming') finish(c, '');
       else if (f.kind === 'ended') finish(c, endingText(c, f.outcome));
     },
     busy: () => cur !== null && cur.phase !== 'ended',

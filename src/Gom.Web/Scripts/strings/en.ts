@@ -437,6 +437,10 @@ export const en: Strings = {
     noMic: "This browser can't make calls.",
     tabRinging: (name: string) => `📞 ${name} is calling`,
     close: 'Close',
+    minimise: 'Minimise',
+    backTo: (name: string) => `Back to the call with ${name}`,
+    reconnecting: 'Reconnecting…',
+    reconnectNote: 'The network changed. The call is still on; the sound comes back once it reconnects.',
   },
   notices: {
     today: 'Today',

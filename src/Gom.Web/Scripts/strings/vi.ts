@@ -440,6 +440,10 @@ export const vi = {
     noMic: 'Trình duyệt này không gọi được.',
     tabRinging: (name: string) => `📞 ${name} đang gọi`,
     close: 'Đóng',
+    minimise: 'Thu nhỏ',
+    backTo: (name: string) => `Quay lại cuộc gọi với ${name}`,
+    reconnecting: 'Đang kết nối lại…',
+    reconnectNote: 'Mạng vừa đổi. Cuộc gọi vẫn giữ, tiếng sẽ trở lại khi kết nối xong.',
   },
   notices: {
     today: 'Hôm nay',

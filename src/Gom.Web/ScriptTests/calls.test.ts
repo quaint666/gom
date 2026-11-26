@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallInfo, CallServers } from '../Scripts/api.js';
-import { createCalls, ENDED_MS, GATHER_MS, type CallApi, type CallDeps, type PeerLike } from '../Scripts/calls/call.js';
+import { createCalls, ENDED_MS, GATHER_MS, GIVE_UP_MS, RECONNECT_AFTER_MS, RENEW_BEFORE_S, type CallApi, type CallDeps, type PeerLike } from '../Scripts/calls/call.js';
 import { fail, flush, ok } from './helpers.js';
 
 const CHAT = 'c-1';
@@ -19,16 +19,22 @@ class FakePeer implements PeerLike {
   closed = false;
   iceGatheringState = 'new';
   connectionState = 'new';
+  signalingState = 'stable';
+  configs: RTCConfiguration[] = [];
+  offers: (RTCOfferOptions | undefined)[] = [];
+  restarts = 0;
   onicegatheringstatechange: (() => void) | null = null;
   onconnectionstatechange: (() => void) | null = null;
   ontrack: ((e: { streams: readonly MediaStream[] }) => void) | null = null;
   constructor(readonly config: RTCConfiguration) {}
   get localDescription() { return this.local === null ? null : { sdp: `${this.local.sdp}+addresses` }; }
   addTrack(track: MediaStreamTrack) { this.tracks.push(track); }
-  async createOffer() { return { type: 'offer' as const, sdp: 'v=0 offer' }; }
+  async createOffer(options?: RTCOfferOptions) { this.offers.push(options); return { type: 'offer' as const, sdp: options?.iceRestart ? 'v=0 offer again' : 'v=0 offer' }; }
   async createAnswer() { return { type: 'answer' as const, sdp: 'v=0 answer' }; }
-  async setLocalDescription(d: RTCSessionDescriptionInit) { this.local = d; this.iceGatheringState = 'gathering'; }
-  async setRemoteDescription(d: RTCSessionDescriptionInit) { this.remote.push(d); }
+  async setLocalDescription(d: RTCSessionDescriptionInit) { this.local = d; this.iceGatheringState = 'gathering'; this.signalingState = d.type === 'offer' ? 'have-local-offer' : 'stable'; }
+  async setRemoteDescription(d: RTCSessionDescriptionInit) { this.remote.push(d); this.signalingState = d.type === 'offer' ? 'have-remote-offer' : 'stable'; }
+  setConfiguration(c: RTCConfiguration) { this.configs.push(c); }
+  restartIce() { this.restarts++; }
   close() { this.closed = true; }
   gatherNow() { this.iceGatheringState = 'complete'; this.onicegatheringstatechange?.(); }
   state(s: string) { this.connectionState = s; this.onconnectionstatechange?.(); }
@@ -52,6 +58,7 @@ function setup(over: { api?: Partial<{ [K in keyof CallApi]: ReturnType<typeof v
     acceptCall: vi.fn(async () => ok(info({ state: 'active' }))),
     declineCall: vi.fn(async () => ok(undefined)),
     hangUp: vi.fn(async () => ok(undefined)),
+    callSdp: vi.fn(async () => ok({ rev: 1 })),
     callAlive: vi.fn(async () => ok(undefined)),
     ...over.api,
   };
@@ -78,7 +85,7 @@ function setup(over: { api?: Partial<{ [K in keyof CallApi]: ReturnType<typeof v
       timers.delete(due[0]);
       clock = due[1].at;
       due[1].fn();
-      await flush();
+      for (let i = 0; i < 6; i++) await Promise.resolve();   // what the timer started settles (faster than a full flush, over hours)
     }
     clock = until;
     await flush();
@@ -329,5 +336,135 @@ describe('calls: a call coming in', () => {
     t.calls.frame(incoming);
     t.calls.frame({ kind: 'ended', id: 'call-other', c: CHAT, outcome: 'missed' });
     expect(t.calls.busy()).toBe(true);
+  });
+});
+
+/** A call answered and connected, on the caller's side. */
+async function talking(t: ReturnType<typeof setup>) {
+  await ringingOut(t);
+  t.calls.frame({ kind: 'accepted', id: ID, c: CHAT, sdp: 'v=0 their answer' });
+  await flush();
+  t.peers[0]!.state('connected');
+  await flush();
+}
+
+describe('calls: the call bar (mockups 34, 35)', () => {
+  it('minimises to a bar with the name and time, which brings the call back; its red button ends it', async () => {
+    const t = setup();
+    await talking(t);
+    await t.pass(5000);
+    await t.press('minimise');
+    expect(t.host.querySelector('.call-screen')).toBeNull();
+    const bar = t.host.querySelector('[data-call-bar]')!;
+    expect(bar.querySelector('b')!.textContent).toBe('Mẹ');
+    expect(bar.querySelector('span')!.textContent).toBe('· 0:05');
+    expect(document.activeElement?.getAttribute('data-call')).toBe('open');
+    await t.pass(1000);
+    expect(bar.textContent).toContain('0:06');   // the time goes on in the bar
+    await t.press('open');
+    expect(t.host.querySelector('.call-screen')).not.toBeNull();
+    await t.press('minimise');
+    await t.press('bar-hang');
+    expect(t.api.hangUp).toHaveBeenCalledWith(ID);
+    expect(t.text()).toContain('Cuộc gọi đã kết thúc · 0:06');   // the ending is shown full size
+  });
+
+  it('shows a crossed mic in the bar when muted, and can minimise while it rings, but not a call coming in', async () => {
+    const t = setup();
+    await ringingOut(t);
+    await t.press('mute');
+    await t.press('minimise');
+    expect(t.text()).toContain('Đang đổ chuông…');
+    expect(t.host.querySelectorAll('[data-call="open"] svg')).toHaveLength(2);   // the handset and the crossed mic
+    const u = setup();
+    u.calls.frame({ kind: 'incoming', id: ID, c: CHAT, from: { id: 'u-mom', displayName: 'Mẹ' } });
+    expect(u.host.querySelector('[data-call="minimise"]')).toBeNull();
+  });
+});
+
+describe('calls: a network change', () => {
+  it('the caller restarts the connection after 2 s down, sends the new offer, takes the answer, and carries on', async () => {
+    const t = setup();
+    await talking(t);
+    const pc = t.peers[0]!;
+    pc.state('disconnected');
+    await flush();
+    expect(t.text()).toContain('Đang kết nối lại…');
+    expect(t.text()).toContain('Mạng vừa đổi');
+    await t.pass(RECONNECT_AFTER_MS - 1);
+    expect(pc.restarts).toBe(0);
+    await t.pass(1);
+    expect(pc.restarts).toBe(1);
+    expect(pc.offers.at(-1)).toEqual({ iceRestart: true });
+    pc.gatherNow();
+    await flush(); await flush();
+    expect(t.api.callSdp).toHaveBeenCalledWith(ID, 'offer', 'v=0 offer again+addresses');
+    t.calls.frame({ kind: 'sdp', id: ID, c: CHAT, type: 'answer', sdp: 'v=0 new answer', rev: 1 });
+    await flush();
+    expect(pc.remote.at(-1)).toEqual({ type: 'answer', sdp: 'v=0 new answer' });
+    pc.state('connected');
+    await flush();
+    expect(t.text()).not.toContain('Đang kết nối lại…');
+  });
+
+  it('a connection back on its own within 2 s is not restarted', async () => {
+    const t = setup();
+    await talking(t);
+    t.peers[0]!.state('disconnected');
+    t.peers[0]!.state('connected');
+    await t.pass(10_000);
+    expect(t.peers[0]!.restarts).toBe(0);
+  });
+
+  it('the person called never restarts, answers the caller\'s new offer, and ignores an older one', async () => {
+    const t = setup();
+    t.calls.frame({ kind: 'incoming', id: ID, c: CHAT, from: { id: 'u-mom', displayName: 'Mẹ' } });
+    await t.press('answer');
+    await flush();
+    const pc = t.peers[0]!;
+    pc.gatherNow();
+    await flush(); await flush();
+    pc.state('connected');
+    pc.state('disconnected');
+    await t.pass(10_000);
+    expect(pc.restarts).toBe(0);
+    expect(t.text()).toContain('Đang kết nối lại…');
+    t.calls.frame({ kind: 'sdp', id: ID, c: CHAT, type: 'offer', sdp: 'v=0 offer again', rev: 2 });
+    await flush();
+    pc.gatherNow();
+    await flush(); await flush();
+    expect(pc.remote.at(-1)).toEqual({ type: 'offer', sdp: 'v=0 offer again' });
+    expect(t.api.callSdp).toHaveBeenCalledWith(ID, 'answer', 'v=0 answer+addresses');
+    t.calls.frame({ kind: 'sdp', id: ID, c: CHAT, type: 'offer', sdp: 'v=0 stale', rev: 1 });
+    await flush();
+    expect(pc.remote.at(-1)).toEqual({ type: 'offer', sdp: 'v=0 offer again' });
+  });
+
+  it('gives up after a minute down', async () => {
+    const t = setup();
+    await talking(t);
+    t.peers[0]!.state('failed');
+    await t.pass(GIVE_UP_MS - 1000);
+    expect(t.calls.busy()).toBe(true);
+    await t.pass(5000);
+    expect(t.api.hangUp).toHaveBeenCalledWith(ID);
+    expect(t.text()).toContain('Không kết nối được');
+  });
+});
+
+describe('calls: long calls', () => {
+  it('renews the relay login 10 minutes before it runs out, and the caller then restarts so both use the new ones', async () => {
+    const t = setup();
+    await talking(t);
+    const pc = t.peers[0]!;
+    const renewAt = (servers.seconds - RENEW_BEFORE_S) * 1000;
+    await t.pass(renewAt - 60_000);
+    expect(t.api.callServers).toHaveBeenCalledTimes(1);
+    await t.pass(60_000);
+    expect(t.api.callServers).toHaveBeenLastCalledWith({ callId: ID });
+    expect(pc.configs).toEqual([{ iceServers: servers.iceServers }]);
+    expect(pc.restarts).toBe(0);
+    await t.pass((45 + 15) * 1000);   // after the other side has surely renewed too (it rang at most 45 s)
+    expect(pc.restarts).toBe(1);
   });
 });
