@@ -49,7 +49,8 @@ public static class SocketEndpoint
         }
         var o = options.Value;
         var connection = new Connection(GomClaims.User(http.User), GomClaims.Session(http.User), new WebSocketSink(socket),
-            o.SocketQueue, TimeSpan.FromSeconds(o.SocketSendTimeoutSeconds), loggers.CreateLogger<Connection>());
+            o.SocketQueue, TimeSpan.FromSeconds(o.SocketSendTimeoutSeconds), loggers.CreateLogger<Connection>())
+            { TakesCalls = http.Request.Query["calls"] == "1" };
         registry.Add(connection);
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         var writer = connection.RunWriter();

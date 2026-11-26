@@ -22,6 +22,12 @@ public sealed class CallOptions
     /// <summary>Calls one person may start in a row, then one every <see cref="SecondsBetweenCalls"/>.</summary>
     public int CallBurst { get; set; } = 3;
     public int SecondsBetweenCalls { get; set; } = 20;
+    /// <summary>
+    /// Whether the Android app takes calls: off, its registration does not make its person callable and calls never wake it
+    /// (a high-priority push it would not show lowers FCM's priority for the app). Pages that take calls say so themselves
+    /// (docs/voice-calls.md, section 2b).
+    /// </summary>
+    public bool AppsTakeCalls { get; set; }
 }
 
 /// <summary>Who may start a call how often: a bucket per person, apart from the one for messages.</summary>
@@ -38,9 +44,13 @@ public sealed class CallLimiter(SendLimiter bucket)
 /// it; each call's logins are taken back when it ends, and one no call claimed soon is taken back by the sweep.
 /// And the wake-ups for the person called's apps (FCM), which ring and stop ringing a phone with Gom closed.
 /// </summary>
-public sealed class CallRelay(ConnectionRegistry registry, TurnRevoker revoker, Push.CallPushQueue pushes)
+public sealed class CallRelay(ConnectionRegistry registry, TurnRevoker revoker, Push.CallPushQueue pushes, IOptions<CallOptions> options)
 {
-    public void Wake(Push.CallPush job) => pushes.Enqueue(job);
+    /// <summary>Wakes the person's apps, when apps take calls.</summary>
+    public void Wake(Push.CallPush job) { if (options.Value.AppsTakeCalls) pushes.Enqueue(job); }
+
+    /// <summary>Whether one of the person's open pages takes calls (its socket said so).</summary>
+    public bool OnAPage(Guid person) => registry.For(person).Any(c => c.TakesCalls);
 
     public sealed record Descriptions(string? Offer, string? Answer, int Rev, Guid? LastFrom, string? LastType, string? LastSdp);
 
@@ -194,21 +204,21 @@ public static class CallEndpoints
     }
 
     /// <summary>
-    /// The friend I may call in this chat, or why there is none: not my chat, not one-to-one, no longer friends, or they have no device
-    /// that can take a call (the Android app, signed in: docs/voice-calls.md; web pages take calls later).
+    /// The friend I may call in this chat, or why there is none: not my chat, not one-to-one, no longer friends, or nothing of theirs can
+    /// take a call now: an open page that takes calls, or the Android app signed in once apps take calls (docs/voice-calls.md, 2b).
     /// </summary>
-    private static async Task<(Guid Peer, IResult? Refused)> Callee(GomDbContext db, Guid conversation, Guid me, DateTimeOffset now, CancellationToken ct)
+    private static async Task<(Guid Peer, IResult? Refused)> Callee(GomDbContext db, CallRelay relay, bool apps, Guid conversation, Guid me, DateTimeOffset now, CancellationToken ct)
     {
         var access = await Access.Of(db, conversation, me, ct);
         if (access is null) return (default, Results.NotFound());
         if (access.Kind != ConversationKind.Direct) return (default, Error(StatusCodes.Status400BadRequest, "invalid_call"));
         var peer = await db.Members.Where(m => m.ConversationId == conversation && m.UserId != me).Select(m => m.UserId).SingleAsync(ct);
         if (!await Friends(db, me, peer, ct)) return (default, Error(StatusCodes.Status403Forbidden, "not_friends"));
-        var reachable = await (
+        var reachable = relay.OnAPage(peer) || (apps && await (
             from s in db.Sessions
             where s.UserId == peer && s.RevokedAt == null && s.ExpiresAt > now
             join d in db.FcmDevices on s.Id equals d.SessionId
-            select d.Id).AnyAsync(ct);
+            select d.Id).AnyAsync(ct));
         if (!reachable) return (default, Error(StatusCodes.Status409Conflict, "cannot_take_calls"));
         return (peer, null);
     }
@@ -254,7 +264,7 @@ public static class CallEndpoints
         if (await db.Calls.AsNoTracking().SingleOrDefaultAsync(k => k.CallerId == me && k.ClientId == clientId, ct) is { } again)
             return await Described(db, again, me, session, relay, o, ct);
 
-        var (peer, refused) = await Callee(db, conversation, me, clock.GetUtcNow(), ct);
+        var (peer, refused) = await Callee(db, relay, o.AppsTakeCalls, conversation, me, clock.GetUtcNow(), ct);
         if (refused is not null) return refused;
 
         // They are calling me at this moment: that call is the one, so this device shows it as incoming.
@@ -310,7 +320,7 @@ public static class CallEndpoints
     /// Only for a call I may make, one ringing for me, or one I am in; counted as calls are.
     /// </summary>
     private static async Task<IResult> Relay(RelayRequest request, HttpContext http, GomDbContext db, CallRelay relay, TurnLogins turn, TurnLimiter limiter,
-        TimeProvider clock, CancellationToken ct)
+        TimeProvider clock, IOptions<CallOptions> options, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var session = GomClaims.Session(http.User);
@@ -325,7 +335,7 @@ public static class CallEndpoints
         }
         else if (request.ConversationId is { } conversation)
         {
-            if ((await Callee(db, conversation, me, clock.GetUtcNow(), ct)).Refused is { } refused) return refused;
+            if ((await Callee(db, relay, options.Value.AppsTakeCalls, conversation, me, clock.GetUtcNow(), ct)).Refused is { } refused) return refused;
         }
         else return Error(StatusCodes.Status400BadRequest, "missing_fields");
 

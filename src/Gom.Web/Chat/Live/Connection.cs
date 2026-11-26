@@ -30,6 +30,8 @@ public sealed class Connection(Guid userId, Guid sessionId, IFrameSink sink, int
 
     public Guid UserId { get; } = userId;
     public Guid SessionId { get; } = sessionId;
+    /// <summary>The page said, as it connected, that it can take a voice call (<c>/ws?calls=1</c>).</summary>
+    public bool TakesCalls { get; init; }
 
     /// <summary>Queues a frame. False (and the connection is closed) when the client is too far behind or already closing.</summary>
     public bool TryEnqueue(byte[] frame)

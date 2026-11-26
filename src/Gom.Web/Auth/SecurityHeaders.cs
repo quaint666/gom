@@ -19,7 +19,7 @@ public sealed class SecurityHeaders(RequestDelegate next)
             headers.ContentSecurityPolicy = Policy;
             headers.XContentTypeOptions = "nosniff";
             headers["Referrer-Policy"] = "no-referrer";
-            headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+            headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()";
             // Never cached, unless an answer says on its own how long it may be (the pictures of a conversation do, privately).
             if ((context.Request.Path.StartsWithSegments("/api") || (context.Response.ContentType?.StartsWith("text/html") ?? false)) && !headers.ContainsKey("Cache-Control"))
                 headers.CacheControl = "no-store";
