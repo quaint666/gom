@@ -43,6 +43,12 @@ jobs:
           SHA: ${{ github.sha }}
         run: echo "TAG=${SHA:0:12}" >> "$GITHUB_ENV"
 
+      # The x64 runners' CPU is not named by GitHub and may differ between runs: kept beside each result, to compare.
+      - name: Which CPU this runner has
+        run: |
+          grep -m1 'model name' /proc/cpuinfo
+          grep -m1 -o -w 'avx512f' /proc/cpuinfo || echo 'no avx512f'
+
       - name: Build the image (the site and the migration bundle)
         run: docker build --provenance=false -t "$APP_IMAGE:$TAG" .
 
@@ -94,6 +100,8 @@ jobs:
             -e ForwardedHeaders__Hops=2 -e 'AllowedHosts=gom-staging.example;localhost' \
             -e Auth__AllowedOrigins__0=https://gom-staging.example \
             -e Owner__GomId=ci_owner -e Owner__Password=ci-only-password-not-a-secret \
+            -e DOTNET_DbgEnableMiniDump=1 -e DOTNET_DbgMiniDumpType=1 -e DOTNET_EnableCrashReport=1 \
+            -e DOTNET_DbgMiniDumpName=/tmp/gom-crash.%p \
             "$APP_IMAGE:$TAG"
           for i in $(seq 1 30); do
             docker exec "$CI_NAME-web" wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 && break
@@ -138,6 +146,14 @@ jobs:
         run: |
           docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' "$CI_NAME-web" || true
           docker logs "$CI_NAME-web" 2>&1 | tail -80 || true
+          # A crash (the start-up segfault seen since #140) leaves .NET's crash report: the crashing thread's frames, native and managed.
+          mkdir -p "$RUNNER_TEMP/crash" && docker cp "$CI_NAME-web:/tmp/." "$RUNNER_TEMP/crash/" 2>/dev/null || true
+          for report in "$RUNNER_TEMP"/crash/*.crashreport.json; do
+            [ -e "$report" ] || { echo 'no crash report'; break; }
+            jq -r '.payload.configuration | "runtime \(.version) \(.architecture)"' "$report"
+            jq -r '.payload.threads[] | select(.crashed == "true") | .stack_frames[]
+              | "\(.native_module // .filename // "?")  \(.method_name // "")  +\(.native_image_offset // "")"' "$report"
+          done
 
       - name: Log in and push the image (main only)
         if: github.ref == 'refs/heads/main'
