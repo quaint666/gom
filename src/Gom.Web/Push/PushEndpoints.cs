@@ -19,6 +19,8 @@ public static class PushEndpoints
         api.MapGet("", Get);
         api.MapPut("", Subscribe);
         api.MapDelete("", Unsubscribe);
+        api.MapPut("/fcm", RegisterApp);
+        api.MapDelete("/fcm", UnregisterApp);
     }
 
     /// <summary>The server's public key (a browser needs it to subscribe), and whether this device is on, at which level (for a device that is not: the default, words).</summary>
@@ -41,14 +43,7 @@ public static class PushEndpoints
         if (request.Endpoint is not { Length: > 0 and <= 1024 } endpoint || !o.Allows(endpoint)) return Error("invalid_endpoint");
         if (Decode(request.Keys?.P256dh) is not { } p256dh || !WebPushCrypto.IsPublicKey(p256dh)
             || Decode(request.Keys?.Auth) is not { Length: 16 } auth) return Error("invalid_keys");
-        PushLevel level;
-        switch (request.Level)
-        {
-            case null or "words": level = PushLevel.Words; break;
-            case "name": level = PushLevel.Name; break;
-            case "nothing": level = PushLevel.Nothing; break;
-            default: return Error("invalid_level");
-        }
+        if (ParseLevel(request.Level) is not { } level) return Error("invalid_level");
 
         var session = GomClaims.Session(http.User);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -63,6 +58,49 @@ public static class PushEndpoints
         await tx.CommitAsync(ct);
         return Results.NoContent();
     }
+
+    public sealed record AppRequest(string? Token, string? Level);
+
+    /// <summary>
+    /// Registers this device's Android app (its FCM token), replacing what it had; the same token under another session moves here. The
+    /// app takes the place of the browser's notifications for this session, so nothing arrives twice (docs/voice-calls.md, decision 44).
+    /// </summary>
+    private static async Task<IResult> RegisterApp(AppRequest request, HttpContext http, GomDbContext db, FcmAccount fcm, TimeProvider clock, CancellationToken ct)
+    {
+        if (!fcm.Enabled) return Results.NotFound();
+        // FCM's tokens are letters, digits and a few marks; anything else (spaces, controls) is not one.
+        if (request.Token is not { Length: > 0 and <= 1024 } token || token.Any(c => c is <= ' ' or > '~')) return Error("invalid_token");
+        if (ParseLevel(request.Level) is not { } level) return Error("invalid_level");
+
+        var session = GomClaims.Session(http.User);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.FcmDevices.Where(d => d.SessionId == session || d.Token == token).ExecuteDeleteAsync(ct);
+        await db.PushSubscriptions.Where(p => p.SessionId == session).ExecuteDeleteAsync(ct);
+        db.FcmDevices.Add(new FcmDevice { Id = Guid.NewGuid(), SessionId = session, Token = token, Level = level, CreatedAt = clock.GetUtcNow() });
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            return Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status409Conflict);
+        }
+        await tx.CommitAsync(ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> UnregisterApp(HttpContext http, GomDbContext db, FcmAccount fcm, CancellationToken ct)
+    {
+        if (!fcm.Enabled) return Results.NotFound();
+        var session = GomClaims.Session(http.User);
+        await db.FcmDevices.Where(d => d.SessionId == session).ExecuteDeleteAsync(ct);
+        return Results.NoContent();
+    }
+
+    private static PushLevel? ParseLevel(string? level) => level switch
+    {
+        null or "words" => PushLevel.Words,
+        "name" => PushLevel.Name,
+        "nothing" => PushLevel.Nothing,
+        _ => null,
+    };
 
     private static async Task<IResult> Unsubscribe(HttpContext http, GomDbContext db, IOptions<PushOptions> options, CancellationToken ct)
     {

@@ -435,6 +435,50 @@ namespace Gom.Web.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.FcmDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("level");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("token");
+
+                    b.HasKey("Id")
+                        .HasName("pk_fcm_devices");
+
+                    b.HasIndex("SessionId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_fcm_devices_session_id");
+
+                    b.HasIndex("Token")
+                        .IsUnique()
+                        .HasDatabaseName("ix_fcm_devices_token");
+
+                    b.ToTable("fcm_devices", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_fcm_level", "level IN ('name', 'nothing', 'words')");
+                        });
+                });
+
             modelBuilder.Entity("Gom.Web.Data.Friendship", b =>
                 {
                     b.Property<Guid>("UserLow")
@@ -1221,6 +1265,16 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_conversation_members_user_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.FcmDevice", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Session", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_fcm_devices_session_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.Friendship", b =>
