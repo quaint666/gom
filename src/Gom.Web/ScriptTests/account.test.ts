@@ -282,10 +282,11 @@ describe('settings: the profile picture', () => {
     expect(root.querySelector('[data-avatar-remove]')).toBeNull();
   });
 
-  it('offers nothing when the server takes no pictures', async () => {
+  it('offers no way to choose a picture when the server takes none', async () => {
     mountSettings(root, withPicture(null, false), vi.fn());
     await flush();
-    expect(root.querySelector('[data-avatar]')).toBeNull();
+    expect(root.querySelector('[data-avatar-file]')).toBeNull();
+    expect(root.querySelector('.me-cam')).toBeNull();
   });
 
   it('keeps the picture when the name is changed', async () => {

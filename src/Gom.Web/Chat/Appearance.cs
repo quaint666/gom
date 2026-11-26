@@ -9,7 +9,7 @@ public static class Appearance
     public const string DefaultPalette = "sage";
 
     public static readonly IReadOnlyList<string> Palettes =
-        ["sage", "sea", "lotus", "turmeric", "lavender", "graphite", "jade", "indigo", "plum", "lacquer", "coffee", "moss"];
+        ["sage", "sea", "lotus", "turmeric", "lavender", "graphite", "jade", "indigo", "plum", "lacquer", "coffee", "moss", "clay", "sky", "wine", "rice"];
 
     public const string DefaultPattern = "plain";
 
@@ -17,7 +17,8 @@ public static class Appearance
     /// The backgrounds behind the messages. "plain" has none; each other is wwwroot/patterns/{code}.svg, drawn in the colour's own
     /// pattern tone (<c>--pat</c>) through a mask, and named in both string tables; a test keeps them together.
     /// </summary>
-    public static readonly IReadOnlyList<string> Patterns = ["plain", "dots", "tiles", "waves", "bamboo", "clouds", "grid", "weave", "lotus"];
+    public static readonly IReadOnlyList<string> Patterns = ["plain", "dots", "tiles", "waves", "bamboo", "clouds", "grid", "weave", "lotus",
+        "nonla", "drum", "blossom", "lantern", "koi", "stars"];
 
     /// <summary>The longest code, for the column.</summary>
     public const int CodeMaxLength = 16;

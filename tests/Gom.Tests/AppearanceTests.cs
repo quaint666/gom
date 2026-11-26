@@ -76,7 +76,7 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal("plain", await PatternOf(cookie));
         using (var r = await app.Call(HttpMethod.Put, "/api/me/pattern", new { pattern = "tiles" }, cookie)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
         Assert.Equal("tiles", await PatternOf(await app.SignIn(user.GomId)));
-        foreach (var bad in new[] { "stars", "Tiles", "", null })
+        foreach (var bad in new[] { "hearts", "Tiles", "", null })
         {
             using var r = await app.Call(HttpMethod.Put, "/api/me/pattern", new { pattern = bad }, cookie);
             Assert.Equal("invalid_pattern", (await AppFixture.Json(r)).GetProperty("error").GetString());
@@ -98,6 +98,8 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
             Assert.Contains($"url(\"/patterns/{code}.svg\")", css);
             var svg = System.Xml.Linq.XElement.Parse(Source("wwwroot", "patterns", code + ".svg"));
             Assert.NotNull(svg.Attribute("width"));   // the tile's size comes from the file
+            // Attributes only: a tile never depends on how a browser treats a <style> or style="" inside an image under the page's CSP.
+            Assert.Empty(svg.DescendantsAndSelf().Where(e => e.Name.LocalName == "style" || e.Attribute("style") is not null));
             Assert.NotNull(svg.Attribute("height"));
             using var r = await app.Call(HttpMethod.Get, $"/patterns/{code}.svg");
             Assert.Equal(HttpStatusCode.OK, r.StatusCode);

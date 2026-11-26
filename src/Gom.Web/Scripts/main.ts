@@ -7,10 +7,8 @@ import { mountChat, type ChatDeps, type OutboxItem } from './pages/chat.js';
 import { createInstaller } from './install.js';
 import { createLive } from './chat/live.js';
 import { mountJoin } from './pages/join.js';
-import { mountOwner } from './pages/owner.js';
 import { mountReset } from './pages/reset.js';
 import { mountSettings } from './pages/settings.js';
-import { mountStorage } from './pages/storage.js';
 import { createPusher } from './push.js';
 import { mountSignIn } from './pages/signin.js';
 import { mountSignUp } from './pages/signup.js';
@@ -87,13 +85,11 @@ if (root) {
     case 'signup': mountSignUp(root, api, go); break;
     case 'reset': mountReset(root, api, go, token); break;
     case 'home': mountChat(root, api, go, chatDeps()); break;
-    case 'settings': mountSettings(root, api, go, installer, pusher); break;
+    case 'settings': mountSettings(root, api, go, installer, pusher, { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) }); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
     case 'group': mountGroup(root, api, go, token); break;
-    case 'owner': mountOwner(root, api, go, location.origin); break;
-    case 'storage': mountStorage(root, api, go); break;
   }
 }
 

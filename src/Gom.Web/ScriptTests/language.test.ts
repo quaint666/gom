@@ -69,14 +69,14 @@ describe('settings: colour', () => {
   const me = { id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false, language: 'vi' as const };
   const swatch = (code: string) => root.querySelector<HTMLInputElement>(`[data-palette-choice] input[value="${code}"]`)!;
 
-  it('shows the twelve, draws a chosen one at once and saves it; a refusal puts the old one back with the reason', async () => {
+  it('shows the sixteen, draws a chosen one at once and saves it; a refusal puts the old one back with the reason', async () => {
     localStorage.clear();
     delete document.documentElement.dataset['palette'];
     const setPalette = vi.fn().mockResolvedValueOnce(ok(undefined)).mockResolvedValueOnce(fail('invalid_palette', 400));
     const a = fakeApi({ me: vi.fn(async () => ok(me)), sessions: vi.fn(async () => ok([])), pushState: vi.fn(async () => fail('unknown', 404)), setPalette });
     mountSettings(root, a, vi.fn());
     await flush();
-    expect(root.querySelectorAll('[data-palette-choice] input')).toHaveLength(12);
+    expect(root.querySelectorAll('[data-palette-choice] input')).toHaveLength(16);
     expect(swatch('sage').checked).toBe(true);
     expect(text(root.querySelector('[data-palette-choice]')!)).toContain('Oải hương');
 
@@ -128,7 +128,7 @@ describe('settings: background', () => {
     const a = fakeApi({ me: vi.fn(async () => ok(me)), sessions: vi.fn(async () => ok([])), pushState: vi.fn(async () => fail('unknown', 404)), setPattern });
     mountSettings(root, a, vi.fn());
     await flush();
-    expect(root.querySelectorAll('[data-pattern-choice] input')).toHaveLength(9);
+    expect(root.querySelectorAll('[data-pattern-choice] input')).toHaveLength(15);
     expect(tile('plain').checked).toBe(true);
     expect(root.querySelector('[data-pattern-choice] .backdrop[data-pattern="tiles"]')).not.toBeNull();
     expect(text(root.querySelector('[data-pattern-choice]')!)).toContain('Gạch bông');
