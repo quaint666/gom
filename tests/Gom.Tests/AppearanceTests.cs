@@ -98,6 +98,8 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
             Assert.Contains($"url(\"/patterns/{code}.svg\")", css);
             var svg = System.Xml.Linq.XElement.Parse(Source("wwwroot", "patterns", code + ".svg"));
             Assert.NotNull(svg.Attribute("width"));   // the tile's size comes from the file
+            // Safari applies the page's Content-Security-Policy inside an SVG image: a <style> or style="" in a tile is dropped there.
+            Assert.Empty(svg.DescendantsAndSelf().Where(e => e.Name.LocalName == "style" || e.Attribute("style") is not null));
             Assert.NotNull(svg.Attribute("height"));
             using var r = await app.Call(HttpMethod.Get, $"/patterns/{code}.svg");
             Assert.Equal(HttpStatusCode.OK, r.StatusCode);

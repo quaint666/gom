@@ -5,10 +5,12 @@ regular repeats). Run it after changing a motif, then look at the backgrounds in
     python3 design/patterns.py
 
 A motif is drawn around (0, 0) within about 26 px. The page tints a tile through a mask (see .backdrop in gom.css), so only the shape
-counts: lines are black, and keep their width at every size (vector-effect). A motif near an edge is drawn again on the other side,
-so the tile repeats without a seam.
+counts: lines are black, and keep their width at every size (vector-effect). Everything is written as attributes, never a <style>:
+Safari applies the page's Content-Security-Policy inside an SVG image and would drop it. A motif near an edge is drawn again on the
+other side, so the tile repeats without a seam.
 """
 import math
+import re
 import pathlib
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / 'src' / 'Gom.Web' / 'wwwroot' / 'patterns'
@@ -66,6 +68,12 @@ def copies(x, y, reach):
     return [(cx, cy) for cx in xs for cy in ys]
 
 
+def plain(svg):
+    """Each shape spelt out with attributes: a filled one (class "f") black with no line, every other one a line that keeps its width."""
+    svg = svg.replace(' class="f"', ' fill="#000" stroke="none"')
+    return re.sub(r'<(path|circle|ellipse)(?![^>]*stroke="none")', r'<\1 vector-effect="non-scaling-stroke"', svg)
+
+
 def tile(motif, size):
     parts = []
     for x, y, scale, angle in PLACES:
@@ -74,10 +82,10 @@ def tile(motif, size):
             parts.append(f'<g transform="translate({cx} {cy}) rotate({angle}) scale({s:.2f})">{motif}</g>')
     for x, y in DOTS:
         for cx, cy in copies(x, y, 2):
-            parts.append(f'<circle cx="{cx}" cy="{cy}" r="1.8" class="f"/>')
+            parts.append(f'<circle cx="{cx}" cy="{cy}" r="1.8" fill="#000" stroke="none"/>')
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{TILE}" height="{TILE}" viewBox="0 0 {TILE} {TILE}" fill="none" '
             'stroke="#000" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">'
-            '<style>*{vector-effect:non-scaling-stroke}.f{fill:#000;stroke:none}</style>' + ''.join(parts) + '</svg>\n')
+            + plain(''.join(parts)) + '</svg>\n')
 
 
 if __name__ == '__main__':
