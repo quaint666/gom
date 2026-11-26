@@ -32,7 +32,7 @@ describe('app: notifications through the app', () => {
   it('says hello with its protocol version, and believes what the app says of itself', () => {
     const f = fakePort();
     const pusher = createAppPusher(f.port);
-    expect(f.of('hello')).toEqual([{ t: 'hello', v: APP_PROTOCOL }]);
+    expect(f.of('hello')).toEqual([{ t: 'hello', v: APP_PROTOCOL, images: 0 }]);
     expect(pusher.support()).toBe('ok');
     f.answer(hello({ permission: 'denied' }));
     expect(pusher.permission()).toBe('denied');
@@ -104,6 +104,27 @@ describe('app: notifications through the app', () => {
     await flush();
     expect(f.of('theme').at(-1)).toMatchObject({ bar: '#123456' });
     expect(f.of('theme')).toHaveLength(2);
+  });
+});
+
+describe('app: pictures from the keyboard', () => {
+  it('tells the app the largest picture the server takes', () => {
+    const f = fakePort();
+    createAppPusher(f.port, window, 5_000_000);
+    expect(f.of('hello')[0]).toMatchObject({ images: 5_000_000 });
+  });
+
+  it('turns a GIF the keyboard gave into a file, as a paste would, and drops anything else', async () => {
+    const f = fakePort();
+    const pusher = createAppPusher(f.port);
+    const got: File[] = [];
+    pusher.onKeyboardImage((file) => got.push(file));
+    f.answer({ t: 'image', type: 'image/gif', data: btoa('GIF89a') });
+    f.answer({ t: 'image', type: 'text/html', data: btoa('<p>') });
+    f.answer({ t: 'image', type: 'image/png', data: '%%% not base64' });
+    f.answer({ t: 'image', type: 'image/png', data: '' });
+    expect(got.map((g) => [g.name, g.type])).toEqual([['keyboard.gif', 'image/gif']]);
+    expect(new TextDecoder().decode(await got[0]!.arrayBuffer())).toBe('GIF89a');
   });
 });
 

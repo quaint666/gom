@@ -7,10 +7,12 @@ import type { DeviceSubscription, Pusher } from './push.js';
  * gets a {@link Pusher} of its own: Settings and the chat page use it exactly as they use the browser's.
  *
  * Protocol 1:
- * - page → app: `{t: 'hello'}`, `{t: 'enable'}` (ask Android's permission and register with FCM), `{t: 'disable'}`,
+ * - page → app: `{t: 'hello', images}` (the largest picture the server takes, for the keyboard's pictures), `{t: 'enable'}` (ask Android's permission and register with FCM), `{t: 'disable'}`,
  *   `{t: 'clear', c}` (close one conversation's notifications), `{t: 'theme', bar, page}` (the colours behind the system bars).
  * - app → page: `{t: 'hello', v, app, push, permission, fid?}`, then `{t: 'enabled', fid}`, `{t: 'denied'}` or `{t: 'failed'}`
- *   for an `enable`, and `{t: 'fid', fid}` when FCM gives the app a new installation id.
+ *   for an `enable`, `{t: 'fid', fid}` when FCM gives the app a new installation id, and `{t: 'image', type, data}` (base64) for
+ *   a picture or GIF the keyboard put into a text field (Gboard's GIF button; added after protocol 1 shipped, which pages that
+ *   do not know it simply ignore).
  */
 export const APP_PROTOCOL = 1;
 
@@ -39,7 +41,24 @@ export const appPort = (w: Window = window): AppPort | undefined => {
   return typeof port === 'object' && port !== null && typeof (port as AppPort).postMessage === 'function' ? port as AppPort : undefined;
 };
 
-type FromApp = { t: 'hello' } & AppHello | { t: 'enabled'; fid: string } | { t: 'denied' } | { t: 'failed' } | { t: 'fid'; fid: string };
+type FromApp = { t: 'hello' } & AppHello | { t: 'enabled'; fid: string } | { t: 'denied' } | { t: 'failed' } | { t: 'fid'; fid: string }
+  | { t: 'image'; type: string; data: string };
+
+/** What a keyboard may hand over: the kinds of picture a message takes. */
+export const KEYBOARD_IMAGE_TYPES: Record<string, string> = { 'image/gif': 'gif', 'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpg' };
+
+/** A keyboard's picture as a file, as a paste would give it; null for anything else. */
+export function keyboardFile(type: unknown, data: unknown): File | null {
+  if (typeof type !== 'string' || typeof data !== 'string' || data === '') return null;
+  const extension = KEYBOARD_IMAGE_TYPES[type];
+  if (extension === undefined) return null;
+  try {
+    const s = atob(data);
+    const bytes = new Uint8Array(new ArrayBuffer(s.length));
+    for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
+    return new File([bytes], `keyboard.${extension}`, { type });
+  } catch { return null; }
+}
 
 const parse = (data: unknown): FromApp | null => {
   try {
@@ -56,17 +75,20 @@ export const ENABLE_WAIT_MS = 120_000;
 export interface AppPusher extends Pusher {
   /** Called with the app's registration whenever it may be new: the hello that carries one, and each new id from FCM. */
   onRegistration(callback: (subscription: DeviceSubscription) => void): void;
+  /** Called with each picture the keyboard hands over. */
+  onKeyboardImage(callback: (file: File) => void): void;
 }
 
 /**
  * The app's notifications behind the browser's interface: subscribing asks the app (Android's permission, then FCM), and the
  * "subscription" is the app's installation id, which the server keeps as the session's app (`PUT /api/push/fcm`).
  */
-export function createAppPusher(port: AppPort, w: Window & typeof globalThis = window): AppPusher {
+export function createAppPusher(port: AppPort, w: Window & typeof globalThis = window, imageBytes = 0): AppPusher {
   let hello: AppHello | null = null;
   let fid: string | undefined;
   let waiting: ((m: FromApp) => void) | null = null;
   const registered: Array<(s: DeviceSubscription) => void> = [];
+  const images: Array<(f: File) => void> = [];
   const tell = (id: string): void => { for (const r of registered) r({ app: id }); };
   const send = (m: object): void => { try { port.postMessage(JSON.stringify(m)); } catch { /* the app is going away */ } };
 
@@ -80,13 +102,16 @@ export function createAppPusher(port: AppPort, w: Window & typeof globalThis = w
     } else if (m.t === 'fid') {
       fid = m.fid;
       tell(fid);
+    } else if (m.t === 'image') {
+      const file = keyboardFile(m.type, m.data);
+      if (file !== null) for (const i of images) i(file);
     } else if (waiting !== null) {
       const answer = waiting;
       waiting = null;
       answer(m);
     }
   };
-  send({ t: 'hello', v: APP_PROTOCOL });
+  send({ t: 'hello', v: APP_PROTOCOL, images: imageBytes });
   watchTheme(send, w);
 
   return {
@@ -117,6 +142,7 @@ export function createAppPusher(port: AppPort, w: Window & typeof globalThis = w
       registered.push(callback);
       if (fid) callback({ app: fid });
     },
+    onKeyboardImage(callback) { images.push(callback); },
   };
 }
 

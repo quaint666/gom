@@ -39,7 +39,8 @@ class Origins(baseUrl: String, alsoAllow: String = "") {
 
 /** What the page says to the app (protocol 1, `Scripts/app.ts`). */
 sealed interface FromPage {
-    data class Hello(val version: Int) : FromPage
+    /** [images]: the largest picture the server takes, in bytes; 0 (an older page) takes no keyboard pictures. */
+    data class Hello(val version: Int, val images: Long = 0) : FromPage
     data object Enable : FromPage
     data object Disable : FromPage
     data class Clear(val conversation: String) : FromPage
@@ -50,7 +51,7 @@ sealed interface FromPage {
         fun parse(message: String): FromPage? {
             val m = try { JSONObject(message) } catch (_: JSONException) { return null }
             return when (m.optString("t")) {
-                "hello" -> Hello(m.optInt("v", 0))
+                "hello" -> Hello(m.optInt("v", 0), m.optLong("images", 0).coerceAtLeast(0))
                 "enable" -> Enable
                 "disable" -> Disable
                 "clear" -> m.optString("c").takeIf { it.isNotEmpty() }?.let { Clear(it) }
@@ -71,6 +72,13 @@ object ToPage {
 
     fun enabled(fid: String): String = JSONObject().put("t", "enabled").put("fid", fid).toString()
     fun fid(fid: String): String = JSONObject().put("t", "fid").put("fid", fid).toString()
+
+    /** A picture the keyboard gave, for the page to take as a paste: only the kinds a message takes. */
+    fun image(type: String, bytes: ByteArray): String? = if (type !in KEYBOARD_TYPES) null
+        else JSONObject().put("t", "image").put("type", type).put("data", java.util.Base64.getEncoder().encodeToString(bytes)).toString()
+
+    /** What the app tells keyboards it takes (Gboard's GIF button shows only when one of these is offered). */
+    val KEYBOARD_TYPES = arrayOf("image/gif", "image/webp", "image/png", "image/jpeg")
     val denied: String = """{"t":"denied"}"""
     val failed: String = """{"t":"failed"}"""
 }
@@ -138,5 +146,19 @@ sealed interface Push {
                 else -> null
             }
         }
+    }
+}
+
+/** All of [input] when it is at most [limit] bytes; null when it is longer (read only one byte past the limit to know). */
+fun readAtMost(input: java.io.InputStream, limit: Long): ByteArray? {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(64 * 1024)
+    var total = 0L
+    while (true) {
+        val n = input.read(buffer)
+        if (n < 0) return out.toByteArray()
+        total += n
+        if (total > limit) return null
+        out.write(buffer, 0, n)
     }
 }

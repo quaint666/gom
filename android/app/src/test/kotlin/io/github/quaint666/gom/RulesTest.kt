@@ -49,6 +49,8 @@ class OriginsTest {
 class ProtocolTest {
     @Test fun the_pages_messages_are_read_and_nothing_else() {
         assertEquals(FromPage.Hello(1), FromPage.parse("""{"t":"hello","v":1}"""))
+        assertEquals(FromPage.Hello(1, 5_000_000), FromPage.parse("""{"t":"hello","v":1,"images":5000000}"""))
+        assertEquals(FromPage.Hello(1, 0), FromPage.parse("""{"t":"hello","v":1,"images":-3}"""))
         assertEquals(FromPage.Enable, FromPage.parse("""{"t":"enable"}"""))
         assertEquals(FromPage.Disable, FromPage.parse("""{"t":"disable"}"""))
         assertEquals(FromPage.Clear("c-1"), FromPage.parse("""{"t":"clear","c":"c-1"}"""))
@@ -116,5 +118,23 @@ class PushTest {
         assertNull(Notice.parse("""{"title":"Mẹ","body":"chào","url":"https://evil.example/","tag":"$c"}"""))
         assertNull(Notice.parse("""{"title":"","body":"chào","url":"/","tag":"x"}"""))
         assertNull(Notice.parse("""<html>login</html>"""))
+    }
+}
+
+class KeyboardImageTest {
+    @Test fun only_the_kinds_a_message_takes_go_to_the_page() {
+        val gif = JSONObject(ToPage.image("image/gif", "GIF89a".toByteArray())!!)
+        assertEquals("image", gif.getString("t"))
+        assertEquals("image/gif", gif.getString("type"))
+        assertEquals("GIF89a", String(java.util.Base64.getDecoder().decode(gif.getString("data"))))
+        assertNull(ToPage.image("text/html", "<p>".toByteArray()))
+        assertNull(ToPage.image("image/svg+xml", "<svg/>".toByteArray()))
+    }
+
+    @Test fun a_picture_over_the_servers_limit_is_not_read_whole() {
+        assertEquals(4, readAtMost(java.io.ByteArrayInputStream(ByteArray(4)), 4)!!.size)
+        assertNull(readAtMost(java.io.ByteArrayInputStream(ByteArray(5)), 4))
+        assertNull(readAtMost(java.io.ByteArrayInputStream(ByteArray(200_000)), 100_000))
+        assertEquals(0, readAtMost(java.io.ByteArrayInputStream(ByteArray(0)), 0)!!.size)
     }
 }

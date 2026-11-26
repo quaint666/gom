@@ -29,6 +29,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
+import androidx.core.view.ContentInfoCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -45,10 +46,13 @@ class MainActivity : ComponentActivity() {
     private val origins = GomApp.origins
     private lateinit var root: FrameLayout
     private lateinit var top: View
-    private lateinit var web: WebView
+    private lateinit var web: GomWebView
     private lateinit var bridge: Bridge
     private var picking: ValueCallback<Array<Uri>>? = null
     private var fullScreen: View? = null
+
+    /** The largest picture the open page's server takes (its hello says); 0 until then, and no picture is taken. */
+    private var imageBytes = 0L
 
     private val pick = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val data = result.data
@@ -77,7 +81,7 @@ class MainActivity : ComponentActivity() {
         }
         root = FrameLayout(this)
         top = View(this)
-        web = WebView(this)
+        web = GomWebView(this).apply { onImage = { content -> keyboardImage(content) } }
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(top, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
         setContentView(root)
@@ -218,7 +222,10 @@ class MainActivity : ComponentActivity() {
 
     private fun onPage(message: FromPage, from: Bridge) {
         when (message) {
-            is FromPage.Hello -> from.send(ToPage.hello(appVersion(), GomApp.push, permission(), Registration.fid(this)))
+            is FromPage.Hello -> {
+                imageBytes = message.images
+                from.send(ToPage.hello(appVersion(), GomApp.push, permission(), Registration.fid(this)))
+            }
             FromPage.Enable -> enable()
             FromPage.Disable -> Registration.unregister(this)
             is FromPage.Clear -> Notices.clear(this, message.conversation)
@@ -250,6 +257,27 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun appVersion(): String = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+
+    /**
+     * A picture the keyboard committed (Gboard's GIF button): read at once, while Android lets the app read it, and sent to the
+     * page, which takes it as a paste. Larger than the server takes, or of another kind, it is not taken.
+     */
+    private fun keyboardImage(content: ContentInfoCompat): Boolean {
+        if (imageBytes <= 0) return false
+        val clip = content.clip
+        var sent = false
+        for (i in 0 until clip.itemCount) {
+            val uri = clip.getItemAt(i).uri ?: continue
+            val type = contentResolver.getType(uri) ?: clip.description.getMimeType(0)
+            val bytes = try {
+                contentResolver.openInputStream(uri)?.use { readAtMost(it, imageBytes) }
+            } catch (_: java.io.IOException) { null } catch (_: SecurityException) { null } ?: continue
+            val message = ToPage.image(type, bytes) ?: continue
+            bridge.send(message)
+            sent = true
+        }
+        return sent
+    }
 
     /** The status bar's strip takes the page's main colour, the rest its background; the icons are dark or light to suit. */
     private fun paint(bar: Int, page: Int) {
