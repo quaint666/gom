@@ -8,8 +8,11 @@ import { say } from './say.js';
 /** What this device can do: get notifications, not at all, or (an iPhone or iPad) only once Gom is on the Home Screen. */
 export type PushSupport = 'ok' | 'unsupported' | 'needs-home-screen';
 
-/** A subscription as the server wants it: the push service's address and the browser's keys. */
-export interface DeviceSubscription { endpoint: string; keys: { p256dh: string; auth: string } }
+/** A browser's subscription as the server wants it: the push service's address and the browser's keys. */
+export interface WebSubscription { endpoint: string; keys: { p256dh: string; auth: string } }
+
+/** What registers this device: a browser's subscription, or in the Android app its FCM installation id (`app.ts`). */
+export type DeviceSubscription = WebSubscription | { app: string };
 
 export interface Pusher {
   support(): PushSupport;
@@ -35,7 +38,7 @@ const toKey = (base64url: string): Uint8Array<ArrayBuffer> => {
   return bytes;
 };
 
-const asDevice = (s: PushSubscription | null): DeviceSubscription | null => {
+const asDevice = (s: PushSubscription | null): WebSubscription | null => {
   const j = s?.toJSON();
   return j?.endpoint && j.keys?.['p256dh'] && j.keys['auth'] ? { endpoint: j.endpoint, keys: { p256dh: j.keys['p256dh'], auth: j.keys['auth'] } } : null;
 };

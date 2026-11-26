@@ -176,7 +176,8 @@ export interface Api {
   /** The server's key for notifications and whether this device gets them; a failure (404) means push is off on this server. */
   pushState(): Promise<Result<PushState>>;
   setPush(subscription: DeviceSubscription, level: PushLevel): Promise<Result<void>>;
-  removePush(): Promise<Result<void>>;
+  /** Forgets this device: the app's registration when that is what it had, else the browser's. */
+  removePush(subscription?: DeviceSubscription | null): Promise<Result<void>>;
   disableMember(gomId: string): Promise<Result<void>>;
   enableMember(gomId: string): Promise<Result<void>>;
   friends(): Promise<Result<FriendLists>>;
@@ -380,8 +381,10 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
     removeAvatar: () => call('DELETE', '/api/me/avatar'),
     pushState: () => call('GET', '/api/push'),
-    setPush: (subscription, level) => call('PUT', '/api/push', { ...subscription, level }),
-    removePush: () => call('DELETE', '/api/push'),
+    setPush: (subscription, level) => ('app' in subscription
+      ? call('PUT', '/api/push/fcm', { token: subscription.app, level })
+      : call('PUT', '/api/push', { ...subscription, level })),
+    removePush: (subscription) => call('DELETE', subscription && 'app' in subscription ? '/api/push/fcm' : '/api/push'),
     disableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/disable`),
     enableMember: (gomId) => call('POST', `/api/users/${enc(gomId)}/enable`),
     friends: () => call('GET', '/api/friends'),

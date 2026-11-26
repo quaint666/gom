@@ -195,7 +195,8 @@ public class FcmTests(CallFixture app) : IClassFixture<CallFixture>
         Assert.Equal("Bearer token-1", send.Headers.Authorization!.ToString());
         using var json = JsonDocument.Parse(body);
         var message = json.RootElement.GetProperty("message");
-        Assert.Equal("device-1", message.GetProperty("token").GetString());
+        Assert.Equal("device-1", message.GetProperty("fid").GetString());   // the installation id; "token" is deprecated
+        Assert.False(message.TryGetProperty("token", out _));
         Assert.Equal("abc", message.GetProperty("data").GetProperty("id").GetString());
         Assert.Equal("HIGH", message.GetProperty("android").GetProperty("priority").GetString());
         Assert.Equal("45s", message.GetProperty("android").GetProperty("ttl").GetString());

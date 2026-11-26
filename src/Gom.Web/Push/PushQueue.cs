@@ -12,7 +12,20 @@ namespace Gom.Web.Push;
 /// <paramref name="MissedCall"/>: a call the person called missed (the sender is the caller), told to them even in a muted chat.
 /// </summary>
 public sealed record PushJob(Guid ConversationId, long Seq, Guid SenderId, string SenderName, int Images, int Files, bool Sticker = false,
-    string Text = "", Guid MessageId = default, bool Recalled = false, bool JoinRequest = false, int Videos = 0, bool Contact = false, bool MissedCall = false);
+    string Text = "", Guid MessageId = default, bool Recalled = false, bool JoinRequest = false, int Videos = 0, bool Contact = false, bool MissedCall = false)
+{
+    /// <summary>
+    /// A message as its notification words it: sending one and the app asking for its words (<c>GET /api/push/notice</c>) both start
+    /// here, so the two never word it differently.
+    /// </summary>
+    public static PushJob From(Data.Message message, string senderName, IReadOnlyList<Uploads.AttachmentEndpoints.AttachmentDto>? attachments)
+    {
+        var files = attachments ?? [];
+        return new PushJob(message.ConversationId, message.Seq, message.SenderId, senderName, files.Count(a => a.Kind == "image"),
+            files.Count(a => a.Kind == "file"), message.Sticker is not null, Chat.Replies.Snippet(message.Body), message.Id,
+            Videos: files.Count(a => a.Kind == "video"));
+    }
+}
 
 /// <summary>
 /// Messages waiting for their notifications, handed over after the commit. Bounded: when it is full a notification is dropped, never

@@ -111,11 +111,13 @@ public sealed class GoogleFcmTransport(IHttpClientFactory clients, FcmAccount ac
 
     public async Task<FcmResult> SendAsync(string token, IReadOnlyDictionary<string, string> data, int ttlSeconds, bool high, CancellationToken ct)
     {
+        // FCM addresses an app by its Firebase installation id now: "token" is deprecated in favour of "fid" (firebase-messaging 25.1.0,
+        // June 2026). The column and the request field keep the name "token".
         var message = new
         {
             message = new
             {
-                token,
+                fid = token,
                 data,
                 android = new { priority = high ? "HIGH" : "NORMAL", ttl = ttlSeconds.ToString(CultureInfo.InvariantCulture) + "s" },
             },

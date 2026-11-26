@@ -1,5 +1,6 @@
 using System.Buffers.Text;
 using Gom.Web.Auth;
+using Gom.Web.Chat;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -21,14 +22,19 @@ public static class PushEndpoints
         api.MapDelete("", Unsubscribe);
         api.MapPut("/fcm", RegisterApp);
         api.MapDelete("/fcm", UnregisterApp);
+        api.MapGet("/notice", Notice);
     }
 
-    /// <summary>The server's public key (a browser needs it to subscribe), and whether this device is on, at which level (for a device that is not: the default, words).</summary>
-    private static async Task<IResult> Get(HttpContext http, GomDbContext db, IOptions<PushOptions> options, CancellationToken ct)
+    /// <summary>
+    /// The server's public key (a browser needs it to subscribe), and whether this device is on, at which level (for a device that is
+    /// not: the default, words). In the Android app the device is its FCM registration, so the same switch in Settings works there.
+    /// </summary>
+    private static async Task<IResult> Get(HttpContext http, GomDbContext db, IOptions<PushOptions> options, FcmAccount fcm, CancellationToken ct)
     {
-        if (!options.Value.Enabled) return Results.NotFound();
+        if (!options.Value.Enabled && !fcm.Enabled) return Results.NotFound();
         var session = GomClaims.Session(http.User);
-        var mine = await db.PushSubscriptions.AsNoTracking().Where(p => p.SessionId == session).Select(p => (PushLevel?)p.Level).SingleOrDefaultAsync(ct);
+        var mine = await db.PushSubscriptions.AsNoTracking().Where(p => p.SessionId == session).Select(p => (PushLevel?)p.Level).SingleOrDefaultAsync(ct)
+            ?? await db.FcmDevices.AsNoTracking().Where(d => d.SessionId == session).Select(d => (PushLevel?)d.Level).SingleOrDefaultAsync(ct);
         return Results.Ok(new { key = options.Value.PublicKey, subscribed = mine is not null, level = Level(mine ?? PushLevel.Words) });
     }
 
@@ -92,6 +98,53 @@ public static class PushEndpoints
         var session = GomClaims.Session(http.User);
         await db.FcmDevices.Where(d => d.SessionId == session).ExecuteDeleteAsync(ct);
         return Results.NoContent();
+    }
+
+    /// <summary>What the app's notification says, worded as a browser's would be, at this device's level and in its person's language.</summary>
+    public sealed record NoticeDto(string Title, string Body, string Url, string Tag);
+
+    /// <summary>
+    /// The words of a notification for the Android app (docs/voice-calls.md, decision 43): FCM brings it only ids, and it asks here, with
+    /// its session, so Google never sees a name or words. <c>c</c> and <c>m</c>: a message (one taken back says so); <c>owner</c>
+    /// "join" or "contact": the owner's notices. Anything this person cannot see is a 404, and the app then shows its own plain line.
+    /// </summary>
+    private static async Task<IResult> Notice(Guid? c, Guid? m, string? owner, HttpContext http, GomDbContext db, FcmAccount fcm, CancellationToken ct)
+    {
+        if (!fcm.Enabled) return Results.NotFound();
+        var me = GomClaims.User(http.User);
+        var session = GomClaims.Session(http.User);
+        var level = await db.FcmDevices.AsNoTracking().Where(d => d.SessionId == session).Select(d => (PushLevel?)d.Level).SingleOrDefaultAsync(ct)
+            ?? PushLevel.Nothing;   // not registered: nothing beyond "a new message"
+        var person = await db.Users.AsNoTracking().Where(u => u.Id == me).Select(u => new { u.Language, u.IsOwner }).SingleAsync(ct);
+        var say = ServerText.For(person.Language);
+
+        if (owner is not null)
+        {
+            if (!person.IsOwner || owner is not ("join" or "contact")) return Results.NotFound();
+            if (owner == "contact") return Results.Ok(new NoticeDto("Gom", say.ContactMessage, "/settings/owner", "contact"));
+            var newest = level == PushLevel.Nothing ? null : await db.Users.AsNoTracking().Where(u => u.RequestedAt != null && u.RefusedAt == null)
+                .OrderByDescending(u => u.RequestedAt).Select(u => u.DisplayName).FirstOrDefaultAsync(ct);
+            return Results.Ok(new NoticeDto("Gom", newest is null ? say.JoinRequestUnnamed : say.JoinRequest(newest), "/settings/owner", "join-requests"));
+        }
+
+        if (c is not { } chat || m is not { } id) return Error("invalid_notice");
+        var access = await Access.Of(db, chat, me, ct);
+        if (access is null) return Results.NotFound();
+        var found = await (
+            from msg in db.Messages.AsNoTracking()
+            where msg.Id == id && msg.ConversationId == chat && msg.Seq > access.SeesAfter && msg.Notice == null
+                && !db.Hides.Any(h => h.UserId == me && h.MessageId == msg.Id)
+            join u in db.Users on msg.SenderId equals u.Id
+            join conversation in db.Conversations on msg.ConversationId equals conversation.Id
+            select new { Message = msg, u.DisplayName, conversation.Title }).SingleOrDefaultAsync(ct);
+        if (found is null) return Results.NotFound();
+
+        var (url, tag) = ($"/c/{chat}", chat.ToString());
+        if (level == PushLevel.Nothing) return Results.Ok(new NoticeDto("Gom", say.NewMessage, url, tag));
+        var files = found.Message.DeletedAt is null ? (await MessageAttachments.For(db, [id], ct)).GetValueOrDefault(id)?.Attachments : null;
+        var job = PushJob.From(found.Message, found.DisplayName, files);
+        var (title, body) = PushSender.Words(job, access.Kind, found.Title, say, words: level == PushLevel.Words);
+        return Results.Ok(new NoticeDto(title, found.Message.DeletedAt is null ? body : say.Recalled, url, tag));
     }
 
     private static PushLevel? ParseLevel(string? level) => level switch

@@ -450,8 +450,9 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
         else pushStatus = errorText(result);
       }
     } else {
+      const sub = await pusher.current();
       await pusher.unsubscribe();
-      const result = await api.removePush();
+      const result = await api.removePush(sub);
       if (result.ok) { push = { ...push, subscribed: false }; pushStatus = say.settings.pushTurnedOff; }
       else if (result.error === 'unauthorized') { signIn(); return; }
       else pushStatus = errorText(result);
