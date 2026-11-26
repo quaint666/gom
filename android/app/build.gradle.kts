@@ -56,6 +56,14 @@ android {
         buildConfigField("String", "FIREBASE_SENDER_ID", literal(setting(prefix + "firebase.senderId")))
     }
 
+    buildTypes {
+        // WebRTC brings its native code for four kinds of processor; a debug build keeps the phones' (arm64) and the emulator's
+        // (x86_64), so it stays small. A release keeps all four, and Play gives each phone only its own.
+        debug {
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -91,6 +99,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.service)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+    implementation(libs.webrtc)
     // The call screens (6c): Compose without Material, drawn in Gom's own look.
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.foundation)

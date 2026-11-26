@@ -56,7 +56,7 @@ class CallService : LifecycleService() {
         super.onCreate()
         running = true
         val origin = GomApp.origins.origin
-        engine = CallEngine(HttpCallServer(origin), media, lifecycleScope, System::currentTimeMillis) { UUID.randomUUID().toString() }
+        engine = CallEngine(HttpCallServer(origin), WebRtcMedia(this), lifecycleScope, System::currentTimeMillis) { UUID.randomUUID().toString() }
         socket = CallSocket(origin, lifecycleScope, engine::frame, engine::resync)
         calls = CallsManager(this)
         try { calls.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE) } catch (_: UnsupportedOperationException) { /* no Telecom: the call goes on without it */ }
@@ -305,11 +305,8 @@ class CallService : LifecycleService() {
         private const val EXTRA_OUTCOME = "outcome"
         private const val EXTRA_ON = "on"
 
-        /** The connection's sound: none until 6d brings WebRTC, so a call ends as "no microphone" (the app does not offer calls yet). */
-        private val media = Media { _, _ -> null }
-
         /** Whether this build makes and takes calls; the page offers calls only then (its hello says so). */
-        const val AVAILABLE = false
+        const val AVAILABLE = true
 
         private val shown = MutableStateFlow<CallView?>(null)
         private val locked = MutableStateFlow<String?>(null)
