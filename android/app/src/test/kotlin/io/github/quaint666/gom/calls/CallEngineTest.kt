@@ -172,6 +172,40 @@ class CallEngineTest {
         assertEquals(listOf("decline"), d.server.asked)
     }
 
+    @Test
+    fun answered_but_never_connected_is_given_up_after_30_s_by_either_side() = runTest {
+        for (mine in listOf(true, false)) {
+            val s = Setup(this)
+            if (mine) {
+                s.server.start = Reply.Ok(info())
+                s.engine.start(chat, Peer("Minh"))
+                runCurrent()
+                s.engine.frame(Frame.Accepted(id, "v=0 answer"))
+            } else {
+                s.server.get = Reply.Ok(info())
+                s.server.accept = Reply.Ok(info(state = "active"))
+                s.engine.ringing(id, chat, Peer("Minh"))
+                s.engine.answer()
+            }
+            runCurrent()
+            advanceTimeBy(CallProtocol.CONNECT_MS - 1)
+            assertEquals(Phase.CONNECTING, s.view!!.phase)
+            assertTrue("hangup $id" !in s.server.asked)
+            advanceTimeBy(2)
+            assertEquals(Ending.Failed, s.view!!.ending)
+            assertTrue("hangup $id" in s.server.asked)
+            assertTrue("close" in s.connection.did)
+        }
+    }
+
+    @Test
+    fun a_call_that_connects_in_time_is_not_given_up_later() = runTest {
+        val s = inCall(mine = true)
+        advanceTimeBy(CallProtocol.CONNECT_MS * 2)
+        assertEquals(Phase.ACTIVE, s.view!!.phase)
+        assertTrue("hangup $id" !in s.server.asked)
+    }
+
     /** A call in progress: [mine] says who called. */
     private suspend fun TestScope.inCall(mine: Boolean): Setup {
         val s = Setup(this)

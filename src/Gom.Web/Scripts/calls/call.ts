@@ -81,6 +81,8 @@ export const RECONNECT_AFTER_MS = 2000;
 export const RECONNECT_EVERY_MS = 5000;
 /** Down this long, the call is given up. */
 export const GIVE_UP_MS = 60_000;
+/** Answered but never connected this long (a network that lets nothing through): the call is given up, never left "connecting". */
+export const CONNECT_MS = 30_000;
 /** A relay login is renewed this long before it runs out (3 h logins: at 2 h 50 min; decision 22). */
 export const RENEW_BEFORE_S = 600;
 
@@ -354,6 +356,7 @@ export function createCalls(deps: CallDeps): Calls {
     await pc.setLocalDescription(await pc.createAnswer());
     const sdp = await gathered(pc);
     if (!live(c)) return;
+    deadline(c);
     const accepted = await deps.api.acceptCall(id, sdp);
     if (!accepted.ok) {
       if (!live(c)) return;
@@ -363,6 +366,15 @@ export function createCalls(deps: CallDeps): Calls {
       return;
     }
     keepAlive(c, accepted.data.aliveSeconds);
+  }
+
+  /** Answered: the connection has CONNECT_MS to come up, else the call ends as one that could not connect. */
+  function deadline(c: Current): void {
+    c.timers.push(deps.timer.set(() => {
+      if (!live(c) || c.phase !== 'connecting') return;
+      if (c.id !== null) void deps.api.hangUp(c.id);
+      finish(c, say.calls.failed);
+    }, CONNECT_MS));
   }
 
   function hangUp(c: Current): void {
@@ -451,6 +463,7 @@ export function createCalls(deps: CallDeps): Calls {
         deps.ring.stop();
         c.phase = 'connecting';
         c.status = say.calls.connecting;
+        deadline(c);
         draw();
         void c.pc.setRemoteDescription({ type: 'answer', sdp: f.sdp });
       } else if (f.kind === 'sdp') void renegotiate(c, f.type, f.sdp, f.rev);

@@ -296,6 +296,7 @@ class CallEngine(
         renewLater(c, servers.data.seconds)
         val answer = connection.answer(offer)
         if (!live(c)) return
+        deadline(c)
         when (val accepted = server.accept(id, answer)) {
             is Reply.Ok -> keepAlive(c, accepted.data.aliveSeconds)
             is Reply.Failed -> if (live(c)) when (accepted.error) {
@@ -303,6 +304,15 @@ class CallEngine(
                 "call_ended" -> finish(c, null)
                 else -> finish(c, Ending.Refused(accepted.error))
             }
+        }
+    }
+
+    /** Answered: the connection has [CallProtocol.CONNECT_MS] to come up, else the call ends as one that could not connect. */
+    private fun deadline(c: Current) {
+        later(c, CallProtocol.CONNECT_MS) {
+            if (c.view.phase != Phase.CONNECTING) return@later
+            c.view.id?.let { server.hangUp(it) }
+            finish(c, Ending.Failed)
         }
     }
 
@@ -340,6 +350,7 @@ class CallEngine(
                 val connection = c.connection
                 if (!c.view.mine || !live(c) || connection == null || c.view.phase != Phase.OUTGOING) return
                 show(c) { it.copy(phase = Phase.CONNECTING, ringing = false) }
+                deadline(c)
                 scope.launch { connection.accept(f.sdp) }
             }
             is Frame.Sdp -> scope.launch { renegotiate(c, f.description) }

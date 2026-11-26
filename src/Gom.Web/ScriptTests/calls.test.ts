@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallInfo, CallServers } from '../Scripts/api.js';
-import { createCalls, ENDED_MS, GATHER_MS, GIVE_UP_MS, RECONNECT_AFTER_MS, RENEW_BEFORE_S, type CallApi, type CallDeps, type PeerLike } from '../Scripts/calls/call.js';
+import { CONNECT_MS, createCalls, ENDED_MS, GATHER_MS, GIVE_UP_MS, RECONNECT_AFTER_MS, RENEW_BEFORE_S, type CallApi, type CallDeps, type PeerLike } from '../Scripts/calls/call.js';
 import { fail, flush, ok } from './helpers.js';
 
 const CHAT = 'c-1';
@@ -258,6 +258,33 @@ describe('calls: calling a friend', () => {
     expect(t.api.hangUp).toHaveBeenCalledWith(ID);
     expect(t.text()).toContain('Không kết nối được');
   });
+
+  it('answered but never connected: gives up after 30 s instead of "connecting" for ever', async () => {
+    const t = setup();
+    await ringingOut(t);
+    t.calls.frame({ kind: 'accepted', id: ID, c: CHAT, sdp: 'v=0 a' });
+    await flush();
+    t.peers[0]!.state('checking');
+    await t.pass(CONNECT_MS - 1000);
+    expect(t.text()).toContain('Đang kết nối…');
+    expect(t.api.hangUp).not.toHaveBeenCalled();
+    await t.pass(1000);
+    expect(t.api.hangUp).toHaveBeenCalledWith(ID);
+    expect(t.text()).toContain('Không kết nối được');
+    expect(t.peers[0]!.closed).toBe(true);
+    expect(t.calls.busy()).toBe(false);
+  });
+
+  it('a call that connects in time is not given up later', async () => {
+    const t = setup();
+    await ringingOut(t);
+    t.calls.frame({ kind: 'accepted', id: ID, c: CHAT, sdp: 'v=0 a' });
+    await flush();
+    t.peers[0]!.state('connected');
+    await t.pass(CONNECT_MS * 2);
+    expect(t.api.hangUp).not.toHaveBeenCalled();
+    expect(t.host.querySelector('[data-call-state]')!.textContent).toBe('1:00');
+  });
 });
 
 describe('calls: a call coming in', () => {
@@ -300,6 +327,21 @@ describe('calls: a call coming in', () => {
     await flush();
     expect(t.host.querySelector('[data-call-state]')!.textContent).toBe('0:00');
     expect(t.deps.title).toHaveBeenLastCalledWith(null);
+  });
+
+  it('answered here but never connected: gives up after 30 s', async () => {
+    const t = setup();
+    t.calls.frame(incoming);
+    await t.press('answer');
+    await flush();
+    t.peers[0]!.gatherNow();
+    await flush(); await flush();
+    expect(t.api.acceptCall).toHaveBeenCalled();
+    await t.pass(CONNECT_MS - 1000);
+    expect(t.api.hangUp).not.toHaveBeenCalled();
+    await t.pass(1000);
+    expect(t.api.hangUp).toHaveBeenCalledWith(ID);
+    expect(t.text()).toContain('Không kết nối được');
   });
 
   it('answered first on another device: says so', async () => {

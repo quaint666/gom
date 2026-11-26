@@ -20,6 +20,8 @@ object CallProtocol {
     const val RECONNECT_EVERY_MS = 5_000L
     /** Down this long, the call is given up (`GIVE_UP_MS`). */
     const val GIVE_UP_MS = 60_000L
+    /** Answered but never connected this long, the call is given up, never left "connecting" (`CONNECT_MS`). */
+    const val CONNECT_MS = 30_000L
     /** A relay login is renewed this long before it runs out (`RENEW_BEFORE_S`). */
     const val RENEW_BEFORE_S = 600L
     /** A failed renewal is tried again after this long (the page's `60_000`). */
