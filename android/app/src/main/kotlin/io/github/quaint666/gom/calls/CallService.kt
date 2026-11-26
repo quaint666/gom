@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.Uri
+import android.media.AudioManager
 import android.os.PowerManager
 import android.telecom.DisconnectCause
 import androidx.core.app.NotificationCompat
@@ -49,6 +50,10 @@ class CallService : LifecycleService() {
     /** The words for the ringing notification (`GET /api/push/notice?call=`): no name at the "nothing" level. */
     private var words: Notice? = null
     private var foreground = 0
+    private lateinit var ringer: Ringer
+    private lateinit var audio: AudioManager
+    /** Android's own word on where the call's sound goes: the route shown is the one really in use (see [route]). */
+    private val deviceChanged = AudioManager.OnCommunicationDeviceChangedListener { refreshRoutes() }
     /** Turns the screen off while the phone is at the ear (the earpiece in use, a call going on). */
     private var ear: PowerManager.WakeLock? = null
 
@@ -60,6 +65,9 @@ class CallService : LifecycleService() {
         socket = CallSocket(origin, lifecycleScope, engine::frame, engine::resync)
         calls = CallsManager(this)
         try { calls.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE) } catch (_: UnsupportedOperationException) { /* no Telecom: the call goes on without it */ }
+        ringer = Ringer(this)
+        audio = getSystemService(AudioManager::class.java)
+        audio.addOnCommunicationDeviceChangedListener(mainExecutor, deviceChanged)
         ear = getSystemService(PowerManager::class.java)
             .takeIf { it.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK) }
             ?.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "gom:call")
@@ -107,10 +115,11 @@ class CallService : LifecycleService() {
         words = null
         locked.value = getString(R.string.call_voice)   // nobody named until the server says the level allows it
         show(ringing(Peer(getString(R.string.call_voice))), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+        ringer.incoming()
         lifecycleScope.launch {
             val server = HttpCallServer(GomApp.origins.origin)
             val info = (server.get(id) as? Reply.Ok)?.data
-            if (info == null || info.state != "ringing") { if (engine.view.value == null) stop(); return@launch }
+            if (info == null || info.state != "ringing") { if (engine.view.value == null) { ringer.stop(); stop() }; return@launch }
             words = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Notices.words("/api/push/notice?call=$id") }
             // At the "nothing" level the server's title names nobody: the lock screen then shows no name (decision 8).
             locked.value = words.let { if (it == null) getString(R.string.call_voice) else it.title.takeIf { t -> t != info.callerName } }
@@ -131,6 +140,11 @@ class CallService : LifecycleService() {
 
     /** Follows the call: the notification, the socket, Android's call system, and the service's own end. */
     private fun changed(before: CallView?, v: CallView?) {
+        when {
+            v?.phase == Phase.INCOMING -> ringer.incoming()
+            v?.phase == Phase.OUTGOING && v.ringing -> ringer.ringback()
+            else -> ringer.stop()
+        }
         if (v == null) {
             // The first "no call" is where the service starts, before it is asked anything: nothing has ended.
             if (before == null) return
@@ -175,19 +189,42 @@ class CallService : LifecycleService() {
                 ) {
                     control = this
                     launch { isMuted.collect { muted -> if (engine.view.value?.muted != muted) engine.mute(muted) } }
-                    launch { availableEndpoints.collect { list -> endpoints = list; routes.value = Routes(list.map(::routeOf), routes.value.current) } }
-                    launch { currentCallEndpoint.collect { now -> routes.value = routes.value.copy(current = routeOf(now)); earLock() } }
+                    launch { availableEndpoints.collect { list -> endpoints = list; refreshRoutes() } }
+                    launch { currentCallEndpoint.collect { now -> telecomCurrent = routeOf(now); refreshRoutes() } }
                 }
             } catch (_: CallException) { control = null }
         }
     }
 
     private var endpoints: List<CallEndpointCompat> = emptyList()
+    private var telecomCurrent: Route? = null
 
-    /** Where the sound goes: through Android's call system, which Google asks of calling apps (not AudioManager directly). */
+    /**
+     * Where the sound can go (Telecom's list, or Android's own devices when Telecom gives none) and where it really goes: Android's
+     * communication device, when it says, else what Telecom says.
+     */
+    private fun refreshRoutes() {
+        val list = endpoints.map(::routeOf).ifEmpty { audio.availableCommunicationDevices.mapNotNull(::routeOf).distinctBy { it.kind } }
+        val actual = audio.communicationDevice?.let { kindOfDevice(it.type) }
+        routes.value = Routes(list, actual?.let { k -> list.firstOrNull { it.kind == k } } ?: telecomCurrent)
+        earLock()
+    }
+
+    /**
+     * Where the sound goes: asked of Android's call system first, as Google asks of calling apps. Some phones (Samsung, Android 14)
+     * are reported to accept and not move the sound; so after [ROUTE_CHECK_MS] the device in use is checked, and if it is not the
+     * one asked for, it is set directly.
+     */
     private fun route(id: String) {
-        val endpoint = endpoints.firstOrNull { it.identifier.toString() == id } ?: return
-        lifecycleScope.launch { control?.requestEndpointChange(endpoint) }
+        val target = routes.value.list.firstOrNull { it.id == id } ?: return
+        lifecycleScope.launch {
+            endpoints.firstOrNull { it.identifier.toString() == id }?.let { control?.requestEndpointChange(it) }
+            delay(ROUTE_CHECK_MS)
+            if (audio.communicationDevice?.let { kindOfDevice(it.type) } != target.kind) {
+                audio.availableCommunicationDevices.firstOrNull { kindOfDevice(it.type) == target.kind }?.let { audio.setCommunicationDevice(it) }
+            }
+            refreshRoutes()
+        }
     }
 
     /** The screen goes off at the ear only while the earpiece plays a call that goes on. */
@@ -290,6 +327,9 @@ class CallService : LifecycleService() {
     override fun onDestroy() {
         running = false
         socket.close()
+        ringer.stop()
+        audio.removeOnCommunicationDeviceChangedListener(deviceChanged)
+        audio.clearCommunicationDevice()   // a device set directly is let go with the call
         if (ear?.isHeld == true) ear?.release()
         shown.value = null
         locked.value = null
@@ -306,12 +346,16 @@ class CallService : LifecycleService() {
     private fun stopIfIdle(): Int { if (engine.view.value == null && foreground == 0) stopSelf(); return START_NOT_STICKY }
 
     companion object {
-        const val CALLS = "calls"
+        /** The call notifications' channel, silent: the [Ringer] rings. ("calls", which rang by itself, is removed.) */
+        const val CALLS = "ringing"
         const val MISSED_CALLS = "missed_calls"
+        private const val OLD_CALLS = "calls"
         private const val CALL_ID = 2
         private const val OPEN = 3
         private const val ANSWERING = 4
         private const val UNREAD_ENDING_MS = 60_000L
+        /** How long Telecom gets to move the sound before the device is checked (see [route]). */
+        private const val ROUTE_CHECK_MS = 1_000L
         /** A call going on: the call itself, and the microphone (allowed after a tap). */
         private const val IN_CALL = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         /** A call longer than this keeps the screen-off lock only until then (a lock is never held for ever). */
@@ -391,12 +435,12 @@ class CallService : LifecycleService() {
         /** The two call channels: ringing (the ringtone, over everything) and missed calls. */
         fun channels(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java)
-            val ring = android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+            // A channel's sound cannot change once made: the old ringing channel goes, and the new one is silent.
+            manager.deleteNotificationChannel(OLD_CALLS)
             manager.createNotificationChannel(android.app.NotificationChannel(CALLS, context.getString(R.string.channel_calls),
                 NotificationManager.IMPORTANCE_HIGH).apply {
-                setSound(android.provider.Settings.System.DEFAULT_RINGTONE_URI, ring)
-                enableVibration(true)
+                setSound(null, null)
+                enableVibration(false)
                 lockscreenVisibility = Notification.VISIBILITY_PRIVATE
             })
             manager.createNotificationChannel(android.app.NotificationChannel(MISSED_CALLS, context.getString(R.string.channel_missed_calls),

@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- The screen goes off while the phone is at the ear. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- A call ringing here vibrates as the phone is set. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- No backup: a session copied to another phone would sign it in. -->
     <application

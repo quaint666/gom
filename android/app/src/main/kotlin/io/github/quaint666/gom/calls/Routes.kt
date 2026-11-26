@@ -24,3 +24,18 @@ fun routeOf(e: CallEndpointCompat): Route = Route(e.identifier.toString(), when 
     CallEndpointCompat.TYPE_WIRED_HEADSET -> RouteKind.HEADSET
     else -> RouteKind.OTHER
 }, e.name.toString())
+
+/** Where Android says a call's sound goes ([android.media.AudioDeviceInfo]'s type), as a route; null for a kind a call never uses. */
+fun kindOfDevice(type: Int): RouteKind? = when (type) {
+    android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> RouteKind.EARPIECE
+    android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> RouteKind.SPEAKER
+    android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO, android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+    android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER, android.media.AudioDeviceInfo.TYPE_HEARING_AID -> RouteKind.BLUETOOTH
+    android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET, android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+    android.media.AudioDeviceInfo.TYPE_USB_HEADSET -> RouteKind.HEADSET
+    else -> null
+}
+
+/** One of Android's own communication devices as a route, when Telecom offers none (its id says so: "audio:" and the device's). */
+fun routeOf(d: android.media.AudioDeviceInfo): Route? =
+    kindOfDevice(d.type)?.let { Route("audio:${d.id}", it, d.productName?.toString().orEmpty()) }
