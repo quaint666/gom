@@ -80,6 +80,8 @@ class MainActivity : ComponentActivity() {
         val call = dialling
         dialling = null
         if (granted && call != null) CallService.dial(this, call.conversation, call.name, call.avatar)
+        // Refused (or refused for good, when Android no longer asks): said, as the page says it in a browser.
+        else if (call != null) android.widget.Toast.makeText(this, R.string.call_need_mic, android.widget.Toast.LENGTH_LONG).show()
     }
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -166,6 +168,7 @@ class MainActivity : ComponentActivity() {
         })
         addView(Button(context).apply {
             setText(R.string.offline_retry)
+            isAllCaps = false
             setOnClickListener { offline.visibility = View.GONE; web.reload() }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }

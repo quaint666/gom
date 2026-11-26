@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,7 +19,9 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -131,12 +134,15 @@ fun CallScreen(
     // Nobody named on the lock screen at the "nothing" level (mockup 22), or before the server has said who calls.
     val anonymous = overLock && (hiddenTitle != null || v == null)
     val name = if (anonymous) stringResource(R.string.call_incoming) else v?.peer?.name.orEmpty()
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to c.tint, 0.62f to c.bg))) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to c.tint, 0.62f to c.bg))) {
+        // A short screen (a phone on its side): smaller, and scrolling, so the buttons and their words always fit.
+        val short = maxHeight < 560.dp
+        Column(Modifier.fillMaxSize().safeDrawingPadding().then(if (short) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+            .padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (overLock) Clock(c)
             else Header(c, showMinimise = v != null && v.phase in setOf(Phase.OUTGOING, Phase.CONNECTING, Phase.ACTIVE), act.minimise)
-            Spacer(Modifier.height(if (overLock) 28.dp else 40.dp))
-            if (anonymous) Anonymous(c) else Avatar(name, c)
+            Spacer(Modifier.height(if (short) 8.dp else if (overLock) 28.dp else 40.dp))
+            if (anonymous) Anonymous(c, short) else Avatar(name, c, short)
             Spacer(Modifier.height(18.dp))
             BasicText(name, style = TextStyle(color = c.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center))
             Spacer(Modifier.height(12.dp))
@@ -145,7 +151,7 @@ fun CallScreen(
                 Spacer(Modifier.width(8.dp))
                 BasicText(stringResource(R.string.call_unlock_to_see), style = TextStyle(color = c.muted, fontSize = 16.sp))
             } else Status(v, c)
-            Spacer(Modifier.weight(1f))
+            Spacer(if (short) Modifier.height(20.dp) else Modifier.weight(1f))
             if (v?.downSince != null) {
                 BasicText(stringResource(R.string.call_reconnect_note), Modifier.widthIn(max = 320.dp).padding(bottom = 20.dp),
                     style = TextStyle(color = c.muted, fontSize = 14.sp, textAlign = TextAlign.Center))
@@ -201,16 +207,16 @@ private fun Clock(c: Palette) {
 
 /** A handset in a plain circle, where the caller's picture would name them. */
 @Composable
-private fun Anonymous(c: Palette) {
-    Box(Modifier.size(120.dp).clip(CircleShape).background(c.surface).border(1.dp, c.border, CircleShape), contentAlignment = Alignment.Center) {
+private fun Anonymous(c: Palette, short: Boolean) {
+    Box(Modifier.size(if (short) 72.dp else 120.dp).clip(CircleShape).background(c.surface).border(1.dp, c.border, CircleShape), contentAlignment = Alignment.Center) {
         Icon(Icons.call, c.muted, 44.dp)
     }
 }
 
 @Composable
-private fun Avatar(name: String, c: Palette) {
-    Box(Modifier.size(120.dp).clip(CircleShape).background(c.tint), contentAlignment = Alignment.Center) {
-        BasicText(name.trim().firstOrNull()?.uppercase() ?: "", style = TextStyle(color = c.link, fontSize = 42.sp, fontWeight = FontWeight.Bold))
+private fun Avatar(name: String, c: Palette, short: Boolean) {
+    Box(Modifier.size(if (short) 72.dp else 120.dp).clip(CircleShape).background(c.tint), contentAlignment = Alignment.Center) {
+        BasicText(name.trim().firstOrNull()?.uppercase() ?: "", style = TextStyle(color = c.link, fontSize = if (short) 28.sp else 42.sp, fontWeight = FontWeight.Bold))
     }
 }
 

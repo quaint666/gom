@@ -28,6 +28,7 @@ import io.github.quaint666.gom.Notices
 import io.github.quaint666.gom.R
 import java.util.UUID
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -84,7 +85,8 @@ class CallService : LifecycleService() {
             }
             RING -> ring(i.getStringExtra(EXTRA_ID).orEmpty())
             ANSWER -> answer(fromTelecom = false)
-            HANG_UP -> engine.hangUp()
+            // On a call that has ended (its ending still shown), the notification's button closes it.
+            HANG_UP -> if (engine.view.value?.phase == Phase.ENDED) engine.close() else engine.hangUp()
             MUTE -> engine.mute(i.getBooleanExtra(EXTRA_ON, false))
             ROUTE -> route(i.getStringExtra(EXTRA_ID).orEmpty())
             CLOSE -> engine.close()
@@ -145,7 +147,13 @@ class CallService : LifecycleService() {
                 show(ongoing(v), IN_CALL)
                 if (v.phase == Phase.ACTIVE && before?.phase != Phase.ACTIVE && v.mine) lifecycleScope.launch { control?.setActive() }
             }
-            Phase.ENDED -> { socket.close(); disconnect(v) }
+            Phase.ENDED -> {
+                socket.close()
+                disconnect(v)
+                show(ended(v), foreground.takeIf { it != 0 } ?: ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                // An ending that waits to be read is closed by the screen; one nobody opens still goes after a while.
+                if (v.ending?.problem == true) lifecycleScope.launch { delay(UNREAD_ENDING_MS); if (engine.view.value === v) engine.close() }
+            }
         }
     }
 
@@ -249,6 +257,17 @@ class CallService : LifecycleService() {
         .setContentIntent(screen(null))
         .build()
 
+    /** The call is over and its ending shows on the call screen: no "Hang up" any more, a tap opens the ending. */
+    private fun ended(v: CallView): Notification = NotificationCompat.Builder(this, CALLS)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setColor(getColor(R.color.gom))
+        .setContentTitle(v.peer.name)
+        .setContentText(getString(if (v.ending?.problem == true || v.ending == Ending.Failed) R.string.call_failed else R.string.call_ended))
+        .setCategory(NotificationCompat.CATEGORY_CALL)
+        .setSilent(true)
+        .setContentIntent(screen(null))
+        .build()
+
     /** The call screen, over the lock screen; [action] [CallActivity.ANSWER] answers once the microphone is allowed. */
     private fun screen(action: String?): PendingIntent {
         val intent = Intent(this, CallActivity::class.java).setAction(action ?: Intent.ACTION_MAIN)
@@ -292,6 +311,7 @@ class CallService : LifecycleService() {
         private const val CALL_ID = 2
         private const val OPEN = 3
         private const val ANSWERING = 4
+        private const val UNREAD_ENDING_MS = 60_000L
         /** A call going on: the call itself, and the microphone (allowed after a tap). */
         private const val IN_CALL = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         /** A call longer than this keeps the screen-off lock only until then (a lock is never held for ever). */

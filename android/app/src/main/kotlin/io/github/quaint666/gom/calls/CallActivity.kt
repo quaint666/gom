@@ -18,6 +18,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import io.github.quaint666.gom.GomApp
 import io.github.quaint666.gom.MainActivity
+import io.github.quaint666.gom.R
 import kotlinx.coroutines.launch
 
 /**
@@ -35,7 +36,11 @@ class CallActivity : ComponentActivity() {
     private val askMicrophone = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val then = afterMic
         afterMic = null
-        if (granted) then?.invoke() else if (CallService.view.value?.phase == Phase.INCOMING) CallService.hangUp(this)
+        if (granted) then?.invoke()
+        else {
+            if (CallService.view.value?.phase == Phase.INCOMING) CallService.hangUp(this)
+            android.widget.Toast.makeText(this, R.string.call_need_mic, android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,10 +102,17 @@ class CallActivity : ComponentActivity() {
         withMic { CallService.dial(this, v.conversation, v.peer.name, v.peer.avatar) }
     }
 
-    /** Back to the app, on the chat with them; the call goes on. */
+    /** Back to the app, on the chat with them; the call goes on. A call that has ended is closed as it is left. */
     private fun minimise() {
         openChat()
+        if (CallService.view.value?.phase == Phase.ENDED) CallService.close(this)
         finish()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Left some other way (Home, another app): an ending nobody looks at is closed, so no call stays behind.
+        if (!isChangingConfigurations && CallService.view.value?.phase == Phase.ENDED) CallService.close(this)
     }
 
     private fun openChat() {
