@@ -29,7 +29,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0.404-alpine3.24@sha256:0294f285d062afacc8b
 
 WORKDIR /src
 # Restore first: this layer is reused until a package changes.
-COPY Directory.Build.props dotnet-tools.json ./
+COPY Directory.Build.props VERSION dotnet-tools.json ./
 COPY src/Gom.Web/Gom.Web.csproj src/Gom.Web/
 # The runtime is named, so only the native files for this one (the picture library has them for every system) are restored and shipped.
 RUN dotnet restore src/Gom.Web/Gom.Web.csproj -r linux-musl-x64 && dotnet tool restore

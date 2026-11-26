@@ -190,7 +190,7 @@ if (root) {
       });
       break;
     }
-    case 'settings': mountSettings(root, api, go, installer, pusher, { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) }, { version: versionOf(ownScript), reload: () => { void reloadFresh(); } }); break;
+    case 'settings': mountSettings(root, api, go, installer, pusher, { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) }, { version: document.body.dataset['version'] || null, reload: () => { void reloadFresh(); } }); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
