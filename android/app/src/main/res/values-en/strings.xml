@@ -44,7 +44,7 @@
     <string name="call_error_other">Couldn\'t call. Try again.</string>
     <string name="call_unlock_to_see">Unlock to see who\'s calling</string>
     <string name="ready_full_screen_title">Let calls show full screen</string>
-    <string name="ready_full_screen_text">Android has turned off full-screen calls for Gom, so a call on a locked phone shows only as a small notification. Turn on "Allow full screen notifications" for Gom.</string>
+    <string name="ready_full_screen_text">Android has turned off full-screen calls for Gom, so a call on a locked phone shows only as a small notification. Turn on “Allow full-screen notifications” for Gom.</string>
     <string name="ready_sleep_title">Keep Gom ringing</string>
     <string name="ready_sleep_text">The phone may put Gom to sleep to save battery, and then calls won\'t ring. On Gom\'s page, choose Battery, then Unrestricted. On a Samsung phone, also go to Settings › Device care › Battery › Background usage limits, and add Gom to Never sleeping apps.</string>
     <string name="ready_open_settings">Open settings</string>
