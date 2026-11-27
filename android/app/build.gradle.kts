@@ -14,7 +14,7 @@ val release: String = rootDir.resolve("../VERSION").readText().trim().also {
 /** Google Play's versionCode, from the same number: 1.2.3 is 10203, so every release is higher than the one before it. */
 val releaseCode: Int = release.split('.').map(String::toInt).let { (major, minor, patch) ->
     require(minor < 100 && patch < 100) { "VERSION's second and third numbers must stay below 100 for Play's versionCode" }
-    major * 10_000 + minor * 100 + patch
+    major * 10_000 + minor * 10 + patch
 }
 
 /** Play's upload key (Google keeps the app's own signing key): from the build machine's Gradle properties, never this repository. */
