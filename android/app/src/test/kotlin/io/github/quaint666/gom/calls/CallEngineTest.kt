@@ -19,7 +19,7 @@ class CallEngineTest {
     private val stun = listOf(IceServer(listOf("stun:s.example")))
 
     private fun info(state: String = "ringing", offer: String? = "v=0 offer", answer: String? = null, outcome: String? = null, sdp: Description? = null) =
-        CallInfo(id, chat, state, outcome, "Minh", offer, answer, sdp, 45, 30)
+        CallInfo(id, chat, state, outcome, "Minh", null, offer, answer, sdp, 45, 30)
 
     /** Records each step and answers as told. */
     private class FakeServer : CallServer {

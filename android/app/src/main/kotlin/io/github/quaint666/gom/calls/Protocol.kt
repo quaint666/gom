@@ -71,6 +71,8 @@ data class CallInfo(
     val state: String,
     val outcome: String?,
     val callerName: String,
+    /** The caller's picture id, for the ringing screen; null when they have none. */
+    val callerAvatar: String?,
     val offer: String?,
     val answer: String?,
     val sdp: Description?,
@@ -82,7 +84,8 @@ data class CallInfo(
             val o = JSONObject(json)
             val sdp = o.optJSONObject("sdp")?.let { Description(it.getString("type"), it.getString("sdp"), it.getInt("rev")) }
             CallInfo(o.getString("id"), o.getString("conversationId"), o.getString("state"), text(o, "outcome"),
-                o.optJSONObject("caller")?.let { text(it, "displayName") }.orEmpty(), text(o, "offer"), text(o, "answer"), sdp,
+                o.optJSONObject("caller")?.let { text(it, "displayName") }.orEmpty(),
+                o.optJSONObject("caller")?.let { text(it, "avatar") }?.takeIf { CallProtocol.isId(it) }, text(o, "offer"), text(o, "answer"), sdp,
                 o.getLong("ringSeconds"), o.getLong("aliveSeconds"))
                 .takeIf { CallProtocol.isId(it.id) && CallProtocol.isId(it.conversation) }
         } catch (_: JSONException) { null }

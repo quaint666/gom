@@ -18,6 +18,7 @@ private fun call(phase: Phase, mine: Boolean = true) = CallView("k", "c", mom, m
 @Preview(name = "21 calling", widthDp = 390, heightDp = 780, locale = "vi") @Composable fun Calling() = Show(call(Phase.OUTGOING).copy(ringing = true))
 @Preview(name = "22 incoming, locked, no name", widthDp = 390, heightDp = 780, locale = "vi") @Composable fun IncomingHidden() = Show(call(Phase.INCOMING, mine = false), locked = true, hidden = "Gom")
 @Preview(name = "23 incoming, locked", widthDp = 390, heightDp = 780, locale = "vi") @Composable fun IncomingLocked() = Show(call(Phase.INCOMING, mine = false), locked = true)
+@Preview(name = "24 incoming, phone in use", widthDp = 390, heightDp = 780, locale = "vi") @Composable fun Incoming() = Show(call(Phase.INCOMING, mine = false))
 @Preview(name = "25 in call, speaker, muted", widthDp = 390, heightDp = 780, locale = "vi") @Composable fun InCall() = Show(call(Phase.ACTIVE).copy(connectedAt = System.currentTimeMillis() - 185_000, muted = true), Routes(listOf(phone, speaker), speaker))
 @Preview(name = "26 sound route", widthDp = 390, heightDp = 780, locale = "vi") @Composable fun SoundRoute() = Show(call(Phase.ACTIVE).copy(connectedAt = System.currentTimeMillis() - 185_000), Routes(listOf(phone, speaker, buds), buds), sheet = true)
 @Preview(name = "27 reconnecting", widthDp = 390, heightDp = 780, locale = "vi") @Composable fun Reconnecting() = Show(call(Phase.ACTIVE).copy(connectedAt = 0, downSince = 1))
@@ -28,6 +29,6 @@ private fun call(phase: Phase, mine: Boolean = true) = CallView("k", "c", mom, m
 
 /** By mockup number, for [CallPreviewActivity]. */
 val previews: Map<String, @Composable () -> Unit> = mapOf(
-    "21" to { Calling() }, "22" to { IncomingHidden() }, "23" to { IncomingLocked() }, "25" to { InCall() }, "26" to { SoundRoute() },
+    "21" to { Calling() }, "22" to { IncomingHidden() }, "23" to { IncomingLocked() }, "24" to { Incoming() }, "25" to { InCall() }, "26" to { SoundRoute() },
     "27" to { Reconnecting() }, "28" to { Ended() }, "28d" to { EndedDark() }, "mic" to { NoMic() }, "25en" to { InCallEnglish() },
 )

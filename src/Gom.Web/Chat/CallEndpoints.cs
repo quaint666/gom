@@ -224,7 +224,7 @@ public static class CallEndpoints
     }
 
     /// <summary>What a device of one of the two may know of a call. The offer and answer go only to the devices that need them.</summary>
-    private static object Describe(Call k, Guid me, Guid session, CallRelay relay, CallOptions o, string? callerName)
+    private static object Describe(Call k, Guid me, Guid session, CallRelay relay, CallOptions o, string? callerName, Guid? callerAvatar)
     {
         var d = relay.Of(k.Id);
         var callee = me == k.CalleeId;
@@ -232,7 +232,8 @@ public static class CallEndpoints
         return new
         {
             id = k.Id, conversationId = k.ConversationId, state = Name(k.State), outcome = k.Outcome is { } x ? Name(x) : null,
-            callerId = k.CallerId, calleeId = k.CalleeId, caller = new { id = k.CallerId, displayName = callerName },
+            // The caller's picture, for the app's ringing screen (the two are friends, who may see each other's pictures).
+            callerId = k.CallerId, calleeId = k.CalleeId, caller = new { id = k.CallerId, displayName = callerName, avatar = callerAvatar },
             createdAt = k.CreatedAt, answeredAt = k.AnsweredAt, endedAt = k.EndedAt, v = k.Version,
             // The person called needs the offer to answer (any of their devices while it rings); afterwards only the two devices in it.
             offer = callee && (k.State == CallState.Ringing || (k.State == CallState.Active && inIt)) ? d?.Offer : null,
@@ -245,8 +246,8 @@ public static class CallEndpoints
 
     private static async Task<IResult> Described(GomDbContext db, Call k, Guid me, Guid session, CallRelay relay, CallOptions o, CancellationToken ct)
     {
-        var name = await db.Users.Where(u => u.Id == k.CallerId).Select(u => u.DisplayName).SingleAsync(ct);
-        return Results.Ok(Describe(k, me, session, relay, o, name));
+        var caller = await db.Users.Where(u => u.Id == k.CallerId).Select(u => new { u.DisplayName, u.AvatarId }).SingleAsync(ct);
+        return Results.Ok(Describe(k, me, session, relay, o, caller.DisplayName, caller.AvatarId));
     }
 
     private static async Task<IResult> Start(StartRequest request, HttpContext http, GomDbContext db, CallLimiter limiter, CallRelay relay, LiveDelivery live, Push.PushQueue push,
@@ -308,10 +309,10 @@ public static class CallEndpoints
         }
         relay.Offer(call.Id, sdp);
         relay.Claim(call.Id, me, session);
-        var caller = await db.Users.Where(u => u.Id == me).Select(u => new MessageEndpoints.PersonDto(u.Id, u.DisplayName)).SingleAsync(ct);
-        relay.Send(peer, Frames.CallIncoming(call.Id, conversation, caller));
+        var caller = await db.Users.Where(u => u.Id == me).Select(u => new { u.Id, u.DisplayName, u.AvatarId }).SingleAsync(ct);
+        relay.Send(peer, Frames.CallIncoming(call.Id, conversation, new MessageEndpoints.PersonDto(caller.Id, caller.DisplayName)));
         relay.Wake(new Push.CallPush(call.Id, peer, Ring: true, Until: now.AddSeconds(o.RingSeconds)));
-        return Results.Ok(Describe(call, me, session, relay, o, caller.DisplayName));
+        return Results.Ok(Describe(call, me, session, relay, o, caller.DisplayName, caller.AvatarId));
     }
 
     /// <summary>

@@ -24,6 +24,13 @@ class Origins(baseUrl: String, alsoAllow: String = "") {
         return u.scheme == "https" && u.host.equals(b.host, ignoreCase = true) && u.port == b.port
     }
 
+    /**
+     * Whether a page may have the microphone (a voice message): only Gom's own pages, and only the microphone; never a page of
+     * [alsoAllow]'s host, nor the camera. Android's own question still comes first.
+     */
+    fun mayUseMicrophone(origin: String, resources: List<String>): Boolean =
+        isGom(origin) && resources == listOf(android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+
     fun loadsInside(url: String): Boolean {
         if (isGom(url)) return true
         if (extra.isEmpty()) return false

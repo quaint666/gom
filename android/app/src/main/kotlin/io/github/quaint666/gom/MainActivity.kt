@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
@@ -82,6 +83,15 @@ class MainActivity : ComponentActivity() {
         if (granted && call != null) CallService.dial(this, call.conversation, call.name, call.avatar)
         // Refused (or refused for good, when Android no longer asks): said, as the page says it in a browser.
         else if (call != null) android.widget.Toast.makeText(this, R.string.call_need_mic, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    /** The page's request for the microphone (a voice message), waiting for Android's question. */
+    private var micRequest: PermissionRequest? = null
+
+    private val askMicForPage = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val request = micRequest
+        micRequest = null
+        if (granted) request?.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) else request?.deny()
     }
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -227,6 +237,16 @@ class MainActivity : ComponentActivity() {
         }
 
         web.webChromeClient = object : WebChromeClient() {
+            // The page asks for the microphone (to record a voice message): granted only to Gom's own pages, and after Android's own
+            // question, as a browser asks; anything else a page asks for is refused.
+            override fun onPermissionRequest(request: PermissionRequest) {
+                if (!origins.mayUseMicrophone(request.origin.toString(), request.resources.toList())) { request.deny(); return }
+                if (CallService.hasMic(this@MainActivity)) { request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)); return }
+                micRequest?.deny()
+                micRequest = request
+                askMicForPage.launch(Manifest.permission.RECORD_AUDIO)
+            }
+
             override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
                 picking?.onReceiveValue(null)
                 picking = callback
