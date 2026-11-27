@@ -1,8 +1,9 @@
 # Gom's Android app (android/).
 #
-# Every pull request and push to main that touches the app lints it, runs its unit tests and builds both flavours' debug
-# APKs. It holds no secrets: the server's address is a placeholder and the Firebase values are left out, so these builds have
-# notifications off and are for checking only, never for a phone. The builds people install are made outside CI (README).
+# Every pull request and push to main that touches the app (or VERSION, its version name) lints it, runs its unit tests
+# and builds both flavours' debug APKs. It holds no secrets: the server's address is a placeholder and the Firebase
+# values are left out, so these builds have notifications off and are for checking only, never for a phone. The builds
+# people install are made outside CI (README).
 # setup-gradle also checks the committed Gradle wrapper against Gradle's published checksums.
 
 name: android
@@ -11,11 +12,13 @@ on:
   pull_request:
     paths:
       - "android/**"
+      - "VERSION"
       - ".github/workflows/android.yml"
   push:
     branches: [main]
     paths:
       - "android/**"
+      - "VERSION"
       - ".github/workflows/android.yml"
 
 permissions:
