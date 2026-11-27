@@ -58,6 +58,31 @@ public class ReplyTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task A_quote_of_a_message_with_only_a_picture_or_a_file_says_what_its_first_one_is()
+    {
+        var t = await NewTeam();
+        async Task<Guid> Upload(byte[] bytes, string name)
+        {
+            using var r = await app.CallBytes(Post, $"/api/conversations/{t.Chat}/attachments?name={Uri.EscapeDataString(name)}", bytes, t.CB);
+            Assert.Equal(HttpStatusCode.Created, r.StatusCode);
+            return (await AppFixture.Json(r)).GetProperty("id").GetGuid();
+        }
+        var picture = await Upload(TestImages.Png(60, 40), "a.png");
+        var file = await Upload([1, 2, 3], "b.bin");
+        using var sent = await app.Call(Post, $"/api/conversations/{t.Chat}/messages", new { clientId = Guid.NewGuid(), body = "", attachments = new[] { picture, file } }, t.CB);
+        var first = await AppFixture.Json(sent);
+        var words = await Say(t.Chat, t.CB, "chữ thôi");
+
+        var answer = await Say(t.Chat, t.CC, "đẹp quá", IdOf(first));
+        var plain = await Say(t.Chat, t.CC, "ừ", IdOf(words));
+
+        Assert.Equal("", answer.GetProperty("reply").GetProperty("snippet").GetString());
+        Assert.Equal("image", answer.GetProperty("reply").GetProperty("attachment").GetString());
+        Assert.Equal("image", (await History(t.Chat, t.CA)).Single(m => IdOf(m) == IdOf(answer)).GetProperty("reply").GetProperty("attachment").GetString());
+        Assert.Equal(JsonValueKind.Null, plain.GetProperty("reply").GetProperty("attachment").ValueKind);
+    }
+
+    [Fact]
     public async Task A_message_that_answers_nothing_has_no_quote()
     {
         var t = await NewTeam();

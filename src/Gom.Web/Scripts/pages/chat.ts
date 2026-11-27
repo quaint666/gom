@@ -388,12 +388,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @click=${() => void setReaction(m, mine ? null : r.emoji)}>${r.emoji}<span>${r.users.length}</span></button>`;
     })}</div>`;
 
-  /** What stands above an answer: who wrote the message it answers and the start of it, or that it is no longer there to see. */
-  const quote = (r: Reply) => html`
-    <div class="quote" data-quote=${r.id}>${r.sender === null || r.snippet === null
-      ? html`<span class="gone">${say.chat.quoteGone}</span>`
-      : html`<b>${r.sender.id === me?.id ? say.common.you : r.sender.displayName}</b>${r.sticker
-        ? html`<span class="q-stk"><img src=${stickerUrl(r.sticker)} alt="">${say.common.sticker}</span>` : html`<span>${r.snippet}</span>`}`}</div>`;
+  /** What a quote or the reply bar says of a message: its words, or with none, what it carried. */
+  const quoted = (r: Reply) => r.snippet !== '' && r.snippet !== null ? r.snippet
+    : r.attachment === 'image' ? say.common.picture : r.attachment === 'video' ? say.common.video : r.attachment === 'file' ? say.common.file : '';
+
+  /** What stands above an answer: who wrote the message it answers and the start of it, or that it is no longer there to see. A tap goes to
+   * the answered message, as search does. */
+  const quote = (r: Reply, conversationId: string) => r.sender === null || r.snippet === null
+    ? html`<div class="quote" data-quote=${r.id}><span class="gone">${say.chat.quoteGone}</span></div>`
+    : html`<button class="quote" type="button" data-quote=${r.id} aria-label=${say.chat.goToMessage}
+        @click=${(e: MouseEvent) => { e.stopPropagation(); void reveal({ id: r.id, conversationId }); }}><b>${r.sender.id === me?.id ? say.common.you : r.sender.displayName}</b>${r.sticker
+        ? html`<span class="q-stk"><img src=${stickerUrl(r.sticker)} alt="">${say.common.sticker}</span>` : html`<span>${quoted(r)}</span>`}</button>`;
 
   /** The words of a message, with every http or https address made into a link that opens in a new tab and tells that site nothing about this one. */
   const words = (body: string) => linkify(body).map((p) => 'url' in p
@@ -662,7 +667,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm') : html`<div class="sp"></div>`) : nothing}
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
-          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
+          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply, m.conversationId) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">${say.chat.edited}</span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? say.chat.sending : say.chat.waiting}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? say.chat.seen : say.chat.delivered}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${!item.mine ? tools : nothing}
       </div>
@@ -1127,7 +1132,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             </div>`}
           ${t.replying === null ? nothing : html`
             <div class="replybar" data-replybar>
-              <div class="rb-text"><b>${say.chat.replyingTo(t.replying.sender?.id === me?.id ? say.chat.yourself : t.replying.sender?.displayName ?? '')}</b><span>${t.replying.sticker ? say.common.sticker : t.replying.snippet ?? ''}</span></div>
+              <div class="rb-text"><b>${say.chat.replyingTo(t.replying.sender?.id === me?.id ? say.chat.yourself : t.replying.sender?.displayName ?? '')}</b><span>${t.replying.sticker ? say.common.sticker : quoted(t.replying)}</span></div>
               <button class="ib" type="button" data-cancel-reply aria-label=${say.chat.cancelReply} @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
             </div>`}
           ${trayView(t)}
@@ -2005,7 +2010,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const t = threadOf(m.conversationId);
     const body = [...m.body];
     const most = limits().quoteChars;
-    t.replying = { id: m.id, sender: m.sender, snippet: body.length > most ? body.slice(0, most).join('') : m.body, ...(m.sticker ? { sticker: m.sticker } : {}) };
+    t.replying = { id: m.id, sender: m.sender, snippet: body.length > most ? body.slice(0, most).join('') : m.body, ...(m.sticker ? { sticker: m.sticker } : {}),
+      ...(m.attachments?.length ? { attachment: m.attachments[0]!.kind } : {}) };
     update();
     root.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus();
   }

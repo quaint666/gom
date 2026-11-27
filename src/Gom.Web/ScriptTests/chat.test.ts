@@ -1723,6 +1723,48 @@ describe('chat: answering and copying', () => {
     expect(q1).toContain('gốc của mẹ');
     const q2 = text(root.querySelector('[data-quote="x2"]')!);
     expect(q2).toContain('Tin nhắn không còn hiển thị');
+    expect(root.querySelector('[data-quote="x2"]')!.tagName).toBe('DIV');
+  });
+
+  it('says what a message with only pictures, videos or files carried, in the quote and in the bar', async () => {
+    const picture: Attachment = { id: 'p1', kind: 'image', name: 'a.webp', size: 2048, width: 40, height: 30 };
+    open({}, [
+      { ...msg(1, 'minh', ''), attachments: [picture] },
+      answer(2, 'mom', 'đẹp', { id: 'x1', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: '', attachment: 'image' }),
+      answer(3, 'mom', 'xem rồi', { id: 'x2', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: '', attachment: 'video' }),
+      answer(4, 'mom', 'tải rồi', { id: 'x3', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: '', attachment: 'file' }),
+      answer(5, 'mom', 'ừ', { id: 'x4', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: 'chữ và ảnh', attachment: 'image' }),
+    ]);
+    await flush();
+    expect(root.querySelector('[data-quote="x1"] span')!.textContent).toBe('Hình ảnh');
+    expect(root.querySelector('[data-quote="x2"] span')!.textContent).toBe('Video');
+    expect(root.querySelector('[data-quote="x3"] span')!.textContent).toBe('Tệp');
+    expect(root.querySelector('[data-quote="x4"] span')!.textContent).toBe('chữ và ảnh');
+    row('id1').querySelector<HTMLButtonElement>('[data-quick-reply]')!.click();
+    await flush();
+    expect(root.querySelector('.replybar .rb-text span')!.textContent).toBe('Hình ảnh');
+  });
+
+  it('goes to the answered message when its quote is tapped, and marks it for a moment', async () => {
+    open({}, [msg(1, 'minh', 'Tối nay ăn gì?'), msg(2, 'minh', 'giữa'), answer(3, 'mom', 'ăn phở', { id: 'id1', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: 'Tối nay ăn gì?' })]);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-quote="id1"]')!.click();
+    await flush();
+    expect(row('id1').classList.contains('found')).toBe(true);
+    expect(root.querySelector('.menu')).toBeNull();
+  });
+
+  it('loads older messages to reach an answered one that is not on screen yet', async () => {
+    const history = vi.fn(async (_id: string, before?: number) => before === undefined
+      ? ok({ messages: [answer(52, 'mom', 'ăn phở', { id: 'id50', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: 'Tối nay ăn gì?' }), msg(51, 'minh')], hasMore: true })
+      : ok({ messages: [msg(50, 'minh', 'Tối nay ăn gì?'), msg(49, 'minh')], hasMore: false }));
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 52 })], api: { history } });
+    await flush();
+    expect(root.querySelector('[data-msg="id50"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-quote="id50"]')!.click();
+    await flush();
+    expect(history).toHaveBeenCalledWith(C1, 51);
+    expect(row('id50').classList.contains('found')).toBe(true);
   });
 
   it('keeps the quote in the outbox so an answer written offline is still an answer after a reload', async () => {
