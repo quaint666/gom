@@ -23,6 +23,7 @@ import type { Calls } from '../calls/call.js';
 import { rememberAppCalls } from '../calls/here.js';
 import { audioCard, clockOf } from '../chat/audio.js';
 import { VOICE_SECONDS, voiceStamp, type Recording } from '../voice.js';
+import { ref } from 'lit-html/directives/ref.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -409,6 +410,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const lessMotion = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const isMoving = (id: string): boolean => movingChoice.get(id) ?? !lessMotion();
 
+  /** A picture's or video's own size, for the CSS to give it its place before it has loaded (the page may set no style attribute). */
+  const reserve = (el: Element | undefined, a: Attachment) => {
+    if (!(el instanceof HTMLElement) || !a.width || !a.height) return;
+    el.style.setProperty('--w', `${a.width}px`);
+    el.style.setProperty('--r', String(a.width / a.height));
+  };
+
   /**
    * A GIF in a message: the moving picture while it plays, its still first frame while paused. Anything that moves by itself for more
    * than a few seconds needs a way to stop it, so it always has its own pause button beside the one that opens the viewer.
@@ -418,7 +426,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     return html`
       <div class="pic moving" data-moving=${a.id}>
         <button class="pic-open" type="button" data-pic=${a.id} aria-label=${say.chat.viewPicture(i + 1, of)} @click=${open}>
-          <img src=${moving ? `/api/attachments/${a.id}` : `/api/attachments/${a.id}/thumb`} alt=${a.name} decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>
+          <img src=${moving ? `/api/attachments/${a.id}` : `/api/attachments/${a.id}/thumb`} alt=${a.name} decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing} ${ref((el) => reserve(el, a))}></button>
         <button class="moving-toggle" type="button" data-moving-toggle aria-label=${moving ? say.chat.pauseMoving : say.chat.playMoving}
           @click=${() => { movingChoice.set(a.id, !moving); update(); }}>${moving ? icons.pause() : icons.play()}<span aria-hidden="true">GIF</span></button>
       </div>`;
@@ -437,7 +445,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <span class="fi"><b>${a.name}</b><small>${say.chat.videoCannotPlay}</small></span>${icons.download()}</a>`
     : html`<div class="vid" data-video=${a.id}>
         <video controls playsinline preload="metadata" src=${`/api/attachments/${a.id}`} poster=${`/api/attachments/${a.id}/thumb`}
-          width=${a.width ?? nothing} height=${a.height ?? nothing} aria-label=${say.chat.videoLabel(a.name, playLength(a.durationMs))}
+          width=${a.width ?? nothing} height=${a.height ?? nothing} aria-label=${say.chat.videoLabel(a.name, playLength(a.durationMs))} ${ref((el) => reserve(el, a))}
           @error=${() => { unplayable.add(a.id); update(); }}></video>
         ${a.durationMs ? html`<span class="vid-len" aria-hidden="true">${playLength(a.durationMs)}</span>` : nothing}</div>`;
 
@@ -455,7 +463,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         : a.animated ? movingPicture(a, i, pictures.length, () => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id))
         : html`
         <button class="pic" type="button" data-pic=${a.id} aria-label=${say.chat.viewPicture(i + 1, pictures.length)} @click=${() => openViewer(m.conversationId, a.id, m.seq > 0 ? null : m.id)}>
-          <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing}></button>`)}</div>`}
+          <img src=${`/api/attachments/${a.id}/thumb`} alt=${a.name} loading="lazy" decoding="async" width=${a.width ?? nothing} height=${a.height ?? nothing} ${ref((el) => reserve(el, a))}></button>`)}</div>`}
       ${videos.map((a) => a.removed
         ? html`<div class="pic removed vid" data-video-removed=${a.id}><span>${say.chat.videoGone}</span></div>`
         : videoView(a))}
