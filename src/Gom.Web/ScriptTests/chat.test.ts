@@ -46,7 +46,7 @@ interface Harness {
   busy: () => boolean;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages']; calls?: ChatDeps['calls']; callsOn?: boolean } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; recordVoice?: ChatDeps['recordVoice']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages']; calls?: ChatDeps['calls']; callsOn?: boolean } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(opts.callsOn ? { ...me, calls: true } : me)),
@@ -100,6 +100,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     clearNotifications: notes,
     ...(opts.pusher ? { pusher: opts.pusher } : {}),
     ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}),
+    ...(opts.recordVoice ? { recordVoice: opts.recordVoice } : {}),
     ...(opts.keyboardImages ? { keyboardImages: opts.keyboardImages } : {}),
     ...(opts.calls ? { calls: opts.calls } : {}),
   };
@@ -5565,5 +5566,144 @@ describe('call lines (mockups 29 and 30)', () => {
     await flush();
     expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Không trả lời');
     expect(text(rows()[0]!.querySelector('.badge')!)).toBe('1');
+  });
+});
+
+describe('chat: voice messages', () => {
+  const sound = new Blob([new Uint8Array([82, 73, 70, 70])], { type: 'audio/wav' });
+  const voiceAtt = (id: string): Attachment => ({ id, kind: 'file', name: 'Ghi âm.wav', size: 4, audio: true });
+  /** A recorder that hands back `sound` when stopped, and says whether it was stopped or thrown away. */
+  const recorder = () => {
+    const r = { stopped: 0, cancelled: 0, stop: vi.fn(async () => { r.stopped++; return sound as Blob | null; }), cancel: vi.fn(() => { r.cancelled++; }) };
+    return r;
+  };
+  const open = (recordVoice: ChatDeps['recordVoice'], extra: Record<string, unknown> = {}) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh'), chat(C2, 'Lan')], history: { [C1]: [], [C2]: [] }, api: extra, ...(recordVoice ? { recordVoice } : {}) });
+  const mic = () => root.querySelector<HTMLButtonElement>('.composer [data-voice]');
+  const bar = () => root.querySelector<HTMLElement>('[data-recording]');
+  const tick = (h: Harness, times = 1) => { for (let i = 0; i < times; i++) h.timers.filter((t) => t.live && t.ms === 1000).at(-1)!.fn(); };
+
+  it('offers the microphone in the send button’s place while there is nothing to send, and the send button once there are words', async () => {
+    open(vi.fn());
+    await flush();
+    expect(mic()!.getAttribute('aria-label')).toBe('Ghi âm tin nhắn thoại');
+    expect(root.querySelector('.composer button[type="submit"]')).toBeNull();
+    compose('chào');
+    await flush();
+    expect(mic()).toBeNull();
+    expect(root.querySelector('.composer button[type="submit"]')).not.toBeNull();
+    compose('');
+    await flush();
+    expect(mic()).not.toBeNull();
+  });
+
+  it('has no microphone where this browser cannot record', async () => {
+    open(undefined);
+    await flush();
+    expect(mic()).toBeNull();
+    expect(root.querySelector('.composer button[type="submit"]')).not.toBeNull();
+  });
+
+  it('records with a running time out of five minutes, then sends it as a WAV file on its own once it is up', async () => {
+    const r = recorder();
+    const upload = vi.fn(async () => ok(voiceAtt('v1')));
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    const h = open(vi.fn(async () => r), { upload, send });
+    await flush();
+    mic()!.click();
+    await flush();
+    expect(text(bar()!.querySelector('[data-voice-time]')!)).toBe('0:00 / 5:00');
+    tick(h, 12);
+    await flush();
+    expect(text(bar()!.querySelector('[data-voice-time]')!)).toBe('0:12 / 5:00');
+    expect(h.busy()).toBe(true);   // a reload would lose the recording
+    bar()!.querySelector<HTMLButtonElement>('[data-voice-send]')!.click();
+    await flush();
+    expect(r.stopped).toBe(1);
+    const file = (upload.mock.calls[0] as unknown[])[1] as File;
+    expect(file.type).toBe('audio/wav');
+    expect(file.name).toMatch(/^Ghi âm \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\.wav$/);
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', '', undefined, ['v1']);
+    expect(bar()).toBeNull();
+    expect(root.querySelectorAll('[data-tray-item]')).toHaveLength(0);
+    expect(h.timers.filter((t) => t.live && t.ms === 1000)).toHaveLength(0);
+  });
+
+  it('stops and sends by itself at five minutes', async () => {
+    const r = recorder();
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    const h = open(vi.fn(async () => r), { upload: vi.fn(async () => ok(voiceAtt('v1'))), send });
+    await flush();
+    mic()!.click();
+    await flush();
+    tick(h, 299);
+    await flush();
+    expect(r.stopped).toBe(0);
+    tick(h);
+    await flush();
+    expect(r.stopped).toBe(1);
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', '', undefined, ['v1']);
+  });
+
+  it('throws a recording away without sending anything', async () => {
+    const r = recorder();
+    const upload = vi.fn();
+    const h = open(vi.fn(async () => r), { upload });
+    await flush();
+    mic()!.click();
+    await flush();
+    bar()!.querySelector<HTMLButtonElement>('[data-voice-cancel]')!.click();
+    await flush();
+    expect(r.cancelled).toBe(1);
+    expect(upload).not.toHaveBeenCalled();
+    expect(bar()).toBeNull();
+    expect(mic()).not.toBeNull();
+    expect(h.timers.filter((t) => t.live && t.ms === 1000)).toHaveLength(0);
+  });
+
+  it('throws the recording away when another conversation is opened', async () => {
+    const r = recorder();
+    const h = open(vi.fn(async () => r));
+    await flush();
+    mic()!.click();
+    await flush();
+    h.nav.path = `/c/${C2}`;
+    h.nav.pop();
+    await flush();
+    expect(r.cancelled).toBe(1);
+    expect(bar()).toBeNull();
+  });
+
+  it('says in words when the microphone is not allowed', async () => {
+    open(vi.fn(async () => 'denied' as const));
+    await flush();
+    mic()!.click();
+    await flush();
+    expect(bar()).toBeNull();
+    expect(text(root)).toContain('Gom chưa được dùng micrô');
+  });
+
+  it('says in words when this browser cannot record', async () => {
+    open(vi.fn(async () => 'unsupported' as const));
+    await flush();
+    mic()!.click();
+    await flush();
+    expect(text(root)).toContain('Trình duyệt này không ghi âm được.');
+  });
+
+  it('keeps a voice message that failed to go up in the tray, to try again, and sends it once it is up', async () => {
+    const upload = vi.fn().mockResolvedValueOnce(fail('too_large', 413)).mockResolvedValueOnce(ok(voiceAtt('v1')));
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    open(vi.fn(async () => recorder()), { upload, send });
+    await flush();
+    mic()!.click();
+    await flush();
+    bar()!.querySelector<HTMLButtonElement>('[data-voice-send]')!.click();
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-tray-item] [role="alert"]')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-tray-retry]')!.click();
+    await flush();
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', '', undefined, ['v1']);
   });
 });

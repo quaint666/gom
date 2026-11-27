@@ -786,6 +786,12 @@ a.mi { text-decoration: none; }
 .tray-x .i { inline-size: 14px; block-size: 14px; }
 .file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
 .composer .attach { flex: none; }
+/* Recording a voice message: in the composer's place, throw away · a red dot and the time · send. */
+.recbar { align-items: center; }
+.recbar .rec-dot { inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--err-border); flex: none; }
+.recbar .rec-time { flex: 1; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) { .recbar .rec-dot { animation: blink 1s steps(2, jump-none) infinite; } }
+@keyframes blink { 50% { opacity: .25; } }
 /* Where the composer was, in a one-to-one conversation whose other person deleted their account. */
 .closed-note { margin: 0; padding: 14px 16px max(14px, env(safe-area-inset-bottom)); background: var(--surface); border-block-start: 1px solid var(--border); color: var(--muted); font-size: 14px; text-align: center; }
 

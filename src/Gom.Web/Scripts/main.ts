@@ -22,6 +22,7 @@ import { mountSignUp } from './pages/signup.js';
 import { language, pageTitle, rememberLanguage } from './say.js';
 import { BLACK_STORAGE_KEY, PALETTE_STORAGE_KEY, applyBlack, applyPalette, applyScheme, isPalette, isPattern, rememberPattern, storedBlack, storedPalette, storedScheme, syncThemeColor } from './theme.js';
 import { showUpdateBar, versionOf, watchForUpdate } from './update.js';
+import { recordVoice } from './voice.js';
 
 const root = document.getElementById('app');
 // A request to join that is still waiting is sent home, where the chat page shows its waiting screen.
@@ -177,6 +178,8 @@ const chatDeps = (): ChatDeps => ({
   pusher,
   ...(appPusher === undefined ? {} : (({ onKeyboardImage }) => ({ keyboardImages: onKeyboardImage }))(appPusher)),
   prepareVideo,
+  // Voice messages, where this browser (or the app's web view) can record.
+  ...(typeof MediaRecorder === 'function' && navigator.mediaDevices?.getUserMedia !== undefined ? { recordVoice } : {}),
   ...(calls === undefined ? {} : { calls }),
   live: (handlers) => createLive(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws?page=${limits().pageVersion}${webCalls === undefined ? '' : '&calls=1'}`,
     { ...handlers, version: (v) => updates.heard(v), tooOld: () => { handlers.tooOld?.(); updates.tooOld(); } }),

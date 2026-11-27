@@ -21,7 +21,8 @@ import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 import type { Calls } from '../calls/call.js';
 import { rememberAppCalls } from '../calls/here.js';
-import { audioCard } from '../chat/audio.js';
+import { audioCard, clockOf } from '../chat/audio.js';
+import { VOICE_SECONDS, voiceStamp, type Recording } from '../voice.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -50,6 +51,8 @@ export interface ChatDeps {
    * is picked. Without it every video goes as it is.
    */
   prepareVideo?(file: File, onProgress: (fraction: number) => void, maxBytes: number): Promise<PreparedVideo | null>;
+  /** Records a voice message from the microphone (`voice.ts`); without it, or uploads off, there is no microphone button. */
+  recordVoice?(): Promise<Recording | 'denied' | 'unsupported'>;
   /** Voice calls: the page's own, or the Android app's; offered only when the server has calls on and they are ready. */
   calls?: Calls;
 }
@@ -61,6 +64,8 @@ export interface OutboxItem { conversation: string; clientId: string; body: stri
 
 /** How long to wait before asking again after the server said "slow down". */
 const SLOW_RETRY_MS = 1000;
+/** A voice message being recorded in a conversation: `recorder` is null while the browser asks for the microphone; `seconds` counts up to the limit. */
+interface VoiceRecording { conversation: string; recorder: Recording | null; seconds: number; timer: number | null }
 /** How many uploads go up at the same time. */
 const UPLOADS_AT_ONCE = 2;
 /** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
@@ -83,6 +88,8 @@ const SCROLL_END = typeof window !== 'undefined' && 'onscrollend' in window;
 interface TrayItem {
   key: number; name: string; file: File | null; state: 'waiting' | 'converting' | 'uploading' | 'done' | 'failed'; progress: number; attachment?: Attachment; error?: Failure;
   prepared?: boolean; poster?: Blob | null; preview?: string;
+  /** A voice message: sent on its own as soon as it is up. */
+  voice?: boolean;
 }
 
 /** A video picked on this device made ready to send: an MP4 Gom plays everywhere, and its first picture. */
@@ -171,6 +178,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const threads = new Map<string, Thread>();
   let error: Failure | null = null;
   let notice = '';
+  let recording: VoiceRecording | null = null;
   let offline = false;
   let outbox: ReturnType<ChatDeps['outbox']> | null = null;
   let drafts: ReturnType<NonNullable<ChatDeps['drafts']>> | null = null;
@@ -1062,6 +1070,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
               <button class="ib" type="button" data-cancel-reply aria-label=${say.chat.cancelReply} @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
             </div>`}
           ${trayView(t)}
+          ${recording?.conversation === openId ? recordingBar(recording) : html`
           <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
             ${t.editing === null && uploadsOn() ? html`
               <button class="ib attach" type="button" data-gallery aria-label=${say.chat.picturesAndVideos} @click=${() => root.querySelector<HTMLInputElement>('input[name="gallery"]')?.click()}>${icons.image()}</button>
@@ -1077,8 +1086,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label=${say.chat.picker} aria-expanded=${picker !== null ? 'true' : 'false'}
               @click=${togglePicker}>${icons.smile()}</button>` : nothing}
             </div>
-            <button class="send" type="submit" aria-label=${say.chat.send} ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
-          </form>
+            ${voiceOffered(t) ? html`<button class="send" type="button" data-voice aria-label=${say.chat.recordVoice} @click=${() => void startVoice(openId!)}>${icons.mic()}</button>`
+              : html`<button class="send" type="submit" aria-label=${say.chat.send} ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>`}
+          </form>`}
           ${picker !== null && t.editing === null ? pickerPanel(openId!, picker) : nothing}`}
       </section>`;
   }
@@ -1324,6 +1334,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Back to the list: on a phone the conversation slides out first (motion.ts), as it slid in. */
   function toList(): void {
+    cancelVoice();
     const leaving = openId;
     leaveThread(root.querySelector('.thread-pane'), () => { if (openId === leaving) { openId = null; update(); } });
   }
@@ -1346,7 +1357,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function onDraft(e: Event): void {
     const field = e.target as HTMLTextAreaElement;
-    if (openId !== null) setDraft(openId, field.value);
+    if (openId === null) return;
+    const wasEmpty = threadOf(openId).draft.trim() === '';
+    setDraft(openId, field.value);
+    if (wasEmpty !== (field.value.trim() === '') && deps.recordVoice !== undefined) update();   // the send button and the microphone trade places
   }
 
   /** The words in the message field, kept for a reload too; not while they are a sent message's being changed. */
@@ -1370,6 +1384,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Makes this conversation the open one: starts loading it, and remembers what was unread now. */
   function show(id: string): void {
+    if (recording !== null && recording.conversation !== id) cancelVoice();
     openId = id;
     const t = threadOf(id);
     const c = chatOf(id);
@@ -2258,6 +2273,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (!t.tray.includes(item)) { pumpTray(id); return; }   // taken out while it was going up
     // A video's still picture follows it; without one it still plays (it shows nothing until then).
     if (result.ok && result.data.kind === 'video' && item.poster) await api.setPoster(result.data.id, item.poster);
+    if (result.ok && item.voice) {
+      t.tray = t.tray.filter((x) => x !== item);
+      update();
+      pumpTray(id);
+      await post(id, { body: '', attachments: [result.data] });
+      return;
+    }
     if (result.ok) { item.state = 'done'; item.attachment = result.data; item.file = null; delete item.error; }
     else if (result.error === 'unauthorized') { go('/sign-in'); return; }
     else { item.state = 'failed'; item.error = result; }
@@ -2300,6 +2322,72 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     item.state = 'waiting'; delete item.error;
     update();
     if (openId !== null) pumpTray(openId);
+  }
+
+  // ---- voice messages
+
+  /** The microphone takes the send button's place while there is nothing to send, as in Messenger: the composer keeps its width. */
+  const voiceOffered = (t: Thread): boolean => deps.recordVoice !== undefined && uploadsOn() && t.editing === null && t.draft.trim() === '' && t.tray.length === 0;
+
+  /** Where the composer was: throw it away, how long so far out of the most, and send. */
+  const recordingBar = (r: VoiceRecording) => html`
+    <div class="composer recbar" data-recording role="group" aria-label=${say.chat.recordingVoice}>
+      <button class="ib" type="button" data-voice-cancel aria-label=${say.chat.discardVoice} @click=${cancelVoice}>${icons.trash()}</button>
+      <span class="rec-dot" aria-hidden="true"></span>
+      <span class="rec-time" data-voice-time role="timer">${clockOf(r.seconds)} / ${clockOf(VOICE_SECONDS)}</span>
+      <button class="send" type="button" data-voice-send aria-label=${say.chat.sendVoice} ?disabled=${r.recorder === null} @click=${() => void finishVoice()}>${icons.send()}</button>
+    </div>`;
+
+  /** Asks for the microphone and starts recording in this conversation; a "no" says why, in words. */
+  async function startVoice(id: string): Promise<void> {
+    if (recording !== null || deps.recordVoice === undefined || threadOf(id).editing !== null) return;
+    const r: VoiceRecording = { conversation: id, recorder: null, seconds: 0, timer: null };
+    recording = r;
+    picker = null;
+    update();
+    const started = await deps.recordVoice();
+    if (recording !== r) { if (typeof started !== 'string') started.cancel(); return; }   // thrown away while the browser was asking
+    if (typeof started === 'string') {
+      recording = null;
+      notice = started === 'denied' ? say.chat.micDenied : say.chat.voiceUnsupported;
+      update();
+      return;
+    }
+    r.recorder = started;
+    r.timer = deps.timer.set(tick, 1000);
+    update();
+    function tick(): void {
+      if (recording !== r) return;
+      r.seconds++;
+      if (r.seconds >= VOICE_SECONDS) { void finishVoice(); return; }
+      r.timer = deps.timer.set(tick, 1000);
+      update();
+    }
+  }
+
+  function cancelVoice(): void {
+    const r = recording;
+    if (r === null) return;
+    recording = null;
+    if (r.timer !== null) deps.timer.clear(r.timer);
+    r.recorder?.cancel();
+    update();
+  }
+
+  /** Stops recording and sends it: it goes up through the tray, so a failure there can be tried again, and is sent once it is up. */
+  async function finishVoice(): Promise<void> {
+    const r = recording;
+    if (r === null || r.recorder === null) return;
+    recording = null;
+    if (r.timer !== null) deps.timer.clear(r.timer);
+    update();
+    const sound = await r.recorder.stop();
+    if (sound === null) { notice = say.chat.voiceFailed; update(); return; }
+    const t = threadOf(r.conversation);
+    const name = say.chat.voiceFileName(voiceStamp(deps.now()));
+    t.tray.push({ key: ++trayKey, name, file: new File([sound], name, { type: 'audio/wav' }), state: 'waiting', progress: 0, voice: true });
+    update();
+    pumpTray(r.conversation);
   }
 
   // ---- writing
@@ -2532,7 +2620,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     drafts = deps.drafts?.(me.gomId) ?? null;
     for (const [id, t] of threads) if (t.draft === '' && t.editing === null) t.draft = drafts?.load(id) ?? '';
     // A reload loses files picked but not sent, and a change being made to a sent message; typed words are kept (drafts).
-    deps.holdReload?.(() => deps.calls?.busy() === true || [...threads.values()].some((t) => t.tray.length > 0 || t.editing !== null));
+    deps.holdReload?.(() => deps.calls?.busy() === true || [...threads.values()].some((t) => t.tray.length > 0 || t.editing !== null) || recording !== null);
     live = deps.live(handlers);
     live.start();
     await refreshList();
