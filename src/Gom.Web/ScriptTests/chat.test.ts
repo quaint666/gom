@@ -4471,6 +4471,23 @@ describe("chat: someone's card", () => {
     expect(text(card()!.querySelector('[data-card-befriend]')!)).toBe('Chấp nhận kết bạn');
   });
 
+  it('closes with a click or tap outside it, on its shade, but not with one inside it', async () => {
+    inGroup({ person: vi.fn(async () => ok(cardOf())) });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    const dialog = card()!;
+    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({ left: 100, right: 400, top: 100, bottom: 500, width: 300, height: 400, x: 100, y: 100, toJSON: () => ({}) });
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 250, clientY: 300 }));   // its own padding
+    await flush();
+    expect(card()).not.toBeNull();
+    card()!.querySelector('h2')!.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 }));   // something in it
+    await flush();
+    expect(card()).not.toBeNull();
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 300 }));   // the shade
+    await flush();
+    expect(card()).toBeNull();
+  });
+
   it('opens from a member of the side panel, but not for yourself', async () => {
     localStorage.setItem('gom-info', '1');
     try {

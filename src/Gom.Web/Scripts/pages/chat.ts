@@ -8,7 +8,7 @@ import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, ini
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { menuItem, menuPoint, placeMenu as placeMenuAt } from '../menu.js';
-import { dismissMenu, leaveThread } from '../motion.js';
+import { dismissMenu, leaveInfo, leaveThread } from '../motion.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { markedExcerpt, matches, type Run } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
@@ -834,8 +834,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  let infoLeaving = false;
   function toggleInfo(): void {
-    infoOpen = !infoOpen;
+    if (infoLeaving) return;
+    if (infoOpen) {
+      // Closing slides it out first (motion.ts); a second press meanwhile does nothing.
+      infoLeaving = true;
+      leaveInfo(root.querySelector('.thread-pane ~ [data-info-panel]'), () => { infoLeaving = false; setInfo(false); });
+      return;
+    }
+    setInfo(true);
+  }
+
+  function setInfo(open: boolean): void {
+    infoOpen = open;
     try { localStorage.setItem('gom-info', infoOpen ? '1' : '0'); } catch { /* it is just not remembered */ }
     if (infoOpen && openId !== null) { void loadPeople(openId); void loadMedia(openId, 'image'); void loadMedia(openId, 'file'); }
     update();
@@ -999,6 +1011,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /** Someone's card: who they are to you, what you can do, and the groups you are both in. */
+  /**
+   * A tap or click outside an open dialog (on its shade) closes it, as the X does. The shade's clicks reach the dialog itself, and so do
+   * those on its own padding, so where the pointer was decides. (`closedby="any"` does this in Chrome 134+, not yet in Safari.)
+   */
+  const outside = (close: () => void) => (e: MouseEvent) => {
+    const d = e.currentTarget as HTMLElement;
+    if (e.target !== d) return;
+    const r = d.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) close();
+  };
+
   const cardView = () => {
     if (card === null) return nothing;
     const k = card;
@@ -1008,7 +1031,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const via = p?.commonGroups[0]?.id ?? null;
     const close = () => { card = null; update(); };
     return html`
-      <dialog class="pcard" aria-labelledby="pcard-name" data-person-card data-modal @close=${close}
+      <dialog class="pcard" aria-labelledby="pcard-name" data-person-card data-modal @close=${close} @click=${outside(close)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
         <div class="pcard-head"><button class="ib" type="button" data-close-card aria-label=${say.common.close} @click=${close}>${icons.close()}</button></div>
         ${p === null ? (k.error === null ? html`<p class="hint" role="status">${say.common.loading}</p>` : errorBox(k.error)) : html`

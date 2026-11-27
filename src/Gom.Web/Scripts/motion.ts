@@ -31,6 +31,12 @@ export function dismissMenu(scope: ParentNode | null, done: () => void): void {
   leave(pop, sheet ? [{ transform: 'none' }, { transform: 'translateY(100%)' }] : [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.96)' }], sheet ? 180 : 100, done);
 }
 
+/** The information panel beside a conversation, closed on a wide screen: it slides out to the right and fades, as it slid in. */
+export function leaveInfo(panel: Element | null, done: () => void): void {
+  if (typeof matchMedia !== 'function' || !matchMedia('(min-width: 1200px)').matches) { done(); return; }
+  leave(panel, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(24px)', opacity: 0 }], 160, done);
+}
+
 /** A phone's conversation going back to the list: it slides out to the right, as it slid in. Elsewhere it goes at once. */
 export function leaveThread(pane: Element | null, done: () => void): void {
   if (typeof matchMedia !== 'function' || !matchMedia('(max-width: 899.98px)').matches) { done(); return; }

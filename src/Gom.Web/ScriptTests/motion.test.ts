@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dismissMenu, leave, leaveThread } from '../Scripts/motion.js';
+import { dismissMenu, leave, leaveInfo, leaveThread } from '../Scripts/motion.js';
 
 /** An element that animates the way a browser would: `finish()` ends the last animation started on it. */
 function animated() {
@@ -74,5 +74,28 @@ describe('moving out', () => {
     const wide = vi.fn();
     leaveThread(animated().el, wide);
     expect(wide).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the information panel closing', () => {
+  it('slides out to the right and fades on a wide screen, then closes', async () => {
+    media('(min-width: 1200px)');
+    const panel = animated();
+    const done = vi.fn();
+    leaveInfo(panel.el, done);
+    expect(panel.runs[0]!.frames).toEqual([{ transform: 'none', opacity: 1 }, { transform: 'translateX(24px)', opacity: 0 }]);
+    expect(panel.runs[0]!.ms).toBe(160);
+    expect(done).not.toHaveBeenCalled();
+    await panel.finish();
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes at once where it is not a panel beside the conversation', () => {
+    media();
+    const panel = animated();
+    const done = vi.fn();
+    leaveInfo(panel.el, done);
+    expect(panel.runs).toHaveLength(0);
+    expect(done).toHaveBeenCalledTimes(1);
   });
 });
