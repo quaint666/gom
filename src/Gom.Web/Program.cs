@@ -142,6 +142,16 @@ builder.Services.AddHostedService<OwnerSeedingService>();
 
 var app = builder.Build();
 
+// "--two-step-off <gomId>": for an owner who lost the phone with their codes (a member gets the owner's reset link instead). Turns
+// two-step sign-in off for that account, prints what happened and stops; the server keeps running where it runs.
+if (args.Contains("--two-step-off"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var gomIdArg = args.SkipWhile(a => a != "--two-step-off").Skip(1).FirstOrDefault();
+    Console.WriteLine(await TwoStepEndpoints.TurnOffFromCommand(scope.ServiceProvider.GetRequiredService<GomDbContext>(), gomIdArg, CancellationToken.None));
+    return;
+}
+
 if (proxyHops > 0) app.UseForwardedHeaders();
 app.UseMiddleware<SecurityHeaders>();
 app.UseStaticFiles(new StaticFileOptions
@@ -173,6 +183,7 @@ app.MapSignUp();
 app.MapContact();
 app.MapCalls();
 app.MapAccount();
+app.MapTwoStep();
 app.MapFriends();
 app.MapConversations();
 app.MapGroups();
@@ -189,7 +200,7 @@ app.MapSocket(Assets.Version(fingerprints));
 
 // Every page is one shell with its title, script and limits filled in (see Pages), made once at start-up.
 string shell;
-using (var reader = new StreamReader(app.Environment.WebRootFileProvider.GetFileInfo("pages/shell.html").CreateReadStream())) shell = reader.ReadToEnd();
+using (var reader = new StreamReader(app.Environment.WebRootFileProvider.GetFileInfo("pages/shell.html").CreateReadStream())) shell = await reader.ReadToEndAsync();
 var limits = Pages.Limits(
     app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Chat.ChatOptions>>().Value,
     app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions>>().Value,
@@ -209,7 +220,7 @@ app.MapMethods("/healthz", ["GET", "HEAD"], async (GomDbContext db, Cancellation
         ? Results.Ok(new { status = "ok" })
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
-app.Run();
+await app.RunAsync();
 
 // Lets the test project start the app in memory.
 public partial class Program;

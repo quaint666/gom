@@ -65,12 +65,13 @@ public static class AccountEndpoints
         return Results.Ok(new { id = me, gomId, displayName = name, isOwner = http.User.FindFirst(GomClaims.IsOwner)!.Value == "true" });
     }
 
-    private static async Task<IResult> ChangePassword(PasswordRequest request, HttpContext http, GomDbContext db, PasswordService passwords,
-        HashLimiter limiter, SignInThrottle throttle, TimeProvider clock, ConnectionRegistry sockets, CancellationToken ct)
+    /// <summary>
+    /// Checks the signed-in person's own password before a change only they should make; null when it is right, else the answer to give.
+    /// A stolen session must not be a free way to guess the password, so wrong ones count in the sign-in throttle.
+    /// </summary>
+    internal static async Task<IResult?> CheckMyPassword(HttpContext http, GomDbContext db, PasswordService passwords, HashLimiter limiter,
+        SignInThrottle throttle, string password, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(request.Current) || request.Password is null) return Results.BadRequest(new { error = "missing_fields" });
-
-        // A stolen session must not be a free way to guess the password.
         var gomId = http.User.FindFirst(GomClaims.GomId)!.Value;
         var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var wait = throttle.Begin(ip, gomId);
@@ -82,12 +83,20 @@ public static class AccountEndpoints
 
         var me = GomClaims.User(http.User);
         var stored = await db.Users.Where(u => u.Id == me).Select(u => u.PasswordHash).SingleAsync(ct);
-        var current = request.Current;
-        var check = await limiter.RunAsync(() => passwords.Verify(stored, current));
+        var check = await limiter.RunAsync(() => passwords.Verify(stored, password));
         if (check is null) { throttle.Undo(ip, gomId); return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
         // A wrong password was counted by Begin already; a right one takes its count back.
         if (check == PasswordCheck.Wrong) return Results.BadRequest(new { error = "wrong_password" });
         throttle.Succeeded(ip, gomId);
+        return null;
+    }
+
+    private static async Task<IResult> ChangePassword(PasswordRequest request, HttpContext http, GomDbContext db, PasswordService passwords,
+        HashLimiter limiter, SignInThrottle throttle, TimeProvider clock, ConnectionRegistry sockets, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(request.Current) || request.Password is null) return Results.BadRequest(new { error = "missing_fields" });
+        if (await CheckMyPassword(http, db, passwords, limiter, throttle, request.Current, ct) is { } refused) return refused;
+        var me = GomClaims.User(http.User);
 
         var problem = PasswordPolicy.Check(request.Password);
         if (problem != PasswordProblem.None) return Results.BadRequest(new

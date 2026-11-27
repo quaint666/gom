@@ -1,14 +1,14 @@
 import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
 import { ref } from 'lit-html/directives/ref.js';
-import type { Api, Failure, Person, PushLevel, PushState, SessionInfo, User } from '../api.js';
+import type { Api, Failure, Person, PushLevel, PushState, SessionInfo, TwoStepKey, User } from '../api.js';
 import * as icons from '../icons.js';
 import { mountOwner } from './owner.js';
 import { mountStorage } from './storage.js';
 import { GRADIENTS, PALETTES, PATTERNS, applyBlack, applyPalette, chosenScheme, chooseScheme, rememberPattern, storedBlack, storedPalette, storedPattern, type Choice, type Palette, type Pattern } from '../theme.js';
 import type { Installer } from '../install.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
-import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
+import { appBar, avatar, codeField, errorBox, formatTime, passwordField } from '../ui.js';
 import { errorText, passwordHint } from '../text.js';
 import { LANGUAGES, language, rememberLanguage, say, type Language } from '../say.js';
 import { limits } from '../limits.js';
@@ -58,6 +58,12 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let next = '';
   let shown = false;
   let passwordStatus = '';
+  /** Two-step sign-in: a new key being added to an authenticator app (null: not started), what was typed, and how it went. */
+  let twoStepKey: TwoStepKey | null = null;
+  let twoStepCode = '';
+  let twoStepPassword = '';
+  let twoStepStatus = '';
+  let twoStepError: Failure | null = null;
   let receipts = true;
   let receiptsStatus = '';
   let busy = false;
@@ -347,6 +353,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       </form>
       <h2 class="section">${say.settings.devices}</h2>
       <ul class="list">${sessions.map(row)}</ul>
+      ${twoStepCard(u)}
       ${u.isOwner ? nothing : deleteCard(u)}`)}
     ${u.isOwner ? html`
       ${part('owner', openPart() === 'owner' ? html`<div class="embed" ${ref((el) => embed(el, 'owner'))}></div>` : nothing)}
@@ -502,6 +509,74 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     const result = await api.setNickname(nickname);
     busy = false;
     if (result.ok) { user = { ...user, ...result.data }; nickname = result.data.displayName; nicknameStatus = say.settings.saved; } else error = result;
+    update();
+  }
+
+  /** Two-step sign-in (Settings › Account): what it is and a button to start; the key to add; or, when on, the way to turn it off. */
+  const twoStepCard = (u: User) => {
+    const fields = html`
+      ${codeField({ value: twoStepCode, onInput: (v) => { twoStepCode = v; } })}
+      <input class="sr-only" name="username" type="text" autocomplete="username" readonly tabindex="-1" aria-hidden="true" .value=${u.gomId}>
+      ${passwordField({ label: say.account.password, name: 'two-step-password', autocomplete: 'current-password', value: twoStepPassword, shown,
+        onInput: (v) => { twoStepPassword = v; }, onToggle: toggleShown })}`;
+    return html`
+      <h2 class="section">${say.settings.twoStep}</h2>
+      ${u.twoStep === true ? html`
+        <form class="card" data-two-step="on" @submit=${(e: Event) => void twoStepOff(e, u)}>
+          ${errorBox(twoStepError)}
+          <p class="hint">${say.settings.twoStepOnNote}</p>
+          ${fields}
+          <button class="btn secondary danger-text" type="submit" ?disabled=${busy}>${say.settings.twoStepTurnOff}</button>
+          <p class="hint" role="status" data-two-step-status>${twoStepStatus}</p>
+        </form>`
+      : twoStepKey === null ? html`
+        <div class="card" data-two-step="off">
+          <p class="hint">${say.settings.twoStepOffNote}</p>
+          <button class="btn secondary" type="button" data-two-step-start ?disabled=${busy} @click=${() => void twoStepStart()}>${say.settings.twoStepStart}</button>
+          ${errorBox(twoStepError)}
+          <p class="hint" role="status" data-two-step-status>${twoStepStatus}</p>
+        </div>`
+      : html`
+        <form class="card" data-two-step="setup" @submit=${(e: Event) => void twoStepOn(e, u)}>
+          ${errorBox(twoStepError)}
+          <p class="hint">${say.settings.twoStepScan}</p>
+          <img class="qr" src=${twoStepKey.qr} alt=${say.settings.twoStepQr} width="200" height="200" data-two-step-qr>
+          <p class="key"><small>${say.settings.twoStepKey}</small> <code data-two-step-key>${twoStepKey.key.replace(/(.{4})/g, '$1 ').trim()}</code></p>
+          <a class="btn secondary only-touch" href=${twoStepKey.uri} data-two-step-app>${say.settings.twoStepOpenApp}</a>
+          <p class="hint">${say.settings.twoStepConfirm}</p>
+          ${fields}
+          <button class="btn" type="submit" ?disabled=${busy}>${say.settings.twoStepTurnOn}</button>
+          <button class="btn secondary" type="button" data-two-step-cancel @click=${() => { twoStepKey = null; twoStepError = null; twoStepCode = ''; twoStepPassword = ''; update(); }}>${say.common.cancel}</button>
+        </form>`}`;
+  };
+
+  async function twoStepStart(): Promise<void> {
+    busy = true; twoStepError = null; twoStepStatus = ''; update();
+    const result = await api.twoStepNew();
+    busy = false;
+    if (result.ok) twoStepKey = result.data; else twoStepError = result;
+    update();
+  }
+
+  async function twoStepOn(event: Event, u: User): Promise<void> {
+    event.preventDefault();
+    if (busy || twoStepKey === null) return;
+    busy = true; twoStepError = null; update();
+    const result = await api.twoStepOn(twoStepKey.key, twoStepCode, twoStepPassword);
+    busy = false; twoStepCode = '';
+    if (!result.ok) { twoStepError = result; update(); return; }
+    u.twoStep = true; twoStepKey = null; twoStepPassword = ''; twoStepStatus = say.settings.twoStepNowOn;
+    update();
+  }
+
+  async function twoStepOff(event: Event, u: User): Promise<void> {
+    event.preventDefault();
+    if (busy) return;
+    busy = true; twoStepError = null; twoStepStatus = ''; update();
+    const result = await api.twoStepOff(twoStepCode, twoStepPassword);
+    busy = false; twoStepCode = '';
+    if (!result.ok) { twoStepError = result; update(); return; }
+    u.twoStep = false; twoStepPassword = ''; twoStepStatus = say.settings.twoStepNowOff;
     update();
   }
 

@@ -31,6 +31,8 @@ The Android app is woken through Firebase Cloud Messaging: set `Fcm__ServiceAcco
 
 The first start needs an owner account: set `Owner__GomId` and `Owner__Password` (10 characters or more) once, on an empty database, then remove the password from the configuration. Apply the database migrations first (`dotnet dotnet-ef database update --project src/Gom.Web`); the app does not do it for you.
 
+Two-step sign-in is each person's choice (Settings › Account). A member who loses the phone with their codes gets a password reset link from the owner, which turns it off. The owner who loses theirs runs the app once with `--two-step-off <gomId>` (in the container: `dotnet Gom.Web.dll --two-step-off <gomId>`, with the same configuration); it prints what it did and stops.
+
 Releases (the version number in `VERSION`, how one is made, and what each brought) are in `docs/releases.md`. Decisions and their reasons are in `docs/decisions.md`; what comes next is in `docs/next-session.md`. The mockups and design notes are in `design/`.
 
 The font (Be Vietnam Pro, in `wwwroot/fonts/`) is under the SIL Open Font License 1.1, and the stickers (still images from Google's Noto Emoji, its `2D/svg` folder, in `wwwroot/stickers/`) under the Apache License 2.0, except the flags, which are in the public domain; the licence text sits beside each.

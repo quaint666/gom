@@ -955,6 +955,12 @@ button.info-person { inline-size: 100%; padding: 4px 6px; border: 0; border-radi
 button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(--surface)); }
 .info-person small { margin-inline-start: auto; color: var(--muted); font-size: 12px; }
 .danger-text, .btn.danger-text { color: var(--err-text); }
+/* Two-step sign-in (Settings › Account): the QR code on white, as a scanner needs it in either theme, and the key in groups of four. */
+.card .qr { align-self: center; inline-size: 200px; block-size: 200px; padding: 8px; border-radius: 12px; background: #FFFFFF; image-rendering: pixelated; }
+.card .key { margin: 0; text-align: center; }
+.card .key code { font-size: 15px; letter-spacing: .04em; word-spacing: .3em; overflow-wrap: anywhere; user-select: all; }
+/* Shown only where a finger is the pointer: on a phone, a link opens the authenticator app; on a computer there is no app to open. */
+@media (pointer: fine) { .only-touch { display: none; } }
 /* What someone asking to join said about themself, on the owner's page: their own words, kept as they wrote them. */
 .request-note { display: block; margin-block-start: 2px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* muting: for how long, in the same dialog shape as a card */

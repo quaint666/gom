@@ -20,6 +20,9 @@ export function errorText(failure: Failure): string {
     case 'password_too_common': return say.errors.passwordTooCommon;
     case 'invalid_display_name': return say.errors.invalidDisplayName(l.nameChars);
     case 'wrong_password': return say.errors.wrongPassword;
+    case 'code_required': return say.errors.codeRequired;
+    case 'invalid_code': return say.errors.invalidCode;
+    case 'two_step_on': return say.errors.twoStepOn;
     case 'cannot_disable_owner': return say.errors.cannotDisableOwner;
     case 'confirm_mismatch': return say.errors.confirmMismatch;
     case 'owner_cannot_delete': return say.errors.ownerCannotDelete;

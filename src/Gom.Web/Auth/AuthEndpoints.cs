@@ -6,7 +6,7 @@ namespace Gom.Web.Auth;
 
 public static class AuthEndpoints
 {
-    public sealed record SignInRequest(string? GomId, string? Password);
+    public sealed record SignInRequest(string? GomId, string? Password, string? Code = null);
 
     public static void MapAuth(this IEndpointRouteBuilder app)
     {
@@ -15,7 +15,7 @@ public static class AuthEndpoints
         app.MapGet("/api/me", async (HttpContext c, GomDbContext db, Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions> uploads, Microsoft.Extensions.Options.IOptions<Gom.Web.Chat.CallOptions> calls, TimeProvider clock, CancellationToken ct) =>
         {
             var me = GomClaims.User(c.User);
-            var row = await db.Users.Where(u => u.Id == me).Select(u => new { u.AvatarId, u.Language, u.Palette, u.Pattern }).SingleAsync(ct);
+            var row = await db.Users.Where(u => u.Id == me).Select(u => new { u.AvatarId, u.Language, u.Palette, u.Pattern, TwoStep = u.TwoStepKey != null }).SingleAsync(ct);
             var now = clock.GetUtcNow();
             // The Android app signed in somewhere and taking calls: a phone's browser then leaves the ringing to it (Settings).
             var appCalls = calls.Value.Enabled && calls.Value.AppsTakeCalls && await (
@@ -41,6 +41,8 @@ public static class AuthEndpoints
             // The colour of their pages: a page remembers it for the next one, so it is drawn in it from the first paint.
             palette = row.Palette,
             pattern = row.Pattern,
+            // Whether two-step sign-in is on (Settings › Account).
+            twoStep = row.TwoStep,
             // "member", or for a request to join "pending" or "refused": the page then shows only its waiting screen.
             standing = c.User.FindFirst(GomClaims.Standing)?.Value ?? "member",
             });
@@ -81,6 +83,14 @@ public static class AuthEndpoints
         // A wrong password was counted by Begin already.
         if (user is null || user.DisabledAt is not null || check == PasswordCheck.Wrong)
             return Results.Json(new { error = "invalid_credentials" }, statusCode: StatusCodes.Status401Unauthorized);
+
+        // Two-step sign-in: the right password asks for the code (not a failed try); a wrong code stays counted, as a wrong password does.
+        if (user.TwoStepKey is { } key)
+        {
+            if (string.IsNullOrWhiteSpace(request.Code)) { throttle.Undo(ip, gomId); return Results.Json(new { error = "code_required" }, statusCode: StatusCodes.Status401Unauthorized); }
+            if (!await TwoStepEndpoints.Use(db, user.Id, key, user.TwoStepLastStep, request.Code, clock.GetUtcNow(), ct))
+                return Results.Json(new { error = "invalid_code" }, statusCode: StatusCodes.Status401Unauthorized);
+        }
 
         throttle.Succeeded(ip, gomId);
 

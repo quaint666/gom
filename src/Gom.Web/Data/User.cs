@@ -36,6 +36,13 @@ public class User
     public DateTimeOffset? RefusedAt { get; set; }
     /// <summary>What the person said about who they are, for the owner.</summary>
     public string? RequestNote { get; set; }
+    /// <summary>
+    /// Two-step sign-in (<see cref="Auth.Totp"/>): the key the person's authenticator app has; null when it is off. Kept as it is, not
+    /// encrypted: whoever can read it can read the messages too.
+    /// </summary>
+    public byte[]? TwoStepKey { get; set; }
+    /// <summary>The 30-second step of the last code taken, so a code is never taken twice.</summary>
+    public long TwoStepLastStep { get; set; }
 }
 
 /// <summary>The site's own switches, changed by the owner while it runs: one row.</summary>

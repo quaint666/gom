@@ -1116,6 +1116,14 @@ namespace Gom.Web.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("share_read_receipts");
 
+                    b.Property<byte[]>("TwoStepKey")
+                        .HasColumnType("bytea")
+                        .HasColumnName("two_step_key");
+
+                    b.Property<long>("TwoStepLastStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("two_step_last_step");
+
                     b.HasKey("Id")
                         .HasName("pk_users");
 

@@ -16,7 +16,7 @@ const SERVER_CODE_LIST = [
   'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette', 'invalid_pattern',
   'update_required', 'invalid_contact', 'contact_full',
   'cannot_take_calls', 'in_call', 'call_waiting', 'too_many_calls', 'call_ended', 'call_answered', 'not_in_call', 'invalid_call', 'invalid_sdp',
-  'unsupported_version',
+  'unsupported_version', 'code_required', 'invalid_code', 'two_step_on',
 ] as const;
 
 /** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
@@ -30,8 +30,9 @@ export type Result<T> = { ok: true; data: T } | Failure;
 /** `avatar` is the id of the profile picture (at /api/avatars/{avatar}); none means the initials. */
 /** `standing`: a member, or someone who asked to join and is waiting ("pending") or was refused. */
 export type Standing = 'member' | 'pending' | 'refused';
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean; appCalls?: boolean }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean; appCalls?: boolean; twoStep?: boolean }
 /** Someone asking to join, as the owner sees them. */
+export interface TwoStepKey { key: string; uri: string; qr: string }
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 /** A message to the owner from the privacy page's form. */
 export interface ContactMessage { id: string; body: string; replyTo: string | null; createdAt: string }
@@ -138,7 +139,8 @@ export interface GroupMember {
 
 export interface Api {
   me(): Promise<Result<User>>;
-  signIn(gomId: string, password: string): Promise<Result<User>>;
+  /** With two-step sign-in on, the first try answers `code_required`; the same again with the code signs in. */
+  signIn(gomId: string, password: string, code?: string): Promise<Result<User>>;
   signOut(): Promise<Result<void>>;
   peekInvite(token: string): Promise<Result<{ invitedBy: string }>>;
   join(token: string, body: JoinBody): Promise<Result<User>>;
@@ -177,6 +179,10 @@ export interface Api {
   resetLink(gomId: string): Promise<Result<Issued>>;
   setNickname(displayName: string): Promise<Result<User>>;
   changePassword(current: string, password: string): Promise<Result<void>>;
+  /** A new key for an authenticator app (typed in, opened, or as a QR code); nothing is kept until twoStepOn. */
+  twoStepNew(): Promise<Result<TwoStepKey>>;
+  twoStepOn(key: string, code: string, password: string): Promise<Result<void>>;
+  twoStepOff(code: string, password: string): Promise<Result<void>>;
   /** Deletes your own account for good; `gomId` is what the person typed to confirm it. */
   deleteAccount(gomId: string): Promise<Result<void>>;
   /** Makes this picture your profile picture (the server keeps a square from its middle); the answer is its id. */
@@ -369,7 +375,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       if (result.ok && result.data.pattern !== undefined) hooks.onPattern?.(result.data.pattern);
       return result;
     },
-    signIn: (gomId, password) => call('POST', '/api/session', { gomId, password }),
+    signIn: (gomId, password, code) => call('POST', '/api/session', code === undefined ? { gomId, password } : { gomId, password, code }),
     signOut: () => call('DELETE', '/api/session'),
     peekInvite: (token) => call('GET', `/api/join/${enc(token)}`),
     join: (token, body) => call('POST', `/api/join/${enc(token)}`, body),
@@ -401,6 +407,9 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
+    twoStepNew: () => call('GET', '/api/me/two-step/new'),
+    twoStepOn: (key, code, password) => call('PUT', '/api/me/two-step', { key, code, password }),
+    twoStepOff: (code, password) => call('POST', '/api/me/two-step/off', { code, password }),
     deleteAccount: (gomId) => call('DELETE', '/api/me', { gomId }),
     setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
     removeAvatar: () => call('DELETE', '/api/me/avatar'),

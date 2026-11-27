@@ -1,6 +1,6 @@
 import { html, render } from 'lit-html';
 import type { Api, Failure } from '../api.js';
-import { brand, errorBox, idField, passwordField } from '../ui.js';
+import { brand, codeField, errorBox, idField, passwordField } from '../ui.js';
 import { say } from '../say.js';
 
 /** Where to go after signing in: a path on this site, never another address. */
@@ -16,8 +16,25 @@ export function mountSignIn(root: HTMLElement, api: Api, go: (path: string) => v
   let error: Failure | null = null;
   /** Whether the owner lets people ask to join; until the server says, the invite-only line. */
   let open = false;
+  /** Two-step sign-in: the password was right and the code is asked for; the password is sent again with it. */
+  let asking = false;
+  let code = '';
 
-  const view = () => html`
+  const codeStep = () => html`
+    <div class="page">
+      ${brand()}
+      <h1 class="center">${say.account.twoStepTitle}</h1>
+      <form @submit=${onSubmit} data-code-step>
+        ${errorBox(error)}
+        <p class="lead">${say.account.twoStepAsk}</p>
+        ${codeField({ value: code, onInput: (v) => { code = v; } })}
+        <button class="btn" type="submit" ?disabled=${busy}>${say.account.next}</button>
+        <button class="btn secondary" type="button" data-code-back @click=${() => { asking = false; code = ''; password = ''; error = null; update(); }}>${say.account.back}</button>
+      </form>
+      <p class="foot">${say.account.twoStepLost}</p>
+    </div>`;
+
+  const view = () => asking ? codeStep() : html`
     <div class="page">
       ${brand()}
       <h1 class="center">${say.account.signIn}</h1>
@@ -37,9 +54,13 @@ export function mountSignIn(root: HTMLElement, api: Api, go: (path: string) => v
     event.preventDefault();
     if (busy) return;
     busy = true; error = null; update();
-    const result = await api.signIn(gomId, password);
+    const result = asking ? await api.signIn(gomId, password, code) : await api.signIn(gomId, password);
     if (result.ok) { go(safeNext(next)); return; }
-    busy = false; error = result; update();
+    busy = false;
+    if (!result.ok && result.error === 'code_required') { asking = true; error = null; update(); root.querySelector<HTMLInputElement>('#code')?.focus(); return; }
+    if (asking) code = '';
+    error = result; update();
+    if (asking) root.querySelector<HTMLInputElement>('#code')?.focus();
   }
 
   update();
