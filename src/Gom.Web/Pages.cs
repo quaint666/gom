@@ -19,7 +19,7 @@ public static class Pages
     /// (<see cref="PageVersionHeader"/>) and on the socket (<c>?page=</c>); a lower one is told "update_required" and reloads. Most
     /// deploys leave it alone: the version in the socket's "ready" moves those pages over when it loses nothing.
     /// </summary>
-    public const int PageVersion = 1;
+    public const int PageVersion = 2;
     public const string PageVersionHeader = "Gom-Page-Version";
 
     /// <summary>The release this server is ("1.0.0", from the repository's VERSION file through the build), shown in Settings.</summary>

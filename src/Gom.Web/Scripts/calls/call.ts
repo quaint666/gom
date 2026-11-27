@@ -53,6 +53,8 @@ export interface CallDeps {
   guardLeaving(on: boolean): void;
   /** A phone's browser: the call screen asks to keep Gom on screen, since a page in the background loses the microphone. */
   phone(): boolean;
+  /** Whether this browser rings for a call (`calls/here.ts`); when not, a call to you rings elsewhere and is not shown here. */
+  takesCalls(): boolean;
   /** Milliseconds, any steady clock. */
   now(): number;
   timer: { set(fn: () => void, ms: number): number; clear(id: number): void };
@@ -448,6 +450,7 @@ export function createCalls(deps: CallDeps): Calls {
       const c = cur;
       if (f.kind === 'incoming') {
         if (c !== null) return;   // the server makes a second call "busy" for the person already in one
+        if (!deps.takesCalls()) return;   // this browser does not ring: the app, or another device, takes the call
         const next: Current = { id: f.id, conversation: f.c, peer: { name: f.from.displayName }, mine: false, phase: 'incoming', status: say.calls.incoming,
           problem: false, muted: false, connectedAt: null, pc: null, stream: null, timers: [], cancelled: false, minimised: false, downSince: null, rev: 0, ringSeconds: 45 };
         begin(next);

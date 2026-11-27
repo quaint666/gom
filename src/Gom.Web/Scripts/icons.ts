@@ -45,6 +45,12 @@ export const smile = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M8 14.5s1.5
 export const more = () => icon('M12 5.5h.01', 'M12 12h.01', 'M12 18.5h.01');
 export const check = () => icon('M5 12.5l4.5 4.5L19 7.5');
 export const block = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M5.6 5.6l12.8 12.8');
+/** A key: a link to choose a new password. */
+export const key = () => icon('M8 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z', 'M11.5 12H21', 'M18 12v3', 'M21 12v2');
+/** An open padlock: let a locked account in again. */
+export const unlock = () => icon('M6 11h12v9H6z', 'M8.5 11V8a3.5 3.5 0 016.8-1.2');
+/** A person with a minus: no longer friends. */
+export const userMinus = () => icon('M10 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7z', 'M3.5 20c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6', 'M16 9h5');
 export const info = () => icon('M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 11v5.5', 'M12 7.5h.01');
 export const attach = () => icon('M20 11.5l-8.2 8.2a5 5 0 01-7.1-7.1l8.5-8.5a3.3 3.3 0 014.7 4.7l-8.5 8.5a1.7 1.7 0 01-2.4-2.4l7.8-7.8');
 export const file = () => icon('M6 3h8l4 4v14H6z', 'M14 3v4h4', 'M9 13h6M9 17h6');

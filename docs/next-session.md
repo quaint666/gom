@@ -98,7 +98,7 @@ Later: a load test at the app's 512 MB memory limit with several people uploadin
 - Reloading by itself on a real phone: the checks hid the tab by overriding `visibilityState`; how soon a phone that has
   slept for hours notices a new version depends on when its browser wakes the tab. The minimum page version was checked
   in Chrome and Firefox only.
-- Search across every conversation on a long history: one `ILIKE` per word with no index is enough at family size
+- Search in a conversation on a long history: one `ILIKE` per word with no index is enough at family size
   **[inferred]**; not measured.
 - Why one call in 50 between two apps failed after #171: one phone may have run out of its three tries for addresses, or
   no route between the phones worked. The failing phone's `adb logcat -d -s GomCall` tells which; H reports it if it

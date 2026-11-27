@@ -4,6 +4,7 @@ import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, errorBox, formatTime } from '../ui.js';
 import { limits } from '../limits.js';
+import { menuItem, menuPoint, menuView, placeMenu } from '../menu.js';
 import { say } from '../say.js';
 
 /** How many rows of a long list show before "Xem thêm". */
@@ -32,6 +33,14 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let requests: JoinRequest[] = [];
   /** Messages from the privacy page's form, newest first. */
   let contacts: ContactMessage[] = [];
+  /** The open "..." menu: whose row, and where it was opened (none on a phone, where it is a sheet). */
+  let menu: { kind: 'member' | 'invite'; id: string; at: { x: number; y: number } } | null = null;
+
+  /** The "..." of a row: opens its menu, which closes again to this button. */
+  const moreButton = (kind: 'member' | 'invite', id: string, label: string) => html`
+    <button class="ib li-more" type="button" data-row-more=${`${kind}:${id}`} aria-label=${label} aria-haspopup="menu"
+      aria-expanded=${menu?.kind === kind && menu.id === id ? 'true' : 'false'}
+      @click=${(e: MouseEvent) => { menu = { kind, id, at: menuPoint(e) }; update(); root.querySelector<HTMLElement>('[data-row-actions] [role="menuitem"]')?.focus(); }}>${icons.more()}</button>`;
 
   const inviteRow = (i: Invite) => html`
     <li class="li invite" data-invite=${i.id} data-status=${i.status}>
@@ -40,26 +49,36 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         <small>${say.owner.inviteLine(i.uses, String(i.maxUses ?? '∞'), formatTime(i.createdAt), i.status === 'expired' ? say.owner.hasExpired : say.owner.expires(formatTime(i.expiresAt)))}</small>
         ${i.members.length === 0 ? nothing : html`<small data-joined>${say.owner.joined(i.members.map((m) => `${m.displayName} (@${m.gomId})`).join(', '))}</small>`}
       </div>
-      ${i.status === 'active' ? html`<button class="btn secondary small" type="button" data-revoke @click=${() => revoke(i.id)}>${say.owner.revoke}</button>` : nothing}
+      ${i.status === 'active' ? moreButton('invite', i.id, say.owner.inviteOptions) : nothing}
     </li>`;
 
   const memberRow = (m: Member) => html`
     <li class="li" data-member=${m.gomId}>
       <div class="t"><b>${m.displayName}${m.isOwner ? html`<span class="tag">${say.owner.ownerTag}</span>` : nothing}${m.deleted ? html`<span class="tag">${say.owner.deletedTag}</span>` : m.disabled ? html`<span class="tag">${say.owner.disabledTag}</span>` : nothing}</b><small>@${m.gomId}</small></div>
-      ${m.isOwner || m.deleted ? nothing : html`
-        <details class="row-acts" data-member-actions>
-          <summary class="ib" aria-label=${say.friends.optionsFor(m.displayName)}>${icons.more()}</summary>
-          <div class="row-acts-list">
-            ${m.disabled ? nothing : html`<button type="button" data-reset @click=${(e: Event) => { shut(e); makeReset(m.gomId); }}>${say.owner.makeReset}</button>`}
-            ${m.disabled
-              ? html`<button type="button" data-enable @click=${(e: Event) => { shut(e); void setDisabled(m.gomId, false); }}>${say.owner.enable}</button>`
-              : html`<button type="button" class="danger-item" data-disable @click=${(e: Event) => { shut(e); void setDisabled(m.gomId, true); }}>${say.owner.disable}</button>`}
-          </div>
-        </details>`}
+      ${m.isOwner || m.deleted ? nothing : moreButton('member', m.gomId, say.friends.optionsFor(m.displayName))}
     </li>`;
 
-  /** Closes the row's actions once one is chosen. */
-  const shut = (e: Event) => { (e.currentTarget as HTMLElement).closest('details')?.removeAttribute('open'); };
+  /** The open row's actions: a member's reset link and lock or unlock, or an invite's revoke. Each closes the menu first. */
+  const menuOf = () => {
+    if (menu === null) return nothing;
+    const { kind, id } = menu;
+    const pick = (run: () => void) => () => { closeMenu(false); run(); };
+    if (kind === 'invite') return menuView(say.owner.inviteOptions, [menuItem('revoke', icons.block(), say.owner.revokeInvite, pick(() => void revoke(id)), true)], () => closeMenu());
+    const m = members.find((x) => x.gomId === id);
+    if (m === undefined) return nothing;
+    return menuView(say.friends.optionsFor(m.displayName), m.disabled
+      ? [menuItem('enable', icons.unlock(), say.owner.enable, pick(() => void setDisabled(id, false)))]
+      : [menuItem('reset', icons.key(), say.owner.makeReset, pick(() => void makeReset(id))),
+        menuItem('disable', icons.lock(), say.owner.disable, pick(() => void setDisabled(id, true)), true)], () => closeMenu());
+  };
+
+  /** Closes the menu; by Escape, a tap outside or "Đóng", the focus goes back to the row's "...". */
+  function closeMenu(refocus = true): void {
+    const was = menu;
+    menu = null;
+    update();
+    if (refocus && was !== null) root.querySelector<HTMLElement>(`[data-row-more="${was.kind}:${was.id}"]`)?.focus();
+  }
 
   const linkBox = () => link === null ? nothing : html`
     <div class="card">
@@ -140,8 +159,9 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
             .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>`}
       ${shownMembers().length === 0 ? html`<p class="hint" data-no-member>${say.owner.noMember}</p>` : html`<ul class="list">${shownMembers().map(memberRow)}</ul>`}
       ${query.trim() !== '' || moreMembers || members.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-members @click=${() => { moreMembers = true; update(); }}>${say.friends.seeMoreCount(members.length - HANDFUL)}</button>`}
-    </div>`;
-  const update = () => render(view(), root);
+    </div>
+    ${menuOf()}`;
+  const update = () => { render(view(), root); placeMenu(root.querySelector<HTMLElement>('[data-row-actions]'), menu?.at); };
 
   const show = (issued: Issued, note: string) => { link = { url: origin + issued.path, note }; copied = ''; error = null; };
 

@@ -25,7 +25,6 @@ public static class MessageEndpoints
 
     public static void MapMessages(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/search", SearchAll).RequireAuthorization();
         var api = app.MapGroup("/api/conversations/{id:guid}").RequireAuthorization();
         api.MapPost("/messages", Send);
         api.MapGet("/messages", History);
@@ -248,23 +247,6 @@ public static class MessageEndpoints
         if (words is null) return Error(StatusCodes.Status400BadRequest, "invalid_query");
         var found = Containing(db.Messages.AsNoTracking().Where(m => m.ConversationId == id && m.Seq > access.SeesAfter), words, db, me);
         return await SearchResults(found, newestFirst: q => q.OrderByDescending(r => r.Message.Seq), db, ct);
-    }
-
-    /// <summary>
-    /// The same, across every conversation this person is in (each from where they may see it), newest first: the list's search box.
-    /// A conversation they hid is searched too, as the list's search finds it by name.
-    /// </summary>
-    private static async Task<IResult> SearchAll(string? q, HttpContext http, GomDbContext db, CancellationToken ct)
-    {
-        var me = GomClaims.User(http.User);
-        var words = SearchWords(q);
-        if (words is null) return Error(StatusCodes.Status400BadRequest, "invalid_query");
-        var seen =
-            from m in db.Messages.AsNoTracking()
-            join mem in db.Members on m.ConversationId equals mem.ConversationId
-            where mem.UserId == me && m.Seq > (mem.JoinedSeq > mem.ClearedSeq ? mem.JoinedSeq : mem.ClearedSeq)
-            select m;
-        return await SearchResults(Containing(seen, words, db, me), newestFirst: q => q.OrderByDescending(r => r.Message.CreatedAt).ThenByDescending(r => r.Message.Seq), db, ct);
     }
 
     /// <summary>The words of a search, or null when there are none or too many characters. A control character (a NUL would make PostgreSQL refuse the query) counts as a space.</summary>

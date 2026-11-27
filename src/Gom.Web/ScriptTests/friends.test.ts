@@ -94,8 +94,9 @@ describe('friends page', () => {
     me: vi.fn(async () => ok(me)), friends: vi.fn(async () => ok(lists)), blocks: vi.fn(async () => ok(blocked)),
     conversations: vi.fn(async () => ok(chatsList)), ...extra,
   });
-  /** The "more" tray of a friend (unfriend, block) opens first. */
+  /** A friend's "⋯" menu (unfriend, block) opens first; its actions are in `[data-row-actions]`, outside the row. */
   const tray = (id: string) => { root.querySelector<HTMLButtonElement>(`[data-friend="${id}"] button[data-more]`)!.click(); };
+  const choose = (action: string) => { root.querySelector<HTMLButtonElement>(`[data-row-actions] button[data-${action}]`)!.click(); };
   const mount = (a = api()) => { mountFriends(root, a, vi.fn(), 'https://gom.test'); return a; };
 
   it('sends a signed-out visitor to sign in', async () => {
@@ -210,7 +211,7 @@ describe('friends page', () => {
     const a = mount();
     await flush();
     tray('minh'); await flush();
-    root.querySelector<HTMLButtonElement>(`[data-friend="minh"] button[data-action="${method}"]`)!.click();
+    choose(method);
     await flush();
     expect(text(root.querySelector('[data-sure="minh"]')!)).toContain(words);
     expect(text(root.querySelector('[data-sure="minh"]')!)).toContain('Minh');
@@ -222,12 +223,29 @@ describe('friends page', () => {
     expect(root.querySelector('[data-sure]')).toBeNull();
   });
 
+  it('opens unfriend and block in a menu like the chat list\'s, which closes back to the friend\'s "⋯"', async () => {
+    const a = mount();
+    await flush();
+    const more = root.querySelector<HTMLButtonElement>('[data-friend="minh"] button[data-more]')!;
+    expect(more.getAttribute('aria-haspopup')).toBe('menu');
+    expect(root.querySelector('[data-friend="minh"] [data-unfriend]')).toBeNull();
+    tray('minh'); await flush();
+    const menu = root.querySelector<HTMLElement>('[data-row-actions]')!;
+    expect(menu.getAttribute('aria-label')).toBe('Tùy chọn cho Minh');
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => text(b))).toEqual(['Xóa bạn', 'Chặn']);
+    expect(document.activeElement).toBe(menu.querySelector('[data-unfriend]'));
+    root.querySelector<HTMLElement>('[data-scrim]')!.click(); await flush();
+    expect(root.querySelector('[data-row-actions]')).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector('[data-friend="minh"] button[data-more]'));
+    expect(a.unfriend).not.toHaveBeenCalled();
+  });
+
   it('asks only under the friend you tapped, not under the others', async () => {
     const two = { ...lists, friends: [{ gomId: 'minh', displayName: 'Minh' }, { gomId: 'cuong', displayName: 'Cường' }] };
     mount(api({ friends: vi.fn(async () => ok(two)) }));
     await flush();
     tray('cuong'); await flush();
-    root.querySelector<HTMLButtonElement>('[data-friend="cuong"] button[data-action="block"]')!.click();
+    choose('block');
     await flush();
     expect(root.querySelectorAll('[data-sure]')).toHaveLength(1);
     expect(root.querySelector('[data-sure="cuong"]')).not.toBeNull();
@@ -238,7 +256,7 @@ describe('friends page', () => {
     const a = mount();
     await flush();
     tray('minh'); await flush();
-    root.querySelector<HTMLButtonElement>(`[data-friend="minh"] button[data-action="${method}"]`)!.click();
+    choose(method);
     await flush();
     root.querySelector<HTMLButtonElement>('[data-cancel-sure]')!.click();
     await flush();
@@ -266,68 +284,67 @@ describe('friends page', () => {
   });
 });
 
-describe('contacts: tabs, a handful of rows, and search', () => {
+describe('contacts: tabs, recent and A to Z, and search', () => {
   const many = Array.from({ length: 8 }, (_, i) => ({ gomId: `f${i}`, displayName: i === 0 ? 'Đào Thị Lan' : `Bạn ${i}` }));
   const lists = { friends: many, incoming: [], outgoing: [] };
-  const chatsList = [
-    { id: 'g1', kind: 'group', title: 'Gia đình', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 4 },
-    { id: 'd1', kind: 'direct', title: 'Bạn 1', peer: { gomId: 'f1', displayName: 'Bạn 1' }, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null },
-  ];
-  const mount = () => {
+  /** A one-to-one conversation with friend `i`, last written in at minute `minute` (f0 and f7 have none). */
+  const direct = (i: number, minute: number) => ({ id: `d${i}`, kind: 'direct', title: `Bạn ${i}`, peer: { gomId: `f${i}`, displayName: `Bạn ${i}` }, lastSeq: 1, lastReadSeq: 1, unread: 0,
+    lastMessage: { seq: 1, body: 'chào', createdAt: `2026-11-27T10:${String(minute).padStart(2, '0')}:00Z`, sender: { id: 'x', displayName: 'x' } } });
+  const group = (id: string, title: string, minute: number | null) => ({ id, kind: 'group', title, peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, memberCount: 4,
+    lastMessage: minute === null ? null : { seq: 1, body: 'chào', createdAt: `2026-11-27T10:${String(minute).padStart(2, '0')}:00Z`, sender: { id: 'x', displayName: 'x' } } });
+  const chatsList = [group('g1', 'Gia đình', 30), direct(1, 1), direct(2, 9), direct(3, 3), direct(4, 4), direct(5, 5), direct(6, 6)];
+  const mount = (friends = many, chats: unknown[] = chatsList) => {
     mountFriends(root, fakeApi({
-      me: vi.fn(async () => ok({ id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false })), friends: vi.fn(async () => ok(lists)),
-      blocks: vi.fn(async () => ok([])), conversations: vi.fn(async () => ok(chatsList)),
+      me: vi.fn(async () => ok({ id: 'u1', gomId: 'mom', displayName: 'Mẹ', isOwner: false })), friends: vi.fn(async () => ok({ ...lists, friends })),
+      blocks: vi.fn(async () => ok([])), conversations: vi.fn(async () => ok(chats)),
     }), vi.fn(), 'https://gom.test');
   };
-  const rows = () => root.querySelectorAll('[data-friend]').length;
+  /** The rows under a heading, up to the next heading of its kind. */
+  const after = (selector: string) => [...(root.querySelector(selector)?.nextElementSibling?.querySelectorAll('[data-friend], [data-group]') ?? [])]
+    .map((r) => r.getAttribute('data-friend') ?? r.getAttribute('data-group'));
+  const everyone = () => [...root.querySelectorAll('[data-letter] + ul [data-friend]')].map((r) => r.getAttribute('data-friend'));
   const type = (value: string) => { const f = root.querySelector<HTMLInputElement>('input[name="find"]')!; f.value = value; f.dispatchEvent(new Event('input', { bubbles: true })); };
 
-  it('shows a handful of friends and the rest behind "Xem thêm"', async () => {
+  it('opens with "Gần đây", the five talked with last, newest first, then everyone A to Z, with no "Xem thêm"', async () => {
     mount();
     await flush();
-    expect(rows()).toBe(5);
-    expect(text(root.querySelector('[data-more-rows]')!)).toContain('Xem thêm (3)');
-    root.querySelector<HTMLButtonElement>('[data-more-rows]')!.click();
-    await flush();
-    expect(rows()).toBe(8);
+    expect(text(root.querySelector('[data-recent]')!)).toBe('Gần đây');
+    expect(after('[data-recent]')).toEqual(['f2', 'f6', 'f5', 'f4', 'f3']);   // f1 is the sixth; f0 and f7 were never written to
+    expect(text(root.querySelector('[data-all]')!)).toBe('Tất cả · 8');
+    expect(everyone()).toEqual(['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f0']);   // Đào Thị Lan last, under D
+    expect([...root.querySelectorAll('[data-letter]')].map((h) => h.getAttribute('data-letter'))).toEqual(['B', 'D']);
     expect(root.querySelector('[data-more-rows]')).toBeNull();
   });
 
-  it('lists everyone under A to Z headings once expanded, with "Đ" under D, and no headings for a handful', async () => {
-    mount();
+  it('has no "Gần đây" with five friends or fewer, only everyone A to Z', async () => {
+    mount(many.slice(0, 5));
     await flush();
-    expect(root.querySelector('[data-letter]')).toBeNull();
-    root.querySelector<HTMLButtonElement>('[data-more-rows]')!.click();
-    await flush();
-    const letters = [...root.querySelectorAll('[data-letter]')].map((h) => h.getAttribute('data-letter'));
-    expect(letters).toEqual(['B', 'D']);
-    const names = [...root.querySelectorAll('[data-friend]')].map((n) => n.getAttribute('data-friend'));
-    expect(names[names.length - 1]).toBe('f0');   // Đào Thị Lan comes last, under D
+    expect(root.querySelector('[data-recent]')).toBeNull();
+    expect(root.querySelector('[data-all]')).toBeNull();
+    expect(everyone()).toEqual(['f1', 'f2', 'f3', 'f4', 'f0']);
   });
 
-  it('searches every friend, not only the handful, and ignores accents and capitals', async () => {
+  it('searches every friend and shows only what matches, A to Z, ignoring accents and capitals', async () => {
     mount();
     await flush();
     type('dao lan'); await flush();
     expect([...root.querySelectorAll('[data-friend]')].map((r) => r.getAttribute('data-friend'))).toEqual(['f0']);
-    type('bạn 7'); await flush();
-    expect([...root.querySelectorAll('[data-friend]')].map((r) => r.getAttribute('data-friend'))).toEqual(['f7']);
-    type('bạn'); await flush();   // seven match: all of them show, not a handful
-    expect(rows()).toBe(7);
-    expect(root.querySelector('[data-more-rows]')).toBeNull();
+    type('bạn'); await flush();   // seven match
+    expect(root.querySelector('[data-recent]')).toBeNull();
+    expect(everyone()).toEqual(['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7']);
     type('không có ai'); await flush();
-    expect(rows()).toBe(0);
+    expect(root.querySelectorAll('[data-friend]')).toHaveLength(0);
     expect(text(root.querySelector('[data-empty]')!)).toContain('Không tìm thấy');
   });
 
-  it('starts again from a handful after leaving a tab and coming back', async () => {
-    mount();
+  it('does the same for groups: the five written in last, then all of them A to Z', async () => {
+    const groups = [group('g1', 'Gia đình', 30), group('g2', 'Bạn đại học', 1), group('g3', 'Xóm trọ', 20), group('g4', 'Lớp 12A1', 10), group('g5', 'Họ Nguyễn', 40), group('g6', 'Câu cá', null)];
+    mount(many, groups);
     await flush();
-    root.querySelector<HTMLButtonElement>('[data-more-rows]')!.click(); await flush();
-    expect(rows()).toBe(8);
     root.querySelector<HTMLButtonElement>('[data-tab="groups"]')!.click(); await flush();
-    root.querySelector<HTMLButtonElement>('[data-tab="friends"]')!.click(); await flush();
-    expect(rows()).toBe(5);
+    expect(after('[data-recent]')).toEqual(['g5', 'g1', 'g3', 'g4', 'g2']);
+    expect(text(root.querySelector('[data-all]')!)).toBe('Tất cả · 6');
+    expect(after('[data-all]')).toEqual(['g2', 'g6', 'g1', 'g5', 'g4', 'g3']);
   });
 
   it('gives each friend the avatar colour of their name', async () => {
@@ -343,7 +360,7 @@ describe('contacts: tabs, a handful of rows, and search', () => {
     await flush();
     root.querySelector<HTMLButtonElement>('[data-tab="groups"]')!.click();
     await flush();
-    expect(rows()).toBe(0);
+    expect(root.querySelectorAll('[data-friend]')).toHaveLength(0);
     expect(root.querySelectorAll('[data-group]')).toHaveLength(1);
     expect(root.querySelector('[data-group="g1"]')!.getAttribute('href')).toBe('/c/g1');
     expect(text(root.querySelector('[data-group="g1"]')!)).toContain('4 thành viên');

@@ -46,6 +46,21 @@ describe('the privacy policy', () => {
     expect(root.querySelectorAll('section li').length).toBe(vi.privacy.sections.flatMap((s) => s.items).length);
   });
 
+  it('leads back to Gom with a button at the top and one at the foot, after the contact form', () => {
+    mount('');
+    const top = root.querySelector<HTMLAnchorElement>('a.btn[data-home-top]')!;
+    const foot = root.querySelector<HTMLAnchorElement>('a.btn[data-home]')!;
+    for (const a of [top, foot]) {
+      expect(a.getAttribute('href')).toBe('/');
+      expect(a.textContent?.trim()).toBe('Về trang chính');
+      expect(a.querySelector('svg')).not.toBeNull();
+    }
+    expect(root.querySelector('[data-privacy]')!.firstElementChild).toBe(top);
+    expect(root.querySelector('[data-contact]')!.compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(en.privacy.home).toBe('Return to Gom');
+    expect(en.account.toHome).toBe('Return to Gom');
+  });
+
   it('says the same number of things in English, part by part', () => {
     expect(en.privacy.sections.map((s) => s.items.length)).toEqual(vi.privacy.sections.map((s) => s.items.length));
   });
