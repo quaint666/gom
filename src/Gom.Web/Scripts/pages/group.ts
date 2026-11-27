@@ -98,8 +98,8 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     : html`
       <form class="card" data-rename @submit=${onRename}>
         <label for="group-name">${say.group.name}</label>
-        <input id="group-name" name="title" type="text" maxlength=${limits().nameChars} autocomplete="off" .value=${liveValue(draftTitle)}
-          @input=${(e: Event) => { draftTitle = (e.target as HTMLInputElement).value; update(); }}>
+        <div class="input"><input id="group-name" name="title" type="text" maxlength=${limits().nameChars} autocomplete="off" .value=${liveValue(draftTitle)}
+          @input=${(e: Event) => { draftTitle = (e.target as HTMLInputElement).value; update(); }}></div>
         <button class="btn" type="submit" ?disabled=${renaming || draftTitle.trim() === '' || draftTitle.trim() === title}>${say.settings.saveName}</button>
       </form>`;
 
