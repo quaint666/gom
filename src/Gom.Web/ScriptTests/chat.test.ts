@@ -3680,6 +3680,24 @@ describe('chat: pictures and files', () => {
   };
   const trayItems = () => [...root.querySelectorAll<HTMLElement>('[data-tray-item]')];
 
+  it('gives a picture, a moving picture and a video their own size before they load, so the conversation does not move', async () => {
+    open({}, [
+      { ...msg(1, 'minh', ''), attachments: [att('p1')] },
+      { ...msg(2, 'minh', ''), attachments: [{ ...att('g1', 'image', 'meo.gif'), animated: true }] },
+      { ...msg(3, 'minh', ''), attachments: [{ id: 'v1', kind: 'video', name: 'clip.mp4', size: 4096, width: 1280, height: 720 }] },
+      { ...msg(4, 'minh', ''), attachments: [{ ...att('p2'), width: null, height: null }] },
+      { ...msg(5, 'minh', ''), attachments: [att('p3'), att('p4')] },
+    ]);
+    await flush();
+    const size = (selector: string) => { const s = root.querySelector<HTMLElement>(selector)!.style; return [s.getPropertyValue('--w'), s.getPropertyValue('--r')]; };
+    expect(size('[data-pic="p1"] img')).toEqual(['40px', String(40 / 30)]);
+    expect(size('[data-moving="g1"] img')).toEqual(['40px', String(40 / 30)]);
+    expect(size('[data-video="v1"] video')).toEqual(['1280px', String(1280 / 720)]);
+    expect(size('[data-pic="p2"] img')).toEqual(['', '']);
+    // A picture in a grid carries them too; there the CSS gives each a square of the grid's width instead.
+    expect(size('[data-pic="p3"] img')).toEqual(['40px', String(40 / 30)]);
+  });
+
   it('uploads what was chosen, shows it in the tray, and sends the message with the uploads, in the order chosen', async () => {
     const upload = vi.fn(async (_c: string, file: { name?: string }) => ok(att(`id-${file.name}`, 'image', file.name)));
     const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
