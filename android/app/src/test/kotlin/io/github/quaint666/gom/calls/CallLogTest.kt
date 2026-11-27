@@ -2,7 +2,9 @@ package io.github.quaint666.gom.calls
 
 import io.github.quaint666.gom.calls.CallLog.Stat
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CallLogTest {
@@ -15,6 +17,8 @@ class CallLogTest {
             "a=candidate:4 1 udp 41885439 203.0.113.5 30000 typ relay raddr 198.51.100.7 rport 61000\r\n"
         assertEquals("host 2, srflx 1, relay 1", CallLog.kinds(sdp))
         assertEquals("host 0, srflx 0, relay 0", CallLog.kinds("v=0\r\n"))
+        assertTrue(CallLog.hasAddresses(sdp))
+        assertFalse(CallLog.hasAddresses("v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=ice-ufrag:x\r\n"))
     }
 
     @Test

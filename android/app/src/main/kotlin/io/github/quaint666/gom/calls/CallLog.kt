@@ -17,6 +17,9 @@ object CallLog {
         return KINDS.joinToString { "$it ${counts[it] ?: 0}" }
     }
 
+    /** Whether an offer or answer holds any address at all. */
+    fun hasAddresses(sdp: String): Boolean = candidate.containsMatchIn(sdp)
+
     /** One entry of WebRTC's statistics: its type ("transport", "candidate-pair", "local-candidate"…) and its values. */
     data class Stat(val type: String, val members: Map<String, Any?>)
 

@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.util.Log
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.webrtc.AudioSource
@@ -76,8 +77,20 @@ private class RtcConnection(
     /** Whether it ever connected, for the log when it closes. */
     @Volatile private var connected = false
 
-    private val pc: PeerConnection? = factory.createPeerConnection(config, object : PeerConnection.Observer {
+    /** The connection; replaced only before anything is sent, when its first offer or answer had no addresses (see [withAddresses]). */
+    @Volatile private var pc: PeerConnection? = newPc()
+
+    /** A connection carrying the microphone, whose news counts only while it is the one in use. */
+    private fun newPc(): PeerConnection? {
+        val watch = Watch()
+        return factory.createPeerConnection(config, watch)?.also { watch.of = it; it.addTrack(track, listOf("gom")) }
+    }
+
+    private inner class Watch : PeerConnection.Observer {
+        var of: PeerConnection? = null
+        private val current get() = of != null && of === pc
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
+            if (!current) return
             when (state) {
                 PeerConnection.PeerConnectionState.CONNECTED -> { connected = true; logChosen("connected"); link(Link.CONNECTED) }
                 PeerConnection.PeerConnectionState.DISCONNECTED -> { Log.i(CallLog.TAG, "down"); link(Link.DOWN) }
@@ -86,7 +99,7 @@ private class RtcConnection(
             }
         }
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
-            if (state == PeerConnection.IceGatheringState.COMPLETE) gathered.complete(Unit)
+            if (current && state == PeerConnection.IceGatheringState.COMPLETE) gathered.complete(Unit)
         }
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) = Unit
@@ -98,30 +111,48 @@ private class RtcConnection(
         override fun onDataChannel(channel: DataChannel) = Unit
         override fun onRenegotiationNeeded() = Unit
         override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) = Unit   // the other side's voice plays by itself
-    })
+    }
 
     val ready: Boolean get() = pc != null
-
-    init {
-        pc?.addTrack(track, listOf("gom"))
-    }
 
     override val waitingForAnswer: Boolean get() = pc?.signalingState() == PeerConnection.SignalingState.HAVE_LOCAL_OFFER
     override val stable: Boolean get() = pc?.signalingState() == PeerConnection.SignalingState.STABLE
 
     override suspend fun offer(restart: Boolean): String {
-        val pc = pc ?: return ""
-        if (restart) pc.restartIce()
-        val offer = create { pc.createOffer(it, audioOnly) }
-        return local(pc, offer)
+        if (restart) {   // mid-call: the connection in use restarts; with no network it has no addresses, and the call waits for one
+            val pc = pc ?: return ""
+            pc.restartIce()
+            return local(pc, create { pc.createOffer(it, audioOnly) })
+        }
+        return withAddresses { pc -> local(pc, create { pc.createOffer(it, audioOnly) }) }
     }
 
     override suspend fun answer(offer: String): String {
-        val pc = pc ?: return ""
         Log.i(CallLog.TAG, "offer there: ${CallLog.kinds(offer)}")
-        set { pc.setRemoteDescription(it, SessionDescription(SessionDescription.Type.OFFER, offer)) }
-        val answer = create { pc.createAnswer(it, audioOnly) }
-        return local(pc, answer)
+        return withAddresses { pc ->
+            set { pc.setRemoteDescription(it, SessionDescription(SessionDescription.Type.OFFER, offer)) }
+            local(pc, create { pc.createAnswer(it, audioOnly) })
+        }
+    }
+
+    /**
+     * A call's first offer or answer, made by [make], with addresses in it. WebRTC learns the phone's networks only once a
+     * connection starts gathering, a few milliseconds late, and a connection that gathered before then has none and never gathers
+     * again: such an offer or answer is never sent. A new connection made a moment later, while the first still holds WebRTC's
+     * watch on the networks, makes it again; the first then goes.
+     */
+    private suspend fun withAddresses(make: suspend (PeerConnection) -> String): String {
+        var sdp = make(pc ?: return "")
+        for (attempt in 2..ATTEMPTS) {
+            if (sdp.isEmpty() || CallLog.hasAddresses(sdp)) break
+            Log.i(CallLog.TAG, "no addresses yet, trying again ($attempt of $ATTEMPTS)")
+            delay(RETRY_MS)
+            val old = pc
+            pc = newPc() ?: break
+            sdp = make(pc ?: break)
+            old?.dispose()
+        }
+        return sdp
     }
 
     override suspend fun accept(answer: String) {
@@ -184,6 +215,10 @@ private class RtcConnection(
     }
 
     private companion object {
+        /** Tries at an offer or answer with addresses, and the wait between them (see [withAddresses]). */
+        const val ATTEMPTS = 3
+        const val RETRY_MS = 200L
+
         val audioOnly = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"))
