@@ -480,7 +480,7 @@ export const en: Strings = {
     savePassword: 'Save password',
     befriendTitle: (gomId: string) => `Add @${gomId} as a friend`,
     sendFriendRequest: 'Send friend request',
-    toHome: 'Go to Gom',
+    toHome: 'Return to Gom',
     seeFriends: 'See friends',
   },
   signUp: {
@@ -726,7 +726,7 @@ export const en: Strings = {
         'The date at the top changes with it. A big change will be announced in Gom.',
       ] },
     ],
-    home: 'Go to Gom',
+    home: 'Return to Gom',
     contactHeading: 'Contact',
     contactLead: (days: number) => `Write to the operator about privacy or anything else. Only the operator can read it, and it is deleted after ${days} days. If you want an answer, leave a way to reach you.`,
     contactBody: 'Message',

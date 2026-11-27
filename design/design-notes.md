@@ -59,7 +59,7 @@ Be Vietnam Pro (400, 600, 700), self-hosted from `design/source/fonts/`. Body 15
 - Buttons and inputs: at least 44 px tall (48 px for the main button).
 - Bubbles: 16 px radius; inside a run of messages from one sender the corner on the sender's side is 6 px. No tails.
 - Cards and dialogs: 12 to 16 px radius, 1 px border.
-- A 3 px primary bar runs along the top of each header, as in Peekbox.
+- A 3 px primary bar runs along the top of each header, as in Peekbox. On a computer's chat page it runs along the top of every pane (rail, list, thread, panel), so the window's top edge is one line.
 - No emoji in the interface itself: icons are simple stroked line icons. Emoji and stickers are things people send, not part of the interface.
 - Focus ring: 3 px, offset 2 px, `#3F6B57` in light mode and `#9EC3A5` in dark mode, for the keyboard only, never removed.
 

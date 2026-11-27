@@ -740,7 +740,7 @@ export const vi = {
         'Ngày cập nhật ở đầu trang đổi theo. Thay đổi lớn sẽ được báo trong Gom.',
       ] },
     ],
-    home: 'Về Gom',
+    home: 'Về trang chính',
     contactHeading: 'Liên hệ',
     contactLead: (days: number) => `Viết cho người vận hành về quyền riêng tư hay bất cứ điều gì. Chỉ người vận hành đọc được thư này, và nó tự xóa sau ${days} ngày. Nếu muốn được trả lời, hãy để lại cách liên lạc.`,
     contactBody: 'Lời nhắn',

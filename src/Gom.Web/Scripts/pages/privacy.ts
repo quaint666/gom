@@ -1,5 +1,6 @@
 import { html, render } from 'lit-html';
 import type { Api, Failure } from '../api.js';
+import * as icons from '../icons.js';
 import { limits } from '../limits.js';
 import { brand, errorBox } from '../ui.js';
 import { say } from '../say.js';
@@ -45,6 +46,7 @@ export function mountPrivacy(root: HTMLElement, operator: string, api: Pick<Api,
 
   const view = () => html`
     <article class="page policy" data-privacy>
+      <a class="btn secondary small home-btn" href="/" data-home-top>${icons.back()}${say.privacy.home}</a>
       <a class="policy-home" href="/">${brand()}</a>
       <h1>${say.privacy.title}</h1>
       <p class="hint" data-policy-date>${say.privacy.updated(date)}</p>
@@ -52,7 +54,7 @@ export function mountPrivacy(root: HTMLElement, operator: string, api: Pick<Api,
       ${say.privacy.sections.map((s) => html`
         <section><h2>${s.heading}</h2><ul>${s.items.map((item) => html`<li>${item}</li>`)}</ul></section>`)}
       <section data-contact><h2>${say.privacy.contactHeading}</h2><p>${say.privacy.contactLead(limits().contactKeepDays)}</p>${form()}</section>
-      <p class="foot"><a href="/">${say.privacy.home}</a></p>
+      <a class="btn secondary home-btn" href="/" data-home>${icons.back()}${say.privacy.home}</a>
     </article>`;
   const update = () => render(view(), root);
 
