@@ -1,13 +1,13 @@
 import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
-import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, Result, User, CallLine } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, initials, listTime, mergeMedia, mergeMessages, missedByMe, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
+import { menuItem, menuPoint, placeMenu as placeMenuAt } from '../menu.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { markedExcerpt, matches, type Run } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
@@ -289,7 +289,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             : c.markedUnread ? html`<span class="badge dot ${isMuted(c) ? 'muted' : ''}" data-marked-unread role="img" aria-label=${say.chat.markUnread}></span>` : nothing}</div>
       </div></a>
       <button class="ib row-more" type="button" data-row-menu=${c.id} aria-label=${say.chat.optionsFor(c.title)} aria-haspopup="menu"
-        aria-expanded=${rowMenu?.id === c.id ? 'true' : 'false'} @click=${(e: MouseEvent) => openRowMenu(c.id, rowMenuPoint(e))}>${icons.more()}</button></li>`;
+        aria-expanded=${rowMenu?.id === c.id ? 'true' : 'false'} @click=${(e: MouseEvent) => openRowMenu(c.id, menuPoint(e))}>${icons.more()}</button></li>`;
 
   /** The conversations in view: hidden ones are listed by the server (for a search) and left out here. */
   const shownChats = (): Conversation[] => (chats ?? []).filter((c) => c.hidden !== true);
@@ -313,9 +313,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const recalledText = (mine: boolean, name: string | null): string =>
     mine ? say.chat.recalledByYou : name === null ? say.chat.recalled : say.chat.recalledBy(name);
 
-  /** One line of the menu: an icon and a word. */
-  const menuItem = (attr: string, icon: TemplateResult, label: string, run: () => void, danger = false): TemplateResult =>
-    staticHtml`<button class="mi ${danger ? 'danger' : ''}" type="button" role="menuitem" data-${unsafeStatic(attr)} @click=${run}>${icon}<span>${label}</span></button>`;
 
   /**
    * The menu of the open message: a small list beside the pointer for a mouse, a sheet at the bottom for a finger (the
@@ -1650,12 +1647,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- the "..." menu of a conversation in the list: pin, mark unread, mute, make a group, hide, delete for me (all yours alone)
 
-  /** Under the button, its right edge on the button's; from the keyboard too. */
-  function rowMenuPoint(e: MouseEvent): { x: number; y: number } {
-    const r = (e.currentTarget as HTMLElement | null)?.getBoundingClientRect();
-    return r === undefined ? { x: e.clientX, y: e.clientY } : { x: r.right - 236, y: r.bottom };
-  }
-
   function openRowMenu(id: string, at: { x: number; y: number }): void {
     menu = null;
     rowMenu = { id, confirming: false, at: deps.coarsePointer() ? undefined : at };
@@ -1789,16 +1780,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   // ---- opening the menu without the button
 
-  /**
-   * Puts the menu where it was asked for. Set through the style object after drawing: the page's content security policy
-   * refuses a style attribute (also the one a template would write on the first draw), but allows this.
-   */
+  /** Puts the open menu where it was asked for, after drawing (`menu.ts`). */
   function placeMenu(): void {
-    const at = rowMenu !== null ? rowMenu.at : menu?.at;
-    const pop = root.querySelector<HTMLElement>(rowMenu !== null ? '.menu[data-conversation-menu]' : '.menu');
-    if (at === undefined || pop === null) return;
-    pop.style.setProperty('--x', `${Math.round(at.x)}px`);
-    pop.style.setProperty('--y', `${Math.round(at.y)}px`);
+    placeMenuAt(root.querySelector<HTMLElement>(rowMenu !== null ? '.menu[data-conversation-menu]' : '.menu'), rowMenu !== null ? rowMenu.at : menu?.at);
   }
 
   /** Where a click happened; the keyboard (no pointer) gets the button's own corner. */

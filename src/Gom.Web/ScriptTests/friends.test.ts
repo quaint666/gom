@@ -94,8 +94,9 @@ describe('friends page', () => {
     me: vi.fn(async () => ok(me)), friends: vi.fn(async () => ok(lists)), blocks: vi.fn(async () => ok(blocked)),
     conversations: vi.fn(async () => ok(chatsList)), ...extra,
   });
-  /** The "more" tray of a friend (unfriend, block) opens first. */
+  /** A friend's "⋯" menu (unfriend, block) opens first; its actions are in `[data-row-actions]`, outside the row. */
   const tray = (id: string) => { root.querySelector<HTMLButtonElement>(`[data-friend="${id}"] button[data-more]`)!.click(); };
+  const choose = (action: string) => { root.querySelector<HTMLButtonElement>(`[data-row-actions] button[data-${action}]`)!.click(); };
   const mount = (a = api()) => { mountFriends(root, a, vi.fn(), 'https://gom.test'); return a; };
 
   it('sends a signed-out visitor to sign in', async () => {
@@ -210,7 +211,7 @@ describe('friends page', () => {
     const a = mount();
     await flush();
     tray('minh'); await flush();
-    root.querySelector<HTMLButtonElement>(`[data-friend="minh"] button[data-action="${method}"]`)!.click();
+    choose(method);
     await flush();
     expect(text(root.querySelector('[data-sure="minh"]')!)).toContain(words);
     expect(text(root.querySelector('[data-sure="minh"]')!)).toContain('Minh');
@@ -222,12 +223,29 @@ describe('friends page', () => {
     expect(root.querySelector('[data-sure]')).toBeNull();
   });
 
+  it('opens unfriend and block in a menu like the chat list\'s, which closes back to the friend\'s "⋯"', async () => {
+    const a = mount();
+    await flush();
+    const more = root.querySelector<HTMLButtonElement>('[data-friend="minh"] button[data-more]')!;
+    expect(more.getAttribute('aria-haspopup')).toBe('menu');
+    expect(root.querySelector('[data-friend="minh"] [data-unfriend]')).toBeNull();
+    tray('minh'); await flush();
+    const menu = root.querySelector<HTMLElement>('[data-row-actions]')!;
+    expect(menu.getAttribute('aria-label')).toBe('Tùy chọn cho Minh');
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => text(b))).toEqual(['Xóa bạn', 'Chặn']);
+    expect(document.activeElement).toBe(menu.querySelector('[data-unfriend]'));
+    root.querySelector<HTMLElement>('[data-scrim]')!.click(); await flush();
+    expect(root.querySelector('[data-row-actions]')).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector('[data-friend="minh"] button[data-more]'));
+    expect(a.unfriend).not.toHaveBeenCalled();
+  });
+
   it('asks only under the friend you tapped, not under the others', async () => {
     const two = { ...lists, friends: [{ gomId: 'minh', displayName: 'Minh' }, { gomId: 'cuong', displayName: 'Cường' }] };
     mount(api({ friends: vi.fn(async () => ok(two)) }));
     await flush();
     tray('cuong'); await flush();
-    root.querySelector<HTMLButtonElement>('[data-friend="cuong"] button[data-action="block"]')!.click();
+    choose('block');
     await flush();
     expect(root.querySelectorAll('[data-sure]')).toHaveLength(1);
     expect(root.querySelector('[data-sure="cuong"]')).not.toBeNull();
@@ -238,7 +256,7 @@ describe('friends page', () => {
     const a = mount();
     await flush();
     tray('minh'); await flush();
-    root.querySelector<HTMLButtonElement>(`[data-friend="minh"] button[data-action="${method}"]`)!.click();
+    choose(method);
     await flush();
     root.querySelector<HTMLButtonElement>('[data-cancel-sure]')!.click();
     await flush();

@@ -35,7 +35,7 @@ describe('owner page', () => {
     expect(text(pending)).toContain('Đang hoạt động');
     expect(text(pending)).toContain('1 / 10 người');
     expect(text(pending.querySelector('[data-joined]')!)).toContain('Lan (@lan)');
-    expect(pending.querySelector('button')).not.toBeNull();
+    expect(pending.querySelector('button[data-row-more]')!.getAttribute('aria-label')).toBe('Tùy chọn lời mời');
     expect(text(used)).toContain('Đã đủ người');
     expect(text(used)).toContain('minh');
     expect(used.querySelector('button')).toBeNull();
@@ -45,9 +45,14 @@ describe('owner page', () => {
     const a = api();
     mountOwner(root, a, vi.fn(), 'https://gom.test');
     await flush();
-    root.querySelector<HTMLButtonElement>('[data-invite="i1"] button')!.click();
+    root.querySelector<HTMLButtonElement>('[data-invite="i1"] button[data-row-more]')!.click();
+    await flush();
+    const menu = root.querySelector<HTMLElement>('[data-row-actions]')!;
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => text(b))).toEqual(['Thu hồi lời mời']);
+    menu.querySelector<HTMLButtonElement>('button[data-revoke]')!.click();
     await flush();
     expect(a.revokeInvite).toHaveBeenCalledWith('i1');
+    expect(root.querySelector('[data-row-actions]')).toBeNull();
     expect(a.invites).toHaveBeenCalledTimes(2);
   });
 
@@ -116,7 +121,9 @@ describe('owner page', () => {
     mountOwner(root, a, vi.fn(), 'https://gom.test');
     await flush();
     expect(root.querySelector('[data-member="boss"] button')).toBeNull();
-    root.querySelector<HTMLButtonElement>('[data-member="minh"] button')!.click();
+    root.querySelector<HTMLButtonElement>('[data-member="minh"] button[data-row-more]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-row-actions] button[data-reset]')!.click();
     await flush();
     expect(a.resetLink).toHaveBeenCalledWith('minh');
     expect(root.querySelector<HTMLInputElement>('input[data-link]')!.value).toBe('https://gom.test/reset/RT');

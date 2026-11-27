@@ -492,7 +492,7 @@ a.mi { text-decoration: none; }
 @media (hover: hover) and (pointer: fine) and (min-width: 600px) {
   .scrim { background: transparent; }
   .menu {
-    inset: auto; inset-inline-start: clamp(8px, var(--x, 0px), calc(100vw - 244px)); inset-block-start: clamp(8px, var(--y, 0px), calc(100dvh - 400px));
+    inset: auto; inset-inline-start: clamp(8px, var(--x, 0px), calc(100vw - 244px)); inset-block-start: var(--y, 8px);   /* --y kept on screen by menu.ts */
     inline-size: 236px; max-block-size: calc(100dvh - 16px); padding: 6px; border: 1px solid var(--border); border-radius: 12px; gap: 4px; box-shadow: 0 8px 28px rgb(0 0 0 / .4);
   }
   .menu .emoji-row { gap: 0; padding: 2px; }
@@ -539,7 +539,6 @@ a.mi { text-decoration: none; }
 .rowmain .t b, .person .t b { display: block; }
 .person .t { flex: 1; min-inline-size: 0; }
 .person .t small { color: var(--muted); font-size: 13px; }
-.tray { flex-basis: 100%; display: flex; gap: 8px; padding-block-end: 6px; }
 .pick label span { min-inline-size: 0; overflow-wrap: anywhere; }
 [role="tabpanel"] { display: flex; flex-direction: column; gap: 14px; }
 
@@ -976,19 +975,9 @@ a.profile { color: inherit; text-decoration: none; }
 .embed .bar { display: none; }
 .embed .page { max-inline-size: none; padding: 0; }
 
-/* A row's actions behind "⋯" (the owner's members): closed, the row stays one line however long the name; open, the actions list
-   under it, inside the row, so a list with overflow: hidden never cuts them. */
-.li:has(> .row-acts) { position: relative; padding-inline-end: 60px; }
-.row-acts { flex: 0 0 0; }
-.row-acts[open] { flex-basis: 100%; }
-.row-acts > summary { position: absolute; inset-inline-end: 10px; inset-block-start: 12px; list-style: none; cursor: pointer; }
-.row-acts > summary::-webkit-details-marker { display: none; }
-.row-acts[open] > summary { background: var(--tint); color: var(--tint-text); }
-.row-acts-list { display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
-.row-acts-list button { display: flex; align-items: center; min-block-size: 44px; padding-inline: 12px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; font-size: 15px; text-align: start; cursor: pointer; }
-.row-acts-list button:active { background: var(--press); }
-.row-acts-list button.danger-item { color: var(--err-text); }
-@media (hover: hover) { .row-acts-list button:hover { background: var(--hover); } }
+/* A row's "⋯" (the owner's members and invites, Contacts' friends): it opens the row's menu (menu.ts), at the row's end. */
+.li-more { margin-inline-start: auto; flex: none; }
+.li-more[aria-expanded="true"] { background: var(--tint); color: var(--tint-text); }
 
 /* The owner's clean-up forms: fields spaced like every other form, and what is about to be deleted in a box of its own. */
 .card:has(> .field) { gap: 12px; }

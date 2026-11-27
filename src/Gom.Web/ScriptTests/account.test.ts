@@ -132,34 +132,63 @@ describe('owner: switching members off and on', () => {
     me: vi.fn(async () => ok(owner)), invites: vi.fn(async () => ok([])), members: vi.fn(async () => ok(members)), ...extra,
   });
 
+  /** Opens a member's "⋯" menu and gives back its actions (`[data-row-actions]`, outside the row, as in the chat list). */
+  const menuOf = async (gomId: string) => {
+    root.querySelector<HTMLButtonElement>(`[data-member="${gomId}"] button[data-row-more]`)!.click();
+    await flush();
+    return root.querySelector<HTMLElement>('[data-row-actions]')!;
+  };
+
   it('offers to lock an active member, to unlock a locked one, and nothing for the owner', async () => {
     mountOwner(root, api(), vi.fn(), 'https://gom.test');
     await flush();
     expect(root.querySelector('[data-member="boss"] button')).toBeNull();
-    expect(root.querySelector('[data-member="minh"] button[data-disable]')).not.toBeNull();
-    expect(root.querySelector('[data-member="minh"] button[data-enable]')).toBeNull();
-    expect(root.querySelector('[data-member="lan"] button[data-enable]')).not.toBeNull();
-    expect(root.querySelector('[data-member="lan"] button[data-disable]')).toBeNull();
+    let menu = await menuOf('minh');
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => text(b))).toEqual(['Tạo liên kết đặt lại mật khẩu', 'Khóa tài khoản']);
+    menu.querySelector<HTMLButtonElement>('[data-close-menu]')!.click();
+    await flush();
+    menu = await menuOf('lan');
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => text(b))).toEqual(['Mở khóa']);
     expect(text(root.querySelector('[data-member="lan"]')!)).toContain('Đã khóa');
   });
 
-  it('keeps the actions for a member behind a closed "⋯" that closes again once one is chosen', async () => {
+  it('opens the actions in a menu like the chat list\'s, named for the member, that closes once one is chosen', async () => {
     mountOwner(root, api(), vi.fn(), 'https://gom.test');
     await flush();
-    const actions = root.querySelector<HTMLDetailsElement>('[data-member="minh"] details[data-member-actions]')!;
-    expect(actions.open).toBe(false);
-    expect(actions.querySelector('summary')!.getAttribute('aria-label')).toBe('Tùy chọn cho Minh');
-    expect(root.querySelector('[data-member="boss"] details')).toBeNull();
-    actions.open = true;
-    actions.querySelector<HTMLButtonElement>('button[data-disable]')!.click();
-    expect(actions.open).toBe(false);
+    const more = root.querySelector<HTMLButtonElement>('[data-member="minh"] button[data-row-more]')!;
+    expect(more.getAttribute('aria-label')).toBe('Tùy chọn cho Minh');
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(root.querySelector('[data-row-actions]')).toBeNull();
+    const menu = await menuOf('minh');
+    expect(menu.getAttribute('role')).toBe('menu');
+    expect(menu.getAttribute('aria-label')).toBe('Tùy chọn cho Minh');
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(menu.querySelector('[role="menuitem"]'));
+    menu.querySelector<HTMLButtonElement>('button[data-disable]')!.click();
+    await flush();
+    expect(root.querySelector('[data-row-actions]')).toBeNull();
+  });
+
+  it.each([
+    ['Escape', (m: HTMLElement) => m.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))],
+    ['a tap outside', () => root.querySelector<HTMLElement>('[data-scrim]')!.click()],
+    ['"Đóng"', (m: HTMLElement) => m.querySelector<HTMLElement>('[data-close-menu]')!.click()],
+  ] as const)('closes the menu on %s, back to its "⋯", doing nothing', async (_how, close) => {
+    const a = api();
+    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    await flush();
+    close(await menuOf('minh'));
+    await flush();
+    expect(root.querySelector('[data-row-actions]')).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector('[data-member="minh"] button[data-row-more]'));
+    expect(a.disableMember).not.toHaveBeenCalled();
   });
 
   it('disables a member and reloads the list', async () => {
     const a = api();
     mountOwner(root, a, vi.fn(), 'https://gom.test');
     await flush();
-    root.querySelector<HTMLButtonElement>('[data-member="minh"] button[data-disable]')!.click();
+    (await menuOf('minh')).querySelector<HTMLButtonElement>('button[data-disable]')!.click();
     await flush();
     expect(a.disableMember).toHaveBeenCalledWith('minh');
     expect(a.members).toHaveBeenCalledTimes(2);
@@ -169,7 +198,7 @@ describe('owner: switching members off and on', () => {
     const a = api();
     mountOwner(root, a, vi.fn(), 'https://gom.test');
     await flush();
-    root.querySelector<HTMLButtonElement>('[data-member="lan"] button[data-enable]')!.click();
+    (await menuOf('lan')).querySelector<HTMLButtonElement>('button[data-enable]')!.click();
     await flush();
     expect(a.enableMember).toHaveBeenCalledWith('lan');
     expect(a.members).toHaveBeenCalledTimes(2);
@@ -179,7 +208,7 @@ describe('owner: switching members off and on', () => {
     const a = api({ disableMember: vi.fn(async () => fail('cannot_disable_owner')) });
     mountOwner(root, a, vi.fn(), 'https://gom.test');
     await flush();
-    root.querySelector<HTMLButtonElement>('[data-member="minh"] button[data-disable]')!.click();
+    (await menuOf('minh')).querySelector<HTMLButtonElement>('button[data-disable]')!.click();
     await flush();
     expect(root.querySelector('[role="alert"]')).not.toBeNull();
   });

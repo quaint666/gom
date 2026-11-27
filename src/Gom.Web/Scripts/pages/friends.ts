@@ -4,6 +4,7 @@ import * as icons from '../icons.js';
 import { fold, matches } from '../search.js';
 import { appBar, avatar, errorBox, formatTime } from '../ui.js';
 import { limits } from '../limits.js';
+import { menuItem, menuPoint, menuView, placeMenu } from '../menu.js';
 import { say } from '../say.js';
 
 /** How many rows of a long list show before "Xem thêm". */
@@ -20,8 +21,8 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
   let tab: 'friends' | 'groups' = 'friends';
   let query = '';
   let expanded = false;
-  /** The friend whose "more" tray (unfriend, block) is open. */
-  let tray: string | null = null;
+  /** The friend whose "..." menu (unfriend, block) is open, and where it was opened. */
+  let menu: { gomId: string; at: { x: number; y: number } } | null = null;
   let friendId = '';
   let status = '';
   let copied = '';
@@ -60,13 +61,29 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
     <li class="li person" data-friend=${p.gomId}>
       <button class="rowmain" type="button" data-action="message" @click=${() => void message(p.gomId)}>${avatar(p.displayName, false, false, p.avatar)}
         <span class="t"><b>${p.displayName}</b><small>@${p.gomId}</small></span></button>
-      <button class="ib" type="button" data-more aria-label=${say.friends.optionsFor(p.displayName)} aria-expanded=${tray === p.gomId ? 'true' : 'false'}
-        @click=${() => { tray = tray === p.gomId ? null : p.gomId; update(); }}>${icons.more()}</button>
-      ${tray === p.gomId ? html`<div class="tray">
-        ${button(say.common.unfriend, 'unfriend', () => { tray = null; sure = { kind: 'unfriend', person: p }; update(); })}
-        ${button(say.common.block, 'block', () => { tray = null; sure = { kind: 'block', person: p }; update(); })}</div>` : nothing}
+      <button class="ib li-more" type="button" data-more=${p.gomId} aria-label=${say.friends.optionsFor(p.displayName)} aria-haspopup="menu"
+        aria-expanded=${menu?.gomId === p.gomId ? 'true' : 'false'}
+        @click=${(e: MouseEvent) => { menu = { gomId: p.gomId, at: menuPoint(e) }; update(); root.querySelector<HTMLElement>('[data-row-actions] [role="menuitem"]')?.focus(); }}>${icons.more()}</button>
     </li>
     ${sure?.person.gomId === p.gomId ? question(sure) : nothing}`;
+
+  /** The open friend's menu; either choice asks first, under the friend's row. */
+  const menuOf = () => {
+    const p = menu === null ? undefined : lists.friends.find((f) => f.gomId === menu!.gomId);
+    if (p === undefined) return nothing;
+    const ask = (kind: 'unfriend' | 'block') => () => { menu = null; sure = { kind, person: p }; update(); root.querySelector<HTMLElement>('[data-confirm-sure]')?.focus(); };
+    return menuView(say.friends.optionsFor(p.displayName), [
+      menuItem('unfriend', icons.userMinus(), say.common.unfriend, ask('unfriend')),
+      menuItem('block', icons.block(), say.common.block, ask('block'), true)], closeMenu);
+  };
+
+  /** Closes the menu without a choice; the focus goes back to the friend's "...". */
+  function closeMenu(): void {
+    const was = menu?.gomId;
+    menu = null;
+    update();
+    if (was !== undefined) root.querySelector<HTMLElement>(`[data-more="${was}"]`)?.focus();
+  }
 
   const groupRow = (c: Conversation) => html`
     <li><a class="li person" href="/c/${c.id}" data-group=${c.id}>${avatar(c.title ?? '?')}
@@ -76,7 +93,7 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
     const mine = lists.friends.length;
     const tabButton = (id: 'friends' | 'groups', label: string, count: number) => html`
       <button class="tab" type="button" role="tab" id=${`tab-${id}`} data-tab=${id} aria-selected=${tab === id ? 'true' : 'false'}
-        @click=${() => { tab = id; expanded = false; tray = null; update(); }}>${label} <span class="count">${count}</span></button>`;
+        @click=${() => { tab = id; expanded = false; menu = null; update(); }}>${label} <span class="count">${count}</span></button>`;
     return html`<div class="tabs" role="tablist" aria-label=${say.common.contacts}>${tabButton('friends', say.friends.friendsTab, mine)}${tabButton('groups', say.friends.groupsTab, groups.length)}</div>`;
   };
 
@@ -152,8 +169,9 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
         ${tab === 'friends' ? section(say.friends.blocked, blocked.map((p) => html`
           <li class="li" data-blocked=${p.gomId}>${who(p)}
             ${button(say.friends.unblock, 'unblock', () => act(() => api.unblock(p.gomId)))}</li>`)) : nothing}`}
-    </div>`;
-  const update = () => render(view(), root);
+    </div>
+    ${menuOf()}`;
+  const update = () => { render(view(), root); placeMenu(root.querySelector<HTMLElement>('[data-row-actions]'), menu?.at); };
 
   async function reload(): Promise<void> {
     const [f, b, g] = await Promise.all([api.friends(), api.blocks(), api.conversations()]);
