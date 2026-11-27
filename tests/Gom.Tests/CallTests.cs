@@ -920,6 +920,19 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
     }
 
     [Fact]
+    public async Task Me_says_whether_my_app_takes_calls_so_a_phones_browser_can_leave_the_ringing_to_it()
+    {
+        var (me, cookie) = await app.Member();
+        async Task<bool> AppCalls(string c) { using var r = await app.Call(Get, "/api/me", cookie: c); return (await AppFixture.Json(r)).GetProperty("appCalls").GetBoolean(); }
+        Assert.False(await AppCalls(cookie));
+        var phone = await app.SignIn(me.GomId);
+        await app.App(phone);
+        Assert.True(await AppCalls(cookie));   // asked from the browser: the app is signed in on another session
+        using (await app.Call(Delete, "/api/session", cookie: phone)) { }
+        Assert.False(await AppCalls(cookie));   // the app's session signed out
+    }
+
+    [Fact]
     public async Task Someone_with_no_app_signed_in_cannot_be_called()
     {
         var (a, ca) = await app.Member();

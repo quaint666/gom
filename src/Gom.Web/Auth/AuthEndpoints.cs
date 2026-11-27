@@ -12,12 +12,20 @@ public static class AuthEndpoints
     {
         app.MapPost("/api/session", SignIn);
         app.MapDelete("/api/session", SignOut).RequireAuthorization("SignedIn");
-        app.MapGet("/api/me", async (HttpContext c, GomDbContext db, Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions> uploads, Microsoft.Extensions.Options.IOptions<Gom.Web.Chat.CallOptions> calls, CancellationToken ct) =>
+        app.MapGet("/api/me", async (HttpContext c, GomDbContext db, Microsoft.Extensions.Options.IOptions<Gom.Web.Uploads.UploadOptions> uploads, Microsoft.Extensions.Options.IOptions<Gom.Web.Chat.CallOptions> calls, TimeProvider clock, CancellationToken ct) =>
         {
-            var row = await db.Users.Where(u => u.Id == GomClaims.User(c.User)).Select(u => new { u.AvatarId, u.Language, u.Palette, u.Pattern }).SingleAsync(ct);
+            var me = GomClaims.User(c.User);
+            var row = await db.Users.Where(u => u.Id == me).Select(u => new { u.AvatarId, u.Language, u.Palette, u.Pattern }).SingleAsync(ct);
+            var now = clock.GetUtcNow();
+            // The Android app signed in somewhere and taking calls: a phone's browser then leaves the ringing to it (Settings).
+            var appCalls = calls.Value.Enabled && calls.Value.AppsTakeCalls && await (
+                from s in db.Sessions
+                where s.UserId == me && s.RevokedAt == null && s.ExpiresAt > now
+                join d in db.FcmDevices on s.Id equals d.SessionId
+                select d.Id).AnyAsync(ct);
             return Results.Ok(new
             {
-            id = GomClaims.User(c.User),
+            id = me,
             gomId = c.User.FindFirst(GomClaims.GomId)!.Value,
             displayName = c.User.FindFirst(GomClaims.DisplayName)!.Value,
             isOwner = c.User.FindFirst(GomClaims.IsOwner)!.Value == "true",
@@ -26,6 +34,7 @@ public static class AuthEndpoints
             uploads = !string.IsNullOrWhiteSpace(uploads.Value.Path),
             // Whether this server takes voice calls (the app shows the call button only then).
             calls = calls.Value.Enabled,
+            appCalls,
             avatar = row.AvatarId,
             // The person's language: a page in another one remembers it and reloads.
             language = row.Language,

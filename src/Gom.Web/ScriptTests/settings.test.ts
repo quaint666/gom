@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountSettings, sectionOf, type SettingsNav } from '../Scripts/pages/settings.js';
 import { fail, fakeApi, flush, ok, text } from './helpers.js';
+import { chosenTakeCalls } from '../Scripts/calls/here.js';
 
 let root: HTMLElement;
 beforeEach(() => { root = document.createElement('div'); document.body.replaceChildren(root); });
@@ -137,6 +138,36 @@ describe('settings: reloading Gom', () => {
     mountSettings(other, api(), vi.fn(), undefined, undefined, fakeNav('/settings'));
     await flush();
     expect(other.querySelector('[data-reload-app]')).toBeNull();
+  });
+});
+
+describe('settings: calls in this browser', () => {
+  const callsOn = (appCalls: boolean) => api({ me: vi.fn(async () => ok({ ...me, calls: true, appCalls })) });
+  const box = () => root.querySelector<HTMLInputElement>('[data-calls-here] input');
+  beforeEach(() => { localStorage.clear(); });
+
+  it('offers the switch only in a browser that can take calls, when calls are on', async () => {
+    mountSettings(root, callsOn(false), vi.fn(), undefined, undefined, fakeNav('/settings/notifications'));
+    await flush();
+    expect(box()).toBeNull();   // the app, or a browser without WebRTC
+    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings/notifications'), undefined, true);
+    await flush();
+    expect(box()).toBeNull();   // calls are off on this server
+    mountSettings(root, callsOn(false), vi.fn(), undefined, undefined, fakeNav('/settings/notifications'), undefined, true);
+    await flush();
+    expect(text(root.querySelector('[data-part="notifications"]')!)).toContain('Nhận cuộc gọi Gom trên trình duyệt này');
+    expect(box()!.checked).toBe(true);   // a computer rings by default
+  });
+
+  it('remembers that the app takes calls, and keeps the choice made for this browser', async () => {
+    mountSettings(root, callsOn(true), vi.fn(), undefined, undefined, fakeNav('/settings/notifications'), undefined, true);
+    await flush();
+    expect(localStorage.getItem('gom-app-calls')).toBe('1');
+    box()!.checked = false;
+    box()!.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(chosenTakeCalls()).toBe(false);
+    expect(box()!.checked).toBe(false);
   });
 });
 

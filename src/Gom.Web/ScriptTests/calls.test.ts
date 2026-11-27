@@ -42,7 +42,7 @@ class FakePeer implements PeerLike {
 
 function fakeTrack() { return { enabled: true, stopped: false, stop() { this.stopped = true; } }; }
 
-function setup(over: { api?: Partial<{ [K in keyof CallApi]: ReturnType<typeof vi.fn> }>; mic?: () => Promise<MediaStream>; phone?: boolean } = {}) {
+function setup(over: { api?: Partial<{ [K in keyof CallApi]: ReturnType<typeof vi.fn> }>; mic?: () => Promise<MediaStream>; phone?: boolean; takesCalls?: boolean } = {}) {
   const host = document.createElement('div');
   document.body.replaceChildren(host);
   const peers: FakePeer[] = [];
@@ -72,6 +72,7 @@ function setup(over: { api?: Partial<{ [K in keyof CallApi]: ReturnType<typeof v
     title: vi.fn(),
     guardLeaving: vi.fn(),
     phone: () => over.phone ?? false,
+    takesCalls: () => over.takesCalls ?? true,
     now: () => clock,
     timer: { set: (fn, ms) => { const id = nextTimer++; timers.set(id, { at: clock + ms, fn }); return id; }, clear: (id) => { timers.delete(id); } },
     newId: () => 'client-1',
@@ -421,6 +422,18 @@ describe('calls: the call bar (mockups 34, 35)', () => {
     const u = setup();
     u.calls.frame({ kind: 'incoming', id: ID, c: CHAT, from: { id: 'u-mom', displayName: 'Mẹ' } });
     expect(u.host.querySelector('[data-call="minimise"]')).toBeNull();
+  });
+});
+
+describe('calls: a browser that does not ring (Settings › Thông báo)', () => {
+  it('neither rings nor shows a call coming in, but still makes its own calls', async () => {
+    const t = setup({ takesCalls: false });
+    t.calls.frame({ kind: 'incoming', id: ID, c: CHAT, from: { id: 'u-mom', displayName: 'Mẹ' } });
+    expect(t.deps.ring.incoming).not.toHaveBeenCalled();
+    expect(t.host.querySelector('[data-call="answer"]')).toBeNull();
+    expect(t.calls.busy()).toBe(false);
+    await ringingOut(t);
+    expect(t.text()).toContain('Đang đổ chuông…');
   });
 });
 

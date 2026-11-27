@@ -11,6 +11,7 @@ import { mountJoin } from './pages/join.js';
 import { mountReset } from './pages/reset.js';
 import { mountPrivacy } from './pages/privacy.js';
 import { mountSettings } from './pages/settings.js';
+import { takesCallsHere } from './calls/here.js';
 import { appPort, createAppPusher, type AppPusher } from './app.js';
 import { createCalls, type Calls, type PeerLike } from './calls/call.js';
 import { createRing } from './calls/ring.js';
@@ -141,8 +142,9 @@ const prepareVideo: ChatDeps['prepareVideo'] = async (file, onProgress, maxBytes
  * Voice calls, in a browser that has WebRTC and a microphone API (docs/voice-calls.md, 2b). Only the chat page takes calls: it tells
  * the server so on its socket. In the Android app the app makes and takes them natively, and the page's buttons only ask it to.
  */
-const webCalls: Calls | undefined = port === undefined && typeof RTCPeerConnection === 'function' && navigator.mediaDevices?.getUserMedia !== undefined
-  && document.body.dataset['page'] === 'home' ? (() => {
+/** A browser (not the app, which calls natively) with WebRTC and a microphone API: it can make and take calls. */
+const browserCanCall = port === undefined && typeof RTCPeerConnection === 'function' && navigator.mediaDevices?.getUserMedia !== undefined;
+const webCalls: Calls | undefined = browserCanCall && document.body.dataset['page'] === 'home' ? (() => {
     const host = document.createElement('div');
     host.className = 'call-host';
     document.body.append(host);
@@ -160,6 +162,7 @@ const webCalls: Calls | undefined = port === undefined && typeof RTCPeerConnecti
       title: (text) => { document.title = text ?? ownTitle; },
       guardLeaving: (on) => { if (on) addEventListener('beforeunload', askBeforeLeaving); else removeEventListener('beforeunload', askBeforeLeaving); },
       phone: () => matchMedia('(pointer: coarse)').matches,
+      takesCalls: () => takesCallsHere(matchMedia('(pointer: coarse)').matches),
       now: () => performance.now(),
       timer: { set: (fn, ms) => window.setTimeout(fn, ms), clear: (id) => window.clearTimeout(id) },
       newId: () => crypto.randomUUID(),
@@ -225,7 +228,7 @@ if (root) {
       });
       break;
     }
-    case 'settings': mountSettings(root, api, go, installer, pusher, { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) }, { version: document.body.dataset['version'] || null, reload: () => { void reloadFresh(); } }); break;
+    case 'settings': mountSettings(root, api, go, installer, pusher, { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) }, { version: document.body.dataset['version'] || null, reload: () => { void reloadFresh(); } }, browserCanCall); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;

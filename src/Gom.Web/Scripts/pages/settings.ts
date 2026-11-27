@@ -12,6 +12,7 @@ import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
 import { errorText, passwordHint } from '../text.js';
 import { LANGUAGES, language, rememberLanguage, say, type Language } from '../say.js';
 import { limits } from '../limits.js';
+import { chooseTakeCalls, rememberAppCalls, takesCallsHere } from '../calls/here.js';
 
 /** The choices for the colour scheme, in the order shown. */
 const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', say.settings.schemeSystem], ['light', say.settings.schemeLight], ['dark', say.settings.schemeDark]];
@@ -37,7 +38,10 @@ export function sectionOf(path: string): Section | null {
 /** `version`: the release the server says it is ("1.0.0", `data-version`), shown as v1.0.0; null when it says none. */
 export interface AppReload { version: string | null; reload(): void }
 
-export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer, pusher?: Pusher, nav?: SettingsNav, app?: AppReload): void {
+/**
+ * `browserCalls`: this is a browser that can take calls (not the app, which rings natively), so Settings offers the switch for it.
+ */
+export function mountSettings(root: HTMLElement, api: Api, go: (path: string) => void, installer?: Installer, pusher?: Pusher, nav?: SettingsNav, app?: AppReload, browserCalls = false): void {
   let section: Section | null = sectionOf(nav?.path() ?? '/settings');
   let user: User | null = null;
   let blocked: Person[] = [];
@@ -191,6 +195,13 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       </div>`;
   };
 
+  /** Whether this browser rings for calls (`calls/here.ts`): only where calls are on and this is a browser that can take them. */
+  const callsCard = (u: User) => !browserCalls || u.calls !== true ? nothing : html`
+    <h2 class="section">${say.settings.callsHeading}</h2>
+    <div class="pick" data-calls-here><input type="checkbox" id="calls-here" .checked=${live(takesCallsHere(matchMedia('(pointer: coarse)').matches))}
+      @change=${(e: Event) => { chooseTakeCalls((e.target as HTMLInputElement).checked); update(); }}><label for="calls-here">${say.settings.callsHere}</label></div>
+    <p class="hint">${say.settings.callsHereNote}</p>`;
+
   /** Deleting the account, for good: opened first, then what it does, then the person's own Gom ID typed out before the button works. */
   const deleteCard = (u: User) => {
     const typed = confirmDelete.trim().replace(/^@/, '').toLowerCase();
@@ -261,7 +272,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
 
   const parts = (u: User) => html`
     ${part('profile', html`${pictureCard(u)}${profileRows(u)}`)}
-    ${part('notifications', push === null ? html`<p class="hint" data-push-unsupported>${say.settings.pushUnsupported}</p>` : pushCard(push))}
+    ${part('notifications', html`${push === null ? html`<p class="hint" data-push-unsupported>${say.settings.pushUnsupported}</p>` : pushCard(push)}${callsCard(u)}`)}
     ${part('appearance', html`
       <h2 class="section">${say.settings.schemeHeading}</h2>
       <fieldset class="choices" data-scheme>
@@ -527,6 +538,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       return;
     }
     user = result.data;
+    rememberAppCalls(user.appCalls === true);
     guard();
     nickname = result.data.displayName;
     receipts = result.data.readReceipts !== false;

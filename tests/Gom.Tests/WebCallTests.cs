@@ -52,6 +52,15 @@ public class WebCallTests(WebCallFixture app) : IClassFixture<WebCallFixture>
     private static async Task<string?> ErrorOf(HttpResponseMessage r) => (await AppFixture.Json(r)).GetProperty("error").GetString();
 
     [Fact]
+    public async Task Me_never_says_the_app_takes_calls_while_apps_do_not()
+    {
+        var (_, cookie) = await app.Member();
+        await app.App(cookie);
+        using var r = await app.Call(HttpMethod.Get, "/api/me", cookie: cookie);
+        Assert.False((await AppFixture.Json(r)).GetProperty("appCalls").GetBoolean());
+    }
+
+    [Fact]
     public void The_page_speaks_the_servers_call_protocol()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

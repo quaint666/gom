@@ -19,6 +19,7 @@ import { mountWaiting } from './waiting.js';
 import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl } from '../stickers.js';
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 import type { Calls } from '../calls/call.js';
+import { rememberAppCalls } from '../calls/here.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -2494,6 +2495,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       return;
     }
     me = result.data;
+    rememberAppCalls(me.appCalls === true);
     outbox = deps.outbox(me.gomId);
     drafts = deps.drafts?.(me.gomId) ?? null;
     for (const [id, t] of threads) if (t.draft === '' && t.editing === null) t.draft = drafts?.load(id) ?? '';

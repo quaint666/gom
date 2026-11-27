@@ -30,7 +30,7 @@ export type Result<T> = { ok: true; data: T } | Failure;
 /** `avatar` is the id of the profile picture (at /api/avatars/{avatar}); none means the initials. */
 /** `standing`: a member, or someone who asked to join and is waiting ("pending") or was refused. */
 export type Standing = 'member' | 'pending' | 'refused';
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean; appCalls?: boolean }
 /** Someone asking to join, as the owner sees them. */
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 /** A message to the owner from the privacy page's form. */
