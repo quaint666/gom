@@ -29,6 +29,20 @@ Between releases, staging may run newer code than its number says: the number mo
 
 ## What's new
 
+### 1.1.0 (27 November 2026)
+
+Everything from #152 to #171: voice calls on the web and in the Android app.
+
+**New**
+- Voice calls between friends, one to one, from a chat's header or "Gọi lại" on a missed call. Every device of the person
+  called rings for 45 seconds; each call leaves a line in the chat (its length, or missed, declined or busy).
+- Calls in the browser, on computers and phones, with a bar that keeps the call going while you read the chat.
+- Calls in the Android app: a ringing screen over the lock screen, the speaker, a headset or Bluetooth through Android's
+  call system, and a check that the phone lets Gom ring (sleeping apps, full-screen ringing).
+- A call goes on through a change of network, and one that cannot connect ends after 30 seconds and says so.
+- GIFs from the keyboard in the Android app.
+- The release number in Settings.
+
 ### 1.0.0 (26 November 2026)
 
 The first release: everything from the first pull request to #150, as production ran it that day.
