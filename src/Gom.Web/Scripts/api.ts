@@ -76,7 +76,7 @@ export interface Reply { id: string; sender: Sender | null; snippet: string | nu
  * `removed`: the owner trimmed it; only a placeholder is shown, and it cannot be opened, saved or forwarded.
  */
 /** `durationMs`: how long a video plays. A video's `/thumb` is its still picture, when its sender's browser made one. */
-export interface Attachment { id: string; kind: 'image' | 'video' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean; animated?: boolean; durationMs?: number | null }
+export interface Attachment { id: string; kind: 'image' | 'video' | 'file'; name: string; size: number; width: number | null; height: number | null; removed?: boolean; animated?: boolean; durationMs?: number | null; audio?: boolean }
 /** A picture, video or file of a conversation, with the message it came in: who sent it and its words (the viewer shows them under the picture). */
 export interface MediaItem { attachment: Attachment; messageId: string; seq: number; createdAt: string; sender: Sender; body: string }
 /**

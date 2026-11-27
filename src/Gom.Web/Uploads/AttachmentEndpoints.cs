@@ -15,7 +15,7 @@ public static class AttachmentEndpoints
     /// <see cref="Animated"/>: a moving picture, whose own address is the moving one and whose small version is still.
     /// <see cref="DurationMs"/>: how long a video plays.
     /// </summary>
-    public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height, bool Removed = false, bool Animated = false, int? DurationMs = null);
+    public sealed record AttachmentDto(Guid Id, string Kind, string Name, long Size, int? Width, int? Height, bool Removed = false, bool Animated = false, int? DurationMs = null, bool Audio = false);
 
     /// <summary>Which picture or file to copy into another conversation.</summary>
     public sealed record CopyRequest(Guid? From);
@@ -31,7 +31,10 @@ public static class AttachmentEndpoints
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
-    public static AttachmentDto ToDto(Attachment a) => new(a.Id, KindName(a.Kind), a.Name, a.Size, a.Width, a.Height, a.RemovedAt != null, a.Animated, a.DurationMs);
+    public static AttachmentDto ToDto(Attachment a) => new(a.Id, KindName(a.Kind), a.Name, a.Size, a.Width, a.Height, a.RemovedAt != null, a.Animated, a.DurationMs, IsAudio(a));
+
+    /// <summary>A file the server found to be sound (<see cref="Uploads.Audio"/>): it may play in the page.</summary>
+    public static bool IsAudio(Attachment a) => a.Kind == AttachmentKind.File && a.ContentType.StartsWith("audio/", StringComparison.Ordinal);
 
     /// <summary>The kind as the browser names it.</summary>
     public static string KindName(AttachmentKind kind) => kind switch { AttachmentKind.Image => "image", AttachmentKind.Video => "video", _ => "file" };
@@ -46,8 +49,8 @@ public static class AttachmentEndpoints
         api.MapPost("/conversations/{id:guid}/attachments/copy", Copy);
         api.MapPut("/attachments/{id:guid}/poster", Poster);
         api.MapGet("/conversations/{id:guid}/media", Media);
-        api.MapGet("/attachments/{id:guid}", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: false, http, db, sp, ct));
-        api.MapGet("/attachments/{id:guid}/thumb", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: true, http, db, sp, ct));
+        api.MapGet("/attachments/{id:guid}", (Guid id, bool? play, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: false, http, db, sp, ct, play == true));
+        api.MapGet("/attachments/{id:guid}/thumb", (Guid id, HttpContext http, GomDbContext db, IServiceProvider sp, CancellationToken ct) => Fetch(id, thumb: true, http, db, sp, ct, play: false));
     }
 
     /// <summary>
@@ -239,7 +242,8 @@ public static class AttachmentEndpoints
             main = received;
             attachment.Kind = AttachmentKind.File;
             attachment.Name = clean;
-            attachment.ContentType = "application/octet-stream";   // whatever the sender called it, it is only ever a download
+            // Whatever the sender called it, it is a download; sound, found from its own first bytes, may also play in the page.
+            attachment.ContentType = Audio.TypeOf(received) ?? "application/octet-stream";
         }
         attachment.Size = main.Length;
         if (await OverDaily(db, me, main.Length, o, clock, ct)) return Error(StatusCodes.Status429TooManyRequests, "daily_upload_limit");
@@ -290,7 +294,12 @@ public static class AttachmentEndpoints
             if (size is not { } bytes) return Error(StatusCodes.Status413PayloadTooLarge, "too_large");
 
             VideoInfo? video;
-            await using (var file = store.OpenRead(key)) video = file is null ? null : Mp4.Read(file);
+            var sound = false;
+            await using (var file = store.OpenRead(key))
+            {
+                video = file is null ? null : Mp4.Read(file);
+                if (file is not null && video is null) sound = Mp4.IsSound(file);
+            }
             if (video is not null)
             {
                 if (bytes > o.MaxVideoBytes) { store.Delete(key); return Error(StatusCodes.Status413PayloadTooLarge, "video_too_large"); }
@@ -302,7 +311,7 @@ public static class AttachmentEndpoints
             {
                 if (bytes > o.MaxFileBytes) { store.Delete(key); return Error(StatusCodes.Status413PayloadTooLarge, "too_large"); }
                 attachment.Kind = AttachmentKind.File;
-                attachment.ContentType = "application/octet-stream";
+                attachment.ContentType = sound ? "audio/mp4" : "application/octet-stream";   // sound alone (an M4A) may play in the page
             }
             attachment.Size = bytes;
             if (await OverDaily(db, me, bytes, o, clock, ct)) { store.Delete(key); return Error(StatusCodes.Status429TooManyRequests, "daily_upload_limit"); }
@@ -376,7 +385,7 @@ public static class AttachmentEndpoints
         return buffer.ToArray();
     }
 
-    private static async Task<IResult> Fetch(Guid id, bool thumb, HttpContext http, GomDbContext db, IServiceProvider services, CancellationToken ct)
+    private static async Task<IResult> Fetch(Guid id, bool thumb, HttpContext http, GomDbContext db, IServiceProvider services, CancellationToken ct, bool play)
     {
         var me = GomClaims.User(http.User);
         var a = await db.Attachments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
@@ -398,6 +407,9 @@ public static class AttachmentEndpoints
             http.Response.Headers.CacheControl = "private, max-age=86400";
             return Results.Stream(stream, thumb ? "image/webp" : a.ContentType, entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{id}{(thumb ? "t" : "")}\""), enableRangeProcessing: true);
         }
-        return Results.Stream(stream, a.ContentType, fileDownloadName: a.Name, enableRangeProcessing: true);
+        // Sound asked for to play (?play=true): its own type, not as a download, a piece at a time so the page can skip about. Otherwise,
+        // sound or not, a file is a download.
+        if (play && IsAudio(a)) return Results.Stream(stream, a.ContentType, enableRangeProcessing: true);
+        return Results.Stream(stream, IsAudio(a) ? "application/octet-stream" : a.ContentType, fileDownloadName: a.Name, enableRangeProcessing: true);
     }
 }

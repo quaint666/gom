@@ -21,6 +21,7 @@ import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 import type { Calls } from '../calls/call.js';
 import { rememberAppCalls } from '../calls/here.js';
+import { audioCard } from '../chat/audio.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -440,6 +441,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         : videoView(a))}
       ${files.map((a) => a.removed
         ? html`<div class="filecard removed" data-file-removed=${a.id}>${icons.file()}<span class="fi"><b>${say.chat.fileGone}</b><small>${a.name}</small></span></div>`
+        : a.audio === true ? audioCard(a)
         : isAppFile(a.name) ? html`
         <a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-file=${a.id} data-app-file
           @click=${(e: MouseEvent) => { e.preventDefault(); appFile = a; update(); }}>${icons.file()}

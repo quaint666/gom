@@ -588,6 +588,8 @@ export const vi = {
     forward: 'Chuyển tiếp',
     edit: 'Chỉnh sửa',
     save: 'Lưu về máy',
+    playSound: (name: string) => `Phát ${name}`,
+    soundPosition: 'Vị trí trong bài',
     quoteGone: 'Tin nhắn không còn hiển thị',
     pictureGone: 'Ảnh không còn khả dụng',
     videoGone: 'Video không còn khả dụng',

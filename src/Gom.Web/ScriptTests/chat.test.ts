@@ -3817,6 +3817,16 @@ describe('chat: pictures and files', () => {
     } finally { localStorage.removeItem('gom-pattern'); }
   });
 
+  it('plays a file the server found to be sound in the message, and keeps every other file a card to save', async () => {
+    const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [{ ...att('f1', 'file', 'bai-hat.mp3'), audio: true }, att('f2', 'file', 'loi-bai-hat.mp3')] };
+    open({}, [m]);
+    await flush();
+    const bubble = root.querySelector('[data-msg="id1"] .bub')!;
+    expect(bubble.querySelector('[data-audio="f1"] audio')!.getAttribute('src')).toBe('/api/attachments/f1?play=true');
+    expect(bubble.querySelector('[data-audio="f2"]')).toBeNull();   // named .mp3, but not sound to the server: a card, as before
+    expect(bubble.querySelector('a.filecard[data-file="f2"]')).not.toBeNull();
+  });
+
   it('warns about an app file on its card and asks before saving it; an ordinary file has neither', async () => {
     const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [att('f1', 'file', 'thiep_tet.APK'), att('f2', 'file', 'ghi chú.txt')] };
     open({}, [m]);

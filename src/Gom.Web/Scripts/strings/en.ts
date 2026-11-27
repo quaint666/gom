@@ -582,6 +582,8 @@ export const en: Strings = {
     forward: 'Forward',
     edit: 'Edit',
     save: 'Save to device',
+    playSound: (name: string) => `Play ${name}`,
+    soundPosition: 'Position in the sound',
     quoteGone: 'This message is no longer shown',
     pictureGone: 'Picture no longer available',
     videoGone: 'Video no longer available',
