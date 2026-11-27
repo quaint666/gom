@@ -4,8 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Gom.Web.Chat;
 
-/// <summary>What a message quotes of the one it answers. With no sender and no snippet, the quoted message is not there for this reader. A quoted sticker comes as its code.</summary>
-public sealed record ReplyDto(Guid Id, MessageEndpoints.PersonDto? Sender, string? Snippet, string? Sticker = null);
+/// <summary>What a message quotes of the one it answers. With no sender and no snippet, the quoted message is not there for this reader. A quoted sticker comes as its code; `Attachment` is the kind of the quoted
+/// message's first picture, video or file, so a quote of one with no words can say what it was.</summary>
+public sealed record ReplyDto(Guid Id, MessageEndpoints.PersonDto? Sender, string? Snippet, string? Sticker = null, string? Attachment = null);
 
 /// <summary>Works out the quote shown above a reply, for one reader.</summary>
 public static class Replies
@@ -25,7 +26,8 @@ public static class Replies
         var wanted = replies.Select(m => m.ReplyToId!.Value).Distinct().ToList();
         var parents = await (from p in db.Messages.AsNoTracking() where wanted.Contains(p.Id)
                              join u in db.Users on p.SenderId equals u.Id
-                             select new { p.Id, p.Seq, p.Body, p.Sticker, p.DeletedAt, Sender = new MessageEndpoints.PersonDto(u.Id, u.DisplayName) }).ToDictionaryAsync(p => p.Id, ct);
+                             select new { p.Id, p.Seq, p.Body, p.Sticker, p.DeletedAt, Sender = new MessageEndpoints.PersonDto(u.Id, u.DisplayName),
+                                 Attached = db.Attachments.Where(a => a.MessageId == p.Id).OrderBy(a => a.Position).Select(a => (int?)a.Kind).FirstOrDefault() }).ToDictionaryAsync(p => p.Id, ct);
 
         var mine = (await db.Hides.AsNoTracking().Where(h => h.UserId == reader && wanted.Contains(h.MessageId)).Select(h => h.MessageId).ToListAsync(ct)).ToHashSet();
 
@@ -33,7 +35,7 @@ public static class Replies
         {
             var id = m.ReplyToId!.Value;
             if (!parents.TryGetValue(id, out var p) || p.DeletedAt is not null || p.Seq <= readerSeesAfter || mine.Contains(id)) return Hidden(id);
-            return new ReplyDto(id, p.Sender, Snippet(p.Body), p.Sticker);
+            return new ReplyDto(id, p.Sender, Snippet(p.Body), p.Sticker, p.Attached is { } kind ? Uploads.AttachmentEndpoints.KindName((AttachmentKind)kind) : null);
         });
     }
 

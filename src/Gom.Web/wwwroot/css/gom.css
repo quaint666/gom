@@ -393,7 +393,8 @@ button.th-title:hover b { text-decoration: underline; }
 .seen .i { inline-size: 14px; block-size: 14px; color: var(--link); }
 
 /* answering a message */
-.quote { display: flex; flex-direction: column; gap: 1px; margin-block-end: 4px; padding: 4px 8px; border-inline-start: 3px solid var(--btn); border-radius: 4px; background: rgb(0 0 0 / .05); font-size: 13px; }
+.quote { display: flex; flex-direction: column; gap: 1px; inline-size: 100%; margin-block-end: 4px; padding: 4px 8px; border: 0; border-inline-start: 3px solid var(--btn); border-radius: 4px; background: rgb(0 0 0 / .05); color: inherit; font: inherit; font-size: 13px; text-align: start; }
+button.quote { cursor: pointer; }
 .quote b { font-weight: 600; }
 .quote span { color: var(--muted); overflow-wrap: anywhere; }
 .quote .gone { font-style: italic; }

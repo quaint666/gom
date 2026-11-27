@@ -72,7 +72,7 @@ export interface Sender { id: string; displayName: string }
 /** One emoji on a message and the members who chose it. */
 export interface Reaction { emoji: string; users: Sender[] }
 /** The quote above an answer. With no sender and no snippet, the quoted message is not there for this reader. A quoted sticker comes as its code. */
-export interface Reply { id: string; sender: Sender | null; snippet: string | null; sticker?: string | null }
+export interface Reply { id: string; sender: Sender | null; snippet: string | null; sticker?: string | null; attachment?: Attachment['kind'] | null }
 /**
  * A picture or a file in a message. Fetch it at /api/attachments/{id}; a picture also has a small version at /api/attachments/{id}/thumb.
  * `removed`: the owner trimmed it; only a placeholder is shown, and it cannot be opened, saved or forwarded.
