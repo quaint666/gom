@@ -186,6 +186,7 @@ app.MapCalls();
 app.MapAccount();
 app.MapTwoStep();
 app.MapDisappearing();
+app.MapStickerPacks();
 app.MapFriends();
 app.MapConversations();
 app.MapGroups();

@@ -42,6 +42,8 @@ export interface Limits {
   contactKeepDays: number;
   /** Disappearing messages: the lengths a conversation may choose, in seconds. */
   disappearChoices: number[];
+  /** The name of one of the owner's sticker packs. */
+  stickerPackChars: number;
 }
 
 /** Read from the page each time (it is small), so nothing here can drift from what the server sent. */

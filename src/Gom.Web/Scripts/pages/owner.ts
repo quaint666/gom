@@ -1,11 +1,12 @@
 import { html, nothing, render } from 'lit-html';
-import type { Api, ContactMessage, Failure, Invite, Issued, JoinRequest, Member } from '../api.js';
+import type { Api, ContactMessage, CustomPack, Failure, Invite, Issued, JoinRequest, Member } from '../api.js';
 import * as icons from '../icons.js';
 import { matches } from '../search.js';
 import { appBar, errorBox, formatTime } from '../ui.js';
 import { limits } from '../limits.js';
 import { menuItem, menuPoint, menuView, placeMenu } from '../menu.js';
 import { say } from '../say.js';
+import { stickerUrl } from '../stickers.js';
 
 /** How many rows of a long list show before "Xem thêm". */
 const HANDFUL = 5;
@@ -35,6 +36,80 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let contacts: ContactMessage[] = [];
   /** The open "..." menu: whose row, and where it was opened (none on a phone, where it is a sheet). */
   let menu: { kind: 'member' | 'invite'; id: string; at: { x: number; y: number } } | null = null;
+  /** Sticker packs made here: the packs, the name of a new one, the pack being deleted (asked first), and what went wrong. */
+  let packs: CustomPack[] = [];
+  let packName = '';
+  let deletingPack: string | null = null;
+  let packError: Failure | null = null;
+  let packBusy = false;
+
+  /** Sticker packs (H): make one, add pictures to it, take one out, or delete a pack. Stickers already sent still show. */
+  const packsView = () => html`
+    <h2 class="section">${say.owner.stickers}</h2>
+    <p class="hint">${say.owner.stickersNote}</p>
+    ${errorBox(packError)}
+    <form class="card" data-new-pack @submit=${(e: Event) => { e.preventDefault(); void createPack(); }}>
+      <label for="pack-name">${say.owner.packName}</label>
+      <div class="input"><input id="pack-name" name="pack-name" type="text" maxlength=${limits().stickerPackChars} autocomplete="off" required .value=${packName}
+        @input=${(e: Event) => { packName = (e.target as HTMLInputElement).value; }}></div>
+      <button class="btn" type="submit" ?disabled=${packBusy}>${say.owner.makePack}</button>
+    </form>
+    ${packs.map((p) => html`
+      <div class="card" data-pack=${p.id}>
+        <div class="pack-head"><b>${p.name}</b><small>${say.owner.stickerCount(p.stickers.length)}</small></div>
+        ${p.stickers.length === 0 ? nothing : html`<div class="stk-grid">${p.stickers.map((s) => html`
+          <div class="stk-own" data-pack-sticker=${s.id}><img src=${stickerUrl(s.code)} alt="" width="56" height="56" loading="lazy" draggable="false">
+            <button class="ib tray-x" type="button" aria-label=${say.owner.removeSticker} data-remove-sticker @click=${() => void removeSticker(s.id)}>${icons.close()}</button></div>`)}</div>`}
+        <label class="btn secondary ${packBusy ? 'busy' : ''}" data-add-stickers>${icons.image()} ${say.owner.addStickers}
+          <input class="file-input" type="file" accept="image/png,image/webp,image/jpeg,image/gif" multiple ?disabled=${packBusy}
+            @change=${(e: Event) => { const input = e.target as HTMLInputElement; void addStickers(p.id, [...(input.files ?? [])]); input.value = ''; }}></label>
+        ${deletingPack === p.id ? html`
+          <div class="ask" role="group" data-delete-pack-ask><p>${say.owner.deletePackAsk(p.name)}</p>
+            <button class="btn small danger" type="button" data-delete-pack-yes @click=${() => void deletePack(p.id)}>${say.owner.deletePack}</button>
+            <button class="btn secondary small" type="button" data-delete-pack-no @click=${() => { deletingPack = null; update(); }}>${say.common.no}</button></div>`
+        : html`<button class="btn secondary danger-text" type="button" data-delete-pack @click=${() => { deletingPack = p.id; update(); }}>${say.owner.deletePack}</button>`}
+      </div>`)}`;
+
+  async function loadPacks(): Promise<void> {
+    const result = await api.stickerPacks();
+    if (result.ok) packs = result.data; else packError = result;
+    update();
+  }
+
+  async function createPack(): Promise<void> {
+    if (packBusy) return;
+    packBusy = true; packError = null; update();
+    const result = await api.createStickerPack(packName);
+    packBusy = false;
+    if (!result.ok) { packError = result; update(); return; }
+    packName = '';
+    await loadPacks();
+  }
+
+  /** One picture at a time, in the order picked; the first that fails says why, and the rest still go. */
+  async function addStickers(pack: string, files: File[]): Promise<void> {
+    if (packBusy || files.length === 0) return;
+    packBusy = true; packError = null; update();
+    for (const file of files) {
+      const result = await api.addSticker(pack, file);
+      if (!result.ok) packError ??= result;
+    }
+    packBusy = false;
+    await loadPacks();
+  }
+
+  async function removeSticker(id: string): Promise<void> {
+    const result = await api.deleteSticker(id);
+    if (!result.ok) { packError = result; update(); return; }
+    await loadPacks();
+  }
+
+  async function deletePack(id: string): Promise<void> {
+    const result = await api.deleteStickerPack(id);
+    deletingPack = null;
+    if (!result.ok) { packError = result; update(); return; }
+    await loadPacks();
+  }
 
   /** The "..." of a row: opens its menu, which closes again to this button. */
   const moreButton = (kind: 'member' | 'invite', id: string, label: string) => html`
@@ -159,6 +234,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
             .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>`}
       ${shownMembers().length === 0 ? html`<p class="hint" data-no-member>${say.owner.noMember}</p>` : html`<ul class="list">${shownMembers().map(memberRow)}</ul>`}
       ${query.trim() !== '' || moreMembers || members.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-members @click=${() => { moreMembers = true; update(); }}>${say.friends.seeMoreCount(members.length - HANDFUL)}</button>`}
+      ${packsView()}
     </div>
     ${menuOf()}`;
   const update = () => { render(view(), root); placeMenu(root.querySelector<HTMLElement>('[data-row-actions]'), menu?.at); };
@@ -229,6 +305,6 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       return;
     }
     if (!result.data.isOwner) { go('/'); return; }
-    await reload();
+    await Promise.all([reload(), loadPacks()]);
   });
 }

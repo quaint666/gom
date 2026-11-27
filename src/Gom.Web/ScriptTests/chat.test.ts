@@ -4692,6 +4692,29 @@ describe('chat: stickers', () => {
     expect(panel()).toBeNull();
   });
 
+  it("shows the owner's packs after Gom's own, named as the owner named them, and sends one of theirs", async () => {
+    const mine = 'c-0f8fad5bd9cb469fa16570867728950e';
+    const stickerPacks = vi.fn(async () => ok([
+      { id: 'p1', name: 'Mèo nhà', stickers: [{ id: '0f8fad5bd9cb469fa16570867728950e', code: mine }] },
+      { id: 'p2', name: 'Trống', stickers: [] },   // an empty pack has nothing to show
+    ]));
+    const sendSticker = echo();
+    open({ stickerPacks, sendSticker });
+    await flush();
+    await toggle();
+    await flush();
+    const buttons = [...panel()!.querySelectorAll('[data-sticker-pack]')];
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual([...STICKER_PACKS.map((p) => vietnamese.stickerPacks[p.key]), 'Mèo nhà']);
+    await pack(STICKER_PACKS.length);
+    expect(shown()).toEqual([mine]);
+    expect(root.querySelector<HTMLImageElement>(`[data-send-sticker="${mine}"] img`)!.getAttribute('src')).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
+    await tap(mine);
+    expect(sendSticker).toHaveBeenCalledWith(C1, expect.any(String), mine, undefined);
+    expect(root.querySelector<HTMLImageElement>(`.msgs img.stk[data-sticker="${mine}"]`)!.getAttribute('src')).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
+    await toggle(); await toggle();
+    expect(stickerPacks).toHaveBeenCalledTimes(1);   // asked for once
+  });
+
   it('sends a sticker at once with a tap, shows it as a picture while it goes, and keeps the panel open', async () => {
     let finish: (r: unknown) => void = () => undefined;
     const sendSticker = vi.fn((_c: string, clientId: string, code: string) => new Promise((resolve) => { finish = () => resolve(ok({ ...sticker(2, 'mom', code), clientId })); }));

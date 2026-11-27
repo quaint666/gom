@@ -226,3 +226,26 @@ public class GroupBan
     public Guid BannedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
+
+/// <summary>A pack of stickers the owner made (<see cref="Chat.StickerPacks"/>); shown after Gom's own in everyone's picker until deleted.</summary>
+public class StickerPack
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>Taken out of the picker; stickers of it already sent still show.</summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+/// <summary>One of the owner's stickers: its picture is in the blob store under its id, as kept (a WebP, or a moving GIF or WebP as sent).</summary>
+public class CustomSticker
+{
+    public Guid Id { get; set; }
+    public Guid PackId { get; set; }
+    /// <summary>Its place in the pack: the order the owner added them.</summary>
+    public int Position { get; set; }
+    public string ContentType { get; set; } = "";
+    public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>Taken out of the picker; one already sent still shows.</summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+}

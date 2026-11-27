@@ -40,8 +40,10 @@ public class RouteAuthTests(AppFixture app) : IClassFixture<AppFixture>
     private static readonly string[] OwnerOnly =
     [
         "DELETE /api/contact/{id:guid}", "DELETE /api/invites/{id:guid}", "DELETE /api/join-requests/{gomId}", "DELETE /api/owner/groups/{id:guid}",
+        "DELETE /api/owner/sticker-packs/{id:guid}", "DELETE /api/owner/stickers/{id:guid}",
         "GET /api/contact", "GET /api/invites", "GET /api/join-requests", "GET /api/owner/storage", "GET /api/users",
         "POST /api/invites", "POST /api/join-requests/{gomId}/approve", "POST /api/join-requests/{gomId}/refuse",
+        "POST /api/owner/sticker-packs", "POST /api/owner/sticker-packs/{id:guid}/stickers",
         "POST /api/owner/trim/files", "POST /api/owner/trim/files/preview", "POST /api/owner/trim/messages", "POST /api/owner/trim/messages/preview",
         "POST /api/users/{gomId}/disable", "POST /api/users/{gomId}/enable", "POST /api/users/{gomId}/reset-link",
         "PUT /api/sign-up-open",

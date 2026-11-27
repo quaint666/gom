@@ -117,10 +117,13 @@ export const NOT_OFFERED: readonly string[] = [
 /** Every sticker, pack after pack. */
 export const STICKERS: readonly string[] = STICKER_PACKS.flatMap((p) => p.codes);
 
-export const stickerUrl = (code: string): string => `/stickers/${code}.svg`;
+/** One of the owner's stickers (Chat/StickerPacks.cs): "c-" and its id, its picture from the server. */
+export const isCustomSticker = (code: string): boolean => /^c-[0-9a-f]{32}$/.test(code);
+
+export const stickerUrl = (code: string): string => isCustomSticker(code) ? `/api/stickers/${code.slice(2)}` : `/stickers/${code}.svg`;
 
 /** The emoji a sticker shows, for a screen reader ("Gửi nhãn dán 😂"). */
-export const stickerName = (code: string): string => String.fromCodePoint(...code.split('_').map((p) => parseInt(p, 16)));
+export const stickerName = (code: string): string => isCustomSticker(code) ? '' : String.fromCodePoint(...code.split('_').map((p) => parseInt(p, 16)));
 
 /** The stickers this device sent last, newest first, kept in this browser's storage. */
 const RECENT_KEY = 'gom-stickers-recent';
@@ -129,7 +132,7 @@ const RECENT_MAX = 8;
 export function recentStickers(): string[] {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
-    return Array.isArray(saved) ? saved.filter((c): c is string => typeof c === 'string' && STICKERS.includes(c)).slice(0, RECENT_MAX) : [];
+    return Array.isArray(saved) ? saved.filter((c): c is string => typeof c === 'string' && (STICKERS.includes(c) || isCustomSticker(c))).slice(0, RECENT_MAX) : [];
   } catch { return []; }
 }
 

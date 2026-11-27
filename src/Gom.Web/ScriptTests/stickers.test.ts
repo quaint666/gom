@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { NOT_OFFERED, STICKER_PACKS, STICKERS, recentStickers, rememberSticker, stickerName } from '../Scripts/stickers.js';
+import { NOT_OFFERED, STICKER_PACKS, STICKERS, recentStickers, rememberSticker, stickerName, isCustomSticker, stickerUrl } from '../Scripts/stickers.js';
 import { vi } from '../Scripts/strings/vi.js';
 
 describe('stickers', () => {
@@ -51,5 +51,17 @@ describe('stickers', () => {
     expect(recentStickers()).toEqual(['1f602']);
     localStorage.setItem('gom-stickers-recent', '{not json');
     expect(recentStickers()).toEqual([]);
+  });
+
+  it("draw the owner's stickers from the server, unnamed, and remember them among those sent lately", () => {
+    const code = 'c-0f8fad5bd9cb469fa16570867728950e';
+    expect(isCustomSticker(code)).toBe(true);
+    expect(isCustomSticker('c-../../x')).toBe(false);
+    expect(isCustomSticker('1f602')).toBe(false);
+    expect(stickerUrl(code)).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
+    expect(stickerUrl('1f602')).toBe('/stickers/1f602.svg');
+    expect(stickerName(code)).toBe('');
+    rememberSticker(code);
+    expect(recentStickers()[0]).toBe(code);
   });
 });

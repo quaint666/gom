@@ -14,7 +14,7 @@ const SERVER_CODE_LIST = [
   'invalid_invite', 'too_large', 'animated_too_large', 'video_too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'daily_upload_limit', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
   'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
   'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette', 'invalid_pattern',
-  'update_required', 'invalid_contact', 'contact_full',
+  'update_required', 'invalid_contact', 'contact_full', 'pack_full',
   'cannot_take_calls', 'in_call', 'call_waiting', 'too_many_calls', 'call_ended', 'call_answered', 'not_in_call', 'invalid_call', 'invalid_sdp',
   'unsupported_version', 'code_required', 'invalid_code', 'two_step_on',
 ] as const;
@@ -32,6 +32,7 @@ export type Result<T> = { ok: true; data: T } | Failure;
 export type Standing = 'member' | 'pending' | 'refused';
 export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean; appCalls?: boolean; twoStep?: boolean }
 /** Someone asking to join, as the owner sees them. */
+export interface CustomPack { id: string; name: string; stickers: { id: string; code: string }[] }
 export interface TwoStepKey { key: string; uri: string; qr: string }
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 /** A message to the owner from the privacy page's form. */
@@ -191,6 +192,12 @@ export interface Api {
   deleteAccount(gomId: string): Promise<Result<void>>;
   /** Makes this picture your profile picture (the server keeps a square from its middle); the answer is its id. */
   setAvatar(picture: Blob): Promise<Result<{ avatar: string }>>;
+  /** The owner's sticker packs, in everyone's picker after Gom's own. */
+  stickerPacks(): Promise<Result<CustomPack[]>>;
+  createStickerPack(name: string): Promise<Result<CustomPack>>;
+  deleteStickerPack(id: string): Promise<Result<void>>;
+  addSticker(pack: string, picture: Blob): Promise<Result<{ id: string; code: string }>>;
+  deleteSticker(id: string): Promise<Result<void>>;
   removeAvatar(): Promise<Result<void>>;
   /** The server's key for notifications and whether this device gets them; a failure (404) means push is off on this server. */
   pushState(): Promise<Result<PushState>>;
@@ -418,6 +425,11 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     twoStepOff: (code, password) => call('POST', '/api/me/two-step/off', { code, password }),
     deleteAccount: (gomId) => call('DELETE', '/api/me', { gomId }),
     setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
+    stickerPacks: () => call('GET', '/api/sticker-packs'),
+    createStickerPack: (name) => call('POST', '/api/owner/sticker-packs', { name }),
+    deleteStickerPack: (id) => call('DELETE', `/api/owner/sticker-packs/${enc(id)}`),
+    addSticker: (pack, picture) => call('POST', `/api/owner/sticker-packs/${enc(pack)}/stickers`, picture),
+    deleteSticker: (id) => call('DELETE', `/api/owner/stickers/${enc(id)}`),
     removeAvatar: () => call('DELETE', '/api/me/avatar'),
     pushState: () => call('GET', '/api/push'),
     setPush: (subscription, level) => ('app' in subscription

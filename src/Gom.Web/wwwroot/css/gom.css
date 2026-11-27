@@ -402,7 +402,7 @@ button.th-title:hover b { text-decoration: underline; }
 
 /* A sticker is the picture alone: no bubble, the time under it. */
 .mrow.sticker .bub { background: none; border-color: transparent; padding: 0; }
-.stk { display: block; inline-size: 120px; block-size: 120px; user-select: none; -webkit-touch-callout: none; }
+.stk { display: block; inline-size: 120px; block-size: 120px; object-fit: contain; user-select: none; -webkit-touch-callout: none; }
 .mrow.sticker .ts { float: none; display: block; margin: 2px 4px 0; text-align: end; }
 /* A message of one to three emoji and nothing else: the emoji large, no bubble. */
 .mrow.jumbo .bub { background: none; border-color: transparent; padding: 0; }
@@ -426,6 +426,13 @@ button.th-title:hover b { text-decoration: underline; }
 .e-pick { block-size: 44px; border: 0; border-radius: 10px; background: none; font-size: 28px; line-height: 1; cursor: pointer; }
 .e-pick:hover, .egroup:hover { background: var(--hover); }
 .stk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 4px; }
+/* The owner's sticker packs (Settings › Owner): the pack's name and count, its stickers with a way to take one out, and a picture button. */
+.pack-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.stk-own { position: relative; display: grid; place-items: center; block-size: 64px; }
+.stk-own img { inline-size: 56px; block-size: 56px; object-fit: contain; }
+label.btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+label.btn.busy { opacity: .6; pointer-events: none; }
+.stk-pick img { object-fit: contain; }
 .stk-pick { display: grid; place-items: center; block-size: 60px; border: 0; border-radius: 12px; background: none; cursor: pointer; }
 .stk-pick:hover { background: var(--hover); }
 .stk-pick:active { background: var(--press); }

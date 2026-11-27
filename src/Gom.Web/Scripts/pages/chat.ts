@@ -2,7 +2,7 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, Person, PersonCard, PushLevel, Reply, Result, User, CallLine } from '../api.js';
+import type { Api, Attachment, CustomPack, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, Person, PersonCard, PushLevel, Reply, Result, User, CallLine } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, initials, listTime, mergeMedia, mergeMessages, missedByMe, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
@@ -240,6 +240,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let undoHide: { id: string; timer: number } | null = null;
   /** The pack of stickers shown: -1 is "Gần đây" (the ones this device sent lately). */
   let stickerPack = -1;
+  /** The owner's packs, asked for the first time the stickers are shown (null: not yet), after Gom's own in the picker. */
+  let customPacks: CustomPack[] | null = null;
+  function loadCustomPacks(): void {
+    if (customPacks !== null) return;
+    customPacks = [];
+    void api.stickerPacks().then((r) => { if (r.ok) { customPacks = r.data.filter((p) => p.stickers.length > 0); update(); } else customPacks = null; });
+  }
   /** The group of emoji shown: -1 is "Gần đây". */
   let emojiGroup = recentEmoji().length > 0 ? -1 : 0;
 
@@ -1180,8 +1187,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    */
   const stickerPanel = (id: string) => {
     const recent = recentStickers();
+    // Gom's own packs, then the owner's.
+    const packs: { name: string; codes: readonly string[] }[] = [
+      ...STICKER_PACKS.map((p) => ({ name: say.stickerPacks[p.key], codes: p.codes })),
+      ...(customPacks ?? []).map((p) => ({ name: p.name, codes: p.stickers.map((s) => s.code) })),
+    ];
     const pack = stickerPack === -1 && recent.length === 0 ? 0 : stickerPack;
-    const shown = pack === -1 ? recent : STICKER_PACKS[pack]?.codes ?? [];
+    const shown = pack === -1 ? recent : packs[pack]?.codes ?? [];
     const tile = (code: string) => html`<button class="stk-pick" type="button" data-send-sticker=${code} aria-label=${say.chat.sendSticker(stickerName(code))}
       @click=${() => void sendSticker(id, code)}><img src=${stickerUrl(code)} alt="" loading="lazy" width="56" height="56" draggable="false"></button>`;
     const chooser = (index: number, face: TemplateResult | string, name: string) => html`
@@ -1189,9 +1201,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @click=${() => { stickerPack = index; update(); }}>${face}</button>`;
     return html`
       <section class="stickers" role="tabpanel" aria-label=${say.common.sticker} data-sticker-panel>
-        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${STICKER_PACKS.map((p, i) =>
-          chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, say.stickerPacks[p.key]))}</div>
-        <h3>${pack === -1 ? say.common.recent : say.stickerPacks[STICKER_PACKS[pack]!.key]}</h3>
+        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${packs.map((p, i) =>
+          chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, p.name))}</div>
+        <h3>${pack === -1 ? say.common.recent : packs[pack]?.name ?? ''}</h3>
         <div class="stk-grid" data-shown-stickers>${shown.map(tile)}</div>
         <p class="credit">${say.chat.stickerCredit}</p>
       </section>`;
@@ -1205,12 +1217,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     picker = ((): 'emoji' | 'stickers' => { try { return localStorage.getItem(PICKER_TAB) === 'emoji' ? 'emoji' : 'stickers'; } catch { return 'stickers'; } })();
     // Opens on "Gần đây" when there are some, else on the first pack; it then stays where the person put it, sending or not.
     stickerPack = recentStickers().length > 0 ? -1 : 0;
+    if (picker === 'stickers') loadCustomPacks();
     root.querySelector<HTMLTextAreaElement>('.composer textarea')?.blur();
     update();
   }
 
   function showTab(tab: 'emoji' | 'stickers'): void {
     picker = tab;
+    if (tab === 'stickers') loadCustomPacks();
     try { localStorage.setItem(PICKER_TAB, tab); } catch { /* just not remembered */ }
     update();
   }

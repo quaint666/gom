@@ -27,6 +27,8 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<FcmDevice> FcmDevices => Set<FcmDevice>();
+    public DbSet<StickerPack> StickerPacks => Set<StickerPack>();
+    public DbSet<CustomSticker> CustomStickers => Set<CustomSticker>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -219,6 +221,18 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        b.Entity<StickerPack>(e =>
+        {
+            e.ToTable("sticker_packs");
+            e.Property(x => x.Name).HasMaxLength(Chat.StickerPacks.NameChars);
+        });
+        b.Entity<CustomSticker>(e =>
+        {
+            e.ToTable("custom_stickers");
+            e.Property(x => x.ContentType).HasMaxLength(20);
+            e.HasOne<StickerPack>().WithMany().HasForeignKey(x => x.PackId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.PackId, x.Position });
+        });
         b.Entity<Message>(e =>
         {
             e.ToTable("messages", t =>
