@@ -5707,3 +5707,80 @@ describe('chat: voice messages', () => {
     expect(send).toHaveBeenCalledWith(C1, 'new-1', '', undefined, ['v1']);
   });
 });
+
+describe('chat: disappearing messages', () => {
+  const G = '33333333-3333-4333-8333-333333333333';
+  const group = (extra: Partial<Conversation> = {}): Conversation => ({ id: G, kind: 'group', title: 'Nhóm nhà', peer: null, lastSeq: 1, lastReadSeq: 1, unread: 0, lastMessage: null, memberCount: 2, ...extra });
+  const person = (role: 'leader' | 'deputy' | 'member') => [
+    { id: 'u-mom', displayName: 'Mẹ', isMe: true, isFriend: false, gomId: 'mom', request: 'none' as const, role },
+    { id: 'u-a', displayName: 'Anh', isMe: false, isFriend: true, gomId: 'anh', request: 'none' as const, role: 'leader' as const },
+  ];
+  const openInfo = async () => { root.querySelector<HTMLButtonElement>('[data-info]')!.click(); await flush(); };
+  const row = () => root.querySelector<HTMLElement>('[data-info-panel] [data-info-disappear]')!;
+  beforeEach(() => { try { localStorage.removeItem('gom-info'); } catch { /* nothing to clear */ } });
+
+  it('says in the conversation who turned it on and for how long, and who turned it off', async () => {
+    const line = (seq: number, seconds: number): ChatMessage => ({ ...msg(seq, 'minh', '', at(10, seq)), notice: { type: 'disappearing', seconds } });
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [line(1, 86_400), line(2, 900), line(3, 0)] } });
+    await flush();
+    const said = [...root.querySelectorAll('[data-notice]')].map((n) => text(n));
+    expect(said).toEqual(['Minh đã bật tin nhắn tự xoá: 1 ngày', 'Minh đã bật tin nhắn tự xoá: 15 phút', 'Minh đã tắt tin nhắn tự xoá']);
+  });
+
+  it('takes a message away at its time, with a timer for the next one due, and shows a clock in the header while it is on', async () => {
+    const gone = { ...msg(1, 'minh', 'đã hết giờ'), expiresAt: new Date(NOW.getTime() - 1000).toISOString() };
+    const soon = { ...msg(2, 'minh', 'còn 90 giây'), expiresAt: new Date(NOW.getTime() + 90_000).toISOString() };
+    const kept = msg(3, 'minh', 'giữ mãi');
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { disappearSeconds: 3600, lastSeq: 3 })], history: { [C1]: [gone, soon, kept] } });
+    await flush();
+    const shown = text(root.querySelector('.msgs')!);
+    expect(shown).not.toContain('đã hết giờ');
+    expect(shown).toContain('còn 90 giây');
+    expect(shown).toContain('giữ mãi');
+    expect(h.timers.filter((t) => t.live && t.ms === 90_000)).toHaveLength(1);
+    expect(root.querySelector('[data-disappear-on]')!.getAttribute('aria-label')).toBe('Tin nhắn tự xoá sau 1 giờ');
+  });
+
+  it('lets either person in a one-to-one chat choose how long, from the eight lengths or off', async () => {
+    const setDisappear = vi.fn(async () => ok(undefined));
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] }, api: { setDisappear } });
+    await flush();
+    await openInfo();
+    const select = row().querySelector<HTMLSelectElement>('select')!;
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Tắt', '15 phút', '30 phút', '1 giờ', '3 giờ', '6 giờ', '12 giờ', '1 ngày', '1 tuần']);
+    expect(select.value).toBe('');
+    select.value = '3600';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(setDisappear).toHaveBeenCalledWith(C1, 3600);
+    expect(root.querySelector('[data-disappear-on]')).not.toBeNull();
+  });
+
+  it('in a group, lets the leader and deputies choose; a member only sees what it is', async () => {
+    start({ path: `/c/${G}`, chats: [group({ disappearSeconds: 604_800 })], history: { [G]: [] }, api: { groupMembers: vi.fn(async () => ok(person('member'))) } });
+    await flush();
+    await openInfo();
+    expect(row().querySelector('select')).toBeNull();
+    expect(text(row())).toContain('1 tuần');
+    root.replaceChildren();
+  });
+
+  it('gives a deputy the choice in a group', async () => {
+    start({ path: `/c/${G}`, chats: [group()], history: { [G]: [] }, api: { groupMembers: vi.fn(async () => ok(person('deputy'))) } });
+    await flush();
+    await openInfo();
+    expect(row().querySelector('select')).not.toBeNull();
+  });
+
+  it('puts the choice back and says why when the server refuses it', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] }, api: { setDisappear: vi.fn(async () => fail('not_friends', 403)) } });
+    await flush();
+    await openInfo();
+    const select = row().querySelector<HTMLSelectElement>('select')!;
+    select.value = '900';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(root.querySelector('[data-disappear-on]')).toBeNull();
+    expect(row().querySelector<HTMLSelectElement>('select')!.value).toBe('');
+  });
+});

@@ -301,6 +301,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("character varying(73)")
                         .HasColumnName("direct_key");
 
+                    b.Property<int?>("DisappearSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("disappear_seconds");
+
                     b.Property<bool>("JoinApproval")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -644,6 +648,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("edited_at");
 
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
                     b.Property<int?>("Notice")
                         .HasColumnType("integer")
                         .HasColumnName("notice");
@@ -672,6 +680,10 @@ namespace Gom.Web.Migrations
                     b.HasKey("Id")
                         .HasName("pk_messages");
 
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_messages_expires_at")
+                        .HasFilter("expires_at IS NOT NULL");
+
                     b.HasIndex("NoticeTargetId")
                         .HasDatabaseName("ix_messages_notice_target_id");
 
@@ -685,7 +697,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8, 9)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 

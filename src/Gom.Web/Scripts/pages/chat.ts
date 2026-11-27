@@ -899,6 +899,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <button class="btn secondary small" type="button" data-info-look @click=${() => { looking = { id: c.id, tab: 'colour', palette: c.palette ?? null, pattern: c.pattern ?? null, busy: false, error: null }; update(); }}>${icons.palette()} ${say.chat.look}</button>
       </div>
       ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}
+      ${disappearRow(c)}
       ${t.pins.length === 0 ? nothing : html`
         <h3>${say.chat.pinned}</h3>
         <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
@@ -920,6 +921,34 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         </div>`}
       ${page ? infoFoot(c) : nothing}
     </aside>`;
+
+  /** In a one-to-one chat either person may set it (the server checks they are still friends); in a group, the leader and the deputies. */
+  const maySetDisappear = (c: Conversation): boolean => c.kind === 'direct'
+    ? c.peer !== null && c.peer.deleted !== true
+    : (people.get(c.id) ?? []).some((m) => m.isMe && (m.role === 'leader' || m.role === 'deputy'));
+
+  /** Disappearing messages, in the information panel: a choice for those who may set it, else what it is. */
+  const disappearRow = (c: Conversation) => {
+    const now = c.disappearSeconds ?? null;
+    const name = (s: number | null) => s === null ? say.chat.disappearOffChoice : say.chat.lasts(s);
+    return html`
+      <div class="info-setting" data-info-disappear>
+        <label for="disappear">${icons.clock()} ${say.chat.disappear}</label>
+        ${maySetDisappear(c) ? html`<select id="disappear" .value=${liveValue(String(now ?? ''))} @change=${(e: Event) => void setDisappear(c, (e.target as HTMLSelectElement).value)}>
+            ${[null, ...limits().disappearChoices].map((s) => html`<option value=${s ?? ''} ?selected=${s === now}>${name(s)}</option>`)}</select>`
+          : html`<b>${name(now)}</b>`}
+      </div>
+      <p class="hint">${say.chat.disappearNote}</p>`;
+  };
+
+  async function setDisappear(c: Conversation, value: string): Promise<void> {
+    const seconds = value === '' ? null : Number(value);
+    const before = c.disappearSeconds ?? null;
+    c.disappearSeconds = seconds;   // the line in the conversation and the list follow from the server
+    update();
+    const result = await api.setDisappear(c.id, seconds);
+    if (!result.ok) { c.disappearSeconds = before; notice = errorText(result); update(); }
+  }
 
   /** A phone: the information as a page over the thread, with a way back. */
   const infoSheet = (c: Conversation, t: Thread) => html`
@@ -1033,6 +1062,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
             : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : nothing}</div>`}
+          ${c?.disappearSeconds ? html`<span class="th-timer" role="img" data-disappear-on aria-label=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}
+            title=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}>${icons.clock()}</span>` : nothing}
           ${callable(c) ? html`<button class="ib" type="button" data-call-start aria-label=${say.calls.call} @click=${() => callIn(c)}>${icons.call()}</button>` : nothing}
           ${c === undefined ? nothing : html`<button class="ib wide" type="button" data-search aria-label=${say.chat.searchIn} aria-expanded=${searching ? 'true' : 'false'}
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
@@ -1279,7 +1310,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   function update(): void {
+    dropExpired();
     render(view(), root);
+    scheduleExpiry();
     placeMenu();
     showDialogs();
     const after = root.querySelector<HTMLElement>('.msgs');
@@ -2322,6 +2355,36 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     item.state = 'waiting'; delete item.error;
     update();
     if (openId !== null) pumpTray(openId);
+  }
+
+  // ---- disappearing messages
+
+  /** Takes away the messages whose time is up (the server deletes them too, within half a minute), and pins of them. */
+  function dropExpired(): void {
+    const now = deps.now().getTime();
+    const gone = (m: { expiresAt?: string | null }) => m.expiresAt != null && Date.parse(m.expiresAt) <= now;
+    for (const t of threads.values()) {
+      if (t.messages.some(gone)) t.messages = t.messages.filter((m) => !gone(m));
+      if (t.pins.some(gone)) t.pins = t.pins.filter((m) => !gone(m));
+    }
+  }
+
+  let expiryTimer: number | null = null;
+  let expiryAt = Infinity;
+  /** One timer, for the next message due anywhere in what is loaded: at its time the page is drawn again without it. */
+  function scheduleExpiry(): void {
+    const now = deps.now().getTime();
+    let soonest = Infinity;
+    for (const t of threads.values()) for (const m of t.messages) {
+      if (m.expiresAt == null) continue;
+      const at = Date.parse(m.expiresAt);
+      if (at > now && at < soonest) soonest = at;
+    }
+    if (soonest === expiryAt) return;
+    if (expiryTimer !== null) deps.timer.clear(expiryTimer);
+    expiryTimer = null;
+    expiryAt = soonest;
+    if (soonest !== Infinity) expiryTimer = deps.timer.set(() => { expiryTimer = null; expiryAt = Infinity; update(); }, Math.min(soonest - now, 2 ** 31 - 1));
   }
 
   // ---- voice messages

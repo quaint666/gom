@@ -93,10 +93,12 @@ export interface CallInfo {
   caller: { id: string; displayName: string }; offer: string | null; answer: string | null; ringSeconds: number; aliveSeconds: number;
 }
 export interface CallLine { callerId: string; outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed'; startedAt: string; seconds: number }
-export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null }
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call' | 'disappearing'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null; seconds?: number | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
   /** Set when the message is one sticker (its code): then it has no words and no files. */
-  sticker?: string | null }
+  sticker?: string | null;
+  /** Disappearing messages: when it is deleted for good (fixed when it was sent); absent or null: kept. */
+  expiresAt?: string | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
@@ -116,6 +118,8 @@ export interface Conversation {
   pinned?: boolean; markedUnread?: boolean;
   /** Hidden by you until something new is said: listed so a search can find it, and left out of view. */
   hidden?: boolean;
+  /** Disappearing messages: how long a message sent now lasts, in seconds (one of the limits' `disappearChoices`); null: for good. */
+  disappearSeconds?: number | null;
 }
 /**
  * Someone's card, as you may see it: their Gom ID only if you are friends, where a friend request between you stands, and the groups
@@ -261,6 +265,8 @@ export interface Api {
   setMute(conversation: string, muted: boolean, until?: string): Promise<Result<void>>;
   /** A conversation's own colour and background for everyone in it; null for either: each person's own. */
   setLook(conversation: string, palette: string | null, pattern: string | null): Promise<Result<void>>;
+  /** Disappearing messages for everyone in the conversation: seconds, or null to keep messages for good. */
+  setDisappear(conversation: string, seconds: number | null): Promise<Result<void>>;
   /** The "..." menu of a conversation in the list: each is yours alone. */
   setPinned(conversation: string, on: boolean): Promise<Result<void>>;
   setMarkedUnread(conversation: string, on: boolean): Promise<Result<void>>;
@@ -438,6 +444,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     person: (userId) => call('GET', `/api/people/${enc(userId)}`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
     setLook: (conversation, palette, pattern) => call('PUT', `/api/conversations/${enc(conversation)}/look`, { palette, pattern }),
+    setDisappear: (conversation, seconds) => call('PUT', `/api/conversations/${enc(conversation)}/disappear`, { seconds }),
     setMute: (conversation, muted, until) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, until === undefined ? { muted } : { muted, until }),
     setPinned: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/pinned`, { on }),
     setMarkedUnread: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/unread`, { on }),

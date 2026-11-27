@@ -53,6 +53,11 @@ public class Conversation
     /// </summary>
     public string? Palette { get; set; }
     public string? Pattern { get; set; }
+    /// <summary>
+    /// Disappearing messages: how long a message sent now lasts, in seconds (one of <see cref="Chat.Disappearing.Choices"/>); null: for
+    /// good. Each message keeps the deadline it was sent with (<see cref="Message.ExpiresAt"/>), so a change counts from then on.
+    /// </summary>
+    public int? DisappearSeconds { get; set; }
 }
 
 /// <summary>What a member may do in a group. A one-to-one chat has only plain members.</summary>
@@ -89,7 +94,7 @@ public class ConversationMember
 /// <see cref="FilesTrimmed"/> and <see cref="MessagesTrimmed"/>: the owner trimmed pictures and files, or messages, sent before a date
 /// (the date is the notice's body).
 /// </summary>
-public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7, Call = 8 }
+public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7, Call = 8, Disappearing = 9 }
 
 public enum CallState { Ringing = 1, Active = 2, Ended = 3 }
 
@@ -162,6 +167,8 @@ public class Message
     public NoticeKind? Notice { get; set; }
     /// <summary>The person a notice is about (who was added or removed).</summary>
     public Guid? NoticeTargetId { get; set; }
+    /// <summary>When it is deleted for good (sent in a conversation with disappearing messages on); null: kept.</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 }
 
 public enum EventKind { Created, Deleted, Updated }

@@ -691,6 +691,13 @@ a.mi { text-decoration: none; }
 .info-actions { display: flex; flex-direction: column; gap: 6px; }
 .info-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .info-actions .btn .i { inline-size: 16px; block-size: 16px; }
+/* Disappearing messages in the information panel: the name with a clock, then the choice (or what it is) under it. */
+.info-setting { display: flex; flex-direction: column; gap: 6px; }
+.info-setting label { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.info-setting .i { inline-size: 16px; block-size: 16px; }
+/* In the thread's header while it is on: a small clock (its name says how long). */
+.th-timer { display: inline-grid; place-items: center; color: var(--muted); }
+.th-timer .i { inline-size: 18px; block-size: 18px; }
 .info h3 { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .info-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .info-person { display: flex; align-items: center; gap: 10px; min-block-size: 40px; }

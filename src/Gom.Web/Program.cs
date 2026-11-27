@@ -82,6 +82,7 @@ builder.Services.AddSingleton<ImageLimiter>(sp =>
     return new ImageLimiter(o.ImageSlots > 0 ? o.ImageSlots : Math.Max(1, Environment.ProcessorCount / 2), TimeSpan.FromSeconds(o.ImageWaitSeconds));
 });
 builder.Services.AddHostedService<AttachmentJanitor>();
+builder.Services.AddHostedService<DisappearingJanitor>();
 builder.Services.Configure<PushOptions>(builder.Configuration.GetSection("Push"));
 builder.Services.Configure<ContactOptions>(builder.Configuration.GetSection("Contact"));
 builder.Services.Configure<CallOptions>(builder.Configuration.GetSection("Calls"));
@@ -184,6 +185,7 @@ app.MapContact();
 app.MapCalls();
 app.MapAccount();
 app.MapTwoStep();
+app.MapDisappearing();
 app.MapFriends();
 app.MapConversations();
 app.MapGroups();

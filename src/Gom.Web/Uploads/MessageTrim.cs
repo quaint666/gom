@@ -65,6 +65,30 @@ public static class MessageTrim
     /// One conversation at a time, locked as a send locks it. Every key on a message is Restrict, so what hangs off the messages goes
     /// first; the notice is written in the same transaction, and the bytes of their files are deleted after the commit.
     /// </summary>
+    /// <summary>A picture or file that went with its message: its bytes are deleted after the commit (<see cref="AttachmentFiles.Forget"/>).</summary>
+    public sealed record GoneFile(Guid Id, AttachmentKind Kind, long Size, DateTimeOffset? RemovedAt);
+
+    /// <summary>
+    /// Deletes these messages for good, and what hangs off them: pictures and files, reactions, pins, "delete for me" marks, stream
+    /// steps and call records. Every key on a message is Restrict, so those go first. Call it in a transaction, with the conversation
+    /// locked; delete the returned files' bytes after the commit. Also used by disappearing messages (<see cref="Chat.Disappearing"/>).
+    /// </summary>
+    public static async Task<List<GoneFile>> DeleteMessages(GomDbContext db, List<Guid> ids, CancellationToken ct)
+    {
+        var attached = await db.Attachments.Where(a => a.MessageId != null && ids.Contains(a.MessageId.Value))
+            .Select(a => new GoneFile(a.Id, a.Kind, a.Size, a.RemovedAt)).ToListAsync(ct);
+        var gone = attached.Select(a => a.Id).ToList();
+        await db.Attachments.Where(a => gone.Contains(a.Id)).ExecuteDeleteAsync(ct);
+        await db.Reactions.Where(r => ids.Contains(r.MessageId)).ExecuteDeleteAsync(ct);
+        await db.Pins.Where(p => ids.Contains(p.MessageId)).ExecuteDeleteAsync(ct);
+        await db.Hides.Where(h => ids.Contains(h.MessageId)).ExecuteDeleteAsync(ct);
+        await db.Events.Where(e => ids.Contains(e.MessageId)).ExecuteDeleteAsync(ct);
+        // A call's record goes with its line (docs/voice-calls.md, decision 16).
+        await db.Calls.Where(k => k.MessageId != null && ids.Contains(k.MessageId.Value)).ExecuteDeleteAsync(ct);
+        await db.Messages.Where(m => ids.Contains(m.Id)).ExecuteDeleteAsync(ct);
+        return attached;
+    }
+
     private static async Task<IResult> Trim(TrimRequest request, HttpContext http, GomDbContext db, TimeProvider clock, IBlobStore blobs, LiveDelivery live, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
@@ -86,17 +110,8 @@ public static class MessageTrim
                 var ids = await Matching(db, rule).Where(m => m.ConversationId == conversation).Select(m => m.Id).ToListAsync(ct);
                 if (ids.Count == 0) continue;
                 var said = await db.Messages.CountAsync(m => ids.Contains(m.Id) && m.Notice == null, ct);
-                var attached = await db.Attachments.Where(a => a.MessageId != null && ids.Contains(a.MessageId.Value)).Select(a => new { a.Id, a.Kind, a.Size, a.RemovedAt }).ToListAsync(ct);
+                var attached = await DeleteMessages(db, ids, ct);
                 gone = [.. attached.Select(a => a.Id)];
-
-                await db.Attachments.Where(a => gone.Contains(a.Id)).ExecuteDeleteAsync(ct);
-                await db.Reactions.Where(r => ids.Contains(r.MessageId)).ExecuteDeleteAsync(ct);
-                await db.Pins.Where(p => ids.Contains(p.MessageId)).ExecuteDeleteAsync(ct);
-                await db.Hides.Where(h => ids.Contains(h.MessageId)).ExecuteDeleteAsync(ct);
-                await db.Events.Where(e => ids.Contains(e.MessageId)).ExecuteDeleteAsync(ct);
-                // A call's record goes with its line (docs/voice-calls.md, decision 16).
-                await db.Calls.Where(k => k.MessageId != null && ids.Contains(k.MessageId.Value)).ExecuteDeleteAsync(ct);
-                await db.Messages.Where(m => ids.Contains(m.Id)).ExecuteDeleteAsync(ct);
                 notice = await Notices.Write(db, conversation, owner, NoticeKind.MessagesTrimmed, null, rule.Before.ToString("O"), now, ct);
                 await tx.CommitAsync(ct);
 

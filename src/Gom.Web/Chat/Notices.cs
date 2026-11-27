@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Gom.Web.Chat;
 
 /// <summary>What a notice says, for the page to put in words: what happened, who it was about, for a rename the new name, for a trim the date.</summary>
-public sealed record NoticeDto(string Type, MessageEndpoints.PersonDto? Target, string? Title, DateTimeOffset? Before = null, CallNoticeDto? Call = null);
+public sealed record NoticeDto(string Type, MessageEndpoints.PersonDto? Target, string? Title, DateTimeOffset? Before = null, CallNoticeDto? Call = null, int? Seconds = null);
 
 /// <summary>A call's line in the chat: who called, how it ended, when it began, and how long it lasted once answered (seconds).</summary>
 public sealed record CallNoticeDto(Guid CallerId, string Outcome, DateTimeOffset StartedAt, int Seconds)
@@ -27,13 +27,15 @@ public static class Notices
 {
     private static string Name(NoticeKind kind) => kind switch
     {
-        NoticeKind.Added => "added", NoticeKind.Removed => "removed", NoticeKind.Left => "left", NoticeKind.FilesTrimmed => "filesTrimmed", NoticeKind.MessagesTrimmed => "messagesTrimmed", NoticeKind.Restyled => "restyled", NoticeKind.Call => "call", _ => "renamed",
+        NoticeKind.Added => "added", NoticeKind.Removed => "removed", NoticeKind.Left => "left", NoticeKind.FilesTrimmed => "filesTrimmed", NoticeKind.MessagesTrimmed => "messagesTrimmed", NoticeKind.Restyled => "restyled", NoticeKind.Call => "call", NoticeKind.Disappearing => "disappearing", _ => "renamed",
     };
 
     private static NoticeDto Dto(NoticeKind kind, MessageEndpoints.PersonDto? target, string body, CallNoticeDto? call = null) => new(Name(kind), target,
         kind == NoticeKind.Renamed ? body : null,
         kind is NoticeKind.FilesTrimmed or NoticeKind.MessagesTrimmed ? DateTimeOffset.Parse(body, System.Globalization.CultureInfo.InvariantCulture) : null,
-        call);
+        call,
+        // For disappearing messages, how long they now last (0: turned off).
+        kind == NoticeKind.Disappearing ? int.Parse(body, System.Globalization.CultureInfo.InvariantCulture) : null);
 
     /// <summary>The calls behind these call lines, by line.</summary>
     private static async Task<Dictionary<Guid, CallNoticeDto>> CallsOf(GomDbContext db, IReadOnlyCollection<Guid> lines, CancellationToken ct)

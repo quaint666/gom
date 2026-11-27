@@ -202,7 +202,7 @@ public static class ConversationEndpoints
             orderby (c.LastMessageAt ?? c.CreatedAt) descending
             select new
             {
-                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, c.Palette, c.Pattern, m.LastReadSeq, m.Muted, m.MutedUntil, m.PinnedAt, m.MarkedUnread, m.HiddenSeq,
+                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, c.Palette, c.Pattern, c.DisappearSeconds, m.LastReadSeq, m.Muted, m.MutedUntil, m.PinnedAt, m.MarkedUnread, m.HiddenSeq,
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new
@@ -243,6 +243,8 @@ public static class ConversationEndpoints
             // Its own colour and background, the same for everyone in it; null: each person's own.
             palette = r.Palette,
             pattern = r.Pattern,
+            // Disappearing messages: how long a message sent now lasts, in seconds; null: for good.
+            disappearSeconds = r.DisappearSeconds,
             pinned = r.PinnedAt is not null,
             markedUnread = r.MarkedUnread,
             // Hidden until something is said after it was hidden (a notice does not bring it back).

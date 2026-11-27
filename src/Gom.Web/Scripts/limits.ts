@@ -40,6 +40,8 @@ export interface Limits {
   contactChars: number;
   contactReplyChars: number;
   contactKeepDays: number;
+  /** Disappearing messages: the lengths a conversation may choose, in seconds. */
+  disappearChoices: number[];
 }
 
 /** Read from the page each time (it is small), so nothing here can drift from what the server sent. */
