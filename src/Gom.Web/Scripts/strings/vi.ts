@@ -344,6 +344,7 @@ export const vi = {
     noGroups: 'Bạn chưa ở trong nhóm nào.',
     noMatch: 'Không tìm thấy ai khớp với từ khóa.',
     seeMoreCount: (n: number) => `Xem thêm (${n})`,
+    allCount: (n: number) => `Tất cả · ${n}`,
     newGroup: 'Nhóm mới',
     addFriend: 'Thêm bạn',
     byGomId: 'Thêm bạn bằng Gom ID',
@@ -635,7 +636,8 @@ export const vi = {
     searchMessages: 'Tìm tin nhắn',
     closeSearch: 'Đóng tìm kiếm',
     noMessagesFound: 'Không tìm thấy tin nhắn nào.',
-    foundMessages: 'Tin nhắn',
+    foundFriends: 'Bạn bè',
+    foundGroups: 'Nhóm',
     pinned: 'Tin đã ghim',
     // forwarding
     forwardMax: (n: number) => `Chọn tối đa ${n} cuộc trò chuyện mỗi lần.`,

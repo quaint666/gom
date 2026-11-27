@@ -2,7 +2,7 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, PersonCard, PushLevel, Reply, Result, User, CallLine } from '../api.js';
+import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, Person, PersonCard, PushLevel, Reply, Result, User, CallLine } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, initials, listTime, mergeMedia, mergeMessages, missedByMe, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
@@ -63,7 +63,7 @@ const UPLOADS_AT_ONCE = 2;
 /** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
 const FORWARD_MAX = 5;
 /** How much of a message a one-line preview shows: the pinned bar and panel, a search result or the pin list, what is being forwarded. */
-const CLIP = { pin: 100, result: 160, found: 70, forward: 120 } as const;
+const CLIP = { pin: 100, result: 160, forward: 120 } as const;
 /** How long "Hoàn tác" stays after a conversation is hidden. */
 const UNDO_HIDE_MS = 5000;
 /** How long typing must pause before a search is sent, and the fewest characters that search as you type (Enter searches any). */
@@ -203,11 +203,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const slowWaiting = new Set<string>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
-  /** Messages in all your conversations that contain what is typed above the list; `asked` is the search they answer. */
-  let foundEverywhere: { asked: string; results: ChatMessage[] } | null = null;
-  /** Only the newest search may fill the list: an older, slower answer is dropped. */
-  let everywhereTicket = 0;
-  let everywhereTimer: number | null = null;
+  /** Your friends, asked for when a search above the list starts, so it finds a friend you have not written to yet. */
+  let friends: Person[] | null = null;
   let threadSearchTimer: number | null = null;
   /**
    * Someone's card, opened from a member of a group, a sender's name or a 1:1 conversation's header. `asking` is the question
@@ -1140,30 +1137,30 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /**
-   * The list as narrowed by what is typed, with any hidden conversations it finds under their own heading, then the messages that
-   * contain the words.
+   * The list, or with something typed above it, what it finds by name: friends (their conversations, then friends not written to
+   * yet), then groups, then hidden conversations under their own heading. Messages are searched inside a conversation only.
    */
   const listView = () => {
+    if (filter.trim() === '') return html`<div class="items"><ul class="rows">${repeat(shownChats(), (c) => c.id, row)}</ul></div>`;
     const shown = visibleChats();
+    const directs = shown.filter((c) => c.kind === 'direct');
+    const groups = shown.filter((c) => c.kind === 'group');
+    const talkedTo = new Set((chats ?? []).map((c) => c.peer?.gomId).filter((g) => g !== undefined));
+    const others = (friends ?? []).filter((f) => !talkedTo.has(f.gomId) && matches(`${f.displayName} ${f.gomId}`, filter));
     const found = hiddenMatches(filter);
-    const messages = foundEverywhere?.results ?? [];
-    if (shown.length === 0 && found.length === 0 && messages.length === 0) return html`<p class="hint nomatch" data-no-match>${say.chat.noChatsFound}</p>`;
+    if (directs.length === 0 && others.length === 0 && groups.length === 0 && found.length === 0) return html`<p class="hint nomatch" data-no-match>${say.chat.noChatsFound}</p>`;
     // One scroller for all, so each part follows the one before instead of splitting the pane.
     return html`<div class="items">
-      ${shown.length === 0 ? nothing : html`<ul class="rows">${repeat(shown, (c) => c.id, row)}</ul>`}
-      ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, row)}</ul>`}
-      ${messages.length === 0 ? nothing : html`<h3 class="hidden-label" data-found-label>${say.chat.foundMessages}</h3>
-        <ul class="results found-list" data-found-list>${messages.map((m) => foundRow(m, foundEverywhere!.asked))}</ul>`}</div>`;
+      ${directs.length === 0 && others.length === 0 ? nothing : html`<h3 class="hidden-label" data-found-friends>${say.chat.foundFriends}</h3>
+        <ul class="rows">${repeat(directs, (c) => c.id, row)}${repeat(others, (f) => f.gomId, friendRow)}</ul>`}
+      ${groups.length === 0 ? nothing : html`<h3 class="hidden-label" data-found-groups>${say.chat.foundGroups}</h3><ul class="rows">${repeat(groups, (c) => c.id, row)}</ul>`}
+      ${found.length === 0 ? nothing : html`${hiddenLabel()}<ul class="rows" data-hidden-list>${repeat(found, (c) => c.id, row)}</ul>`}</div>`;
   };
 
-  /** A message the list's search found: where it was said, by whom, the words around what was found, and when. */
-  const foundRow = (m: ChatMessage, asked: string) => {
-    const c = chatOf(m.conversationId);
-    const who = m.sender.id === me?.id ? `${say.common.you}: ` : c?.kind === 'group' ? `${m.sender.displayName}: ` : '';
-    return html`<li><button type="button" class="result" data-found=${m.id} @click=${() => openAt(m)}>
-      <b>${c?.title ?? '…'}</b><small>${listTime(m.createdAt, deps.now())}</small>
-      <span>${who}${marked(markedExcerpt(m.body, asked, CLIP.found))}</span></button></li>`;
-  };
+  /** A friend the search found who has no conversation with you yet: a tap makes it and opens it. */
+  const friendRow = (f: Person) => html`<li class="row"><button type="button" class="item" data-start-chat=${f.gomId} @click=${() => void chatWith(f.gomId)}>
+      ${avatar(f.displayName, f.avatar)}
+      <div class="im"><div class="l1"><span class="nm">${f.displayName}</span></div><div class="l2"><span class="pv">@${f.gomId}</span></div></div></button></li>`;
 
   const view = () => html`
     <div class="chat" data-pane=${openId === null ? 'list' : 'thread'} data-infostate=${infoOpen && openId !== null ? 'open' : 'closed'}>
@@ -1177,8 +1174,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${chats === null || chats.length === 0 ? nothing : html`
           <div class="searchfield input list-search">${icons.search()}
             <input type="search" name="filter" aria-label=${say.common.searchChats} placeholder=${say.common.search} autocomplete="off" maxlength=${limits().nameChars}
-              .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); searchEverywhereSoon(); }}
-              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; searchEverywhereSoon(); } else if (e.key === 'Enter' && !e.isComposing) searchEverywhereSoon(0); }}></div>`}
+              .value=${liveValue(filter)} @input=${(e: Event) => { filter = (e.target as HTMLInputElement).value; update(); loadFriends(); }}
+              @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { filter = ''; update(); } }}></div>`}
         ${banner()}
         ${pushBanner()}
         ${errorBox(error)}
@@ -2070,31 +2067,26 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     void runSearch();
   }
 
-  /**
-   * Searches all your conversations for what is typed above the list once typing pauses (or at once, for Enter). Less than
-   * SEARCH_AS_YOU_TYPE_CHARS characters only narrows the list by name.
-   */
-  function searchEverywhereSoon(wait = SEARCH_WAIT_MS): void {
-    if (everywhereTimer !== null) deps.timer.clear(everywhereTimer);
-    everywhereTimer = null;
-    const q = filter.trim();
-    if ([...q].length < (wait === 0 ? 1 : SEARCH_AS_YOU_TYPE_CHARS)) { everywhereTicket++; foundEverywhere = null; update(); return; }
-    everywhereTimer = deps.timer.set(() => { everywhereTimer = null; void searchEverywhere(q); }, wait);
+  /** Asks for your friends once a search above the list starts (again for each new search, as friends come and go). */
+  function loadFriends(): void {
+    if (filter.trim() === '') { friends = null; return; }
+    if (friends !== null) return;
+    friends = [];
+    void api.friends().then((result) => {
+      if (!result.ok || filter.trim() === '') return;
+      friends = result.data.friends;
+      update();
+    });
   }
 
-  async function searchEverywhere(q: string): Promise<void> {
-    const ticket = ++everywhereTicket;
-    const result = await api.searchAll(q);
-    if (ticket !== everywhereTicket) return;
+  /** A friend found by the search, not written to yet: their conversation, made now, opened, and the search done. */
+  async function chatWith(gomId: string): Promise<void> {
+    const result = await api.openDirect(gomId);
     if (!result.ok) { handleFailure(result); return; }
-    foundEverywhere = { asked: q, results: result.data.results };
-    update();
-  }
-
-  /** Opens the conversation a message found by the list's search is in, and goes to the message. */
-  function openAt(m: ChatMessage): void {
-    if (openId !== m.conversationId) open(m.conversationId);
-    void reveal(m);
+    filter = '';
+    friends = null;
+    if (chatOf(result.data.id) === undefined) await refreshList();
+    open(result.data.id);
   }
 
   async function runSearch(): Promise<void> {
@@ -2151,7 +2143,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     }
     if (menu?.id === messageId) menu = null;
     if (searching?.results) searching.results = searching.results.filter((r) => r.id !== messageId);
-    if (foundEverywhere !== null) foundEverywhere.results = foundEverywhere.results.filter((r) => r.id !== messageId);
     update();
     void refreshList();
   }

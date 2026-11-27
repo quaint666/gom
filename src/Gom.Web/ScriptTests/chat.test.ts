@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { avatarTone, clock } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { Pusher, PushSupport } from '../Scripts/push.js';
@@ -3251,60 +3251,59 @@ describe('chat: the list of conversations', () => {
     expect(names()).toHaveLength(2);
   });
 
-  describe('looking for messages in every conversation', () => {
-    const found = msg(4, 'minh', 'Tối nay ăn phở ở đâu', at(10, 4), C2);
-    const lists = (h: Harness) => h.timers.filter((t) => t.ms === 300 && t.live);
-    const pause = async (h: Harness) => { for (const t of lists(h)) t.fn(); await flush(); };
+  describe('finding friends and groups by name', () => {
+    const C3 = '33333333-3333-4333-8333-333333333333';
+    const mixed = [chat(C1, 'Đào Thị Lan', { lastSeq: 0 }), { ...chat(C2, 'Gia đình', { lastSeq: 0 }), kind: 'group' as const, peer: null }];
+    const friendList = (friends: Array<{ gomId: string; displayName: string }>) => vi.fn(async () => ok({ friends, incoming: [], outgoing: [] }));
+    const heading = (attr: string) => root.querySelector(`[data-${attr}]`);
+    const under = (attr: string) => [...(heading(attr)?.nextElementSibling?.querySelectorAll('.nm') ?? [])].map((n) => n.textContent);
 
-    it('asks once typing pauses and lists the messages under the conversations: where, who and the words in bold', async () => {
-      const groups = [chat(C1, 'Đào Thị Lan', { lastSeq: 0 }), { ...chat(C2, 'Gia đình', { lastSeq: 4 }), kind: 'group' as const }];
-      const h = start({ chats: groups, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+    it('lists friends first, then groups, each under its heading, and never searches messages', async () => {
+      const h = start({ chats: mixed, api: { friends: friendList([{ gomId: 'đào thị lan', displayName: 'Đào Thị Lan' }, { gomId: 'minh', displayName: 'Minh' }]) } });
       await flush();
-      type('gia pho'); await flush();
-      expect(h.api.searchAll).not.toHaveBeenCalled();
-      await pause(h);
-      expect(h.api.searchAll).toHaveBeenCalledWith('gia pho');
-      expect(text(root.querySelector('[data-found-label]')!)).toBe('Tin nhắn');
-      const row = root.querySelector('[data-found="id4"]')!;
-      expect(text(row)).toContain('Gia đình');
-      expect(text(row)).toContain('Minh: Tối nay ăn phở ở đâu');
-      expect([...row.querySelectorAll('mark')].map((m) => m.textContent)).toEqual(['phở']);
-      expect(root.querySelector('[data-no-match]')).toBeNull();   // no conversation is named that, but a message says it
+      expect(heading('found-friends')).toBeNull();   // nothing typed: the plain list
+      type('i'); await flush();
+      expect(text(heading('found-friends')!)).toBe('Bạn bè');
+      expect(under('found-friends')).toEqual(['Đào Thị Lan', 'Minh']);   // the conversation first, then a friend not written to
+      expect(text(heading('found-groups')!)).toBe('Nhóm');
+      expect(under('found-groups')).toEqual(['Gia đình']);
+      expect(h.api.friends).toHaveBeenCalledTimes(1);
+      type('in'); await flush();
+      expect(h.api.friends).toHaveBeenCalledTimes(1);   // asked once for one search
+      for (const t of h.timers) if (t.live) t.fn();
+      await flush();
+      expect(h.api.search).not.toHaveBeenCalled();
     });
 
-    it('opens the conversation at the message, once it has loaded', async () => {
-      const layout = fakeLayout();
-      onTestFinished(() => layout.restore());
-      const h = start({ chats: several, history: { [C2]: [msg(3, 'mom', 'trước', at(10, 3), C2), found] }, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+    it('finds a friend by Gom ID too, and leaves out a heading with nothing under it', async () => {
+      start({ chats: mixed, api: { friends: friendList([{ gomId: 'beo', displayName: 'Hoa' }]) } });
       await flush();
-      type('pho'); await pause(h);
-      root.querySelector<HTMLButtonElement>('[data-found="id4"]')!.click();
+      type('beo'); await flush();
+      expect(under('found-friends')).toEqual(['Hoa']);
+      expect(text(root.querySelector('[data-start-chat="beo"]')!)).toContain('@beo');
+      expect(heading('found-groups')).toBeNull();
+    });
+
+    it('opens a conversation with a friend not written to yet, and the search is done', async () => {
+      const h = start({ chats: mixed, api: { friends: friendList([{ gomId: 'minh', displayName: 'Minh' }]), openDirect: vi.fn(async () => ok({ id: C3 })) } });
+      await flush();
+      type('minh'); await flush();
+      root.querySelector<HTMLButtonElement>('[data-start-chat="minh"]')!.click();
       await flush(); await flush();
-      expect(h.nav.path).toBe(`/c/${C2}`);
-      expect(root.querySelector('[data-msg="id4"]')!.classList.contains('found')).toBe(true);
-      expect(layout.landed()?.getAttribute('data-msg')).toBe('id4');
+      expect(h.api.openDirect).toHaveBeenCalledWith('minh');
+      expect(h.nav.path).toBe(`/c/${C3}`);
+      expect(root.querySelector<HTMLInputElement>('input[name="filter"]')!.value).toBe('');
+      expect(heading('found-friends')).toBeNull();
     });
 
-    it('a single character only narrows the list by name, and clearing the field takes the messages away', async () => {
-      const h = start({ chats: several, api: { searchAll: vi.fn(async () => ok({ results: [found] })) } });
+    it('still finds a hidden conversation, under its own heading', async () => {
+      start({ chats: [...mixed, chat(C3, 'Cường', { hidden: true })], api: { friends: friendList([]) } });
       await flush();
-      type('g'); await pause(h);
-      expect(h.api.searchAll).not.toHaveBeenCalled();
-      type('pho'); await pause(h);
-      expect(root.querySelector('[data-found-list]')).not.toBeNull();
-      root.querySelector('input[name="filter"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await flush();
-      expect(root.querySelector('[data-found-list]')).toBeNull();
-    });
-
-    it('lets only the newest answer fill the list', async () => {
-      const finish: Array<(v: unknown) => void> = [];
-      const h = start({ chats: several, api: { searchAll: vi.fn(() => new Promise((resolve) => { finish.push(resolve); })) } });
-      await flush();
-      type('phở'); await pause(h);
-      type('bún'); await pause(h);
-      finish[1]!(ok({ results: [] })); await flush();
-      finish[0]!(ok({ results: [found] })); await flush();
-      expect(root.querySelector('[data-found-list]')).toBeNull();
+      expect(names()).not.toContain('Cường');
+      type('cuong'); await flush();
+      expect(text(root.querySelector('[data-hidden-label]')!)).toBe('Đã ẩn');
+      expect([...root.querySelectorAll('[data-hidden-list] .nm')].map((n) => n.textContent)).toEqual(['Cường']);
+      expect(heading('found-friends')).toBeNull();   // a hidden one is not listed twice
     });
   });
 

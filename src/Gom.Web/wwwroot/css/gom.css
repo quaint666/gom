@@ -185,6 +185,8 @@ html:has(> body[data-page="home"]), body[data-page="home"] { overflow: hidden; o
 .item { display: flex; align-items: center; gap: 12px; min-block-size: 72px; padding: 10px 14px; border-inline-start: 3px solid transparent; color: var(--text); text-decoration: none; }
 .item:hover { background: var(--hover); }
 .item.active { background: var(--tint); border-inline-start-color: var(--btn); }
+/* A friend the list's search found with no conversation yet: a button drawn like the rows around it. */
+button.item { inline-size: 100%; border-block: 0; border-inline-end: 0; background: none; font: inherit; text-align: start; cursor: pointer; }
 .av { inline-size: 48px; block-size: 48px; border-radius: 50%; display: grid; place-items: center; font-weight: 600; font-size: 16px; flex: none; }
 .av.a1 { background: var(--tint); color: var(--tint-text); }
 .av.a2 { background: light-dark(#F1E6D2, #3A3220); color: light-dark(#5E4710, #EBD9AE); }
@@ -436,8 +438,6 @@ button.th-title:hover b { text-decoration: underline; }
 .result span { grid-column: 1 / -1; overflow-wrap: anywhere; color: var(--muted); }
 .result small { color: var(--muted); }
 .result mark { background: none; color: var(--text); font-weight: 700; }   /* the words found */
-.found-list { max-block-size: none; margin: 0; padding: 0 8px 8px; }   /* messages the list's search found, under the conversations */
-.found-list .result span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }   /* the excerpt starts near the word found */
 /* pinned messages */
 .pinbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--surface); border-block-end: 1px solid var(--border); }
 .pin-top { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 8px; min-block-size: 44px; border: 0; background: none; color: var(--text); font: inherit; text-align: start; cursor: pointer; }

@@ -7,8 +7,8 @@ import { limits } from '../limits.js';
 import { menuItem, menuPoint, menuView, placeMenu } from '../menu.js';
 import { say } from '../say.js';
 
-/** How many rows of a long list show before "Xem thêm". */
-const HANDFUL = 5;
+/** How many friends or groups "Gần đây" shows: the ones you last talked with. Fewer than that, and it would repeat the whole list. */
+const RECENT = 5;
 
 const NONE: FriendLists = { friends: [], incoming: [], outgoing: [] };
 
@@ -18,9 +18,10 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
   let lists: FriendLists = NONE;
   let blocked: Person[] = [];
   let groups: Conversation[] = [];
+  /** When you last talked with each friend (their one-to-one conversation's last message), by Gom ID. */
+  let lastTalk = new Map<string, string>();
   let tab: 'friends' | 'groups' = 'friends';
   let query = '';
-  let expanded = false;
   /** The friend whose "..." menu (unfriend, block) is open, and where it was opened. */
   let menu: { gomId: string; at: { x: number; y: number } } | null = null;
   let friendId = '';
@@ -52,10 +53,6 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
       <button class="btn secondary" type="button" data-cancel-sure @click=${() => { sure = null; update(); }}>${say.common.cancel}</button>
     </li>`;
   };
-
-  /** Up to a handful of rows; the rest behind "Xem thêm", unless something is being searched for. */
-  const shown = <T,>(rows: T[]): { rows: T[]; hidden: number } =>
-    query.trim() !== '' || expanded || rows.length <= HANDFUL ? { rows, hidden: 0 } : { rows: rows.slice(0, HANDFUL), hidden: rows.length - HANDFUL };
 
   const friendRow = (p: Person) => html`
     <li class="li person" data-friend=${p.gomId}>
@@ -93,37 +90,51 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
     const mine = lists.friends.length;
     const tabButton = (id: 'friends' | 'groups', label: string, count: number) => html`
       <button class="tab" type="button" role="tab" id=${`tab-${id}`} data-tab=${id} aria-selected=${tab === id ? 'true' : 'false'}
-        @click=${() => { tab = id; expanded = false; menu = null; update(); }}>${label} <span class="count">${count}</span></button>`;
+        @click=${() => { tab = id; menu = null; update(); }}>${label} <span class="count">${count}</span></button>`;
     return html`<div class="tabs" role="tablist" aria-label=${say.common.contacts}>${tabButton('friends', say.friends.friendsTab, mine)}${tabButton('groups', say.friends.groupsTab, groups.length)}</div>`;
   };
 
   /** A name's letter for the A to Z headings: no accents, no capitals, and "Đ" is its own letter's cousin D. Anything else goes under "#". */
   const letterOf = (name: string): string => { const f = fold(name).charAt(0).toUpperCase(); return /[A-Z]/.test(f) ? f : '#'; };
 
-  /** Friends by name. With everyone showing (not a handful), under a heading for each first letter. */
-  const friendList = (rows: Person[], everyone: boolean) => {
-    const sorted = [...rows].sort((a, b) => fold(a.displayName).localeCompare(fold(b.displayName), 'vi'));
-    if (!everyone || sorted.length <= HANDFUL) return html`<ul class="list">${sorted.map(friendRow)}</ul>`;
+  const byName = (a: string, b: string) => fold(a).localeCompare(fold(b), 'vi');
+
+  /** Friends A to Z, under a heading for each first letter. */
+  const friendList = (rows: Person[]) => {
+    const sorted = [...rows].sort((a, b) => byName(a.displayName, b.displayName));
     const letters = [...new Set(sorted.map((p) => letterOf(p.displayName)))].sort((a, b) => a === '#' ? 1 : b === '#' ? -1 : a.localeCompare(b));
     return html`${letters.map((l) => html`<h3 class="letter" data-letter=${l}>${l}</h3>
       <ul class="list">${sorted.filter((p) => letterOf(p.displayName) === l).map(friendRow)}</ul>`)}`;
   };
 
+  /** The few talked with last, newest first; only those with a message (a friend never written to has no "last"). */
+  const recentOf = <T,>(rows: T[], when: (row: T) => string): T[] =>
+    rows.filter((r) => when(r) !== '').sort((a, b) => when(b).localeCompare(when(a))).slice(0, RECENT);
+
+  /**
+   * Friends or groups: "Gần đây", the five talked with last, then "Tất cả", everyone A to Z. With five or fewer there is no
+   * "Gần đây" (it would repeat the list), and a search shows only what matches, A to Z.
+   */
   const listing = () => {
-    const rows = tab === 'friends'
-      ? lists.friends.filter((p) => matches(`${p.displayName} ${p.gomId}`, query))
-      : groups.filter((c) => matches(c.title ?? '', query));
-    const total = tab === 'friends' ? lists.friends.length : groups.length;
-    const part = shown(rows as unknown[]);
-    const empty = total === 0
-      ? (tab === 'friends' ? say.friends.noFriends : say.friends.noGroups)
-      : say.friends.noMatch;
+    const friendsTab = tab === 'friends';
+    const searching = query.trim() !== '';
+    const total = friendsTab ? lists.friends.length : groups.length;
+    const empty = total === 0 ? (friendsTab ? say.friends.noFriends : say.friends.noGroups) : say.friends.noMatch;
+    const friends = lists.friends.filter((p) => matches(`${p.displayName} ${p.gomId}`, query));
+    const groupRows = groups.filter((c) => matches(c.title ?? '', query)).sort((a, b) => byName(a.title ?? '', b.title ?? ''));
+    const count = friendsTab ? friends.length : groupRows.length;
+    const recent = searching || total <= RECENT ? [] : friendsTab
+      ? recentOf(lists.friends, (p) => lastTalk.get(p.gomId) ?? '')
+      : recentOf(groups, (c) => c.lastMessage?.createdAt ?? '');
+    const all = friendsTab ? friendList(friends) : html`<ul class="list">${groupRows.map(groupRow)}</ul>`;
     return html`
       <div role="tabpanel" aria-labelledby=${`tab-${tab}`}>
-        ${rows.length === 0 ? html`<p class="hint" data-empty>${empty}</p>` : html`
-          ${tab === 'friends' ? friendList(part.rows as Person[], part.hidden === 0) : html`<ul class="list">${(part.rows as Conversation[]).map(groupRow)}</ul>`}
-          ${part.hidden > 0 ? html`<button class="btn secondary" type="button" data-more-rows @click=${() => { expanded = true; update(); }}>${say.friends.seeMoreCount(part.hidden)}</button>` : nothing}`}
-        ${tab === 'groups' ? html`<a class="btn" href="/groups/new" data-new-group>${say.friends.newGroup}</a>` : nothing}
+        ${count === 0 ? html`<p class="hint" data-empty>${empty}</p>` : recent.length === 0 ? all : html`
+          <h2 class="section" data-recent>${say.common.recent}</h2>
+          <ul class="list">${friendsTab ? (recent as Person[]).map(friendRow) : (recent as Conversation[]).map(groupRow)}</ul>
+          <h2 class="section" data-all>${say.friends.allCount(total)}</h2>
+          ${all}`}
+        ${friendsTab ? nothing : html`<a class="btn" href="/groups/new" data-new-group>${say.friends.newGroup}</a>`}
       </div>`;
   };
 
@@ -163,7 +174,7 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
         ${tabs()}
         <div class="searchfield input">${icons.search()}
           <input type="search" name="find" aria-label=${tab === 'friends' ? say.friends.findFriends : say.friends.findGroups} placeholder=${tab === 'friends' ? say.friends.findFriends : say.friends.findGroups}
-            autocomplete="off" maxlength=${limits().nameChars} .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; expanded = false; update(); }}></div>
+            autocomplete="off" maxlength=${limits().nameChars} .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>
         ${listing()}
 
         ${tab === 'friends' ? section(say.friends.blocked, blocked.map((p) => html`
@@ -177,7 +188,10 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
     const [f, b, g] = await Promise.all([api.friends(), api.blocks(), api.conversations()]);
     if (f.ok) lists = f.data; else error = f;
     if (b.ok) blocked = b.data; else error = b;
-    if (g.ok) groups = g.data.filter((c) => c.kind === 'group'); else error = g;
+    if (g.ok) {
+      groups = g.data.filter((c) => c.kind === 'group');
+      lastTalk = new Map(g.data.flatMap((c) => c.kind === 'direct' && c.peer?.gomId && c.lastMessage ? [[c.peer.gomId, c.lastMessage.createdAt] as const] : []));
+    } else error = g;
     update();
   }
 

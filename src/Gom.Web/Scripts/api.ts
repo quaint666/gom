@@ -240,8 +240,6 @@ export interface Api {
   react(conversation: string, message: string, emoji: string): Promise<Result<void>>;
   unreact(conversation: string, message: string): Promise<Result<void>>;
   search(conversation: string, query: string): Promise<Result<{ results: ChatMessage[] }>>;
-  /** The same words looked for in every conversation you are in, newest first: the list's search box. */
-  searchAll(query: string): Promise<Result<{ results: ChatMessage[] }>>;
   pins(conversation: string): Promise<Result<{ pins: ChatMessage[] }>>;
   pin(conversation: string, message: string): Promise<Result<void>>;
   unpin(conversation: string, message: string): Promise<Result<void>>;
@@ -468,7 +466,6 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     copyAttachment: (conversation, from) => call('POST', `/api/conversations/${enc(conversation)}/attachments/copy`, { from }),
     setPoster: (attachment, picture) => call('PUT', `/api/attachments/${enc(attachment)}/poster`, picture),
     search: (conversation, query) => call('GET', `/api/conversations/${enc(conversation)}/search?q=${enc(query)}`),
-    searchAll: (query) => call('GET', `/api/search?q=${enc(query)}`),
     pins: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/pins`),
     pin: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),
     unpin: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),
