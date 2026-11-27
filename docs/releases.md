@@ -29,6 +29,18 @@ Between releases, staging may run newer code than its number says: the number mo
 
 ## What's new
 
+### 1.2.1 (28 November 2026)
+
+#196 and #197: fixes only.
+
+**Fixes**
+- A message with two to five pictures now shows in Firefox and Safari, and so on iPhones; there it was an empty dot
+  (#197).
+- A conversation opens at its newest message even when a picture above it loads late: pictures, moving pictures and
+  videos keep their place while they load. On a computer a video is as wide as pictures (#197).
+- A quote of a message with only a picture, video or file says what it was ("Hình ảnh", "Video", "Tệp"), where it was
+  empty, and a tap on any quote goes to the message it answers (#196).
+
 ### 1.2.0 (28 November 2026)
 
 Everything from #172 to #193: H's fourteen changes to how Gom looks and works, and the Android app's release build.
