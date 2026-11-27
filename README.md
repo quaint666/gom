@@ -50,7 +50,18 @@ gom.prod.firebase.apiKey=…
 gom.prod.firebase.senderId=…
 ```
 
-and the same with `gom.staging.`. Then `cd android && ./gradlew assembleStagingDebug` builds `app/build/outputs/apk/staging/debug/app-staging-debug.apk`. `./gradlew lintProdDebug testProdDebugUnitTest` is what CI runs (with a placeholder address and no Firebase values). Signing a release for Google Play comes later.
+and the same with `gom.staging.`. Then `cd android && ./gradlew assembleStagingDebug` builds `app/build/outputs/apk/staging/debug/app-staging-debug.apk`. `./gradlew lintProdDebug testProdDebugUnitTest` is what CI runs (with a placeholder address and no Firebase values).
+
+A release for Google Play is signed with Play's upload key (Google keeps the app's own signing key), from four more Gradle properties on the machine that builds it:
+
+```
+gom.upload.storeFile=/…/upload.p12        # the upload keystore
+gom.upload.storePassword=…
+gom.upload.keyAlias=…
+gom.upload.keyPassword=…
+```
+
+`./gradlew bundleProdRelease` then builds `app/build/outputs/bundle/prodRelease/app-prod-release.aab`; without all four, a release build stops at once. Its version name is `VERSION`, and its version code the same number written as one (1.2.3 is 10203).
 
 ## On a server
 
