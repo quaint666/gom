@@ -14,8 +14,9 @@ public class PageVersionTests(AppFixture app) : IClassFixture<AppFixture>
     [InlineData("abc", false)]
     [InlineData("-1", false)]
     [InlineData("0", true)]
-    [InlineData("1", false)]
+    [InlineData("1", true)]   // 2026-11-27: GET /api/search went away under pages from before
     [InlineData("2", false)]
+    [InlineData("3", false)]
     public void Only_a_page_that_says_a_lower_number_is_too_old(string? sent, bool expected) =>
         Assert.Equal(expected, Pages.TooOld(sent));
 

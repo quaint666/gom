@@ -108,7 +108,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         Assert.Equal(200, l.GetProperty("noteChars").GetInt32());
         Assert.Equal(7, l.GetProperty("inviteDefaultDays").GetInt32());
         Assert.Equal(10, l.GetProperty("inviteDefaultUses").GetInt32());
-        Assert.Equal(1, l.GetProperty("pageVersion").GetInt32());
+        Assert.Equal(2, l.GetProperty("pageVersion").GetInt32());
         Assert.Equal(2000, l.GetProperty("contactChars").GetInt32());
         Assert.Equal(200, l.GetProperty("contactReplyChars").GetInt32());
         Assert.Equal(180, l.GetProperty("contactKeepDays").GetInt32());
