@@ -514,6 +514,18 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  /** A small picture in the strip under the viewer was chosen: that one, at once. At the oldest, older ones are asked for. */
+  function jumpViewer(attachmentId: string): void {
+    const v = viewer;
+    if (v === null || v.attachmentId === attachmentId) return;
+    v.attachmentId = attachmentId;
+    viewerSync = true;
+    update();
+    const list = mediaOf(v.conversation).image;
+    const slides = slidesOf(v);
+    if (v.local === null && slides[0]?.attachment.id === attachmentId && list.hasMore && slides.length === list.items.length) void loadMedia(v.conversation, 'image', true);
+  }
+
   /** Where the strip of pictures came to rest after a swipe: that picture is the current one. Near the oldest, older ones are asked for. */
   function onViewerSettle(track: HTMLElement): void {
     const v = viewer;
@@ -584,6 +596,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <div class="vwho"><b>${who}</b><small>${sentAt(current.createdAt)}</small></div>
           ${current.body === '' ? nothing : html`<p class="vcap" data-viewer-caption>${words(current.body)}</p>`}
         </div>
+        ${slides.length < 2 ? nothing : html`
+          <div class="vthumbs" data-viewer-thumbs role="group" aria-label=${say.chat.pictures}>
+            ${repeat(slides, (s) => s.attachment.id, (s, k) => html`
+              <button class="vthumb" type="button" data-viewer-thumb=${s.attachment.id} aria-label=${`${k + 1} / ${slides.length}`} aria-current=${k === i ? 'true' : nothing}
+                @click=${() => jumpViewer(s.attachment.id)}><img src=${`/api/attachments/${s.attachment.id}/thumb`} alt="" loading="lazy" decoding="async">
+                ${s.attachment.kind === 'video' ? html`<span class="tray-play" aria-hidden="true">${icons.play()}</span>` : nothing}</button>`)}
+          </div>`}
       </dialog>`;
   };
 
@@ -1271,7 +1290,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (typeof d.showModal === 'function') d.showModal(); else d.setAttribute('open', '');
     }
     const track = root.querySelector<HTMLElement>('[data-viewer-track]');
-    if (viewer === null || !viewerSync || track === null || track.clientWidth <= 0) return;
+    if (viewer === null || !viewerSync || track === null) return;
+    // The strip of small pictures (a computer's) keeps the current one in view.
+    root.querySelector<HTMLElement>('[data-viewer-thumbs] [aria-current="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+    if (track.clientWidth <= 0) return;
     const i = slidesOf(viewer).findIndex((s) => s.attachment.id === viewer!.attachmentId);
     const left = Math.max(0, i) * track.clientWidth;
     track.scrollLeft = left;

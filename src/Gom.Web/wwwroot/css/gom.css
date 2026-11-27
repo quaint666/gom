@@ -748,6 +748,21 @@ a.mi { text-decoration: none; }
 .vwho small { color: rgb(255 255 255 / .75); }
 .vcap { margin: 4px 0 0; max-block-size: 4.5em; overflow-y: auto; overflow-wrap: anywhere; pointer-events: auto; }
 .vcap a { color: #fff; }
+/* On a computer, every picture of the conversation small along the bottom, the current one outlined; a click goes to it. A phone
+   swipes instead, and has no room for it. */
+.vthumbs { display: none; }
+@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
+  .viewer:has(.vthumbs) .vslide { padding-block-end: 172px; }
+  .viewer:has(.vthumbs) .vimg { max-block-size: calc(100dvh - 228px); }
+  .viewer:has(.vthumbs) .viewer-foot { inset-block-end: 76px; }
+  .vthumbs { position: absolute; inset-inline: 0; inset-block-end: 0; z-index: 2; display: flex; gap: 6px; padding: 10px 16px 12px; overflow-x: auto; scrollbar-width: thin; background: rgb(0 0 0 / .55); }
+  .vthumbs::before, .vthumbs::after { content: ""; margin: auto; }   /* centred while they fit; from the start once they scroll */
+  .vthumb { position: relative; flex: none; inline-size: 56px; block-size: 56px; padding: 0; border: 2px solid transparent; border-radius: 8px; overflow: hidden; background: #222; opacity: .55; cursor: pointer; }
+  .vthumb:hover { opacity: .85; }
+  .vthumb[aria-current="true"] { opacity: 1; border-color: #fff; }
+  .vthumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+  .vthumb .tray-play { inline-size: 24px; block-size: 24px; }
+}
 @media (pointer: coarse) { .viewer .vprev, .viewer .vnext { display: none; } }
 
 /* the panel beside a thread: pictures and files shared so far */

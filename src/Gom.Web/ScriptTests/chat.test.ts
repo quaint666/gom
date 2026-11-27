@@ -3937,12 +3937,40 @@ describe('chat: pictures and files', () => {
       expect(h.nav.push).not.toHaveBeenCalled();
     });
 
-    it('closes with the button, and has no arrows for a single picture', async () => {
+    it('has a strip of every picture small, the current one marked, and a click on one goes to it', async () => {
+      const media = vi.fn(async () => ok({ items: [listed('p3', 2), listed('p2', 2), listed('p1', 1)], hasMore: false }));
+      open({ media }, [{ ...msg(1, 'minh'), attachments: [att('p1')] }, { ...msg(2, 'minh'), attachments: [att('p3'), att('p2')] }]);
+      await flush();
+      await click('[data-pic="p2"]');
+      const thumbs = () => [...viewer()!.querySelectorAll<HTMLButtonElement>('[data-viewer-thumb]')];
+      expect(thumbs().map((b) => b.dataset['viewerThumb'])).toEqual(['p1', 'p3', 'p2']);   // oldest on the left, as the pictures above
+      expect(thumbs()[0]!.querySelector('img')!.getAttribute('src')).toBe('/api/attachments/p1/thumb');
+      expect(thumbs().map((b) => b.getAttribute('aria-current'))).toEqual([null, null, 'true']);
+      expect(thumbs()[0]!.getAttribute('aria-label')).toBe('1 / 3');
+      await click('[data-viewer-thumb="p1"]');
+      expect(current()).toBe('/api/attachments/p1');
+      expect(count()).toBe('1 / 3');
+      expect(thumbs().map((b) => b.getAttribute('aria-current'))).toEqual(['true', null, null]);
+    });
+
+    it('asks for older pictures when the oldest small one is chosen', async () => {
+      const media = vi.fn(async (_c: string, _k: string, before?: number) => ok(before === undefined ? { items: [listed('p6', 6), listed('p5', 5)], hasMore: true } : { items: [listed('p4', 4)], hasMore: false }));
+      open({ media }, [{ ...msg(5, 'minh'), attachments: [att('p5')] }, { ...msg(6, 'minh'), attachments: [att('p6')] }]);
+      await flush();
+      await click('[data-pic="p6"]');
+      await click('[data-viewer-thumb="p5"]');
+      expect(media).toHaveBeenLastCalledWith(C1, 'image', 5);
+      expect(count()).toBe('2 / 3');
+      expect(viewer()!.querySelector('[data-viewer-thumb="p4"]')).not.toBeNull();
+    });
+
+    it('closes with the button, and has no arrows and no strip for a single picture', async () => {
       open({}, [{ ...msg(1, 'minh', '', at(10)), attachments: [att('p1')] }]);
       await flush();
       await click('[data-pic="p1"]');
       expect(root.querySelector('[data-viewer-next]')).toBeNull();
       expect(root.querySelector('[data-viewer-prev]')).toBeNull();
+      expect(viewer()!.querySelector('[data-viewer-thumbs]')).toBeNull();
       expect(viewer()!.querySelector('[data-viewer-caption]')).toBeNull();   // no words, no caption
       await click('[data-viewer-close]');
       expect(viewer()).toBeNull();
