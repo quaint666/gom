@@ -1,4 +1,5 @@
 import { html, nothing, render, type TemplateResult } from 'lit-html';
+import { keyed } from 'lit-html/directives/keyed.js';
 import type { Api, Conversation, FriendLists, Failure, Person, User } from '../api.js';
 import * as icons from '../icons.js';
 import { fold, matches } from '../search.js';
@@ -175,7 +176,7 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
         <div class="searchfield input">${icons.search()}
           <input type="search" name="find" aria-label=${tab === 'friends' ? say.friends.findFriends : say.friends.findGroups} placeholder=${tab === 'friends' ? say.friends.findFriends : say.friends.findGroups}
             autocomplete="off" maxlength=${limits().nameChars} .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>
-        ${listing()}
+        ${keyed(tab, listing())}
 
         ${tab === 'friends' ? section(say.friends.blocked, blocked.map((p) => html`
           <li class="li" data-blocked=${p.gomId}>${who(p)}

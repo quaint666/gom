@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { avatarTone, clock } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { Pusher, PushSupport } from '../Scripts/push.js';
@@ -271,6 +271,28 @@ describe('chat: opening a conversation', () => {
     h.nav.path = `/c/${C1}`; h.nav.pop();
     await flush();
     expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('thread');
+  });
+
+  it('on a phone, slides the conversation out before the list shows, for the back button and the back gesture', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((q: string) => ({ matches: q === '(max-width: 899.98px)', media: q } as MediaQueryList));
+    const ends: Array<() => void> = [];
+    const frames: Keyframe[][] = [];
+    const animate = vi.fn((f: Keyframe[]) => { frames.push(f); return { finished: new Promise<void>((resolve) => { ends.push(resolve); }), cancel: vi.fn() }; });
+    Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true });
+    onTestFinished(() => { delete (HTMLElement.prototype as { animate?: unknown }).animate; vi.restoreAllMocks(); });
+    const h = start({ chats, history });
+    await flush();
+    rows()[0]!.click(); await flush();
+    root.querySelector<HTMLElement>('.th-head .back')!.click(); await flush();
+    expect(frames.at(-1)![1]).toEqual({ transform: 'translateX(40%)', opacity: 0 });
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('thread');   // still sliding
+    ends.at(-1)!(); await flush();
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('list');
+    rows()[0]!.click(); await flush();
+    h.nav.path = '/'; h.nav.pop(); await flush();
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('thread');
+    ends.at(-1)!(); await flush();
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('list');
   });
 
   it('marks the active row', async () => {

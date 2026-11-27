@@ -8,6 +8,7 @@ import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, ini
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { menuItem, menuPoint, placeMenu as placeMenuAt } from '../menu.js';
+import { dismissMenu, leaveThread } from '../motion.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { markedExcerpt, matches, type Run } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
@@ -322,12 +323,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (m === undefined) return nothing;
     const mine = m.sender.id === me?.id;
     const close = () => { menu = null; update(); };
+    /** Escape, the shade or "Đóng": the menu moves out first (motion.ts). A choice closes it at once. */
+    const dismiss = () => dismissMenu(root, close);
     const pinned = t.pins.some((p) => p.id === m.id);
     // What can still be passed on or saved: a trimmed picture or file cannot.
     const kept = (m.attachments ?? []).filter((a) => !a.removed);
     return html`
-      <div class="scrim" data-scrim @click=${close}></div>
-      <div class="menu ${mine ? 'mine' : ''}" role="menu" aria-label=${say.chat.messageOptions} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') close(); }}>
+      <div class="scrim" data-scrim @click=${dismiss}></div>
+      <div class="menu ${mine ? 'mine' : ''}" role="menu" aria-label=${say.chat.messageOptions} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); }}>
       ${menu.hide ? html`
         <p>${say.chat.hideQ}</p>
         <div class="ask"><button class="btn small" type="button" data-confirm-hide @click=${() => void hide(m)}>${say.chat.deleteForMe}</button>
@@ -347,7 +350,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${menuItem('hide', icons.trash(), say.chat.deleteForMe, () => { menu = { id: m.id, confirming: false, hide: true }; update(); })}
         ${mine ? menuItem('recall', icons.undo(), say.chat.recall, () => { menu = { id: m.id, confirming: true }; update(); }, true) : nothing}
         </div>
-        <button class="btn secondary small close-menu" type="button" data-cancel-recall @click=${close}>${say.common.close}</button>`}
+        <button class="btn secondary small close-menu" type="button" data-cancel-recall @click=${dismiss}>${say.common.close}</button>`}
       </div>`;
   };
 
@@ -789,8 +792,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @click=${() => { gearOpen = !gearOpen; update(); }}>${icons.gear()}</button>
     </nav>
     ${gearOpen ? html`
-      <div class="scrim" data-gear-scrim @click=${() => { gearOpen = false; update(); }}></div>
-      <div class="gearmenu" role="menu" aria-label=${say.chat.account} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { gearOpen = false; update(); } }}>
+      <div class="scrim" data-gear-scrim @click=${() => dismissMenu(root, () => { gearOpen = false; update(); })}></div>
+      <div class="gearmenu" role="menu" aria-label=${say.chat.account} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') dismissMenu(root, () => { gearOpen = false; update(); }); }}>
         <a class="mi" role="menuitem" href="/settings">${icons.gear()}<span>${say.common.settings}</span></a>
         ${me?.isOwner ? html`<a class="mi" role="menuitem" href="/settings/owner">${icons.users()}<span>${say.common.ownerPage}</span></a>` : nothing}
         <button class="mi" type="button" role="menuitem" data-signout @click=${() => void signOut()}>${icons.signOut()}<span>${say.common.signOut}</span></button>
@@ -1314,8 +1317,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     deps.nav.push('/');
-    openId = null;
-    update();
+    toList();
+  }
+
+  /** Back to the list: on a phone the conversation slides out first (motion.ts), as it slid in. */
+  function toList(): void {
+    const leaving = openId;
+    leaveThread(root.querySelector('.thread-pane'), () => { if (openId === leaving) { openId = null; update(); } });
   }
 
   /** The Gom button: back to the start of the app (the list, nothing open). Already there, it does nothing. */
@@ -1720,9 +1728,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const unread = c.unread > 0 || c.markedUnread === true;
     const friend = c.kind === 'direct' && c.peer !== null && !c.peer.deleted && c.peer.gomId ? c.peer.gomId : null;
     return html`
-      <div class="scrim" data-scrim @click=${closeRowMenu}></div>
+      <div class="scrim" data-scrim @click=${() => dismissMenu(root, closeRowMenu)}></div>
       <div class="menu" role="menu" aria-label=${say.chat.optionsFor(c.title)} data-conversation-menu
-        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') closeRowMenu(); }}>
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') dismissMenu(root, closeRowMenu); }}>
       ${rowMenu!.confirming ? html`
         <p>${say.chat.clearQ}</p>
         <div class="ask"><button class="btn small" type="button" data-confirm-clear @click=${() => void clearConversation(c)}>${say.chat.deleteForMe}</button>
@@ -1737,7 +1745,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           : menuItem('hide-chat', icons.eyeOff(), say.chat.hide, () => void hideConversation(c))}
         ${menuItem('clear-chat', icons.trash(), say.chat.clear, () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}
         </div>
-        <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${closeRowMenu}>${say.common.close}</button>`}
+        <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${() => dismissMenu(root, closeRowMenu)}>${say.common.close}</button>`}
       </div>`;
   };
 
@@ -2489,7 +2497,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   };
 
   // Back from the information page (its own step in the history) only closes it.
-  deps.nav.onPop(() => { infoPage = false; const id = idFromPath(); if (id === null) { openId = null; update(); } else show(id); });
+  deps.nav.onPop(() => { infoPage = false; const id = idFromPath(); if (id === null) toList(); else show(id); });
   document.addEventListener('visibilitychange', () => {
     if (!deps.visible()) return;
     live?.retryNow();

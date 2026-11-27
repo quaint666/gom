@@ -645,6 +645,13 @@ a.mi { text-decoration: none; }
   .tick { transition: color var(--dur) var(--ease), opacity var(--dur) var(--ease); }
   @media (hover: hover) and (pointer: fine) and (min-width: 600px) { .menu { animation: pop .12s var(--ease); transform-origin: top left; } }
   @media (max-width: 899.98px) { .chat[data-pane="thread"] .thread-pane { animation: slide-in .2s var(--ease); } }
+  /* Moving between Gom's pages (the list, Contacts, Settings): they cross-fade instead of the screen swapping at once, where the
+     browser does it (Chrome, Android's web view, Safari 18.2+). The rule is here, in the stylesheet the offline worker serves too. */
+  @view-transition { navigation: auto; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+  /* The info panel beside the thread slides in from the right; a tab's content and a Settings part fade in. */
+  @media (min-width: 1200px) { .chat[data-infostate="open"] .info { animation: slide-in .2s var(--ease); } }
+  [role="tabpanel"], .part:not([hidden]) { animation: fade .15s var(--ease); }
 }
 
 /* ticks on your own messages */
