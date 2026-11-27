@@ -5,7 +5,7 @@ import type { Api, Failure, Person, PushLevel, PushState, SessionInfo, User } fr
 import * as icons from '../icons.js';
 import { mountOwner } from './owner.js';
 import { mountStorage } from './storage.js';
-import { PALETTES, PATTERNS, applyBlack, applyPalette, chosenScheme, chooseScheme, rememberPattern, storedBlack, storedPalette, storedPattern, type Choice, type Palette, type Pattern } from '../theme.js';
+import { GRADIENTS, PALETTES, PATTERNS, applyBlack, applyPalette, chosenScheme, chooseScheme, rememberPattern, storedBlack, storedPalette, storedPattern, type Choice, type Palette, type Pattern } from '../theme.js';
 import type { Installer } from '../install.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
 import { appBar, avatar, errorBox, formatTime, passwordField } from '../ui.js';
@@ -270,6 +270,11 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   /** The parts, each in the DOM and shown only when it is the one open (the owner's two are mounted when opened). */
   const part = (s: Section, body: unknown) => html`<section class="part" data-part=${s} aria-label=${title(s)} ?hidden=${openPart() !== s}>${body}</section>`;
 
+  /** One colour to choose (a solid one, or a gradient): its dot drawn in it, and its name. */
+  const swatch = (value: Palette) => html`
+    <label class="swatch"><input type="radio" name="palette" value=${value} .checked=${live(palette === value)} ?disabled=${busy}
+      @change=${() => void choosePalette(value)}><span class="dot" data-palette=${value} aria-hidden="true"></span><span>${say.settings.palettes[value]}</span></label>`;
+
   const parts = (u: User) => html`
     ${part('profile', html`${pictureCard(u)}${profileRows(u)}`)}
     ${part('notifications', html`${push === null ? html`<p class="hint" data-push-unsupported>${say.settings.pushUnsupported}</p>` : pushCard(push)}${callsCard(u)}`)}
@@ -289,10 +294,14 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       <h2 class="section">${say.settings.palette}</h2>
       <fieldset class="swatches" data-palette-choice aria-describedby="palette-note">
         <legend class="sr-only">${say.settings.palette}</legend>
-        ${PALETTES.map((value) => html`
-          <label class="swatch"><input type="radio" name="palette" value=${value} .checked=${live(palette === value)} ?disabled=${busy}
-            @change=${() => void choosePalette(value)}><span class="dot" data-palette=${value} aria-hidden="true"></span><span>${say.settings.palettes[value]}</span></label>`)}
+        ${PALETTES.filter((value) => !GRADIENTS.includes(value)).map(swatch)}
         <p class="hint" id="palette-note">${say.settings.paletteNote}</p>
+      </fieldset>
+      <h2 class="section">${say.settings.gradients}</h2>
+      <fieldset class="swatches" data-gradient-choice aria-describedby="gradient-note">
+        <legend class="sr-only">${say.settings.gradients}</legend>
+        ${GRADIENTS.map(swatch)}
+        <p class="hint" id="gradient-note">${say.settings.gradientsNote}</p>
       </fieldset>
       <h2 class="section">${say.settings.pattern}</h2>
       <fieldset class="patterns" data-pattern-choice aria-describedby="pattern-note">

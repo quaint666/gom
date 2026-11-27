@@ -76,6 +76,42 @@
   --tint: light-dark(#F0E4E6, #2A1A1C); --tint-text: light-dark(#621F2D, #DFC4CA); --out: light-dark(#EBDBDF, #391D21); --pat: light-dark(#EADDDA, #2A1A1C); }
 [data-palette="rice"] { --btn: #2F7A3A; --btn-hover: light-dark(#215529, #40854A); --badge: #2F7A3A; --link: light-dark(#2F7A3A, #A1C3A6); --ring: light-dark(#2F7A3A, #A1C3A6);
   --tint: light-dark(#E4EEE5, #18291B); --tint-text: light-dark(#215529, #C5DAC8); --out: light-dark(#DCE8DE, #1B351F); --pat: light-dark(#DFE6D9, #18291B); }
+/* The gradients (Settings, "Chuyển màu"): an accent made from the first colour, as above, and --mine, the gradient your own messages
+   take (see .out .bub). White words on every point of each are at least 4.5 to 1; a test checks. Any colour without one clears it, so a
+   conversation in a solid colour does not take the gradient of the page around it. */
+[data-palette] { --mine: initial; --mine-ink: initial; --mine-soft: initial; --mine-quote: initial; }
+[data-palette="sunset"] { --btn: #C2410C; --btn-hover: light-dark(#882E08, #C7501F); --badge: #C2410C; --link: light-dark(#C2410C, #E4AA92); --ring: light-dark(#C2410C, #E4AA92);
+  --tint: light-dark(#F7E6DF, #351E12); --tint-text: light-dark(#882E08, #EECABB); --out: light-dark(#F5DFD6, #4A2311); --pat: light-dark(#F1DFD4, #351E12);
+  --mine-ink: #FFFFFF; --mine-soft: rgb(255 255 255 / .82); --mine-quote: rgb(0 0 0 / .18);
+  --mine: linear-gradient(180deg, #C2410C, #BE123C, #7E22CE); }
+[data-palette="nightsea"] { --btn: #0369A1; --btn-hover: light-dark(#024A71, #1775A9); --badge: #0369A1; --link: light-dark(#0369A1, #8EBCD5); --ring: light-dark(#0369A1, #8EBCD5);
+  --tint: light-dark(#DEECF3, #0F262F); --tint-text: light-dark(#024A71, #B8D5E5); --out: light-dark(#D4E5EF, #0D3040); --pat: light-dark(#DAE4E6, #0F262F);
+  --mine-ink: #FFFFFF; --mine-soft: rgb(255 255 255 / .82); --mine-quote: rgb(0 0 0 / .18);
+  --mine: linear-gradient(180deg, #0369A1, #4338CA, #7E22CE); }
+[data-palette="forest"] { --btn: #15803D; --btn-hover: light-dark(#0F5A2B, #288A4D); --badge: #15803D; --link: light-dark(#15803D, #96C6A8); --ring: light-dark(#15803D, #96C6A8);
+  --tint: light-dark(#E1EEE6, #132A1B); --tint-text: light-dark(#0F5A2B, #BDDBC9); --out: light-dark(#D7E9DE, #133720); --pat: light-dark(#DCE7DA, #132A1B);
+  --mine-ink: #FFFFFF; --mine-soft: rgb(255 255 255 / .82); --mine-quote: rgb(0 0 0 / .18);
+  --mine: linear-gradient(180deg, #15803D, #0F766E, #1D4ED8); }
+[data-palette="blossom"] { --btn: #BE185D; --btn-hover: light-dark(#851141, #C32A6A); --badge: #BE185D; --link: light-dark(#BE185D, #E297B6); --ring: light-dark(#BE185D, #E297B6);
+  --tint: light-dark(#F7E1EA, #341622); --tint-text: light-dark(#851141, #EDBED2); --out: light-dark(#F4D8E3, #49162B); --pat: light-dark(#F0DADD, #341622);
+  --mine-ink: #FFFFFF; --mine-soft: rgb(255 255 255 / .82); --mine-quote: rgb(0 0 0 / .18);
+  --mine: linear-gradient(180deg, #BE185D, #9333EA); }
+[data-palette="ember"] { --btn: #B91C1C; --btn-hover: light-dark(#821414, #BF2E2E); --badge: #B91C1C; --link: light-dark(#B91C1C, #E09999); --ring: light-dark(#B91C1C, #E09999);
+  --tint: light-dark(#F6E1E1, #331615); --tint-text: light-dark(#821414, #EBBFBF); --out: light-dark(#F3D8D8, #471716); --pat: light-dark(#F0DBD6, #331615);
+  --mine-ink: #FFFFFF; --mine-soft: rgb(255 255 255 / .82); --mine-quote: rgb(0 0 0 / .18);
+  --mine: linear-gradient(180deg, #B91C1C, #C2410C, #A16207); }
+[data-palette="candy"] { --btn: #C81E6E; --btn-hover: light-dark(#8C154D, #CC307A); --badge: #C81E6E; --link: light-dark(#C81E6E, #E69ABE); --ring: light-dark(#C81E6E, #E69ABE);
+  --tint: light-dark(#F8E2EC, #361725); --tint-text: light-dark(#8C154D, #F0C0D6); --out: light-dark(#F6D9E6, #4C1830); --pat: light-dark(#F1DBE0, #361725);
+  --mine-ink: #FFFFFF; --mine-soft: rgb(255 255 255 / .82); --mine-quote: rgb(0 0 0 / .18);
+  --mine: linear-gradient(180deg, #C81E6E, #7C3AED, #2563EB); }
+[data-palette="aurora"] { --btn: #047857; --btn-hover: light-dark(#03543D, #188364); --badge: #047857; --link: light-dark(#047857, #8EC2B3); --ring: light-dark(#047857, #8EC2B3);
+  --tint: light-dark(#DEEDE9, #0F2921); --tint-text: light-dark(#03543D, #B9D9D0); --out: light-dark(#D4E8E2, #0E3529); --pat: light-dark(#DAE6DD, #0F2921);
+  --mine-ink: #FFFFFF; --mine-soft: rgb(255 255 255 / .82); --mine-quote: rgb(0 0 0 / .18);
+  --mine: linear-gradient(180deg, #047857, #0E7490, #6D28D9); }
+[data-palette="lime"] { --btn: #4D7C0F; --btn-hover: light-dark(#36570A, #5B8622); --badge: #4D7C0F; --link: light-dark(#4D7C0F, #AFC493); --ring: light-dark(#4D7C0F, #AFC493);
+  --tint: light-dark(#E8EEE0, #1E2A12); --tint-text: light-dark(#36570A, #CDDABC); --out: light-dark(#E1E9D6, #253612); --pat: light-dark(#E3E6D4, #1E2A12);
+  --mine-ink: #FFFFFF; --mine-soft: rgb(255 255 255 / .82); --mine-quote: rgb(0 0 0 / .18);
+  --mine: linear-gradient(180deg, #4D7C0F, #0F766E, #0369A1); }
 
 * { box-sizing: border-box; }
 body {
@@ -286,6 +322,13 @@ button.th-title:hover b { text-decoration: underline; }
 .bub { max-inline-size: min(520px, 78%); padding: 8px 12px 6px; border-radius: 16px; overflow-wrap: anywhere; }
 .in .bub { background: var(--surface); border: 1px solid var(--border); }
 .out .bub { background: var(--out); border: 1px solid transparent; }
+/* A gradient colour: your own messages are solid with white words, the gradient fixed to the screen, so each takes the colour of where
+   it sits and shifts as the chat scrolls, as Messenger does. Where a browser does not fix a background to the screen (Safari on an
+   iPhone), each shows the whole gradient. Only a colour with --mine sets the --mine-ink and --mine-soft these use. */
+.out .bub { background: var(--mine, var(--out)) fixed; color: var(--mine-ink, inherit); }
+.out .ts, .out .edited, .out .quote span { color: var(--mine-soft, var(--muted)); }
+.out .tick.t-seen, .out .bub a { color: var(--mine-ink, var(--link)); }
+.out .quote { background: var(--mine-quote, rgb(0 0 0 / .05)); border-inline-start-color: var(--mine-ink, var(--btn)); }
 .in:not(.last) .bub { border-end-start-radius: 6px; }
 .in:not(.first) .bub { border-start-start-radius: 6px; }
 .out:not(.last) .bub { border-end-end-radius: 6px; }
@@ -558,7 +601,7 @@ a.mi { text-decoration: none; }
 .swatches .hint { grid-column: 1 / -1; }
 .swatch { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-block-size: 44px; font-size: 12.5px; color: var(--muted); text-align: center; cursor: pointer; }
 .swatch input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
-.swatch .dot { inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--btn); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .08); }
+.swatch .dot { inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--mine, var(--btn)); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .08); }
 .swatch:has(input:checked) { color: var(--text); font-weight: 600; }
 .swatch:has(input:checked) .dot { outline: 3px solid var(--btn); outline-offset: 2px; }
 .swatch:has(input:focus-visible) .dot { outline: 3px solid var(--ring); outline-offset: 4px; }

@@ -3441,7 +3441,7 @@ describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
     root.querySelector<HTMLButtonElement>('[data-info-look]')!.click();
     await flush();
     const panel = () => root.querySelector<HTMLElement>('[data-look-panel]')!;
-    expect(panel().querySelectorAll('[data-look-colours] input')).toHaveLength(17);   // each person's own, then sixteen
+    expect(panel().querySelectorAll('[data-look-colours] input')).toHaveLength(25);   // each person's own, then sixteen colours and eight gradients
     expect(panel().querySelector<HTMLInputElement>('[data-look-colours] input[value=""]')!.checked).toBe(true);
     const sea = panel().querySelector<HTMLInputElement>('[data-look-colours] input[value="sea"]')!;
     sea.checked = true; sea.dispatchEvent(new Event('change'));

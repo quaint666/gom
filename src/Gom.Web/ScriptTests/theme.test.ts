@@ -82,7 +82,7 @@ describe('the person\'s colour', () => {
     localStorage.setItem('gom-palette', 'neon');
     expect(storedPalette()).toBe('sage');
     expect(isPalette('neon')).toBe(false);
-    expect(PALETTES).toHaveLength(16);
+    expect(PALETTES).toHaveLength(24);
   });
 });
 

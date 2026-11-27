@@ -22,7 +22,10 @@ export const chosenScheme = (): Choice => storedScheme() ?? 'system';
 export const chooseScheme = (choice: Choice): void => applyScheme(choice === 'system' ? null : choice);
 
 /** The colours a person can choose, in the order Settings shows them. The codes are Chat/Appearance.cs's (a server test checks). */
-export const PALETTES = ['sage', 'sea', 'lotus', 'turmeric', 'lavender', 'graphite', 'jade', 'indigo', 'plum', 'lacquer', 'coffee', 'moss', 'clay', 'sky', 'wine', 'rice'] as const;
+export const PALETTES = ['sage', 'sea', 'lotus', 'turmeric', 'lavender', 'graphite', 'jade', 'indigo', 'plum', 'lacquer', 'coffee', 'moss', 'clay', 'sky', 'wine', 'rice',
+  'sunset', 'nightsea', 'forest', 'blossom', 'ember', 'candy', 'aurora', 'lime'] as const;
+/** The last eight are gradients (`--mine` in gom.css): Settings shows them on their own, as "Chuyển màu". */
+export const GRADIENTS: readonly Palette[] = PALETTES.slice(16);
 export type Palette = typeof PALETTES[number];
 export const isPalette = (value: unknown): value is Palette => typeof value === 'string' && (PALETTES as readonly string[]).includes(value);
 

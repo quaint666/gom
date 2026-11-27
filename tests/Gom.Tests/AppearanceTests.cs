@@ -164,6 +164,43 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Empty(low);
     }
 
+    /// <summary>
+    /// The gradients are the last eight colours, and only they have one (--mine): your own messages in white on it, so white must be at
+    /// least 4.5 to 1 on every point of it, worked out in sRGB as browsers draw a linear-gradient by default.
+    /// </summary>
+    [Fact]
+    public void Every_gradient_is_one_of_the_last_eight_colours_and_white_is_readable_on_every_point_of_it()
+    {
+        var css = Source("wwwroot", "css", "gom.css");
+        var gradients = new List<string>();
+        var low = new List<string>();
+        foreach (Match m in CssBlock().Matches(css))
+        {
+            var t = Tokens(css[m.Index..css.IndexOf('}', m.Index)]);
+            if (!t.TryGetValue("--mine", out var mine)) continue;
+            gradients.Add(m.Groups[1].Value);
+            Assert.Equal("#FFFFFF", t["--mine-ink"].Light);
+            var stops = Hex().Matches(mine.Light).Select(h => h.Value).ToArray();
+            Assert.True(stops.Length >= 2, $"{m.Groups[1].Value}: a gradient needs two colours or more");
+            Assert.Equal(t["--btn"].Light, stops[0]);   // the buttons take the first colour
+            for (var s = 0; s + 1 < stops.Length; s++)
+                for (var k = 0; k <= 20; k++)
+                {
+                    var point = Mix(stops[s], stops[s + 1], k / 20.0);
+                    var ratio = Contrast("#FFFFFF", point);
+                    if (ratio < 4.5) low.Add($"{m.Groups[1].Value} at {point}: {ratio:0.00}");
+                }
+        }
+        Assert.Equal(Appearance.Palettes.Skip(16), gradients);
+        Assert.Empty(low);
+    }
+
+    private static string Mix(string a, string b, double t)
+    {
+        int C(string h, int i) => int.Parse(h.AsSpan(1 + 2 * i, 2), NumberStyles.HexNumber);
+        return "#" + string.Concat(Enumerable.Range(0, 3).Select(i => ((int)Math.Round(C(a, i) * (1 - t) + C(b, i) * t)).ToString("X2", CultureInfo.InvariantCulture)));
+    }
+
     private static Dictionary<string, (string Light, string Dark)> Tokens(string block)
     {
         var tokens = new Dictionary<string, (string, string)>();
@@ -207,6 +244,8 @@ public partial class AppearanceTests(AppFixture app) : IClassFixture<AppFixture>
     private static partial Regex Names();
     [GeneratedRegex(@"([a-z]+): '")]
     private static partial Regex NameKey();
+    [GeneratedRegex(@"#[0-9A-Fa-f]{6}")]
+    private static partial Regex Hex();
     [GeneratedRegex(@"(--[a-z-]+):\s*([^;]+);")]
     private static partial Regex Token();
     // The dark half may be a var() with the default dark value as its fallback (pure black overrides it).
