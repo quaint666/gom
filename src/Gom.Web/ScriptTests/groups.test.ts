@@ -431,6 +431,7 @@ describe('group page: the name', () => {
       mount(role);
       await flush();
       expect(field().value).toBe('Nhà cũ');
+      expect(field().parentElement!.classList.contains('input')).toBe(true);   // the site's own box, as on every other form
     }
   });
 
