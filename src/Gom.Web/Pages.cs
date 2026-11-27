@@ -96,6 +96,8 @@ public static class Pages
         contactChars = ContactEndpoints.MaxChars,
         contactReplyChars = ContactEndpoints.ReplyMaxChars,
         contactKeepDays = contact.KeepDays,
+        disappearChoices = Chat.Disappearing.Choices,
+        stickerPackChars = Chat.StickerPacks.NameChars,
     });
 
     /// <summary>The shell made into one page, each value escaped for HTML text or a quoted attribute.</summary>

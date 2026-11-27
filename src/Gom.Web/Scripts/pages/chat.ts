@@ -2,13 +2,13 @@ import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import { repeat } from 'lit-html/directives/repeat.js';
 import { NO_PUSH_SERVICE, type Pusher } from '../push.js';
-import type { Api, Attachment, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, Person, PersonCard, PushLevel, Reply, Result, User, CallLine } from '../api.js';
+import type { Api, Attachment, CustomPack, ChatEvent, ChatMessage, Conversation, Failure, GroupMember, MediaItem, Person, PersonCard, PushLevel, Reply, Result, User, CallLine } from '../api.js';
 import { linkify } from '../linkify.js';
 import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, initials, listTime, mergeMedia, mergeMessages, missedByMe, noticeText, type Shown, type ThreadItem } from '../chat/model.js';
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { menuItem, menuPoint, placeMenu as placeMenuAt } from '../menu.js';
-import { dismissMenu, leaveThread } from '../motion.js';
+import { dismissMenu, leaveInfo, leaveThread } from '../motion.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { markedExcerpt, matches, type Run } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
@@ -21,7 +21,8 @@ import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 import type { Calls } from '../calls/call.js';
 import { rememberAppCalls } from '../calls/here.js';
-import { audioCard } from '../chat/audio.js';
+import { audioCard, clockOf } from '../chat/audio.js';
+import { VOICE_SECONDS, voiceStamp, type Recording } from '../voice.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -50,6 +51,8 @@ export interface ChatDeps {
    * is picked. Without it every video goes as it is.
    */
   prepareVideo?(file: File, onProgress: (fraction: number) => void, maxBytes: number): Promise<PreparedVideo | null>;
+  /** Records a voice message from the microphone (`voice.ts`); without it, or uploads off, there is no microphone button. */
+  recordVoice?(): Promise<Recording | 'denied' | 'unsupported'>;
   /** Voice calls: the page's own, or the Android app's; offered only when the server has calls on and they are ready. */
   calls?: Calls;
 }
@@ -61,6 +64,8 @@ export interface OutboxItem { conversation: string; clientId: string; body: stri
 
 /** How long to wait before asking again after the server said "slow down". */
 const SLOW_RETRY_MS = 1000;
+/** A voice message being recorded in a conversation: `recorder` is null while the browser asks for the microphone; `seconds` counts up to the limit. */
+interface VoiceRecording { conversation: string; recorder: Recording | null; seconds: number; timer: number | null }
 /** How many uploads go up at the same time. */
 const UPLOADS_AT_ONCE = 2;
 /** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
@@ -83,6 +88,8 @@ const SCROLL_END = typeof window !== 'undefined' && 'onscrollend' in window;
 interface TrayItem {
   key: number; name: string; file: File | null; state: 'waiting' | 'converting' | 'uploading' | 'done' | 'failed'; progress: number; attachment?: Attachment; error?: Failure;
   prepared?: boolean; poster?: Blob | null; preview?: string;
+  /** A voice message: sent on its own as soon as it is up. */
+  voice?: boolean;
 }
 
 /** A video picked on this device made ready to send: an MP4 Gom plays everywhere, and its first picture. */
@@ -171,6 +178,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const threads = new Map<string, Thread>();
   let error: Failure | null = null;
   let notice = '';
+  let recording: VoiceRecording | null = null;
   let offline = false;
   let outbox: ReturnType<ChatDeps['outbox']> | null = null;
   let drafts: ReturnType<NonNullable<ChatDeps['drafts']>> | null = null;
@@ -232,6 +240,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let undoHide: { id: string; timer: number } | null = null;
   /** The pack of stickers shown: -1 is "Gần đây" (the ones this device sent lately). */
   let stickerPack = -1;
+  /** The owner's packs, asked for the first time the stickers are shown (null: not yet), after Gom's own in the picker. */
+  let customPacks: CustomPack[] | null = null;
+  function loadCustomPacks(): void {
+    if (customPacks !== null) return;
+    customPacks = [];
+    void api.stickerPacks().then((r) => { if (r.ok) { customPacks = r.data.filter((p) => p.stickers.length > 0); update(); } else customPacks = null; });
+  }
   /** The group of emoji shown: -1 is "Gần đây". */
   let emojiGroup = recentEmoji().length > 0 ? -1 : 0;
 
@@ -826,8 +841,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  let infoLeaving = false;
   function toggleInfo(): void {
-    infoOpen = !infoOpen;
+    if (infoLeaving) return;
+    if (infoOpen) {
+      // Closing slides it out first (motion.ts); a second press meanwhile does nothing.
+      infoLeaving = true;
+      leaveInfo(root.querySelector('.thread-pane ~ [data-info-panel]'), () => { infoLeaving = false; setInfo(false); });
+      return;
+    }
+    setInfo(true);
+  }
+
+  function setInfo(open: boolean): void {
+    infoOpen = open;
     try { localStorage.setItem('gom-info', infoOpen ? '1' : '0'); } catch { /* it is just not remembered */ }
     if (infoOpen && openId !== null) { void loadPeople(openId); void loadMedia(openId, 'image'); void loadMedia(openId, 'file'); }
     update();
@@ -891,6 +918,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <button class="btn secondary small" type="button" data-info-look @click=${() => { looking = { id: c.id, tab: 'colour', palette: c.palette ?? null, pattern: c.pattern ?? null, busy: false, error: null }; update(); }}>${icons.palette()} ${say.chat.look}</button>
       </div>
       ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}
+      ${disappearRow(c)}
       ${t.pins.length === 0 ? nothing : html`
         <h3>${say.chat.pinned}</h3>
         <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
@@ -912,6 +940,34 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         </div>`}
       ${page ? infoFoot(c) : nothing}
     </aside>`;
+
+  /** In a one-to-one chat either person may set it (the server checks they are still friends); in a group, the leader and the deputies. */
+  const maySetDisappear = (c: Conversation): boolean => c.kind === 'direct'
+    ? c.peer !== null && c.peer.deleted !== true
+    : (people.get(c.id) ?? []).some((m) => m.isMe && (m.role === 'leader' || m.role === 'deputy'));
+
+  /** Disappearing messages, in the information panel: a choice for those who may set it, else what it is. */
+  const disappearRow = (c: Conversation) => {
+    const now = c.disappearSeconds ?? null;
+    const name = (s: number | null) => s === null ? say.chat.disappearOffChoice : say.chat.lasts(s);
+    return html`
+      <div class="info-setting" data-info-disappear>
+        <label for="disappear">${icons.clock()} ${say.chat.disappear}</label>
+        ${maySetDisappear(c) ? html`<select id="disappear" .value=${liveValue(String(now ?? ''))} @change=${(e: Event) => void setDisappear(c, (e.target as HTMLSelectElement).value)}>
+            ${[null, ...limits().disappearChoices].map((s) => html`<option value=${s ?? ''} ?selected=${s === now}>${name(s)}</option>`)}</select>`
+          : html`<b>${name(now)}</b>`}
+      </div>
+      <p class="hint">${say.chat.disappearNote}</p>`;
+  };
+
+  async function setDisappear(c: Conversation, value: string): Promise<void> {
+    const seconds = value === '' ? null : Number(value);
+    const before = c.disappearSeconds ?? null;
+    c.disappearSeconds = seconds;   // the line in the conversation and the list follow from the server
+    update();
+    const result = await api.setDisappear(c.id, seconds);
+    if (!result.ok) { c.disappearSeconds = before; notice = errorText(result); update(); }
+  }
 
   /** A phone: the information as a page over the thread, with a way back. */
   const infoSheet = (c: Conversation, t: Thread) => html`
@@ -962,6 +1018,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /** Someone's card: who they are to you, what you can do, and the groups you are both in. */
+  /**
+   * A tap or click outside an open dialog (on its shade) closes it, as the X does. The shade's clicks reach the dialog itself, and so do
+   * those on its own padding, so where the pointer was decides. (`closedby="any"` does this in Chrome 134+, not yet in Safari.)
+   */
+  const outside = (close: () => void) => (e: MouseEvent) => {
+    const d = e.currentTarget as HTMLElement;
+    if (e.target !== d) return;
+    const r = d.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) close();
+  };
+
   const cardView = () => {
     if (card === null) return nothing;
     const k = card;
@@ -971,7 +1038,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const via = p?.commonGroups[0]?.id ?? null;
     const close = () => { card = null; update(); };
     return html`
-      <dialog class="pcard" aria-labelledby="pcard-name" data-person-card data-modal @close=${close}
+      <dialog class="pcard" aria-labelledby="pcard-name" data-person-card data-modal @close=${close} @click=${outside(close)}
         @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
         <div class="pcard-head"><button class="ib" type="button" data-close-card aria-label=${say.common.close} @click=${close}>${icons.close()}</button></div>
         ${p === null ? (k.error === null ? html`<p class="hint" role="status">${say.common.loading}</p>` : errorBox(k.error)) : html`
@@ -1025,6 +1092,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
             : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : nothing}</div>`}
+          ${c?.disappearSeconds ? html`<span class="th-timer" role="img" data-disappear-on aria-label=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}
+            title=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}>${icons.clock()}</span>` : nothing}
           ${callable(c) ? html`<button class="ib" type="button" data-call-start aria-label=${say.calls.call} @click=${() => callIn(c)}>${icons.call()}</button>` : nothing}
           ${c === undefined ? nothing : html`<button class="ib wide" type="button" data-search aria-label=${say.chat.searchIn} aria-expanded=${searching ? 'true' : 'false'}
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
@@ -1062,6 +1131,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
               <button class="ib" type="button" data-cancel-reply aria-label=${say.chat.cancelReply} @click=${() => { t.replying = null; update(); }}>${icons.close()}</button>
             </div>`}
           ${trayView(t)}
+          ${recording?.conversation === openId ? recordingBar(recording) : html`
           <form class="composer" @submit=${(e: Event) => { e.preventDefault(); void send(openId!); }}>
             ${t.editing === null && uploadsOn() ? html`
               <button class="ib attach" type="button" data-gallery aria-label=${say.chat.picturesAndVideos} @click=${() => root.querySelector<HTMLInputElement>('input[name="gallery"]')?.click()}>${icons.image()}</button>
@@ -1077,8 +1147,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label=${say.chat.picker} aria-expanded=${picker !== null ? 'true' : 'false'}
               @click=${togglePicker}>${icons.smile()}</button>` : nothing}
             </div>
-            <button class="send" type="submit" aria-label=${say.chat.send} ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>
-          </form>
+            ${voiceOffered(t) ? html`<button class="send" type="button" data-voice aria-label=${say.chat.recordVoice} @click=${() => void startVoice(openId!)}>${icons.mic()}</button>`
+              : html`<button class="send" type="submit" aria-label=${say.chat.send} ?disabled=${t.tray.some((i) => i.state !== 'done')}>${icons.send()}</button>`}
+          </form>`}
           ${picker !== null && t.editing === null ? pickerPanel(openId!, picker) : nothing}`}
       </section>`;
   }
@@ -1116,8 +1187,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    */
   const stickerPanel = (id: string) => {
     const recent = recentStickers();
+    // Gom's own packs, then the owner's.
+    const packs: { name: string; codes: readonly string[] }[] = [
+      ...STICKER_PACKS.map((p) => ({ name: say.stickerPacks[p.key], codes: p.codes })),
+      ...(customPacks ?? []).map((p) => ({ name: p.name, codes: p.stickers.map((s) => s.code) })),
+    ];
     const pack = stickerPack === -1 && recent.length === 0 ? 0 : stickerPack;
-    const shown = pack === -1 ? recent : STICKER_PACKS[pack]?.codes ?? [];
+    const shown = pack === -1 ? recent : packs[pack]?.codes ?? [];
     const tile = (code: string) => html`<button class="stk-pick" type="button" data-send-sticker=${code} aria-label=${say.chat.sendSticker(stickerName(code))}
       @click=${() => void sendSticker(id, code)}><img src=${stickerUrl(code)} alt="" loading="lazy" width="56" height="56" draggable="false"></button>`;
     const chooser = (index: number, face: TemplateResult | string, name: string) => html`
@@ -1125,9 +1201,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @click=${() => { stickerPack = index; update(); }}>${face}</button>`;
     return html`
       <section class="stickers" role="tabpanel" aria-label=${say.common.sticker} data-sticker-panel>
-        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${STICKER_PACKS.map((p, i) =>
-          chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, say.stickerPacks[p.key]))}</div>
-        <h3>${pack === -1 ? say.common.recent : say.stickerPacks[STICKER_PACKS[pack]!.key]}</h3>
+        <div class="egroups">${recent.length > 0 ? chooser(-1, '🕘', say.common.recent) : nothing}${packs.map((p, i) =>
+          chooser(i, html`<img src=${stickerUrl(p.codes[0]!)} alt="" width="26" height="26" draggable="false">`, p.name))}</div>
+        <h3>${pack === -1 ? say.common.recent : packs[pack]?.name ?? ''}</h3>
         <div class="stk-grid" data-shown-stickers>${shown.map(tile)}</div>
         <p class="credit">${say.chat.stickerCredit}</p>
       </section>`;
@@ -1141,12 +1217,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     picker = ((): 'emoji' | 'stickers' => { try { return localStorage.getItem(PICKER_TAB) === 'emoji' ? 'emoji' : 'stickers'; } catch { return 'stickers'; } })();
     // Opens on "Gần đây" when there are some, else on the first pack; it then stays where the person put it, sending or not.
     stickerPack = recentStickers().length > 0 ? -1 : 0;
+    if (picker === 'stickers') loadCustomPacks();
     root.querySelector<HTMLTextAreaElement>('.composer textarea')?.blur();
     update();
   }
 
   function showTab(tab: 'emoji' | 'stickers'): void {
     picker = tab;
+    if (tab === 'stickers') loadCustomPacks();
     try { localStorage.setItem(PICKER_TAB, tab); } catch { /* just not remembered */ }
     update();
   }
@@ -1269,7 +1347,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   function update(): void {
+    dropExpired();
     render(view(), root);
+    scheduleExpiry();
     placeMenu();
     showDialogs();
     const after = root.querySelector<HTMLElement>('.msgs');
@@ -1324,6 +1404,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Back to the list: on a phone the conversation slides out first (motion.ts), as it slid in. */
   function toList(): void {
+    cancelVoice();
     const leaving = openId;
     leaveThread(root.querySelector('.thread-pane'), () => { if (openId === leaving) { openId = null; update(); } });
   }
@@ -1346,7 +1427,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   function onDraft(e: Event): void {
     const field = e.target as HTMLTextAreaElement;
-    if (openId !== null) setDraft(openId, field.value);
+    if (openId === null) return;
+    const wasEmpty = threadOf(openId).draft.trim() === '';
+    setDraft(openId, field.value);
+    if (wasEmpty !== (field.value.trim() === '') && deps.recordVoice !== undefined) update();   // the send button and the microphone trade places
   }
 
   /** The words in the message field, kept for a reload too; not while they are a sent message's being changed. */
@@ -1370,6 +1454,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Makes this conversation the open one: starts loading it, and remembers what was unread now. */
   function show(id: string): void {
+    if (recording !== null && recording.conversation !== id) cancelVoice();
     openId = id;
     const t = threadOf(id);
     const c = chatOf(id);
@@ -2258,6 +2343,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (!t.tray.includes(item)) { pumpTray(id); return; }   // taken out while it was going up
     // A video's still picture follows it; without one it still plays (it shows nothing until then).
     if (result.ok && result.data.kind === 'video' && item.poster) await api.setPoster(result.data.id, item.poster);
+    if (result.ok && item.voice) {
+      t.tray = t.tray.filter((x) => x !== item);
+      update();
+      pumpTray(id);
+      await post(id, { body: '', attachments: [result.data] });
+      return;
+    }
     if (result.ok) { item.state = 'done'; item.attachment = result.data; item.file = null; delete item.error; }
     else if (result.error === 'unauthorized') { go('/sign-in'); return; }
     else { item.state = 'failed'; item.error = result; }
@@ -2300,6 +2392,102 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     item.state = 'waiting'; delete item.error;
     update();
     if (openId !== null) pumpTray(openId);
+  }
+
+  // ---- disappearing messages
+
+  /** Takes away the messages whose time is up (the server deletes them too, within half a minute), and pins of them. */
+  function dropExpired(): void {
+    const now = deps.now().getTime();
+    const gone = (m: { expiresAt?: string | null }) => m.expiresAt != null && Date.parse(m.expiresAt) <= now;
+    for (const t of threads.values()) {
+      if (t.messages.some(gone)) t.messages = t.messages.filter((m) => !gone(m));
+      if (t.pins.some(gone)) t.pins = t.pins.filter((m) => !gone(m));
+    }
+  }
+
+  let expiryTimer: number | null = null;
+  let expiryAt = Infinity;
+  /** One timer, for the next message due anywhere in what is loaded: at its time the page is drawn again without it. */
+  function scheduleExpiry(): void {
+    const now = deps.now().getTime();
+    let soonest = Infinity;
+    for (const t of threads.values()) for (const m of t.messages) {
+      if (m.expiresAt == null) continue;
+      const at = Date.parse(m.expiresAt);
+      if (at > now && at < soonest) soonest = at;
+    }
+    if (soonest === expiryAt) return;
+    if (expiryTimer !== null) deps.timer.clear(expiryTimer);
+    expiryTimer = null;
+    expiryAt = soonest;
+    if (soonest !== Infinity) expiryTimer = deps.timer.set(() => { expiryTimer = null; expiryAt = Infinity; update(); }, Math.min(soonest - now, 2 ** 31 - 1));
+  }
+
+  // ---- voice messages
+
+  /** The microphone takes the send button's place while there is nothing to send, as in Messenger: the composer keeps its width. */
+  const voiceOffered = (t: Thread): boolean => deps.recordVoice !== undefined && uploadsOn() && t.editing === null && t.draft.trim() === '' && t.tray.length === 0;
+
+  /** Where the composer was: throw it away, how long so far out of the most, and send. */
+  const recordingBar = (r: VoiceRecording) => html`
+    <div class="composer recbar" data-recording role="group" aria-label=${say.chat.recordingVoice}>
+      <button class="ib" type="button" data-voice-cancel aria-label=${say.chat.discardVoice} @click=${cancelVoice}>${icons.trash()}</button>
+      <span class="rec-dot" aria-hidden="true"></span>
+      <span class="rec-time" data-voice-time role="timer">${clockOf(r.seconds)} / ${clockOf(VOICE_SECONDS)}</span>
+      <button class="send" type="button" data-voice-send aria-label=${say.chat.sendVoice} ?disabled=${r.recorder === null} @click=${() => void finishVoice()}>${icons.send()}</button>
+    </div>`;
+
+  /** Asks for the microphone and starts recording in this conversation; a "no" says why, in words. */
+  async function startVoice(id: string): Promise<void> {
+    if (recording !== null || deps.recordVoice === undefined || threadOf(id).editing !== null) return;
+    const r: VoiceRecording = { conversation: id, recorder: null, seconds: 0, timer: null };
+    recording = r;
+    picker = null;
+    update();
+    const started = await deps.recordVoice();
+    if (recording !== r) { if (typeof started !== 'string') started.cancel(); return; }   // thrown away while the browser was asking
+    if (typeof started === 'string') {
+      recording = null;
+      notice = started === 'denied' ? say.chat.micDenied : say.chat.voiceUnsupported;
+      update();
+      return;
+    }
+    r.recorder = started;
+    r.timer = deps.timer.set(tick, 1000);
+    update();
+    function tick(): void {
+      if (recording !== r) return;
+      r.seconds++;
+      if (r.seconds >= VOICE_SECONDS) { void finishVoice(); return; }
+      r.timer = deps.timer.set(tick, 1000);
+      update();
+    }
+  }
+
+  function cancelVoice(): void {
+    const r = recording;
+    if (r === null) return;
+    recording = null;
+    if (r.timer !== null) deps.timer.clear(r.timer);
+    r.recorder?.cancel();
+    update();
+  }
+
+  /** Stops recording and sends it: it goes up through the tray, so a failure there can be tried again, and is sent once it is up. */
+  async function finishVoice(): Promise<void> {
+    const r = recording;
+    if (r === null || r.recorder === null) return;
+    recording = null;
+    if (r.timer !== null) deps.timer.clear(r.timer);
+    update();
+    const sound = await r.recorder.stop();
+    if (sound === null) { notice = say.chat.voiceFailed; update(); return; }
+    const t = threadOf(r.conversation);
+    const name = say.chat.voiceFileName(voiceStamp(deps.now()));
+    t.tray.push({ key: ++trayKey, name, file: new File([sound], name, { type: 'audio/wav' }), state: 'waiting', progress: 0, voice: true });
+    update();
+    pumpTray(r.conversation);
   }
 
   // ---- writing
@@ -2532,7 +2720,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     drafts = deps.drafts?.(me.gomId) ?? null;
     for (const [id, t] of threads) if (t.draft === '' && t.editing === null) t.draft = drafts?.load(id) ?? '';
     // A reload loses files picked but not sent, and a change being made to a sent message; typed words are kept (drafts).
-    deps.holdReload?.(() => deps.calls?.busy() === true || [...threads.values()].some((t) => t.tray.length > 0 || t.editing !== null));
+    deps.holdReload?.(() => deps.calls?.busy() === true || [...threads.values()].some((t) => t.tray.length > 0 || t.editing !== null) || recording !== null);
     live = deps.live(handlers);
     live.start();
     await refreshList();

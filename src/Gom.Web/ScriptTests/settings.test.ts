@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountSettings, sectionOf, type SettingsNav } from '../Scripts/pages/settings.js';
-import { fail, fakeApi, flush, ok, text } from './helpers.js';
+import { fail, fakeApi, fill, flush, ok, text } from './helpers.js';
 import { chosenTakeCalls } from '../Scripts/calls/here.js';
 
 let root: HTMLElement;
@@ -235,5 +235,57 @@ describe('settings: inside the parts', () => {
     english.dispatchEvent(new Event('change'));
     await flush();
     expect(go).toHaveBeenCalledWith('/settings/appearance');
+  });
+});
+
+describe('settings: two-step sign-in', () => {
+  const key = { key: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', uri: 'otpauth://totp/Gom:mom?secret=GEZD', qr: 'data:image/png;base64,AAAA' };
+  const card = () => root.querySelector<HTMLElement>('[data-part="account"] [data-two-step]')!;
+  const fillCard = (code: string, password: string) => {
+    fill(card(), 'input[name="code"]', code);
+    fill(card(), 'input[name="two-step-password"]', password);
+    card().dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  };
+
+  it('explains it while off, then shows the QR code, the key in fours and a link for the app, and turns on with a code and the password', async () => {
+    const twoStepOn = vi.fn(async () => ok(undefined));
+    mountSettings(root, api({ me: vi.fn(async () => ok({ ...me })), twoStepNew: vi.fn(async () => ok(key)), twoStepOn }), vi.fn(), undefined, undefined, fakeNav('/settings/account'));
+    await flush();
+    expect(card().dataset['twoStep']).toBe('off');
+    expect(text(card())).toContain('Google Authenticator');
+    card().querySelector<HTMLButtonElement>('[data-two-step-start]')!.click();
+    await flush();
+    expect(card().dataset['twoStep']).toBe('setup');
+    expect(card().querySelector<HTMLImageElement>('[data-two-step-qr]')!.getAttribute('src')).toBe(key.qr);
+    expect(text(card().querySelector('[data-two-step-key]')!)).toBe('GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ');
+    expect(card().querySelector<HTMLAnchorElement>('[data-two-step-app]')!.getAttribute('href')).toBe(key.uri);
+    fillCard('123 456', 'my password');
+    await flush();
+    expect(twoStepOn).toHaveBeenCalledWith(key.key, '123 456', 'my password');
+    expect(card().dataset['twoStep']).toBe('on');
+    expect(text(card().querySelector('[data-two-step-status]')!)).toBe('Đã bật xác minh hai bước.');
+  });
+
+  it('keeps the key on screen with the reason when the code is wrong', async () => {
+    mountSettings(root, api({ me: vi.fn(async () => ok({ ...me })), twoStepNew: vi.fn(async () => ok(key)), twoStepOn: vi.fn(async () => fail('invalid_code', 400)) }), vi.fn(), undefined, undefined, fakeNav('/settings/account'));
+    await flush();
+    card().querySelector<HTMLButtonElement>('[data-two-step-start]')!.click();
+    await flush();
+    fillCard('000000', 'my password');
+    await flush();
+    expect(card().dataset['twoStep']).toBe('setup');
+    expect(text(card().querySelector('[role="alert"]')!)).toContain('Mã không đúng');
+  });
+
+  it('turns off with a code and the password when on', async () => {
+    const twoStepOff = vi.fn(async () => ok(undefined));
+    mountSettings(root, api({ me: vi.fn(async () => ok({ ...me, twoStep: true })), twoStepOff }), vi.fn(), undefined, undefined, fakeNav('/settings/account'));
+    await flush();
+    expect(card().dataset['twoStep']).toBe('on');
+    fillCard('654321', 'my password');
+    await flush();
+    expect(twoStepOff).toHaveBeenCalledWith('654321', 'my password');
+    expect(card().dataset['twoStep']).toBe('off');
+    expect(text(card().querySelector('[data-two-step-status]')!)).toBe('Đã tắt xác minh hai bước.');
   });
 });

@@ -84,3 +84,49 @@ describe('sign-in page', () => {
     });
   });
 });
+
+describe('sign-in page: two-step sign-in', () => {
+  const start = (signIn: ReturnType<typeof vi.fn>) => {
+    const api = fakeApi({ signIn });
+    const go = vi.fn();
+    mountSignIn(root, api, go);
+    fill(root, 'input[name="gomId"]', 'me');
+    fill(root, 'input[type="password"]', 'secret password');
+    submit(root);
+    return { api, go };
+  };
+
+  it('asks for the code after the right password, then signs in with the password and the code', async () => {
+    const signIn = vi.fn().mockResolvedValueOnce(fail('code_required', 401)).mockResolvedValueOnce(ok(user));
+    const { go } = start(signIn);
+    await flush();
+    expect(text(root.querySelector('h1')!)).toBe('Xác minh hai bước');
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    const field = root.querySelector<HTMLInputElement>('input[name="code"]')!;
+    expect(field.autocomplete).toBe('one-time-code');
+    expect(field.inputMode).toBe('numeric');
+    expect(root.ownerDocument.activeElement).toBe(field);
+    fill(root, 'input[name="code"]', '123456');
+    submit(root);
+    await flush();
+    expect(signIn).toHaveBeenLastCalledWith('me', 'secret password', '123456');
+    expect(go).toHaveBeenCalledWith('/');
+  });
+
+  it('says so when the code is wrong, empties it, and lets the person go back to the password', async () => {
+    const signIn = vi.fn().mockResolvedValueOnce(fail('code_required', 401)).mockResolvedValueOnce(fail('invalid_code', 401));
+    const { go } = start(signIn);
+    await flush();
+    fill(root, 'input[name="code"]', '000000');
+    submit(root);
+    await flush();
+    expect(text(root.querySelector('[role="alert"]')!)).toContain('Mã không đúng hoặc đã dùng rồi');
+    expect(root.querySelector<HTMLInputElement>('input[name="code"]')!.value).toBe('');
+    expect(go).not.toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>('[data-code-back]')!.click();
+    await flush();
+    expect(root.querySelector('input[name="code"]')).toBeNull();
+    expect(root.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe('');
+    expect(root.querySelector<HTMLInputElement>('input[name="gomId"]')!.value).toBe('me');
+  });
+});

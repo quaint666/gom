@@ -46,7 +46,7 @@ interface Harness {
   busy: () => boolean;
 }
 
-function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages']; calls?: ChatDeps['calls']; callsOn?: boolean } = {}): Harness {
+function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; recordVoice?: ChatDeps['recordVoice']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages']; calls?: ChatDeps['calls']; callsOn?: boolean } = {}): Harness {
   const history = opts.history ?? {};
   const api = fakeApi({
     me: vi.fn(async () => ok(opts.callsOn ? { ...me, calls: true } : me)),
@@ -100,6 +100,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     clearNotifications: notes,
     ...(opts.pusher ? { pusher: opts.pusher } : {}),
     ...(opts.prepareVideo ? { prepareVideo: opts.prepareVideo } : {}),
+    ...(opts.recordVoice ? { recordVoice: opts.recordVoice } : {}),
     ...(opts.keyboardImages ? { keyboardImages: opts.keyboardImages } : {}),
     ...(opts.calls ? { calls: opts.calls } : {}),
   };
@@ -4470,6 +4471,23 @@ describe("chat: someone's card", () => {
     expect(text(card()!.querySelector('[data-card-befriend]')!)).toBe('Chấp nhận kết bạn');
   });
 
+  it('closes with a click or tap outside it, on its shade, but not with one inside it', async () => {
+    inGroup({ person: vi.fn(async () => ok(cardOf())) });
+    await flush();
+    await click('[data-sender="u-minh"]');
+    const dialog = card()!;
+    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({ left: 100, right: 400, top: 100, bottom: 500, width: 300, height: 400, x: 100, y: 100, toJSON: () => ({}) });
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 250, clientY: 300 }));   // its own padding
+    await flush();
+    expect(card()).not.toBeNull();
+    card()!.querySelector('h2')!.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 }));   // something in it
+    await flush();
+    expect(card()).not.toBeNull();
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 300 }));   // the shade
+    await flush();
+    expect(card()).toBeNull();
+  });
+
   it('opens from a member of the side panel, but not for yourself', async () => {
     localStorage.setItem('gom-info', '1');
     try {
@@ -4672,6 +4690,29 @@ describe('chat: stickers', () => {
     expect(text(panel()!)).toContain('Noto Emoji của Google, giấy phép Apache 2.0; cờ các nước thuộc phạm vi công cộng.');
     await toggle();
     expect(panel()).toBeNull();
+  });
+
+  it("shows the owner's packs after Gom's own, named as the owner named them, and sends one of theirs", async () => {
+    const mine = 'c-0f8fad5bd9cb469fa16570867728950e';
+    const stickerPacks = vi.fn(async () => ok([
+      { id: 'p1', name: 'Mèo nhà', stickers: [{ id: '0f8fad5bd9cb469fa16570867728950e', code: mine }] },
+      { id: 'p2', name: 'Trống', stickers: [] },   // an empty pack has nothing to show
+    ]));
+    const sendSticker = echo();
+    open({ stickerPacks, sendSticker });
+    await flush();
+    await toggle();
+    await flush();
+    const buttons = [...panel()!.querySelectorAll('[data-sticker-pack]')];
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual([...STICKER_PACKS.map((p) => vietnamese.stickerPacks[p.key]), 'Mèo nhà']);
+    await pack(STICKER_PACKS.length);
+    expect(shown()).toEqual([mine]);
+    expect(root.querySelector<HTMLImageElement>(`[data-send-sticker="${mine}"] img`)!.getAttribute('src')).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
+    await tap(mine);
+    expect(sendSticker).toHaveBeenCalledWith(C1, expect.any(String), mine, undefined);
+    expect(root.querySelector<HTMLImageElement>(`.msgs img.stk[data-sticker="${mine}"]`)!.getAttribute('src')).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
+    await toggle(); await toggle();
+    expect(stickerPacks).toHaveBeenCalledTimes(1);   // asked for once
   });
 
   it('sends a sticker at once with a tap, shows it as a picture while it goes, and keeps the panel open', async () => {
@@ -5565,5 +5606,221 @@ describe('call lines (mockups 29 and 30)', () => {
     await flush();
     expect(text(rows()[0]!.querySelector('.pv')!)).toBe('Không trả lời');
     expect(text(rows()[0]!.querySelector('.badge')!)).toBe('1');
+  });
+});
+
+describe('chat: voice messages', () => {
+  const sound = new Blob([new Uint8Array([82, 73, 70, 70])], { type: 'audio/wav' });
+  const voiceAtt = (id: string): Attachment => ({ id, kind: 'file', name: 'Ghi âm.wav', size: 4, width: null, height: null, audio: true });
+  /** A recorder that hands back `sound` when stopped, and says whether it was stopped or thrown away. */
+  const recorder = () => {
+    const r = { stopped: 0, cancelled: 0, stop: vi.fn(async () => { r.stopped++; return sound as Blob | null; }), cancel: vi.fn(() => { r.cancelled++; }) };
+    return r;
+  };
+  const open = (recordVoice: ChatDeps['recordVoice'], extra: Record<string, unknown> = {}) =>
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh'), chat(C2, 'Lan')], history: { [C1]: [], [C2]: [] }, api: extra, ...(recordVoice ? { recordVoice } : {}) });
+  const mic = () => root.querySelector<HTMLButtonElement>('.composer [data-voice]');
+  const bar = () => root.querySelector<HTMLElement>('[data-recording]');
+  const tick = (h: Harness, times = 1) => { for (let i = 0; i < times; i++) h.timers.filter((t) => t.live && t.ms === 1000).at(-1)!.fn(); };
+
+  it('offers the microphone in the send button’s place while there is nothing to send, and the send button once there are words', async () => {
+    open(vi.fn());
+    await flush();
+    expect(mic()!.getAttribute('aria-label')).toBe('Ghi âm tin nhắn thoại');
+    expect(root.querySelector('.composer button[type="submit"]')).toBeNull();
+    compose('chào');
+    await flush();
+    expect(mic()).toBeNull();
+    expect(root.querySelector('.composer button[type="submit"]')).not.toBeNull();
+    compose('');
+    await flush();
+    expect(mic()).not.toBeNull();
+  });
+
+  it('has no microphone where this browser cannot record', async () => {
+    open(undefined);
+    await flush();
+    expect(mic()).toBeNull();
+    expect(root.querySelector('.composer button[type="submit"]')).not.toBeNull();
+  });
+
+  it('records with a running time out of five minutes, then sends it as a WAV file on its own once it is up', async () => {
+    const r = recorder();
+    const upload = vi.fn(async () => ok(voiceAtt('v1')));
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    const h = open(vi.fn(async () => r), { upload, send });
+    await flush();
+    mic()!.click();
+    await flush();
+    expect(text(bar()!.querySelector('[data-voice-time]')!)).toBe('0:00 / 5:00');
+    tick(h, 12);
+    await flush();
+    expect(text(bar()!.querySelector('[data-voice-time]')!)).toBe('0:12 / 5:00');
+    expect(h.busy()).toBe(true);   // a reload would lose the recording
+    bar()!.querySelector<HTMLButtonElement>('[data-voice-send]')!.click();
+    await flush();
+    expect(r.stopped).toBe(1);
+    const file = (upload.mock.calls[0] as unknown[])[1] as File;
+    expect(file.type).toBe('audio/wav');
+    expect(file.name).toMatch(/^Ghi âm \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\.wav$/);
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', '', undefined, ['v1']);
+    expect(bar()).toBeNull();
+    expect(root.querySelectorAll('[data-tray-item]')).toHaveLength(0);
+    expect(h.timers.filter((t) => t.live && t.ms === 1000)).toHaveLength(0);
+  });
+
+  it('stops and sends by itself at five minutes', async () => {
+    const r = recorder();
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    const h = open(vi.fn(async () => r), { upload: vi.fn(async () => ok(voiceAtt('v1'))), send });
+    await flush();
+    mic()!.click();
+    await flush();
+    tick(h, 299);
+    await flush();
+    expect(r.stopped).toBe(0);
+    tick(h);
+    await flush();
+    expect(r.stopped).toBe(1);
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', '', undefined, ['v1']);
+  });
+
+  it('throws a recording away without sending anything', async () => {
+    const r = recorder();
+    const upload = vi.fn();
+    const h = open(vi.fn(async () => r), { upload });
+    await flush();
+    mic()!.click();
+    await flush();
+    bar()!.querySelector<HTMLButtonElement>('[data-voice-cancel]')!.click();
+    await flush();
+    expect(r.cancelled).toBe(1);
+    expect(upload).not.toHaveBeenCalled();
+    expect(bar()).toBeNull();
+    expect(mic()).not.toBeNull();
+    expect(h.timers.filter((t) => t.live && t.ms === 1000)).toHaveLength(0);
+  });
+
+  it('throws the recording away when another conversation is opened', async () => {
+    const r = recorder();
+    const h = open(vi.fn(async () => r));
+    await flush();
+    mic()!.click();
+    await flush();
+    h.nav.path = `/c/${C2}`;
+    h.nav.pop();
+    await flush();
+    expect(r.cancelled).toBe(1);
+    expect(bar()).toBeNull();
+  });
+
+  it('says in words when the microphone is not allowed', async () => {
+    open(vi.fn(async () => 'denied' as const));
+    await flush();
+    mic()!.click();
+    await flush();
+    expect(bar()).toBeNull();
+    expect(text(root)).toContain('Gom chưa được dùng micrô');
+  });
+
+  it('says in words when this browser cannot record', async () => {
+    open(vi.fn(async () => 'unsupported' as const));
+    await flush();
+    mic()!.click();
+    await flush();
+    expect(text(root)).toContain('Trình duyệt này không ghi âm được.');
+  });
+
+  it('keeps a voice message that failed to go up in the tray, to try again, and sends it once it is up', async () => {
+    const upload = vi.fn().mockResolvedValueOnce(fail('too_large', 413)).mockResolvedValueOnce(ok(voiceAtt('v1')));
+    const send = vi.fn(async (c: string, clientId: string, body: string) => ok({ ...msg(1, 'mom', body, at(10), c), clientId }));
+    open(vi.fn(async () => recorder()), { upload, send });
+    await flush();
+    mic()!.click();
+    await flush();
+    bar()!.querySelector<HTMLButtonElement>('[data-voice-send]')!.click();
+    await flush();
+    expect(send).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-tray-item] [role="alert"]')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-tray-retry]')!.click();
+    await flush();
+    expect(send).toHaveBeenCalledWith(C1, 'new-1', '', undefined, ['v1']);
+  });
+});
+
+describe('chat: disappearing messages', () => {
+  const G = '33333333-3333-4333-8333-333333333333';
+  const group = (extra: Partial<Conversation> = {}): Conversation => ({ id: G, kind: 'group', title: 'Nhóm nhà', peer: null, lastSeq: 1, lastReadSeq: 1, unread: 0, lastMessage: null, memberCount: 2, ...extra });
+  const person = (role: 'leader' | 'deputy' | 'member') => [
+    { id: 'u-mom', displayName: 'Mẹ', isMe: true, isFriend: false, gomId: 'mom', request: 'none' as const, role },
+    { id: 'u-a', displayName: 'Anh', isMe: false, isFriend: true, gomId: 'anh', request: 'none' as const, role: 'leader' as const },
+  ];
+  const openInfo = async () => { root.querySelector<HTMLButtonElement>('[data-info]')!.click(); await flush(); };
+  const row = () => root.querySelector<HTMLElement>('[data-info-panel] [data-info-disappear]')!;
+  beforeEach(() => { try { localStorage.removeItem('gom-info'); } catch { /* nothing to clear */ } });
+
+  it('says in the conversation who turned it on and for how long, and who turned it off', async () => {
+    const line = (seq: number, seconds: number): ChatMessage => ({ ...msg(seq, 'minh', '', at(10, seq)), notice: { type: 'disappearing', seconds } });
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [line(1, 86_400), line(2, 900), line(3, 0)] } });
+    await flush();
+    const said = [...root.querySelectorAll('[data-notice]')].map((n) => text(n));
+    expect(said).toEqual(['Minh đã bật tin nhắn tự xoá: 1 ngày', 'Minh đã bật tin nhắn tự xoá: 15 phút', 'Minh đã tắt tin nhắn tự xoá']);
+  });
+
+  it('takes a message away at its time, with a timer for the next one due, and shows a clock in the header while it is on', async () => {
+    const gone = { ...msg(1, 'minh', 'đã hết giờ'), expiresAt: new Date(NOW.getTime() - 1000).toISOString() };
+    const soon = { ...msg(2, 'minh', 'còn 90 giây'), expiresAt: new Date(NOW.getTime() + 90_000).toISOString() };
+    const kept = msg(3, 'minh', 'giữ mãi');
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { disappearSeconds: 3600, lastSeq: 3 })], history: { [C1]: [gone, soon, kept] } });
+    await flush();
+    const shown = text(root.querySelector('.msgs')!);
+    expect(shown).not.toContain('đã hết giờ');
+    expect(shown).toContain('còn 90 giây');
+    expect(shown).toContain('giữ mãi');
+    expect(h.timers.filter((t) => t.live && t.ms === 90_000)).toHaveLength(1);
+    expect(root.querySelector('[data-disappear-on]')!.getAttribute('aria-label')).toBe('Tin nhắn tự xoá sau 1 giờ');
+  });
+
+  it('lets either person in a one-to-one chat choose how long, from the eight lengths or off', async () => {
+    const setDisappear = vi.fn(async () => ok(undefined));
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] }, api: { setDisappear } });
+    await flush();
+    await openInfo();
+    const select = row().querySelector<HTMLSelectElement>('select')!;
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Tắt', '15 phút', '30 phút', '1 giờ', '3 giờ', '6 giờ', '12 giờ', '1 ngày', '1 tuần']);
+    expect(select.value).toBe('');
+    select.value = '3600';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(setDisappear).toHaveBeenCalledWith(C1, 3600);
+    expect(root.querySelector('[data-disappear-on]')).not.toBeNull();
+  });
+
+  it('in a group, lets the leader and deputies choose; a member only sees what it is', async () => {
+    start({ path: `/c/${G}`, chats: [group({ disappearSeconds: 604_800 })], history: { [G]: [] }, api: { groupMembers: vi.fn(async () => ok(person('member'))) } });
+    await flush();
+    await openInfo();
+    expect(row().querySelector('select')).toBeNull();
+    expect(text(row())).toContain('1 tuần');
+    root.replaceChildren();
+  });
+
+  it('gives a deputy the choice in a group', async () => {
+    start({ path: `/c/${G}`, chats: [group()], history: { [G]: [] }, api: { groupMembers: vi.fn(async () => ok(person('deputy'))) } });
+    await flush();
+    await openInfo();
+    expect(row().querySelector('select')).not.toBeNull();
+  });
+
+  it('puts the choice back and says why when the server refuses it', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh')], history: { [C1]: [msg(1, 'minh')] }, api: { setDisappear: vi.fn(async () => fail('not_friends', 403)) } });
+    await flush();
+    await openInfo();
+    const select = row().querySelector<HTMLSelectElement>('select')!;
+    select.value = '900';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(root.querySelector('[data-disappear-on]')).toBeNull();
+    expect(row().querySelector<HTMLSelectElement>('select')!.value).toBe('');
   });
 });

@@ -402,7 +402,7 @@ button.th-title:hover b { text-decoration: underline; }
 
 /* A sticker is the picture alone: no bubble, the time under it. */
 .mrow.sticker .bub { background: none; border-color: transparent; padding: 0; }
-.stk { display: block; inline-size: 120px; block-size: 120px; user-select: none; -webkit-touch-callout: none; }
+.stk { display: block; inline-size: 120px; block-size: 120px; object-fit: contain; user-select: none; -webkit-touch-callout: none; }
 .mrow.sticker .ts { float: none; display: block; margin: 2px 4px 0; text-align: end; }
 /* A message of one to three emoji and nothing else: the emoji large, no bubble. */
 .mrow.jumbo .bub { background: none; border-color: transparent; padding: 0; }
@@ -426,6 +426,13 @@ button.th-title:hover b { text-decoration: underline; }
 .e-pick { block-size: 44px; border: 0; border-radius: 10px; background: none; font-size: 28px; line-height: 1; cursor: pointer; }
 .e-pick:hover, .egroup:hover { background: var(--hover); }
 .stk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 4px; }
+/* The owner's sticker packs (Settings › Owner): the pack's name and count, its stickers with a way to take one out, and a picture button. */
+.pack-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.stk-own { position: relative; display: grid; place-items: center; block-size: 64px; }
+.stk-own img { inline-size: 56px; block-size: 56px; object-fit: contain; }
+label.btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+label.btn.busy { opacity: .6; pointer-events: none; }
+.stk-pick img { object-fit: contain; }
 .stk-pick { display: grid; place-items: center; block-size: 60px; border: 0; border-radius: 12px; background: none; cursor: pointer; }
 .stk-pick:hover { background: var(--hover); }
 .stk-pick:active { background: var(--press); }
@@ -691,6 +698,13 @@ a.mi { text-decoration: none; }
 .info-actions { display: flex; flex-direction: column; gap: 6px; }
 .info-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .info-actions .btn .i { inline-size: 16px; block-size: 16px; }
+/* Disappearing messages in the information panel: the name with a clock, then the choice (or what it is) under it. */
+.info-setting { display: flex; flex-direction: column; gap: 6px; }
+.info-setting label { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.info-setting .i { inline-size: 16px; block-size: 16px; }
+/* In the thread's header while it is on: a small clock (its name says how long). */
+.th-timer { display: inline-grid; place-items: center; color: var(--muted); }
+.th-timer .i { inline-size: 18px; block-size: 18px; }
 .info h3 { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .info-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .info-person { display: flex; align-items: center; gap: 10px; min-block-size: 40px; }
@@ -786,6 +800,12 @@ a.mi { text-decoration: none; }
 .tray-x .i { inline-size: 14px; block-size: 14px; }
 .file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
 .composer .attach { flex: none; }
+/* Recording a voice message: in the composer's place, throw away · a red dot and the time · send. */
+.recbar { align-items: center; }
+.recbar .rec-dot { inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--err-border); flex: none; }
+.recbar .rec-time { flex: 1; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) { .recbar .rec-dot { animation: blink 1s steps(2, jump-none) infinite; } }
+@keyframes blink { 50% { opacity: .25; } }
 /* Where the composer was, in a one-to-one conversation whose other person deleted their account. */
 .closed-note { margin: 0; padding: 14px 16px max(14px, env(safe-area-inset-bottom)); background: var(--surface); border-block-start: 1px solid var(--border); color: var(--muted); font-size: 14px; text-align: center; }
 
@@ -949,6 +969,12 @@ button.info-person { inline-size: 100%; padding: 4px 6px; border: 0; border-radi
 button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(--surface)); }
 .info-person small { margin-inline-start: auto; color: var(--muted); font-size: 12px; }
 .danger-text, .btn.danger-text { color: var(--err-text); }
+/* Two-step sign-in (Settings › Account): the QR code on white, as a scanner needs it in either theme, and the key in groups of four. */
+.card .qr { align-self: center; inline-size: 200px; block-size: 200px; padding: 8px; border-radius: 12px; background: #FFFFFF; image-rendering: pixelated; }
+.card .key { margin: 0; text-align: center; }
+.card .key code { font-size: 15px; letter-spacing: .04em; word-spacing: .3em; overflow-wrap: anywhere; user-select: all; }
+/* Shown only where a finger is the pointer: on a phone, a link opens the authenticator app; on a computer there is no app to open. */
+@media (pointer: fine) { .only-touch { display: none; } }
 /* What someone asking to join said about themself, on the owner's page: their own words, kept as they wrote them. */
 .request-note { display: block; margin-block-start: 2px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* muting: for how long, in the same dialog shape as a card */

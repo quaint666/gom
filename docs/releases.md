@@ -29,6 +29,37 @@ Between releases, staging may run newer code than its number says: the number mo
 
 ## What's new
 
+### 1.2.0 (28 November 2026)
+
+Everything from #172 to #193: H's fourteen changes to how Gom looks and works, and the Android app's release build.
+
+**New**
+- Voice messages: while there is nothing to send, the microphone takes the send button's place; a tap records up to five
+  minutes, with a bin to throw it away.
+- Sound files (MP3, AAC, OGG, WAV, FLAC, sound-only MP4) play in the message, with a seek bar; one at a time.
+- Two-step sign-in, each person's choice: a 6-digit code from an authenticator app after the password. The owner's reset
+  link turns it off; the owner's own lost phone has a server command.
+- Disappearing messages: 15 minutes to a week, per conversation; in a group set by the leader and the deputies.
+- Sticker packs the owner makes from their own pictures, in everyone's picker after Gom's own.
+- Eight gradient colours, your own messages in them as in Messenger.
+- The search above the list finds friends (also those never written to) and groups; Contacts shows the five most
+  recent, then everyone A–Z. The search through every conversation's messages is gone.
+- Each row's ⋯ (members and invites on the owner's page, friends in Contacts) opens the chat list's menu.
+- Smoother movement: pages cross-fade, a phone's conversation slides out on back, menus and the info panel close
+  animated, tabs fade.
+- On a computer, a strip of the conversation's pictures under the picture viewer.
+- In the Android app: the ringing screen's buttons higher and closer, with a pulse on Answer, "Cuộc gọi thoại đến",
+  and the caller's picture; the page may use the microphone (voice messages).
+- Someone's card closes with a tap outside it.
+- The Android app's release build for Google Play (not on Play yet).
+
+**Fixes**
+- Gom open in a phone's browser no longer rings beside the app for the same call: each browser chooses whether it takes
+  calls (Settings › Thông báo), off by default on a phone whose person has the app (#180).
+- The privacy page's way back is a button ("Về trang chính"); the accent bar runs straight across the top on a
+  computer; the ⓘ button is filled while its panel is open (#177).
+- The group page's name box in the site's own style (#188).
+
 ### 1.1.0 (27 November 2026)
 
 Everything from #152 to #171: voice calls on the web and in the Android app.

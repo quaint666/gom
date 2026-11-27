@@ -14,9 +14,9 @@ const SERVER_CODE_LIST = [
   'invalid_invite', 'too_large', 'animated_too_large', 'video_too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'daily_upload_limit', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
   'invalid_endpoint', 'invalid_keys', 'invalid_level', 'not_editable', 'invalid_sticker', 'invalid_mute', 'invalid_kind',
   'invalid_note', 'sign_up_closed', 'sign_up_full', 'pending_approval', 'not_a_request', 'invalid_language', 'invalid_palette', 'invalid_pattern',
-  'update_required', 'invalid_contact', 'contact_full',
+  'update_required', 'invalid_contact', 'contact_full', 'pack_full',
   'cannot_take_calls', 'in_call', 'call_waiting', 'too_many_calls', 'call_ended', 'call_answered', 'not_in_call', 'invalid_call', 'invalid_sdp',
-  'unsupported_version',
+  'unsupported_version', 'code_required', 'invalid_code', 'two_step_on',
 ] as const;
 
 /** A server's code, or what the page says when there is none: no session, refused, no network, a server fault, anything else. */
@@ -30,8 +30,10 @@ export type Result<T> = { ok: true; data: T } | Failure;
 /** `avatar` is the id of the profile picture (at /api/avatars/{avatar}); none means the initials. */
 /** `standing`: a member, or someone who asked to join and is waiting ("pending") or was refused. */
 export type Standing = 'member' | 'pending' | 'refused';
-export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean; appCalls?: boolean }
+export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean; appCalls?: boolean; twoStep?: boolean }
 /** Someone asking to join, as the owner sees them. */
+export interface CustomPack { id: string; name: string; stickers: { id: string; code: string }[] }
+export interface TwoStepKey { key: string; uri: string; qr: string }
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 /** A message to the owner from the privacy page's form. */
 export interface ContactMessage { id: string; body: string; replyTo: string | null; createdAt: string }
@@ -92,10 +94,12 @@ export interface CallInfo {
   caller: { id: string; displayName: string }; offer: string | null; answer: string | null; ringSeconds: number; aliveSeconds: number;
 }
 export interface CallLine { callerId: string; outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed'; startedAt: string; seconds: number }
-export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null }
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call' | 'disappearing'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null; seconds?: number | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
   /** Set when the message is one sticker (its code): then it has no words and no files. */
-  sticker?: string | null }
+  sticker?: string | null;
+  /** Disappearing messages: when it is deleted for good (fixed when it was sent); absent or null: kept. */
+  expiresAt?: string | null }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
@@ -115,6 +119,8 @@ export interface Conversation {
   pinned?: boolean; markedUnread?: boolean;
   /** Hidden by you until something new is said: listed so a search can find it, and left out of view. */
   hidden?: boolean;
+  /** Disappearing messages: how long a message sent now lasts, in seconds (one of the limits' `disappearChoices`); null: for good. */
+  disappearSeconds?: number | null;
 }
 /**
  * Someone's card, as you may see it: their Gom ID only if you are friends, where a friend request between you stands, and the groups
@@ -138,7 +144,8 @@ export interface GroupMember {
 
 export interface Api {
   me(): Promise<Result<User>>;
-  signIn(gomId: string, password: string): Promise<Result<User>>;
+  /** With two-step sign-in on, the first try answers `code_required`; the same again with the code signs in. */
+  signIn(gomId: string, password: string, code?: string): Promise<Result<User>>;
   signOut(): Promise<Result<void>>;
   peekInvite(token: string): Promise<Result<{ invitedBy: string }>>;
   join(token: string, body: JoinBody): Promise<Result<User>>;
@@ -177,10 +184,20 @@ export interface Api {
   resetLink(gomId: string): Promise<Result<Issued>>;
   setNickname(displayName: string): Promise<Result<User>>;
   changePassword(current: string, password: string): Promise<Result<void>>;
+  /** A new key for an authenticator app (typed in, opened, or as a QR code); nothing is kept until twoStepOn. */
+  twoStepNew(): Promise<Result<TwoStepKey>>;
+  twoStepOn(key: string, code: string, password: string): Promise<Result<void>>;
+  twoStepOff(code: string, password: string): Promise<Result<void>>;
   /** Deletes your own account for good; `gomId` is what the person typed to confirm it. */
   deleteAccount(gomId: string): Promise<Result<void>>;
   /** Makes this picture your profile picture (the server keeps a square from its middle); the answer is its id. */
   setAvatar(picture: Blob): Promise<Result<{ avatar: string }>>;
+  /** The owner's sticker packs, in everyone's picker after Gom's own. */
+  stickerPacks(): Promise<Result<CustomPack[]>>;
+  createStickerPack(name: string): Promise<Result<CustomPack>>;
+  deleteStickerPack(id: string): Promise<Result<void>>;
+  addSticker(pack: string, picture: Blob): Promise<Result<{ id: string; code: string }>>;
+  deleteSticker(id: string): Promise<Result<void>>;
   removeAvatar(): Promise<Result<void>>;
   /** The server's key for notifications and whether this device gets them; a failure (404) means push is off on this server. */
   pushState(): Promise<Result<PushState>>;
@@ -255,6 +272,8 @@ export interface Api {
   setMute(conversation: string, muted: boolean, until?: string): Promise<Result<void>>;
   /** A conversation's own colour and background for everyone in it; null for either: each person's own. */
   setLook(conversation: string, palette: string | null, pattern: string | null): Promise<Result<void>>;
+  /** Disappearing messages for everyone in the conversation: seconds, or null to keep messages for good. */
+  setDisappear(conversation: string, seconds: number | null): Promise<Result<void>>;
   /** The "..." menu of a conversation in the list: each is yours alone. */
   setPinned(conversation: string, on: boolean): Promise<Result<void>>;
   setMarkedUnread(conversation: string, on: boolean): Promise<Result<void>>;
@@ -369,7 +388,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
       if (result.ok && result.data.pattern !== undefined) hooks.onPattern?.(result.data.pattern);
       return result;
     },
-    signIn: (gomId, password) => call('POST', '/api/session', { gomId, password }),
+    signIn: (gomId, password, code) => call('POST', '/api/session', code === undefined ? { gomId, password } : { gomId, password, code }),
     signOut: () => call('DELETE', '/api/session'),
     peekInvite: (token) => call('GET', `/api/join/${enc(token)}`),
     join: (token, body) => call('POST', `/api/join/${enc(token)}`, body),
@@ -401,8 +420,16 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     resetLink: (gomId) => call('POST', `/api/users/${enc(gomId)}/reset-link`),
     setNickname: (displayName) => call('PATCH', '/api/me', { displayName }),
     changePassword: (current, password) => call('PUT', '/api/me/password', { current, password }),
+    twoStepNew: () => call('GET', '/api/me/two-step/new'),
+    twoStepOn: (key, code, password) => call('PUT', '/api/me/two-step', { key, code, password }),
+    twoStepOff: (code, password) => call('POST', '/api/me/two-step/off', { code, password }),
     deleteAccount: (gomId) => call('DELETE', '/api/me', { gomId }),
     setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
+    stickerPacks: () => call('GET', '/api/sticker-packs'),
+    createStickerPack: (name) => call('POST', '/api/owner/sticker-packs', { name }),
+    deleteStickerPack: (id) => call('DELETE', `/api/owner/sticker-packs/${enc(id)}`),
+    addSticker: (pack, picture) => call('POST', `/api/owner/sticker-packs/${enc(pack)}/stickers`, picture),
+    deleteSticker: (id) => call('DELETE', `/api/owner/stickers/${enc(id)}`),
     removeAvatar: () => call('DELETE', '/api/me/avatar'),
     pushState: () => call('GET', '/api/push'),
     setPush: (subscription, level) => ('app' in subscription
@@ -429,6 +456,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     person: (userId) => call('GET', `/api/people/${enc(userId)}`),
     addMember: (conversation, gomId) => call('POST', `/api/conversations/${enc(conversation)}/members`, { gomId }),
     setLook: (conversation, palette, pattern) => call('PUT', `/api/conversations/${enc(conversation)}/look`, { palette, pattern }),
+    setDisappear: (conversation, seconds) => call('PUT', `/api/conversations/${enc(conversation)}/disappear`, { seconds }),
     setMute: (conversation, muted, until) => call('PUT', `/api/conversations/${enc(conversation)}/mute`, until === undefined ? { muted } : { muted, until }),
     setPinned: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/pinned`, { on }),
     setMarkedUnread: (conversation, on) => call('PUT', `/api/conversations/${enc(conversation)}/unread`, { on }),

@@ -17,4 +17,5 @@ document.body.dataset['limits'] = JSON.stringify({
   passwordMin: 10, passwordMax: 128, gomIdMin: 3, gomIdMax: 20, searchChars: 100, quoteChars: 100, listPreviewChars: 200, noteChars: 200,
   inviteDays: 30, inviteUses: 100, inviteDefaultDays: 7, inviteDefaultUses: 10, pageVersion: 1,
   contactChars: 2000, contactReplyChars: 200, contactKeepDays: 180,
+  disappearChoices: [900, 1800, 3600, 10800, 21600, 43200, 86400, 604800], stickerPackChars: 40,
 });

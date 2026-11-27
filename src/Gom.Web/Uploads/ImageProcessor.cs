@@ -214,6 +214,27 @@ public static class ImageProcessor
         }
     }
 
+    /// <summary>
+    /// The owner's sticker (Chat.StickerPacks): upright, no larger than <paramref name="edge"/> on its longer side, its transparency
+    /// kept, as a WebP.
+    /// </summary>
+    public static AvatarResult Sticker(byte[] bytes, ImagePlan plan, int edge, int quality)
+    {
+        try
+        {
+            var (decoded, problem) = Decode(bytes, plan);
+            if (decoded is null) return new AvatarResult(null, problem);
+            using var upright = decoded;
+            using var small = Scale(upright, edge);
+            var encoded = Encode(small, quality);
+            return encoded is null ? new AvatarResult(null, ImageProblem.Unreadable) : new AvatarResult(encoded, null);
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException or NullReferenceException)
+        {
+            return new AvatarResult(null, ImageProblem.Unreadable);
+        }
+    }
+
     private static byte[]? Encode(SKBitmap bitmap, int quality)
     {
         using var image = SKImage.FromBitmap(bitmap);

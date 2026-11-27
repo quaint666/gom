@@ -35,6 +35,15 @@ export const passwordField = (o: PasswordFieldOptions): TemplateResult => html`
     ${o.hint ? html`<p class="hint">${o.hint}</p>` : nothing}
   </div>`;
 
+/** A two-step code: digits only, and the phone's keyboard and autofill offer the code from the authenticator app or a notification. */
+export const codeField = (o: { value: string; onInput: (value: string) => void; hint?: string }): TemplateResult => html`
+  <div class="field">
+    <label for="code">${say.account.code}</label>
+    <div class="input"><input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]*" maxlength="7"
+      required enterkeyhint="done" .value=${o.value} @input=${(e: Event) => o.onInput((e.target as HTMLInputElement).value)}></div>
+    ${o.hint ? html`<p class="hint">${o.hint}</p>` : nothing}
+  </div>`;
+
 export interface IdFieldOptions { value: string; enterkeyhint: 'next' | 'done'; onInput: (value: string) => void; hint?: string }
 
 /** The Gom ID: an identifier, not prose, so no capital letters, autocorrect or spellcheck. */

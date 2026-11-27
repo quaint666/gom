@@ -18,7 +18,7 @@ public static class MessageEndpoints
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, NoticeDto? Notice = null, string? Sticker = null);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, NoticeDto? Notice = null, string? Sticker = null, DateTimeOffset? ExpiresAt = null);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -44,7 +44,7 @@ public static class MessageEndpoints
 
     internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null, MessageExtras? extras = null) =>
         new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Notice is null ? m.Body : "", m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt,
-            m.DeletedAt != null ? null : extras?.Attachments, extras?.Notice, m.DeletedAt != null ? null : m.Sticker);
+            m.DeletedAt != null ? null : extras?.Attachments, extras?.Notice, m.DeletedAt != null ? null : m.Sticker, m.ExpiresAt);
 
     // ---- what a message may contain
 
@@ -81,7 +81,7 @@ public static class MessageEndpoints
         if (existing is not null) return await Same(db, existing, id, sender, access.SeesAfter, ct);
 
         // A sticker is the whole message: no words and no files with it.
-        if (request.Sticker is not null && (!Stickers.Allowed.Contains(request.Sticker) || !string.IsNullOrWhiteSpace(request.Body) || request.Attachments is { Count: > 0 }))
+        if (request.Sticker is not null && (!await StickerPacks.MaySend(db, request.Sticker, ct) || !string.IsNullOrWhiteSpace(request.Body) || request.Attachments is { Count: > 0 }))
             return Error(StatusCodes.Status400BadRequest, "invalid_sticker");
         // A message may be only pictures and files; then its words may be empty. Otherwise it needs words.
         var attached = request.Attachments?.Distinct().ToList() ?? [];
@@ -120,7 +120,10 @@ public static class MessageEndpoints
             var seq = (await db.Database.SqlQuery<long>(
                 $"UPDATE conversations SET last_seq = last_seq + 1, last_message_at = {now} WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
 
-            message = new Message { Id = Guid.NewGuid(), ConversationId = id, Seq = seq, SenderId = me, ClientId = clientId, Body = body, Sticker = request.Sticker, CreatedAt = now, ReplyToId = request.ReplyTo };
+            // Disappearing messages: the deadline is fixed now, from the setting as it is at this moment (the row is locked by the UPDATE).
+            var lasts = await db.Conversations.Where(c => c.Id == id).Select(c => c.DisappearSeconds).SingleAsync(ct);
+            message = new Message { Id = Guid.NewGuid(), ConversationId = id, Seq = seq, SenderId = me, ClientId = clientId, Body = body, Sticker = request.Sticker, CreatedAt = now, ReplyToId = request.ReplyTo,
+                ExpiresAt = lasts is { } s ? now.AddSeconds(s) : null };
             db.Messages.Add(message);
             db.Events.Add(new MessageEvent { ConversationId = id, Seq = seq, Kind = EventKind.Created, MessageId = message.Id, CreatedAt = now });
             try

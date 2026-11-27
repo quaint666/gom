@@ -212,3 +212,57 @@ describe('contact messages', () => {
     expect(text(root)).not.toContain('Thư liên hệ');
   });
 });
+
+describe('owner page: sticker packs', () => {
+  const code = 'c-0f8fad5bd9cb469fa16570867728950e';
+  const pack = (stickers = [{ id: 's1', code }]) => ({ id: 'p1', name: 'Mèo nhà', stickers });
+
+  it('makes a pack, adds the pictures picked one by one, and lists it with its count', async () => {
+    let packs: ReturnType<typeof pack>[] = [];
+    const createStickerPack = vi.fn(async (name: string) => { packs = [{ ...pack([]), name }]; return ok(packs[0]); });
+    const addSticker = vi.fn(async () => { packs = [pack()]; return ok({ id: 's1', code }); });
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok(packs)), createStickerPack, addSticker }), vi.fn(), 'https://gom.test');
+    await flush();
+    const name = root.querySelector<HTMLInputElement>('#pack-name')!;
+    name.value = 'Mèo nhà'; name.dispatchEvent(new Event('input', { bubbles: true }));
+    root.querySelector('[data-new-pack]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(createStickerPack).toHaveBeenCalledWith('Mèo nhà');
+    expect(text(root.querySelector('[data-pack="p1"]')!)).toContain('0/100 nhãn dán');
+    const input = root.querySelector<HTMLInputElement>('[data-pack="p1"] input[type="file"]')!;
+    const files = [new File([new Uint8Array([1])], 'a.png', { type: 'image/png' }), new File([new Uint8Array([2])], 'b.png', { type: 'image/png' })];
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush(); await flush();
+    expect(addSticker.mock.calls.map((c) => (c as unknown[])[1])).toEqual(files);
+    expect(root.querySelector<HTMLImageElement>('[data-pack-sticker="s1"] img')!.getAttribute('src')).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
+    expect(text(root.querySelector('[data-pack="p1"]')!)).toContain('1/100 nhãn dán');
+  });
+
+  it('says why a picture was turned away', async () => {
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([pack()])), addSticker: vi.fn(async () => fail('pack_full', 400)) }), vi.fn(), 'https://gom.test');
+    await flush();
+    const input = root.querySelector<HTMLInputElement>('[data-pack="p1"] input[type="file"]')!;
+    Object.defineProperty(input, 'files', { value: [new File([new Uint8Array([1])], 'a.png')], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush(); await flush();
+    expect(text(root.querySelector('[role="alert"]')!)).toContain('Bộ này đã đủ 100 nhãn dán.');
+  });
+
+  it('takes a sticker out, and deletes a pack only after asking', async () => {
+    const deleteSticker = vi.fn(async () => ok(undefined));
+    const deleteStickerPack = vi.fn(async () => ok(undefined));
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([pack()])), deleteSticker, deleteStickerPack }), vi.fn(), 'https://gom.test');
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-pack-sticker="s1"] [data-remove-sticker]')!.click();
+    await flush();
+    expect(deleteSticker).toHaveBeenCalledWith('s1');
+    root.querySelector<HTMLButtonElement>('[data-delete-pack]')!.click();
+    await flush();
+    expect(deleteStickerPack).not.toHaveBeenCalled();
+    expect(text(root.querySelector('[data-delete-pack-ask]')!)).toContain('nhãn dán đã gửi vẫn hiện');
+    root.querySelector<HTMLButtonElement>('[data-delete-pack-yes]')!.click();
+    await flush();
+    expect(deleteStickerPack).toHaveBeenCalledWith('p1');
+  });
+});

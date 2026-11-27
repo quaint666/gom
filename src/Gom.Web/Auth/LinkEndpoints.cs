@@ -234,7 +234,9 @@ public static class LinkEndpoints
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         if (await Consume(db, found.LinkId, found.UserId, now, ct) == 0) return InvalidLink();
 
-        await db.Users.Where(u => u.Id == found.UserId).ExecuteUpdateAsync(s => s.SetProperty(u => u.PasswordHash, hash.Value.Hash), ct);
+        // The owner's link is also the way back in for someone who lost the phone with their codes: two-step sign-in goes off (H).
+        await db.Users.Where(u => u.Id == found.UserId).ExecuteUpdateAsync(s => s.SetProperty(u => u.PasswordHash, hash.Value.Hash)
+            .SetProperty(u => u.TwoStepKey, (byte[]?)null).SetProperty(u => u.TwoStepLastStep, 0L), ct);
         // Whoever held the old password, on whatever device, is signed out.
         await db.Sessions.Where(s => s.UserId == found.UserId && s.RevokedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), ct);
         var started = AuthEndpoints.StartSession(http, db, found.UserId, now, options.Value);

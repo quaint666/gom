@@ -301,6 +301,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("character varying(73)")
                         .HasColumnName("direct_key");
 
+                    b.Property<int?>("DisappearSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("disappear_seconds");
+
                     b.Property<bool>("JoinApproval")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -433,6 +437,44 @@ namespace Gom.Web.Migrations
 
                             t.HasCheckConstraint("ck_conversation_members_role", "role IN (0, 1, 2)");
                         });
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.CustomSticker", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid>("PackId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pack_id");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.HasKey("Id")
+                        .HasName("pk_custom_stickers");
+
+                    b.HasIndex("PackId", "Position")
+                        .HasDatabaseName("ix_custom_stickers_pack_id_position");
+
+                    b.ToTable("custom_stickers", (string)null);
                 });
 
             modelBuilder.Entity("Gom.Web.Data.FcmDevice", b =>
@@ -644,6 +686,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("edited_at");
 
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
                     b.Property<int?>("Notice")
                         .HasColumnType("integer")
                         .HasColumnName("notice");
@@ -672,6 +718,10 @@ namespace Gom.Web.Migrations
                     b.HasKey("Id")
                         .HasName("pk_messages");
 
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_messages_expires_at")
+                        .HasFilter("expires_at IS NOT NULL");
+
                     b.HasIndex("NoticeTargetId")
                         .HasDatabaseName("ix_messages_notice_target_id");
 
@@ -685,7 +735,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8, 9)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 
@@ -1026,6 +1076,33 @@ namespace Gom.Web.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.StickerPack", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sticker_packs");
+
+                    b.ToTable("sticker_packs", (string)null);
+                });
+
             modelBuilder.Entity("Gom.Web.Data.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1115,6 +1192,14 @@ namespace Gom.Web.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("share_read_receipts");
+
+                    b.Property<byte[]>("TwoStepKey")
+                        .HasColumnType("bytea")
+                        .HasColumnName("two_step_key");
+
+                    b.Property<long>("TwoStepLastStep")
+                        .HasColumnType("bigint")
+                        .HasColumnName("two_step_last_step");
 
                     b.HasKey("Id")
                         .HasName("pk_users");
@@ -1265,6 +1350,16 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_conversation_members_user_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.CustomSticker", b =>
+                {
+                    b.HasOne("Gom.Web.Data.StickerPack", null)
+                        .WithMany()
+                        .HasForeignKey("PackId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_custom_stickers_pack_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.FcmDevice", b =>
