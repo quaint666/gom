@@ -5571,7 +5571,7 @@ describe('call lines (mockups 29 and 30)', () => {
 
 describe('chat: voice messages', () => {
   const sound = new Blob([new Uint8Array([82, 73, 70, 70])], { type: 'audio/wav' });
-  const voiceAtt = (id: string): Attachment => ({ id, kind: 'file', name: 'Ghi âm.wav', size: 4, audio: true });
+  const voiceAtt = (id: string): Attachment => ({ id, kind: 'file', name: 'Ghi âm.wav', size: 4, width: null, height: null, audio: true });
   /** A recorder that hands back `sound` when stopped, and says whether it was stopped or thrown away. */
   const recorder = () => {
     const r = { stopped: 0, cancelled: 0, stop: vi.fn(async () => { r.stopped++; return sound as Blob | null; }), cancel: vi.fn(() => { r.cancelled++; }) };
