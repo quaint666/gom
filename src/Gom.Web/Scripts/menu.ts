@@ -1,5 +1,6 @@
 import { html, type TemplateResult } from 'lit-html';
 import { html as staticHtml, unsafeStatic } from 'lit-html/static.js';
+import { dismissMenu } from './motion.js';
 import { say } from './say.js';
 
 /**
@@ -29,9 +30,13 @@ export const menuItem = (attr: string, icon: TemplateResult, label: string, run:
   staticHtml`<button class="mi ${danger ? 'danger' : ''}" type="button" role="menuitem" data-${unsafeStatic(attr)} @click=${run}>${icon}<span>${label}</span></button>`;
 
 /** A whole menu with its shade: a tap outside, Escape or "Đóng" (shown on a phone) closes it. */
-export const menuView = (label: string, items: TemplateResult[], close: () => void): TemplateResult => html`
-  <div class="scrim" data-scrim @click=${close}></div>
-  <div class="menu" role="menu" aria-label=${label} data-row-actions @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') close(); }}>
+export const menuView = (label: string, items: TemplateResult[], close: () => void): TemplateResult => {
+  /** Dismissed, it moves out first (motion.ts); a choice closes it at once. */
+  const dismiss = (e: Event) => dismissMenu((e.currentTarget as Element).parentElement, close);
+  return html`
+  <div class="scrim" data-scrim @click=${dismiss}></div>
+  <div class="menu" role="menu" aria-label=${label} data-row-actions @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(e); }}>
     <div class="items-grid">${items}</div>
-    <button class="btn secondary small close-menu" type="button" data-close-menu @click=${close}>${say.common.close}</button>
+    <button class="btn secondary small close-menu" type="button" data-close-menu @click=${(e: Event) => dismissMenu((e.currentTarget as Element).closest('.menu')?.parentElement ?? null, close)}>${say.common.close}</button>
   </div>`;
+};

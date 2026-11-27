@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { avatarTone, clock } from '../Scripts/chat/model.js';
 import type { Attachment, ChatEvent, ChatMessage, Conversation } from '../Scripts/api.js';
 import type { Pusher, PushSupport } from '../Scripts/push.js';
@@ -271,6 +271,28 @@ describe('chat: opening a conversation', () => {
     h.nav.path = `/c/${C1}`; h.nav.pop();
     await flush();
     expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('thread');
+  });
+
+  it('on a phone, slides the conversation out before the list shows, for the back button and the back gesture', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((q: string) => ({ matches: q === '(max-width: 899.98px)', media: q } as MediaQueryList));
+    const ends: Array<() => void> = [];
+    const frames: Keyframe[][] = [];
+    const animate = vi.fn((f: Keyframe[]) => { frames.push(f); return { finished: new Promise<void>((resolve) => { ends.push(resolve); }), cancel: vi.fn() }; });
+    Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true });
+    onTestFinished(() => { delete (HTMLElement.prototype as { animate?: unknown }).animate; vi.restoreAllMocks(); });
+    const h = start({ chats, history });
+    await flush();
+    rows()[0]!.click(); await flush();
+    root.querySelector<HTMLElement>('.th-head .back')!.click(); await flush();
+    expect(frames.at(-1)![1]).toEqual({ transform: 'translateX(40%)', opacity: 0 });
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('thread');   // still sliding
+    ends.at(-1)!(); await flush();
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('list');
+    rows()[0]!.click(); await flush();
+    h.nav.path = '/'; h.nav.pop(); await flush();
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('thread');
+    ends.at(-1)!(); await flush();
+    expect(root.querySelector('.chat')!.getAttribute('data-pane')).toBe('list');
   });
 
   it('marks the active row', async () => {
@@ -3441,7 +3463,7 @@ describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
     root.querySelector<HTMLButtonElement>('[data-info-look]')!.click();
     await flush();
     const panel = () => root.querySelector<HTMLElement>('[data-look-panel]')!;
-    expect(panel().querySelectorAll('[data-look-colours] input')).toHaveLength(17);   // each person's own, then sixteen
+    expect(panel().querySelectorAll('[data-look-colours] input')).toHaveLength(25);   // each person's own, then sixteen colours and eight gradients
     expect(panel().querySelector<HTMLInputElement>('[data-look-colours] input[value=""]')!.checked).toBe(true);
     const sea = panel().querySelector<HTMLInputElement>('[data-look-colours] input[value="sea"]')!;
     sea.checked = true; sea.dispatchEvent(new Event('change'));
@@ -3795,6 +3817,16 @@ describe('chat: pictures and files', () => {
     } finally { localStorage.removeItem('gom-pattern'); }
   });
 
+  it('plays a file the server found to be sound in the message, and keeps every other file a card to save', async () => {
+    const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [{ ...att('f1', 'file', 'bai-hat.mp3'), audio: true }, att('f2', 'file', 'loi-bai-hat.mp3')] };
+    open({}, [m]);
+    await flush();
+    const bubble = root.querySelector('[data-msg="id1"] .bub')!;
+    expect(bubble.querySelector('[data-audio="f1"] audio')!.getAttribute('src')).toBe('/api/attachments/f1?play=true');
+    expect(bubble.querySelector('[data-audio="f2"]')).toBeNull();   // named .mp3, but not sound to the server: a card, as before
+    expect(bubble.querySelector('a.filecard[data-file="f2"]')).not.toBeNull();
+  });
+
   it('warns about an app file on its card and asks before saving it; an ordinary file has neither', async () => {
     const m: ChatMessage = { ...msg(1, 'minh', '', at(10)), attachments: [att('f1', 'file', 'thiep_tet.APK'), att('f2', 'file', 'ghi chú.txt')] };
     open({}, [m]);
@@ -3937,12 +3969,40 @@ describe('chat: pictures and files', () => {
       expect(h.nav.push).not.toHaveBeenCalled();
     });
 
-    it('closes with the button, and has no arrows for a single picture', async () => {
+    it('has a strip of every picture small, the current one marked, and a click on one goes to it', async () => {
+      const media = vi.fn(async () => ok({ items: [listed('p3', 2), listed('p2', 2), listed('p1', 1)], hasMore: false }));
+      open({ media }, [{ ...msg(1, 'minh'), attachments: [att('p1')] }, { ...msg(2, 'minh'), attachments: [att('p3'), att('p2')] }]);
+      await flush();
+      await click('[data-pic="p2"]');
+      const thumbs = () => [...viewer()!.querySelectorAll<HTMLButtonElement>('[data-viewer-thumb]')];
+      expect(thumbs().map((b) => b.dataset['viewerThumb'])).toEqual(['p1', 'p3', 'p2']);   // oldest on the left, as the pictures above
+      expect(thumbs()[0]!.querySelector('img')!.getAttribute('src')).toBe('/api/attachments/p1/thumb');
+      expect(thumbs().map((b) => b.getAttribute('aria-current'))).toEqual([null, null, 'true']);
+      expect(thumbs()[0]!.getAttribute('aria-label')).toBe('1 / 3');
+      await click('[data-viewer-thumb="p1"]');
+      expect(current()).toBe('/api/attachments/p1');
+      expect(count()).toBe('1 / 3');
+      expect(thumbs().map((b) => b.getAttribute('aria-current'))).toEqual(['true', null, null]);
+    });
+
+    it('asks for older pictures when the oldest small one is chosen', async () => {
+      const media = vi.fn(async (_c: string, _k: string, before?: number) => ok(before === undefined ? { items: [listed('p6', 6), listed('p5', 5)], hasMore: true } : { items: [listed('p4', 4)], hasMore: false }));
+      open({ media }, [{ ...msg(5, 'minh'), attachments: [att('p5')] }, { ...msg(6, 'minh'), attachments: [att('p6')] }]);
+      await flush();
+      await click('[data-pic="p6"]');
+      await click('[data-viewer-thumb="p5"]');
+      expect(media).toHaveBeenLastCalledWith(C1, 'image', 5);
+      expect(count()).toBe('2 / 3');
+      expect(viewer()!.querySelector('[data-viewer-thumb="p4"]')).not.toBeNull();
+    });
+
+    it('closes with the button, and has no arrows and no strip for a single picture', async () => {
       open({}, [{ ...msg(1, 'minh', '', at(10)), attachments: [att('p1')] }]);
       await flush();
       await click('[data-pic="p1"]');
       expect(root.querySelector('[data-viewer-next]')).toBeNull();
       expect(root.querySelector('[data-viewer-prev]')).toBeNull();
+      expect(viewer()!.querySelector('[data-viewer-thumbs]')).toBeNull();
       expect(viewer()!.querySelector('[data-viewer-caption]')).toBeNull();   // no words, no caption
       await click('[data-viewer-close]');
       expect(viewer()).toBeNull();

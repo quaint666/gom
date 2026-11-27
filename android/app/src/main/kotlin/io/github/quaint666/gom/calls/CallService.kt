@@ -123,7 +123,7 @@ class CallService : LifecycleService() {
             words = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Notices.words("/api/push/notice?call=$id") }
             // At the "nothing" level the server's title names nobody: the lock screen then shows no name (decision 8).
             locked.value = words.let { if (it == null) getString(R.string.call_voice) else it.title.takeIf { t -> t != info.callerName } }
-            engine.ringing(id, info.conversation, Peer(info.callerName))
+            engine.ringing(id, info.conversation, Peer(info.callerName, info.callerAvatar))
         }
     }
 

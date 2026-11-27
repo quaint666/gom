@@ -50,6 +50,29 @@ public static class Mp4
         catch (Exception e) when (e is EndOfStreamException or InvalidDataException or IOException) { return null; }
     }
 
+    /// <summary>
+    /// Whether the file is sound alone (an M4A): a whole MP4 with a length, a sound track ("soun") and no picture track. Such a file is
+    /// kept as a file that may play in the page.
+    /// </summary>
+    public static bool IsSound(Stream file)
+    {
+        try
+        {
+            var reader = new Reader(file);
+            var moov = reader.Children(0, file.Length, 0).FirstOrDefault(b => b.Type == "moov");
+            if (moov is null) return false;
+            int? durationMs = null;
+            var handlers = new List<string>();
+            foreach (var box in reader.Children(moov.Body, moov.End, 1))
+            {
+                if (box.Type == "mvhd") durationMs = reader.Duration(box);
+                else if (box.Type == "trak" && reader.Handler(box) is { } handler) handlers.Add(handler);
+            }
+            return durationMs is > 0 && handlers.Contains("soun") && !handlers.Contains("vide");
+        }
+        catch (Exception e) when (e is EndOfStreamException or InvalidDataException or IOException) { return false; }
+    }
+
     private sealed record Box(string Type, long Body, long End);
 
     private sealed class Reader(Stream file)
@@ -86,6 +109,16 @@ public static class Mp4
             if (scale == 0 || duration == 0 || duration == uint.MaxValue || duration == ulong.MaxValue) return null;
             var ms = duration / (double)scale * 1000;
             return ms is > 0 and < int.MaxValue ? (int)Math.Ceiling(ms) : null;
+        }
+
+        /// <summary>What a track holds, as its "mdia/hdlr" names it: "vide", "soun" and so on.</summary>
+        public string? Handler(Box trak)
+        {
+            foreach (var box in Children(trak.Body, trak.End, 2))
+                if (box.Type == "mdia")
+                    foreach (var inner in Children(box.Body, box.End, 3))
+                        if (inner.Type == "hdlr") return System.Text.Encoding.ASCII.GetString(ReadAt(inner.Body + 8, 4));
+            return null;
         }
 
         /// <summary>A track's size as shown, when the track is pictures ("vide" in its "mdia/hdlr"); null for sound and the rest.</summary>

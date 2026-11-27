@@ -49,7 +49,11 @@ class ProtocolTest {
     @Test
     fun reads_a_call_as_the_server_describes_it() {
         val c = CallInfo.parse("""{"id":"$id","conversationId":"$chat","state":"ringing","outcome":null,"caller":{"id":"x","displayName":"Minh"},"offer":"v=0","answer":null,"sdp":null,"ringSeconds":45,"aliveSeconds":30}""")!!
-        assertEquals(CallInfo(id, chat, "ringing", null, "Minh", "v=0", null, null, 45, 30), c)
+        assertEquals(CallInfo(id, chat, "ringing", null, "Minh", null, "v=0", null, null, 45, 30), c)
+        // The caller's picture, by its id; anything that is not an id (it goes into an address) is no picture.
+        val pictured = CallInfo.parse("""{"id":"$id","conversationId":"$chat","state":"ringing","caller":{"displayName":"Minh","avatar":"$chat"},"ringSeconds":45,"aliveSeconds":30}""")!!
+        assertEquals(chat, pictured.callerAvatar)
+        assertNull(CallInfo.parse("""{"id":"$id","conversationId":"$chat","state":"ringing","caller":{"displayName":"Minh","avatar":"../me"},"ringSeconds":45,"aliveSeconds":30}""")!!.callerAvatar)
         val later = CallInfo.parse("""{"id":"$id","conversationId":"$chat","state":"active","caller":{"displayName":"Minh"},"sdp":{"type":"offer","sdp":"v=0 x","rev":2},"ringSeconds":45,"aliveSeconds":30}""")!!
         assertEquals(Description("offer", "v=0 x", 2), later.sdp)
         assertNull(CallInfo.parse("""{"id":"../x","conversationId":"$chat","state":"ringing","ringSeconds":45,"aliveSeconds":30}"""))

@@ -1,6 +1,13 @@
 package io.github.quaint666.gom.calls
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,11 +35,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -56,6 +67,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.quaint666.gom.GomApp
 import io.github.quaint666.gom.R
 import java.time.Instant
 import java.time.ZoneId
@@ -137,12 +149,13 @@ fun CallScreen(
     BoxWithConstraints(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to c.tint, 0.62f to c.bg))) {
         // A short screen (a phone on its side): smaller, and scrolling, so the buttons and their words always fit.
         val short = maxHeight < 560.dp
+        val lift = maxHeight * 0.13f
         Column(Modifier.fillMaxSize().safeDrawingPadding().then(if (short) Modifier.verticalScroll(rememberScrollState()) else Modifier)
             .padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (overLock) Clock(c)
             else Header(c, showMinimise = v != null && v.phase in setOf(Phase.OUTGOING, Phase.CONNECTING, Phase.ACTIVE), act.minimise)
             Spacer(Modifier.height(if (short) 8.dp else if (overLock) 28.dp else 40.dp))
-            if (anonymous) Anonymous(c, short) else Avatar(name, c, short)
+            if (anonymous) Anonymous(c, short) else Avatar(name, v?.peer?.avatar, c, short)
             Spacer(Modifier.height(18.dp))
             BasicText(name, style = TextStyle(color = c.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center))
             Spacer(Modifier.height(12.dp))
@@ -157,6 +170,8 @@ fun CallScreen(
                     style = TextStyle(color = c.muted, fontSize = 14.sp, textAlign = TextAlign.Center))
             }
             Controls(v, routes, c, act, onChooseRoute)
+            // Ringing, the two buttons sit higher, nearer the thumb (about a fifth of the way up, as Zalo has them), not at the very bottom.
+            if (ringing && !short) Spacer(Modifier.height(lift))
         }
         if (chooseRoute && v != null) RouteSheet(routes, c, dark, onPick = { act.route(it); onChooseRoute(false) }, onDismiss = { onChooseRoute(false) })
     }
@@ -187,7 +202,7 @@ private fun Header(c: Palette, showMinimise: Boolean, minimise: () -> Unit) {
         Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.logo, c.link, 16.dp)
             Spacer(Modifier.width(6.dp))
-            BasicText(stringResource(R.string.call_voice), style = TextStyle(color = c.muted, fontSize = 13.sp))
+            BasicText(stringResource(R.string.app_name), style = TextStyle(color = c.muted, fontSize = 13.sp))
         }
     }
 }
@@ -213,10 +228,14 @@ private fun Anonymous(c: Palette, short: Boolean) {
     }
 }
 
+/** The other person's picture, as Zalo shows it; their initial until it has come, or when they have none (CallPictures). */
 @Composable
-private fun Avatar(name: String, c: Palette, short: Boolean) {
+private fun Avatar(name: String, avatar: String?, c: Palette, short: Boolean) {
+    val picture by produceState<ImageBitmap?>(null, avatar) { value = avatar?.let { CallPictures.load(GomApp.origins.origin, it) } }
     Box(Modifier.size(if (short) 72.dp else 120.dp).clip(CircleShape).background(c.tint), contentAlignment = Alignment.Center) {
-        BasicText(name.trim().firstOrNull()?.uppercase() ?: "", style = TextStyle(color = c.link, fontSize = if (short) 28.sp else 42.sp, fontWeight = FontWeight.Bold))
+        val shown = picture
+        if (shown != null) Image(shown, contentDescription = null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else BasicText(name.trim().firstOrNull()?.uppercase() ?: "", style = TextStyle(color = c.link, fontSize = if (short) 28.sp else 42.sp, fontWeight = FontWeight.Bold))
     }
 }
 
@@ -234,7 +253,7 @@ private fun Status(v: CallView?, c: Palette) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     if (v?.phase == Phase.ACTIVE) LaunchedEffect(v.connectedAt) { while (true) { now = System.currentTimeMillis(); delay(500) } }
     val text = when {
-        v == null || v.phase == Phase.INCOMING -> stringResource(R.string.call_voice)
+        v == null || v.phase == Phase.INCOMING -> stringResource(R.string.call_incoming_voice)
         v.phase == Phase.ENDED -> endingText(v.ending)
         v.phase == Phase.ACTIVE && v.connectedAt != null -> callLength(maxOf(0, now - v.connectedAt) / 1000)
         v.phase == Phase.CONNECTING -> stringResource(R.string.call_connecting)
@@ -271,13 +290,20 @@ private fun endingText(e: Ending?): String = when (e) {
 private enum class Look { PLAIN, PRESSED, HANG, ANSWER }
 
 @Composable
-private fun RoundButton(icon: List<String>, label: String, look: Look, c: Palette, pressed: Boolean? = null, onClick: () -> Unit) {
+private fun RoundButton(icon: List<String>, label: String, look: Look, c: Palette, pressed: Boolean? = null, pulse: Boolean = false, onClick: () -> Unit) {
     val big = look == Look.HANG || look == Look.ANSWER
     val (fill, ink) = when (look) {
         Look.HANG -> c.hang to Color.White
         Look.ANSWER -> c.btn to Color.White
         Look.PRESSED -> c.text to c.bg
         Look.PLAIN -> c.surface to c.text
+    }
+    Box(contentAlignment = Alignment.TopCenter) {
+    // Ringing, a soft ring grows out of Answer and fades, again and again; drawn outside the button, which clips its own press.
+    if (pulse) {
+        val beat = rememberInfiniteTransition(label = "answer")
+        val t by beat.animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart), label = "ring")
+        Box(Modifier.size(72.dp).graphicsLayer { scaleX = 1f + .45f * t; scaleY = 1f + .45f * t; alpha = .45f * (1f - t) }.clip(CircleShape).background(fill))
     }
     Column(Modifier.widthIn(min = 76.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onClick)
         .semantics { if (pressed != null) selected = pressed }, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -291,18 +317,19 @@ private fun RoundButton(icon: List<String>, label: String, look: Look, c: Palett
         Spacer(Modifier.height(8.dp))
         BasicText(label, style = TextStyle(color = c.text, fontSize = 13.sp, textAlign = TextAlign.Center))
     }
+    }
 }
 
 @Composable
 private fun Controls(v: CallView?, routes: Routes, c: Palette, act: CallActions, onChooseRoute: (Boolean) -> Unit) {
-    // Ringing: decline and answer apart, toward the edges (mockups 22 to 24); otherwise one even row.
+    // Ringing: decline and answer a thumb's reach apart, about a third in from each side (H, from Zalo's screen); otherwise one even row.
     val apart = v == null || v.phase == Phase.INCOMING
-    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp, start = if (apart) 8.dp else 0.dp, end = if (apart) 8.dp else 0.dp),
-        horizontalArrangement = if (apart) Arrangement.SpaceBetween else Arrangement.SpaceEvenly, verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        horizontalArrangement = if (apart) Arrangement.spacedBy(72.dp, Alignment.CenterHorizontally) else Arrangement.SpaceEvenly, verticalAlignment = Alignment.Top) {
         when {
             v == null || v.phase == Phase.INCOMING -> {
                 RoundButton(Icons.call, stringResource(R.string.call_decline), Look.HANG, c, onClick = act.hangUp)
-                RoundButton(Icons.call, stringResource(R.string.call_answer), Look.ANSWER, c, onClick = act.answer)
+                RoundButton(Icons.call, stringResource(R.string.call_answer), Look.ANSWER, c, pulse = true, onClick = act.answer)
             }
             v.phase == Phase.ENDED && v.ending?.problem == true ->
                 RoundButton(Icons.close, stringResource(R.string.call_close), Look.PLAIN, c, onClick = act.close)

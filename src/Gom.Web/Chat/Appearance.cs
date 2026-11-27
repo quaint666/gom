@@ -9,7 +9,8 @@ public static class Appearance
     public const string DefaultPalette = "sage";
 
     public static readonly IReadOnlyList<string> Palettes =
-        ["sage", "sea", "lotus", "turmeric", "lavender", "graphite", "jade", "indigo", "plum", "lacquer", "coffee", "moss", "clay", "sky", "wine", "rice"];
+        ["sage", "sea", "lotus", "turmeric", "lavender", "graphite", "jade", "indigo", "plum", "lacquer", "coffee", "moss", "clay", "sky", "wine", "rice",
+         "sunset", "nightsea", "forest", "blossom", "ember", "candy", "aurora", "lime"];
 
     public const string DefaultPattern = "plain";
 

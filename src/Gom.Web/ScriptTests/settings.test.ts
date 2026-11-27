@@ -171,6 +171,25 @@ describe('settings: calls in this browser', () => {
   });
 });
 
+describe('settings: colours', () => {
+  it('shows the sixteen solid colours, then the eight gradients under "Chuyển màu", and saves the one chosen', async () => {
+    const setPalette = vi.fn(async () => ok(undefined));
+    mountSettings(root, api({ setPalette }), vi.fn(), undefined, undefined, fakeNav('/settings/appearance'));
+    await flush();
+    const codes = (selector: string) => [...root.querySelectorAll<HTMLInputElement>(`${selector} input[name="palette"]`)].map((i) => i.value);
+    expect(codes('[data-palette-choice]')).toHaveLength(16);
+    expect(codes('[data-gradient-choice]')).toEqual(['sunset', 'nightsea', 'forest', 'blossom', 'ember', 'candy', 'aurora', 'lime']);
+    expect(text(root.querySelector('[data-gradient-choice]')!)).toContain('Hoàng hôn');
+    const sunset = root.querySelector<HTMLInputElement>('[data-gradient-choice] input[value="sunset"]')!;
+    sunset.checked = true;
+    sunset.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(setPalette).toHaveBeenCalledWith('sunset');
+    expect(document.documentElement.dataset['palette']).toBe('sunset');
+    delete document.documentElement.dataset['palette'];
+  });
+});
+
 describe('settings: inside the parts', () => {
   it('lists blocked people under Quyền riêng tư, and unblocks one', async () => {
     const unblock = vi.fn(async () => ok(undefined));

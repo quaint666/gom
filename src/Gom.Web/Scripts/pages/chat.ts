@@ -8,6 +8,7 @@ import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, ini
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { menuItem, menuPoint, placeMenu as placeMenuAt } from '../menu.js';
+import { dismissMenu, leaveThread } from '../motion.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { markedExcerpt, matches, type Run } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
@@ -20,6 +21,7 @@ import { STICKER_PACKS, recentStickers, rememberSticker, stickerName, stickerUrl
 import { EMOJI_GROUPS, emojiOf, onlyEmoji, recentEmoji, rememberEmoji } from '../emoji.js';
 import type { Calls } from '../calls/call.js';
 import { rememberAppCalls } from '../calls/here.js';
+import { audioCard } from '../chat/audio.js';
 
 /** Everything the page takes from its surroundings, so a test can stand in for each. */
 export interface ChatDeps {
@@ -322,12 +324,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (m === undefined) return nothing;
     const mine = m.sender.id === me?.id;
     const close = () => { menu = null; update(); };
+    /** Escape, the shade or "Đóng": the menu moves out first (motion.ts). A choice closes it at once. */
+    const dismiss = () => dismissMenu(root, close);
     const pinned = t.pins.some((p) => p.id === m.id);
     // What can still be passed on or saved: a trimmed picture or file cannot.
     const kept = (m.attachments ?? []).filter((a) => !a.removed);
     return html`
-      <div class="scrim" data-scrim @click=${close}></div>
-      <div class="menu ${mine ? 'mine' : ''}" role="menu" aria-label=${say.chat.messageOptions} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') close(); }}>
+      <div class="scrim" data-scrim @click=${dismiss}></div>
+      <div class="menu ${mine ? 'mine' : ''}" role="menu" aria-label=${say.chat.messageOptions} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); }}>
       ${menu.hide ? html`
         <p>${say.chat.hideQ}</p>
         <div class="ask"><button class="btn small" type="button" data-confirm-hide @click=${() => void hide(m)}>${say.chat.deleteForMe}</button>
@@ -347,7 +351,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${menuItem('hide', icons.trash(), say.chat.deleteForMe, () => { menu = { id: m.id, confirming: false, hide: true }; update(); })}
         ${mine ? menuItem('recall', icons.undo(), say.chat.recall, () => { menu = { id: m.id, confirming: true }; update(); }, true) : nothing}
         </div>
-        <button class="btn secondary small close-menu" type="button" data-cancel-recall @click=${close}>${say.common.close}</button>`}
+        <button class="btn secondary small close-menu" type="button" data-cancel-recall @click=${dismiss}>${say.common.close}</button>`}
       </div>`;
   };
 
@@ -437,6 +441,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         : videoView(a))}
       ${files.map((a) => a.removed
         ? html`<div class="filecard removed" data-file-removed=${a.id}>${icons.file()}<span class="fi"><b>${say.chat.fileGone}</b><small>${a.name}</small></span></div>`
+        : a.audio === true ? audioCard(a)
         : isAppFile(a.name) ? html`
         <a class="filecard" href=${`/api/attachments/${a.id}`} download=${a.name} data-file=${a.id} data-app-file
           @click=${(e: MouseEvent) => { e.preventDefault(); appFile = a; update(); }}>${icons.file()}
@@ -514,6 +519,18 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  /** A small picture in the strip under the viewer was chosen: that one, at once. At the oldest, older ones are asked for. */
+  function jumpViewer(attachmentId: string): void {
+    const v = viewer;
+    if (v === null || v.attachmentId === attachmentId) return;
+    v.attachmentId = attachmentId;
+    viewerSync = true;
+    update();
+    const list = mediaOf(v.conversation).image;
+    const slides = slidesOf(v);
+    if (v.local === null && slides[0]?.attachment.id === attachmentId && list.hasMore && slides.length === list.items.length) void loadMedia(v.conversation, 'image', true);
+  }
+
   /** Where the strip of pictures came to rest after a swipe: that picture is the current one. Near the oldest, older ones are asked for. */
   function onViewerSettle(track: HTMLElement): void {
     const v = viewer;
@@ -584,6 +601,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <div class="vwho"><b>${who}</b><small>${sentAt(current.createdAt)}</small></div>
           ${current.body === '' ? nothing : html`<p class="vcap" data-viewer-caption>${words(current.body)}</p>`}
         </div>
+        ${slides.length < 2 ? nothing : html`
+          <div class="vthumbs" data-viewer-thumbs role="group" aria-label=${say.chat.pictures}>
+            ${repeat(slides, (s) => s.attachment.id, (s, k) => html`
+              <button class="vthumb" type="button" data-viewer-thumb=${s.attachment.id} aria-label=${`${k + 1} / ${slides.length}`} aria-current=${k === i ? 'true' : nothing}
+                @click=${() => jumpViewer(s.attachment.id)}><img src=${`/api/attachments/${s.attachment.id}/thumb`} alt="" loading="lazy" decoding="async">
+                ${s.attachment.kind === 'video' ? html`<span class="tray-play" aria-hidden="true">${icons.play()}</span>` : nothing}</button>`)}
+          </div>`}
       </dialog>`;
   };
 
@@ -770,8 +794,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @click=${() => { gearOpen = !gearOpen; update(); }}>${icons.gear()}</button>
     </nav>
     ${gearOpen ? html`
-      <div class="scrim" data-gear-scrim @click=${() => { gearOpen = false; update(); }}></div>
-      <div class="gearmenu" role="menu" aria-label=${say.chat.account} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') { gearOpen = false; update(); } }}>
+      <div class="scrim" data-gear-scrim @click=${() => dismissMenu(root, () => { gearOpen = false; update(); })}></div>
+      <div class="gearmenu" role="menu" aria-label=${say.chat.account} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') dismissMenu(root, () => { gearOpen = false; update(); }); }}>
         <a class="mi" role="menuitem" href="/settings">${icons.gear()}<span>${say.common.settings}</span></a>
         ${me?.isOwner ? html`<a class="mi" role="menuitem" href="/settings/owner">${icons.users()}<span>${say.common.ownerPage}</span></a>` : nothing}
         <button class="mi" type="button" role="menuitem" data-signout @click=${() => void signOut()}>${icons.signOut()}<span>${say.common.signOut}</span></button>
@@ -1271,7 +1295,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (typeof d.showModal === 'function') d.showModal(); else d.setAttribute('open', '');
     }
     const track = root.querySelector<HTMLElement>('[data-viewer-track]');
-    if (viewer === null || !viewerSync || track === null || track.clientWidth <= 0) return;
+    if (viewer === null || !viewerSync || track === null) return;
+    // The strip of small pictures (a computer's) keeps the current one in view.
+    root.querySelector<HTMLElement>('[data-viewer-thumbs] [aria-current="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+    if (track.clientWidth <= 0) return;
     const i = slidesOf(viewer).findIndex((s) => s.attachment.id === viewer!.attachmentId);
     const left = Math.max(0, i) * track.clientWidth;
     track.scrollLeft = left;
@@ -1292,8 +1319,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     deps.nav.push('/');
-    openId = null;
-    update();
+    toList();
+  }
+
+  /** Back to the list: on a phone the conversation slides out first (motion.ts), as it slid in. */
+  function toList(): void {
+    const leaving = openId;
+    leaveThread(root.querySelector('.thread-pane'), () => { if (openId === leaving) { openId = null; update(); } });
   }
 
   /** The Gom button: back to the start of the app (the list, nothing open). Already there, it does nothing. */
@@ -1698,9 +1730,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const unread = c.unread > 0 || c.markedUnread === true;
     const friend = c.kind === 'direct' && c.peer !== null && !c.peer.deleted && c.peer.gomId ? c.peer.gomId : null;
     return html`
-      <div class="scrim" data-scrim @click=${closeRowMenu}></div>
+      <div class="scrim" data-scrim @click=${() => dismissMenu(root, closeRowMenu)}></div>
       <div class="menu" role="menu" aria-label=${say.chat.optionsFor(c.title)} data-conversation-menu
-        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') closeRowMenu(); }}>
+        @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') dismissMenu(root, closeRowMenu); }}>
       ${rowMenu!.confirming ? html`
         <p>${say.chat.clearQ}</p>
         <div class="ask"><button class="btn small" type="button" data-confirm-clear @click=${() => void clearConversation(c)}>${say.chat.deleteForMe}</button>
@@ -1715,7 +1747,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           : menuItem('hide-chat', icons.eyeOff(), say.chat.hide, () => void hideConversation(c))}
         ${menuItem('clear-chat', icons.trash(), say.chat.clear, () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}
         </div>
-        <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${closeRowMenu}>${say.common.close}</button>`}
+        <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${() => dismissMenu(root, closeRowMenu)}>${say.common.close}</button>`}
       </div>`;
   };
 
@@ -2467,7 +2499,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   };
 
   // Back from the information page (its own step in the history) only closes it.
-  deps.nav.onPop(() => { infoPage = false; const id = idFromPath(); if (id === null) { openId = null; update(); } else show(id); });
+  deps.nav.onPop(() => { infoPage = false; const id = idFromPath(); if (id === null) toList(); else show(id); });
   document.addEventListener('visibilitychange', () => {
     if (!deps.visible()) return;
     live?.retryNow();

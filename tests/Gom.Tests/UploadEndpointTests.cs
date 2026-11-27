@@ -160,6 +160,49 @@ public class UploadEndpointTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     /// <summary>What putting it in a message will do (that step is built next): marks the upload as part of the message.</summary>
+    /// <summary>A file whose first bytes say what sound it is, whatever its name.</summary>
+    [Theory]
+    [InlineData("4944330300000000000000000000", "audio/mpeg")]   // ID3 tags, then an MP3
+    [InlineData("FFFB904400000000000000000000", "audio/mpeg")]   // an MPEG audio frame, no tags
+    [InlineData("FFF1508000000000000000000000", "audio/aac")]
+    [InlineData("4F67675300020000000000000000", "audio/ogg")]
+    [InlineData("664C614300000022000000000000", "audio/flac")]
+    [InlineData("524946462400000057415645666D", "audio/wav")]
+    public async Task Sound_plays_in_the_page_when_asked_with_its_own_type_and_is_still_a_download_otherwise(string head, string type)
+    {
+        var p = await NewPair();
+        var bytes = Convert.FromHexString(head).Concat(new byte[4000]).ToArray();
+        using var created = await Upload(p.Chat, p.CA, bytes, "bai-hat.txt");   // the name says nothing; the bytes do
+        var json = await AppFixture.Json(created);
+        Assert.Equal("file", json.GetProperty("kind").GetString());
+        Assert.True(json.GetProperty("audio").GetBoolean());
+        var id = json.GetProperty("id").GetGuid();
+
+        using var played = await app.Call(Get, $"/api/attachments/{id}?play=true", cookie: p.CA);
+        Assert.Equal(type, played.Content.Headers.ContentType!.MediaType);
+        Assert.Null(played.Content.Headers.ContentDisposition);   // played, not saved
+        Assert.Equal("bytes", played.Headers.AcceptRanges.Single());   // the page can skip about
+        Assert.Equal("nosniff", played.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal(bytes, await played.Content.ReadAsByteArrayAsync());
+
+        using var saved = await app.Call(Get, $"/api/attachments/{id}", cookie: p.CA);
+        Assert.Equal("application/octet-stream", saved.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("attachment", saved.Content.Headers.ContentDisposition!.DispositionType);
+    }
+
+    [Fact]
+    public async Task A_file_named_like_sound_but_not_sound_never_plays()
+    {
+        var p = await NewPair();
+        var bytes = "<html><script>alert(1)</script></html>"u8.ToArray();
+        using var created = await Upload(p.Chat, p.CA, bytes, "bai-hat.mp3");
+        var json = await AppFixture.Json(created);
+        Assert.False(json.GetProperty("audio").GetBoolean());
+        using var played = await app.Call(Get, $"/api/attachments/{json.GetProperty("id").GetGuid()}?play=true", cookie: p.CA);
+        Assert.Equal("application/octet-stream", played.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("attachment", played.Content.Headers.ContentDisposition!.DispositionType);
+    }
+
     private async Task Attach(Guid attachment, Guid chat, string cookie)
     {
         using var sent = await app.Call(Post, $"/api/conversations/{chat}/messages", new { clientId = Guid.NewGuid(), body = "ảnh" }, cookie);

@@ -142,6 +142,8 @@ public class VideoTests(AppFixture app) : IClassFixture<AppFixture>
     [InlineData("sound only")]
     [InlineData("no length")]
     [InlineData("cut short")]
+    [InlineData("no tracks")]
+    [InlineData("sound, no length")]
     public async Task An_mp4_that_is_not_a_whole_video_is_an_ordinary_file(string what)
     {
         var (cookie, chat, _) = await Chat();
@@ -149,10 +151,13 @@ public class VideoTests(AppFixture app) : IClassFixture<AppFixture>
         {
             "sound only" => Mp4(sound: true, pictures: false),
             "no length" => Mp4(durationMs: 0),
+            "no tracks" => Mp4(pictures: false),
+            "sound, no length" => Mp4(sound: true, pictures: false, durationMs: 0),
             _ => Mp4(moovLast: true)[..^40],
         };
         var json = await Uploaded(chat, cookie, bytes, "a.m4a");
         Assert.Equal("file", json.GetProperty("kind").GetString());
+        Assert.Equal(what == "sound only", json.GetProperty("audio").GetBoolean());   // only sound alone may play in the page
         using var full = await app.Call(Get, $"/api/attachments/{json.GetProperty("id").GetGuid()}", cookie: cookie);
         Assert.Equal("application/octet-stream", full.Content.Headers.ContentType!.MediaType);
         Assert.Equal("a.m4a", full.Content.Headers.ContentDisposition!.FileNameStar ?? full.Content.Headers.ContentDisposition.FileName);

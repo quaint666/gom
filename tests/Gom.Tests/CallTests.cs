@@ -920,6 +920,23 @@ public class CallTests(CallFixture app) : IClassFixture<CallFixture>
     }
 
     [Fact]
+    public async Task A_call_names_its_callers_picture_for_the_ringing_screen_or_none()
+    {
+        var p = await Friends();
+        var id = await Ringing(p);
+        Assert.Equal(JsonValueKind.Null, (await Read(id, p.CB)).GetProperty("caller").GetProperty("avatar").ValueKind);   // no picture yet
+        using (await app.Call(Post, $"/api/calls/{id}/hangup", cookie: p.CA)) { }
+        app.Clock.Advance(TimeSpan.FromMinutes(1));   // past the pace of calls
+        using var set = await app.CallBytes(HttpMethod.Put, "/api/me/avatar", TestImages.Encode(TestImages.Busy(300, 300), SkiaSharp.SKEncodedImageFormat.Jpeg), p.CA, "image/jpeg");
+        var avatar = (await AppFixture.Json(set)).GetProperty("avatar").GetGuid();
+        var again = await Ringing(p);
+        var caller = (await Read(again, p.CB)).GetProperty("caller");
+        Assert.Equal(avatar, caller.GetProperty("avatar").GetGuid());
+        using var picture = await app.Call(Get, $"/api/avatars/{avatar}", cookie: p.CB);   // which the person called may fetch
+        Assert.Equal(HttpStatusCode.OK, picture.StatusCode);
+    }
+
+    [Fact]
     public async Task Me_says_whether_my_app_takes_calls_so_a_phones_browser_can_leave_the_ringing_to_it()
     {
         var (me, cookie) = await app.Member();

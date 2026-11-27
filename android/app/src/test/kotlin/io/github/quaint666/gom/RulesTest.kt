@@ -29,6 +29,16 @@ class OriginsTest {
         assertFalse(Origins("https://gom.example").loadsInside("https://team.login.example/"))
     }
 
+    @Test fun only_gom_s_own_pages_get_the_microphone_and_nothing_else() {
+        val mic = listOf("android.webkit.resource.AUDIO_CAPTURE")
+        assertTrue(gom.mayUseMicrophone("https://gom.example", mic))
+        assertFalse(gom.mayUseMicrophone("https://team.login.example", mic))   // the sign-in in front: inside, but never the microphone
+        assertFalse(gom.mayUseMicrophone("https://evil.example", mic))
+        assertFalse(gom.mayUseMicrophone("http://gom.example", mic))
+        assertFalse(gom.mayUseMicrophone("https://gom.example", listOf("android.webkit.resource.VIDEO_CAPTURE")))
+        assertFalse(gom.mayUseMicrophone("https://gom.example", mic + "android.webkit.resource.VIDEO_CAPTURE"))
+    }
+
     @Test fun the_origin_and_pages_come_from_the_setting() {
         assertEquals("https://gom.example", gom.origin)
         assertEquals("https://gom.example:8443", Origins("https://Gom.Example:8443/x").origin)

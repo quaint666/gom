@@ -10,6 +10,7 @@
     <string name="channel_missed_calls">Cuộc gọi nhỡ</string>
     <string name="call_voice">Cuộc gọi thoại Gom</string>
     <string name="call_incoming">Cuộc gọi đến</string>
+    <string name="call_incoming_voice">Cuộc gọi thoại đến</string>
     <string name="call_calling">Đang gọi…</string>
     <string name="call_ringing">Đang đổ chuông…</string>
     <string name="call_connecting">Đang kết nối…</string>
