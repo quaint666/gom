@@ -56,6 +56,7 @@ public static class Pages
         new("/c/{id}", "home"),
         new("/sign-in", "signin"),
         new("/join/{token}", "join"),
+        new("/welcome", "welcome"),
         new("/sign-up", "signup"),
         new("/reset/{token}", "reset"),
         new("/settings", "settings"),
@@ -66,6 +67,7 @@ public static class Pages
         new("/groups/{id}", "group"),
         new("/add/{gomId}", "add"),
         new("/privacy", "privacy"),
+        new("/help", "help"),
     ];
 
     /// <summary>
@@ -109,6 +111,7 @@ public static class Pages
         .Replace("{page}", Escape(page.Name), StringComparison.Ordinal)
         .Replace("{limits}", Escape(limits), StringComparison.Ordinal)
         .Replace("{operator}", Escape(site.Operator.Trim()), StringComparison.Ordinal)
+        .Replace("{source}", Escape(site.Source()), StringComparison.Ordinal)
         .Replace("{version}", Escape(Release), StringComparison.Ordinal);
 
     // Only what HTML needs (WebUtility.HtmlEncode would also write "·" as "&#183;").
@@ -125,4 +128,13 @@ public sealed class SiteOptions
     /// says "the person who runs this site". Configuration only: the repository is public.
     /// </summary>
     public string Operator { get; set; } = "";
+
+    /// <summary>
+    /// Where this Gom's source code and bug reports are (Settings, the privacy page and the welcome page link to it). Only an https
+    /// address is shown; empty hides the link, so a copy run by someone else can point at its own repository or at none.
+    /// </summary>
+    public string SourceUrl { get; set; } = "";
+
+    /// <summary>The address to show, or empty when there is none or it is not https.</summary>
+    public string Source() => Uri.TryCreate(SourceUrl.Trim(), UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps ? u.AbsoluteUri : "";
 }

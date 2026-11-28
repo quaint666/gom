@@ -305,4 +305,37 @@ public class GroupRoleTests(AppFixture app) : IClassFixture<AppFixture>
             Assert.Equal(HttpStatusCode.NotFound, h.StatusCode);
         }
     }
+
+    /// <summary>
+    /// A big group closes at once and its messages go a batch of 5,000 at a time: one transaction for all of them kept the group
+    /// locked long enough to stop the whole site (2026-11-28). Whatever the batches, nothing of it is left.
+    /// </summary>
+    [Fact]
+    public async Task Disbanding_a_group_bigger_than_one_batch_leaves_nothing_of_it()
+    {
+        var t = await NewTeam();
+        (await Say(t, t.CB, "một")).Dispose();
+        await using (var seed = app.Db.NewContext())
+        {
+            var start = await seed.Conversations.Where(c => c.Id == t.Chat).Select(c => c.LastSeq).SingleAsync();
+            for (var i = 1; i <= 5010; i++)
+            {
+                var id = Guid.NewGuid();
+                seed.Messages.Add(new Message { Id = id, ConversationId = t.Chat, Seq = start + i, SenderId = t.B.Id, ClientId = Guid.NewGuid(), Body = $"cũ {i}", CreatedAt = app.Clock.Now });
+                if (i % 100 == 0) seed.Reactions.Add(new MessageReaction { MessageId = id, UserId = t.C.Id, Emoji = "❤️", CreatedAt = app.Clock.Now });
+            }
+            await seed.SaveChangesAsync();
+            await seed.Conversations.Where(c => c.Id == t.Chat).ExecuteUpdateAsync(x => x.SetProperty(c => c.LastSeq, start + 5010));
+        }
+
+        using var r = await Disband(t, t.CA);
+
+        Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        await using var db = app.Db.NewContext();
+        Assert.False(await db.Conversations.AnyAsync(c => c.Id == t.Chat));
+        Assert.False(await db.Messages.AnyAsync(m => m.ConversationId == t.Chat));
+        Assert.False(await db.Members.AnyAsync(m => m.ConversationId == t.Chat));
+        using var sent = await Say(t, t.CB, "còn ai không?");
+        Assert.Equal(HttpStatusCode.NotFound, sent.StatusCode);
+    }
 }

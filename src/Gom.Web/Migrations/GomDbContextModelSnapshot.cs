@@ -20,6 +20,7 @@ namespace Gom.Web.Migrations
                 .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "unaccent");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
@@ -287,6 +288,10 @@ namespace Gom.Web.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<Guid?>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -735,7 +740,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8, 9)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 
@@ -892,6 +897,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -928,6 +937,9 @@ namespace Gom.Web.Migrations
                     b.HasIndex("CreatedBy")
                         .HasDatabaseName("ix_one_time_links_created_by");
 
+                    b.HasIndex("GroupId")
+                        .HasDatabaseName("ix_one_time_links_group_id");
+
                     b.HasIndex("TargetUserId")
                         .HasDatabaseName("ix_one_time_links_target_user_id");
 
@@ -937,6 +949,8 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("one_time_links", null, t =>
                         {
+                            t.HasCheckConstraint("ck_links_group", "group_id IS NULL OR kind = 'invite'");
+
                             t.HasCheckConstraint("ck_links_kind", "kind IN ('invite', 'reset')");
 
                             t.HasCheckConstraint("ck_links_target", "(kind = 'reset') = (target_user_id IS NOT NULL)");
@@ -1091,6 +1105,12 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<bool>("Everywhere")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("everywhere");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -1101,6 +1121,44 @@ namespace Gom.Web.Migrations
                         .HasName("pk_sticker_packs");
 
                     b.ToTable("sticker_packs", (string)null);
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.StickerPackChat", b =>
+                {
+                    b.Property<Guid>("PackId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pack_id");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("conversation_id");
+
+                    b.HasKey("PackId", "ConversationId")
+                        .HasName("pk_sticker_pack_chats");
+
+                    b.HasIndex("ConversationId")
+                        .HasDatabaseName("ix_sticker_pack_chats_conversation_id");
+
+                    b.ToTable("sticker_pack_chats", (string)null);
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.StickerPackPerson", b =>
+                {
+                    b.Property<Guid>("PackId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pack_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("PackId", "UserId")
+                        .HasName("pk_sticker_pack_people");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_sticker_pack_people_user_id");
+
+                    b.ToTable("sticker_pack_people", (string)null);
                 });
 
             modelBuilder.Entity("Gom.Web.Data.User", b =>
@@ -1574,6 +1632,12 @@ namespace Gom.Web.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_one_time_links_created_by");
 
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_one_time_links_group_id");
+
                     b.HasOne("Gom.Web.Data.User", null)
                         .WithMany()
                         .HasForeignKey("TargetUserId")
@@ -1599,6 +1663,40 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_sessions_user_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.StickerPackChat", b =>
+                {
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_pack_chats_conversation_id");
+
+                    b.HasOne("Gom.Web.Data.StickerPack", null)
+                        .WithMany()
+                        .HasForeignKey("PackId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_pack_chats_pack_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.StickerPackPerson", b =>
+                {
+                    b.HasOne("Gom.Web.Data.StickerPack", null)
+                        .WithMany()
+                        .HasForeignKey("PackId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_pack_people_pack_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_pack_people_user_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.User", b =>

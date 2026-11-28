@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- wwwroot/icon.svg's bubble at 2.4 times, centred in the adaptive icon (20% smaller than filling its safe zone, H); the line is
-     thicker in the drawing's units, so it keeps its weight on the screen. -->
+<!-- The launcher icon: the mark at 0.6, centred in the safe zone. Made by design/icons.py. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <group android:translateX="25.2" android:translateY="25.2" android:scaleX="2.4" android:scaleY="2.4">
-        <path android:pathData="M4,5h16v11H11l-4,4v-4H4z" android:strokeColor="#FFFFFF" android:strokeWidth="2.25"
-            android:strokeLineCap="round" android:strokeLineJoin="round" />
-        <path android:pathData="M8,10h8" android:strokeColor="#FFFFFF" android:strokeWidth="2.25" android:strokeLineCap="round" />
+    <group android:translateX="24" android:translateY="24" android:scaleX="0.6" android:scaleY="0.6">
+        <path android:pathData="M24 18h52a12 12 0 0 1 12 12v32a12 12 0 0 1-12 12H46L30 86V74h-6a12 12 0 0 1-12-12V30a12 12 0 0 1 12-12zM24 47a9 9 0 1 0 18 0a9 9 0 1 0-18 0zM46.5 48a7.5 7.5 0 1 0 15 0a7.5 7.5 0 1 0-15 0zM65 49a6 6 0 1 0 12 0a6 6 0 1 0-12 0z" android:fillColor="#FFFFFF" android:fillType="evenOdd" />
     </group>
 </vector>

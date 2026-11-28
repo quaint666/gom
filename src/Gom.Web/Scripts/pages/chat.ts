@@ -69,6 +69,8 @@ const SLOW_RETRY_MS = 1000;
 interface VoiceRecording { conversation: string; recorder: Recording | null; seconds: number; timer: number | null }
 /** How many uploads go up at the same time. */
 const UPLOADS_AT_ONCE = 2;
+/** How many steps a tray item's progress bar moves in (each step is one drawing of the page). */
+const PROGRESS_STEPS = 20;
 /** How many conversations one message may be passed on to at once: with a note that is twice as many sends, inside the server's burst of 20. */
 const FORWARD_MAX = 5;
 /** How much of a message a one-line preview shows: the pinned bar and panel, a search result or the pin list, what is being forwarded. */
@@ -241,12 +243,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let undoHide: { id: string; timer: number } | null = null;
   /** The pack of stickers shown: -1 is "Gần đây" (the ones this device sent lately). */
   let stickerPack = -1;
-  /** The owner's packs, asked for the first time the stickers are shown (null: not yet), after Gom's own in the picker. */
+  /**
+   * The owner's packs for the open conversation (a pack may be only in some), asked for the first time its stickers are shown, after
+   * Gom's own in the picker; `packsFor` says which conversation they are for.
+   */
   let customPacks: CustomPack[] | null = null;
+  let packsFor: string | null = null;
   function loadCustomPacks(): void {
-    if (customPacks !== null) return;
-    customPacks = [];
-    void api.stickerPacks().then((r) => { if (r.ok) { customPacks = r.data.filter((p) => p.stickers.length > 0); update(); } else customPacks = null; });
+    const id = openId;
+    if (id === null || (packsFor === id && customPacks !== null)) return;
+    packsFor = id; customPacks = [];
+    void api.stickerPacks(id).then((r) => {
+      if (packsFor !== id) return;
+      if (r.ok) { customPacks = r.data.filter((p) => p.stickers.length > 0); update(); } else customPacks = null;
+    });
   }
   /** The group of emoji shown: -1 is "Gần đây". */
   let emojiGroup = recentEmoji().length > 0 ? -1 : 0;
@@ -280,6 +290,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     html`<div class="av a${avatarTone(name)} ${size} ${picture ? 'has-pic' : ''}" aria-hidden="true">${picture
       ? html`<img src=${avatarUrl(picture)} alt="" loading="lazy" decoding="async">` : initials(name)}</div>`;
   /** The picture of someone in a group, from its member list (asked for when the group opens). */
+  /** A conversation's picture: the other person's in a 1:1 chat, the group's own in a group. */
+  const pictureOf = (c: Conversation): string | null | undefined => c.kind === 'group' ? c.avatar : c.peer?.avatar;
   const memberPicture = (conversation: string, userId: string): string | null | undefined => people.get(conversation)?.find((m) => m.id === userId)?.avatar;
 
   function preview(c: Conversation): string {
@@ -296,7 +308,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}
       @contextmenu=${(e: MouseEvent) => onRowContext(e, c.id)}
       @pointerdown=${(e: PointerEvent) => rowPressStart(e, c.id)} @pointermove=${rowPressMove} @pointerup=${rowPressEnd} @pointercancel=${rowPressEnd} @pointerleave=${rowPressEnd}>
-      ${avatar(c.title ?? '?', c.peer?.avatar)}
+      ${avatar(c.title ?? '?', pictureOf(c))}
       <div class="im">
         <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label=${say.chat.pinnedMark}>${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.palette ? html`<span class="look-dot" data-palette=${c.palette} role="img" aria-label=${say.chat.ownLook}></span>` : nothing}${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv ${c.lastMessage?.call && missedByMe(c.lastMessage.call, me?.id ?? '') ? 'missed-call' : ''}">${c.lastMessage?.call ? (c.lastMessage.call.callerId === me?.id ? icons.callOut() : icons.callIn()) : nothing}${preview(c)}</span>
@@ -515,16 +527,15 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
-  /** Asks for pages of the conversation's pictures until this one is among them (or there are no more). Until then the viewer shows its message only. */
+  /**
+   * Brings the conversation's pictures back to this one, in one request after the first page (or none, when it is there). Until then,
+   * or when it is further back than the server goes in one jump, the viewer shows its message's pictures only.
+   */
   async function findInList(conversation: string, attachmentId: string): Promise<void> {
     const list = mediaOf(conversation).image;
-    if (!list.loaded) await loadMedia(conversation, 'image');
-    for (let pages = 0; pages < 40 && list.hasMore && !list.items.some((i) => i.attachment.id === attachmentId); pages++) {
-      if (viewer?.attachmentId !== attachmentId) return;
-      const before = list.items.length;
-      await loadMedia(conversation, 'image', true);
-      if (list.items.length === before) return;   // failed, or another load was running: stay on the message's own pictures
-    }
+    if (!list.loaded) await loadMedia(conversation, 'image', false, attachmentId);
+    if (viewer?.attachmentId !== attachmentId || !list.hasMore || list.items.some((i) => i.attachment.id === attachmentId)) return;
+    await loadMedia(conversation, 'image', true, attachmentId);
   }
 
   /** Moves the viewer one picture back (-1) or on (1). At the oldest picture with older ones on the server, they are asked for first. */
@@ -783,7 +794,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       return html`<li><label class="fwd-row">
         <input type="checkbox" data-forward-pick=${c.id} .checked=${on} ?disabled=${f.busy || (!on && full)}
           @change=${(e: Event) => { const yes = (e.target as HTMLInputElement).checked; f.picked = yes ? [...f.picked.filter((x) => x !== c.id), c.id] : f.picked.filter((x) => x !== c.id); update(); }}>
-        ${avatar(c.title ?? '?', c.peer?.avatar)}<span>${c.title ?? '…'}</span></label></li>`;
+        ${avatar(c.title ?? '?', pictureOf(c))}<span>${c.title ?? '…'}</span></label></li>`;
     };
     return html`
       <dialog class="fwd" aria-labelledby="fwd-title" data-forward-panel data-modal @close=${cancel}
@@ -882,12 +893,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /** Asks the server for a page of the side panel's list: the first (once), or the next one after what is shown. A failure leaves the list as it is. */
-  async function loadMedia(id: string, kind: 'image' | 'file', more = false): Promise<void> {
+  /** A page of the list; `more`: the one after what is here; `to`: every one back to that picture at once. */
+  async function loadMedia(id: string, kind: 'image' | 'file', more = false, to?: string): Promise<void> {
     const list = mediaOf(id)[kind];
     if (list.loading || (more ? !list.hasMore : list.loaded)) return;
     list.loading = true;
     update();
-    const result = await api.media(id, kind, more ? list.items[list.items.length - 1]?.seq : undefined);
+    const result = await api.media(id, kind, more ? list.items[list.items.length - 1]?.seq : undefined, to);
     list.loading = false;
     if (result.ok) {
       list.items = mergeMedia(list.items, result.data.items);
@@ -921,7 +933,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const infoPanel = (c: Conversation, t: Thread, page = false) => html`
     <aside class="info" aria-label=${say.chat.info} data-info-panel>
       <div class="info-top">
-        ${avatar(c.title ?? '?', c.peer?.avatar, 'xl')}
+        ${avatar(c.title ?? '?', pictureOf(c), 'xl')}
         <h2>${c.title ?? '…'}</h2>
         <small>${c.kind === 'group' ? say.common.members(c.memberCount ?? 0) : c.peer ? peerLine(c) : ''}</small>
       </div>
@@ -1095,12 +1107,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       </section>`;
     const t = threadOf(openId);
     const items = buildThread(t.messages, me?.id ?? '', t.lastReadAtOpen, t.unreadAtOpen, deps.now(), t.pending);
+    // Worked out once a drawing, not once a message: seenText looks through the whole thread.
+    const group = c?.kind === 'group', seen = seenText(t, group), tick = tickOf(t, c);
     return html`
       <section class="thread-pane" data-palette=${c?.palette ?? nothing} @dragover=${(e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); }}
         @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
           <a class="ib back" href="/" aria-label=${say.common.back} @click=${onBack}>${icons.back()}</a>
-          ${avatar(c?.title ?? '?', c?.peer?.avatar)}
+          ${avatar(c?.title ?? '?', c ? pictureOf(c) : null)}
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
             : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : nothing}</div>`}
@@ -1121,7 +1135,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="backdrop" data-pattern=${c?.pattern ?? storedPattern()}>
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>${say.chat.older}</button>` : nothing}
-          ${repeat(items, (i) => i.key, (i) => threadItem(i, c?.kind === 'group', seenText(t, c?.kind === 'group'), tickOf(t, c)))}
+          ${repeat(items, (i) => i.key, (i) => threadItem(i, group, seen, tick))}
         </div>
         </div>
         ${menuOverlay(t)}
@@ -1202,7 +1216,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     // Gom's own packs, then the owner's.
     const packs: { name: string; codes: readonly string[] }[] = [
       ...STICKER_PACKS.map((p) => ({ name: say.stickerPacks[p.key], codes: p.codes })),
-      ...(customPacks ?? []).map((p) => ({ name: p.name, codes: p.stickers.map((s) => s.code) })),
+      ...(packsFor === openId ? customPacks ?? [] : []).map((p) => ({ name: p.name, codes: p.stickers.map((s) => s.code) })),
     ];
     const pack = stickerPack === -1 && recent.length === 0 ? 0 : stickerPack;
     const shown = pack === -1 ? recent : packs[pack]?.codes ?? [];
@@ -1519,12 +1533,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     void refreshPins(id);
   }
 
-  async function loadOlder(id: string): Promise<void> {
+  /** The page before the oldest one here; with `to`, everything back to that message at once (a jump: one answer, one drawing). */
+  async function loadOlder(id: string, to?: string): Promise<void> {
     const t = threadOf(id);
     const oldest = t.messages[0]?.seq;
     if (t.loading || oldest === undefined) return;
     t.loading = true; update();
-    const result = await api.history(id, oldest);
+    const result = await api.history(id, oldest, to);
     t.loading = false;
     if (!result.ok) { handleFailure(result); return; }
     t.messages = mergeMessages(result.data.messages, t.messages);
@@ -2250,7 +2265,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     t.stick = false;
     t.jump = false;
     update();
-    for (let pages = 0; !t.messages.some((x) => x.id === m.id) && t.hasMore && pages < 40; pages++) await loadOlder(id);
+    if (!t.messages.some((x) => x.id === m.id) && t.hasMore) await loadOlder(id, m.id);   // further back than the server reaches in one jump: not found
     found = m.id;
     update();
     const box = root.querySelector<HTMLElement>('.msgs');
@@ -2344,6 +2359,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     }
   }
 
+
+  /**
+   * Progress for a tray item: the bar moves in steps of a twentieth. Each step draws the whole page again (every message on screen),
+   * and an upload or a video being made smaller reports far more often than that.
+   */
+  const progressOf = (item: TrayItem) => (fraction: number): void => {
+    const step = Math.floor(fraction * PROGRESS_STEPS);
+    const was = Math.floor(item.progress * PROGRESS_STEPS);
+    item.progress = fraction;
+    if (step !== was) update();
+  };
   async function uploadOne(id: string, t: Thread, item: TrayItem): Promise<void> {
     if (!item.prepared && isVideoFile(item.file!)) {
       if (!await prepare(item)) { pumpTray(id); return; }
@@ -2352,7 +2378,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     item.state = 'uploading';
     item.progress = 0;
     update();
-    const result = await api.upload(id, item.file!, (fraction) => { item.progress = fraction; update(); });
+    const result = await api.upload(id, item.file!, progressOf(item));
     if (!t.tray.includes(item)) { pumpTray(id); return; }   // taken out while it was going up
     // A video's still picture follows it; without one it still plays (it shows nothing until then).
     if (result.ok && result.data.kind === 'video' && item.poster) await api.setPoster(result.data.id, item.poster);
@@ -2382,7 +2408,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     item.progress = 0;
     update();
     let ready: PreparedVideo | null = null;
-    try { ready = await deps.prepareVideo?.(original, (fraction) => { item.progress = fraction; update(); }, limits().videoBytes) ?? null; } catch { ready = null; }
+    try { ready = await deps.prepareVideo?.(original, progressOf(item), limits().videoBytes) ?? null; } catch { ready = null; }
     item.prepared = true;
     if (ready !== null) {
       item.file = new File([ready.video], mp4Name(original.name), { type: 'video/mp4' });

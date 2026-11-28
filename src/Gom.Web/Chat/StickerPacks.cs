@@ -1,3 +1,4 @@
+using Gom.Web.Auth;
 using Gom.Web.Data;
 using Gom.Web.Uploads;
 using Microsoft.AspNetCore.Http.Features;
@@ -10,11 +11,14 @@ namespace Gom.Web.Chat;
 /// Sticker packs the owner makes from their own pictures (H), shown in everyone's picker after Gom's own (<see cref="Stickers"/>). A still
 /// picture is made a WebP at most <see cref="Edge"/> pixels on its longer side, keeping its transparency; a moving GIF or WebP is checked
 /// frame by frame and kept as sent. A sticker's code in a message is "c-" and its id; one taken out of the picker, or its pack, still
-/// draws where it was sent, so its picture stays.
+/// draws where it was sent, so its picture stays. A pack is in every conversation's picker, or only for the people and in the
+/// conversations the owner chose (H): a chosen person has it wherever they talk, a chosen conversation has it for everyone in it, and
+/// the owner has every pack. The server keeps to that for the picker and for every send; a sticker already sent shows to all.
 /// </summary>
 public static class StickerPacks
 {
     public sealed record PackRequest(string? Name);
+    public sealed record WhereRequest(bool Everywhere, List<Guid>? Chats, List<string>? People);
 
     public const int NameChars = 40;
     public const int PerPack = 100;
@@ -30,10 +34,19 @@ public static class StickerPacks
     public static Guid? IdOf(string? code) =>
         code is not null && code.StartsWith(Prefix, StringComparison.Ordinal) && Guid.TryParseExact(code.AsSpan(Prefix.Length), "N", out var id) ? id : null;
 
-    /// <summary>Gom's own, or one of the owner's still in the picker.</summary>
-    public static async Task<bool> MaySend(GomDbContext db, string code, CancellationToken ct) =>
+    /// <summary>
+    /// The owner's packs this person has in this conversation: those everywhere, those chosen for the person, and those chosen for the
+    /// conversation (null: none). The owner has them all.
+    /// </summary>
+    private static IQueryable<StickerPack> For(GomDbContext db, Guid me, bool owner, Guid? conversation) =>
+        db.StickerPacks.Where(p => p.DeletedAt == null && (owner || p.Everywhere
+            || db.StickerPackPeople.Any(x => x.PackId == p.Id && x.UserId == me)
+            || (conversation != null && db.StickerPackChats.Any(x => x.PackId == p.Id && x.ConversationId == conversation))));
+
+    /// <summary>Gom's own, or one of the owner's still in a pack this person has in this conversation.</summary>
+    public static async Task<bool> MaySend(GomDbContext db, string code, Guid conversation, Guid me, bool owner, CancellationToken ct) =>
         Stickers.Allowed.Contains(code)
-        || (IdOf(code) is { } id && await db.CustomStickers.AnyAsync(s => s.Id == id && s.DeletedAt == null && db.StickerPacks.Any(p => p.Id == s.PackId && p.DeletedAt == null), ct));
+        || (IdOf(code) is { } id && await db.CustomStickers.AnyAsync(s => s.Id == id && s.DeletedAt == null && For(db, me, owner, conversation).Any(p => p.Id == s.PackId), ct));
 
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
@@ -47,20 +60,64 @@ public static class StickerPacks
         owner.MapDelete("/sticker-packs/{id:guid}", DeletePack);
         owner.MapPost("/sticker-packs/{id:guid}/stickers", Add);
         owner.MapDelete("/stickers/{id:guid}", DeleteSticker);
+        owner.MapPut("/sticker-packs/{id:guid}/where", SetWhere);
     }
 
-    /// <summary>The packs in the picker, oldest first, each with its stickers in the order they were added.</summary>
-    private static async Task<IResult> List(GomDbContext db, CancellationToken ct)
+    /// <summary>
+    /// The packs, oldest first, each with its stickers in the order they were added. With a conversation the person is in: their
+    /// picker there. Without one: the packs they have anywhere (everywhere, or chosen for them); for the owner every pack, with the
+    /// people and conversations it was chosen for.
+    /// </summary>
+    private static async Task<IResult> List(Guid? conversation, HttpContext http, GomDbContext db, CancellationToken ct)
     {
-        var packs = await db.StickerPacks.Where(p => p.DeletedAt == null).OrderBy(p => p.CreatedAt).Select(p => new { p.Id, p.Name }).ToListAsync(ct);
+        var me = GomClaims.User(http.User);
+        var owner = http.User.FindFirst(GomClaims.IsOwner)?.Value == "true";
+        // A conversation someone is not in adds nothing for them.
+        var inIt = conversation is { } c && await db.Members.AnyAsync(m => m.ConversationId == c && m.UserId == me, ct);
+        var packs = await For(db, me, owner, inIt ? conversation : null).OrderBy(p => p.CreatedAt).Select(p => new { p.Id, p.Name, p.Everywhere }).ToListAsync(ct);
         var ids = packs.Select(p => p.Id).ToList();
         var stickers = await db.CustomStickers.Where(s => s.DeletedAt == null && ids.Contains(s.PackId)).OrderBy(s => s.Position)
             .Select(s => new { s.Id, s.PackId }).ToListAsync(ct);
+        // Who and which conversations a pack was chosen for is the owner's business only.
+        var settings = owner && conversation is null;
+        var chats = settings ? await db.StickerPackChats.Where(x => ids.Contains(x.PackId)).ToListAsync(ct) : [];
+        var people = settings ? await db.StickerPackPeople.Where(x => ids.Contains(x.PackId))
+            .Join(db.Users, x => x.UserId, u => u.Id, (x, u) => new { x.PackId, u.GomId }).ToListAsync(ct) : [];
         return Results.Ok(packs.Select(p => new
         {
-            id = p.Id, name = p.Name,
+            id = p.Id, name = p.Name, everywhere = p.Everywhere,
+            chats = settings ? chats.Where(x => x.PackId == p.Id).Select(x => x.ConversationId) : null,
+            people = settings ? people.Where(x => x.PackId == p.Id).Select(x => x.GomId) : null,
             stickers = stickers.Where(s => s.PackId == p.Id).Select(s => new { id = s.Id, code = CodeOf(s.Id) }),
         }));
+    }
+
+    /// <summary>
+    /// Where a pack shows: everywhere, or for the people chosen (members still able to use Gom, by Gom ID) and in the conversations
+    /// chosen (each one the owner is in: they cannot see others).
+    /// </summary>
+    private static async Task<IResult> SetWhere(Guid id, WhereRequest request, HttpContext http, GomDbContext db, CancellationToken ct)
+    {
+        var me = GomClaims.User(http.User);
+        var chosen = (request.Chats ?? []).Distinct().ToList();
+        if (await db.Members.CountAsync(m => m.UserId == me && chosen.Contains(m.ConversationId), ct) != chosen.Count) return Error(StatusCodes.Status400BadRequest, "invalid_member");
+        var wanted = (request.People ?? []).Select(g => (g ?? "").Trim().ToLowerInvariant()).Distinct().ToList();
+        // Only what can be a Gom ID is looked up; anything else is simply not found (and a NUL never reaches PostgreSQL).
+        var valid = wanted.Where(GomId.IsValid).ToList();
+        var people = await db.Users.Where(u => valid.Contains(u.GomId) && u.DisabledAt == null && u.DeletedAt == null && u.RequestedAt == null).Select(u => u.Id).ToListAsync(ct);
+        if (people.Count != wanted.Count) return Error(StatusCodes.Status400BadRequest, "invalid_member");
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        if (await db.StickerPacks.Where(p => p.Id == id && p.DeletedAt == null).ExecuteUpdateAsync(s => s.SetProperty(p => p.Everywhere, request.Everywhere), ct) == 0) return Results.NotFound();
+        await db.StickerPackChats.Where(x => x.PackId == id).ExecuteDeleteAsync(ct);
+        await db.StickerPackPeople.Where(x => x.PackId == id).ExecuteDeleteAsync(ct);
+        if (!request.Everywhere)
+        {
+            db.StickerPackChats.AddRange(chosen.Select(c => new StickerPackChat { PackId = id, ConversationId = c }));
+            db.StickerPackPeople.AddRange(people.Select(u => new StickerPackPerson { PackId = id, UserId = u }));
+        }
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return Results.NoContent();
     }
 
     /// <summary>A sticker's picture, also one taken out of the picker (it may be in messages). It never changes under its id.</summary>

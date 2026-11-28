@@ -17,6 +17,16 @@ beforeEach(() => {
 const mount = (operator: string) => mountPrivacy(root, operator, { contact: contact as never });
 
 describe('the privacy policy', () => {
+  it('links to the source code when there is one, and says nothing of it when not', () => {
+    mountPrivacy(root, '', { contact: contact as never }, 'https://github.com/quaint666/gom');
+    expect(root.querySelector('[data-source] a')?.getAttribute('href')).toBe('https://github.com/quaint666/gom');
+    expect(root.querySelector('[data-source]')?.textContent).toContain('mã nguồn mở');
+    root.replaceWith(root = document.createElement('main'));
+    document.body.append(root);
+    mount('');
+    expect(root.querySelector('[data-source]')).toBeNull();
+  });
+
   it('names who runs this Gom, as the server was configured', () => {
     mount('  Nguyễn An  ');
     expect(root.querySelector('[data-policy-intro]')?.textContent).toContain('do Nguyễn An vận hành');

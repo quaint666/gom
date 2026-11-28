@@ -96,6 +96,8 @@ public class OneTimeLink
     public int? MaxUses { get; set; }
     /// <summary>For an invite: how many have joined through it. Taken in one atomic step, so a link with 3 uses left is never used a 4th time.</summary>
     public int Uses { get; set; }
+    /// <summary>For an invite: a group of the owner's that whoever joins through it is added to (null: none). Cleared when the group goes.</summary>
+    public Guid? GroupId { get; set; }
 }
 
 /// <summary>Who joined through which invite, and when.</summary>

@@ -374,7 +374,7 @@ describe('chat: older messages', () => {
     older.click();
     await flush();
 
-    expect(api.history).toHaveBeenLastCalledWith(C1, 51);
+    expect(api.history).toHaveBeenLastCalledWith(C1, 51, undefined);   // a page, not a jump
     expect(bubbles().map((b) => b.getAttribute('data-msg'))).toEqual(['id49', 'id50', 'id51', 'id52']);
     expect(root.querySelector('button[data-older]')).toBeNull();
   });
@@ -1754,7 +1754,7 @@ describe('chat: answering and copying', () => {
     expect(root.querySelector('.menu')).toBeNull();
   });
 
-  it('loads older messages to reach an answered one that is not on screen yet', async () => {
+  it('loads everything back to an answered one that is not on screen yet, in one request', async () => {
     const history = vi.fn(async (_id: string, before?: number) => before === undefined
       ? ok({ messages: [answer(52, 'mom', 'ăn phở', { id: 'id50', sender: { id: 'u-minh', displayName: 'Minh' }, snippet: 'Tối nay ăn gì?' }), msg(51, 'minh')], hasMore: true })
       : ok({ messages: [msg(50, 'minh', 'Tối nay ăn gì?'), msg(49, 'minh')], hasMore: false }));
@@ -1763,7 +1763,8 @@ describe('chat: answering and copying', () => {
     expect(root.querySelector('[data-msg="id50"]')).toBeNull();
     root.querySelector<HTMLButtonElement>('[data-quote="id50"]')!.click();
     await flush();
-    expect(history).toHaveBeenCalledWith(C1, 51);
+    expect(history).toHaveBeenCalledTimes(2);   // the newest page, then one jump: not page after page
+    expect(history).toHaveBeenLastCalledWith(C1, 51, 'id50');
     expect(row('id50').classList.contains('found')).toBe(true);
   });
 
@@ -2732,7 +2733,7 @@ describe('chat: searching a conversation', () => {
     expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(false);
   });
 
-  it('loads older messages until a result that is further back is there', async () => {
+  it('loads everything back to a result that is further back, in one request', async () => {
     const old = msg(1, 'minh', 'xa lắm phở');
     const history = vi.fn(async (_id: string, before?: number) => before === undefined
       ? ok({ messages: [msg(3, 'minh'), msg(2, 'mom')], hasMore: true, lastSeq: 3 })
@@ -2744,7 +2745,8 @@ describe('chat: searching a conversation', () => {
     await ask('phở');
     root.querySelector<HTMLButtonElement>('[data-result="id1"]')!.click();
     await flush();
-    expect(history).toHaveBeenCalledWith(C1, 2);
+    expect(history).toHaveBeenCalledTimes(2);
+    expect(history).toHaveBeenLastCalledWith(C1, 2, 'id1');
     expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
   });
 
@@ -2862,7 +2864,7 @@ describe('chat: pinned messages', () => {
     expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
   });
 
-  it('loads older pages until a pinned message that is further back is there', async () => {
+  it('loads everything back to a pinned message that is further back, in one request', async () => {
     const old = msg(1, 'minh', 'xa lắm');
     const history = vi.fn(async (_id: string, before?: number) => before === undefined
       ? ok({ messages: [msg(3, 'minh'), msg(2, 'mom')], hasMore: true, lastSeq: 3 })
@@ -2872,7 +2874,8 @@ describe('chat: pinned messages', () => {
     expect(root.querySelector('[data-msg="id1"]')).toBeNull();
     root.querySelector<HTMLButtonElement>('[data-pin-top]')!.click();
     await flush();
-    expect(history).toHaveBeenCalledWith(C1, 2);
+    expect(history).toHaveBeenCalledTimes(2);
+    expect(history).toHaveBeenLastCalledWith(C1, 2, 'id1');
     expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
   });
 });
@@ -3589,6 +3592,11 @@ describe('chat: videos', () => {
     expect(bar.getAttribute('aria-label')).toBe('Đang chuẩn bị video Nhà mình.mov');
     progress(0.5); await flush();
     expect(root.querySelector<HTMLProgressElement>('[data-tray-converting]')!.value).toBe(0.5);
+    // The bar moves in twentieths: a page with a long thread is not drawn again for every report.
+    progress(0.52); await flush();
+    expect(root.querySelector<HTMLProgressElement>('[data-tray-converting]')!.value).toBe(0.5);
+    progress(0.56); await flush();
+    expect(root.querySelector<HTMLProgressElement>('[data-tray-converting]')!.value).toBe(0.56);
     expect(root.querySelector<HTMLButtonElement>('.composer .send')!.disabled).toBe(true);
     expect(upload).not.toHaveBeenCalled();
 
@@ -3952,7 +3960,7 @@ describe('chat: pictures and files', () => {
       open({ media }, [{ ...msg(1, 'minh', 'hôm qua'), attachments: [att('p1')] }, { ...msg(2, 'minh', 'cả nhà'), attachments: [att('p3'), att('p2')] }]);
       await flush();
       await click('[data-pic="p3"]');
-      expect(media).toHaveBeenCalledWith(C1, 'image', undefined);
+      expect(media).toHaveBeenCalledWith(C1, 'image', undefined, undefined);
       expect([...viewer()!.querySelectorAll('[data-viewer-slide]')].map((e) => e.getAttribute('data-viewer-slide'))).toEqual(['p1', 'p3', 'p2']);
       expect(count()).toBe('2 / 3');
       expect(text(viewer()!.querySelector('[data-viewer-foot]')!)).toContain('Minh');
@@ -3970,8 +3978,22 @@ describe('chat: pictures and files', () => {
       await click('[data-pic="p5"]');
       expect(count()).toBe('1 / 1+');
       await click('[data-viewer-prev]');
-      expect(media).toHaveBeenLastCalledWith(C1, 'image', 5);
+      expect(media).toHaveBeenLastCalledWith(C1, 'image', 5, undefined);
       expect(current()).toBe('/api/attachments/p4');
+      expect(count()).toBe('1 / 2');
+    });
+
+    it('brings the list back to an older picture it opens on in one request, not page after page', async () => {
+      const media = vi.fn(async (_c: string, _k: string, _before?: number, to?: string) =>
+        ok(to === 'p1' ? { items: [listed('p5', 5), listed('p1', 1)], hasMore: false } : { items: [listed('p5', 5)], hasMore: true }));
+      open({ media }, [{ ...msg(1, 'minh'), attachments: [att('p1')] }, { ...msg(5, 'minh'), attachments: [att('p5')] }]);
+      await flush();
+      const before = media.mock.calls.length;   // the side panel, if an earlier test left it open, asks for its own lists
+      await click('[data-pic="p1"]');
+      const asked = media.mock.calls.slice(before);
+      expect(asked).toHaveLength(1);
+      expect(asked[0]![3]).toBe('p1');
+      expect(current()).toBe('/api/attachments/p1');
       expect(count()).toBe('1 / 2');
     });
 
@@ -4052,7 +4074,7 @@ describe('chat: pictures and files', () => {
       await flush();
       await click('[data-pic="p6"]');
       await click('[data-viewer-thumb="p5"]');
-      expect(media).toHaveBeenLastCalledWith(C1, 'image', 5);
+      expect(media).toHaveBeenLastCalledWith(C1, 'image', 5, undefined);
       expect(count()).toBe('2 / 3');
       expect(viewer()!.querySelector('[data-viewer-thumb="p4"]')).not.toBeNull();
     });
@@ -4278,8 +4300,8 @@ describe('chat: pictures and files', () => {
       const media = served([item('p1', 9)], [item('f1', 8, 'file', 'bảng.xlsx')]);
       open({ media }, [msg(1, 'minh', 'xin chào')]);   // the thread itself has no attachment at all
       await flush();
-      expect(media).toHaveBeenCalledWith(C1, 'image', undefined);
-      expect(media).toHaveBeenCalledWith(C1, 'file', undefined);
+      expect(media).toHaveBeenCalledWith(C1, 'image', undefined, undefined);
+      expect(media).toHaveBeenCalledWith(C1, 'file', undefined, undefined);
       expect(root.querySelector('[data-info-media] [data-info-pic="p1"]')).not.toBeNull();
       expect(text(root.querySelector('[data-info-files]')!)).toContain('bảng.xlsx');
       expect(root.querySelector('[data-info-more]')).toBeNull();
@@ -4295,7 +4317,7 @@ describe('chat: pictures and files', () => {
       expect(root.querySelectorAll('[data-info-pic]')).toHaveLength(2);
       root.querySelector<HTMLButtonElement>('[data-info-more="image"]')!.click();
       await flush();
-      expect(media).toHaveBeenLastCalledWith(C1, 'image', 8);
+      expect(media).toHaveBeenLastCalledWith(C1, 'image', 8, undefined);
       expect([...root.querySelectorAll('[data-info-pic]')].map((e) => e.getAttribute('data-info-pic'))).toEqual(['p9', 'p8', 'p7']);
       expect(root.querySelector('[data-info-more]')).toBeNull();
     });
@@ -4385,6 +4407,13 @@ describe('chat: notices in a group', () => {
   const notice = (seq: number, type: 'added' | 'left' | 'renamed', by: 'mom' | 'minh' = 'minh', target?: { id: string; displayName: string }, title?: string): ChatMessage =>
     ({ ...msg(seq, by, '', at(10, seq), G), notice: { type, target: target ?? null, title: title ?? null } });
   const open = (history: ChatMessage[]) => start({ path: `/c/${G}`, chats: [group()], history: { [G]: history } });
+
+  it("draws a group's own picture in the list and the header", async () => {
+    start({ path: `/c/${G}`, chats: [group({ avatar: 'pic-g' })], history: { [G]: [] } });
+    await flush();
+    const pictures = [...root.querySelectorAll<HTMLImageElement>('.av img')].map((i) => i.getAttribute('src'));
+    expect(pictures.filter((src) => src === '/api/avatars/pic-g').length).toBeGreaterThanOrEqual(2);
+  });
 
   it('draws a notice as a line between the messages, in words, not as a bubble', async () => {
     open([msg(1, 'minh', 'tin', at(10), G), notice(2, 'added', 'minh', { id: 'u-bao', displayName: 'Bảo' })]);
@@ -4775,6 +4804,22 @@ describe('chat: stickers', () => {
     expect(root.querySelector<HTMLImageElement>(`.msgs img.stk[data-sticker="${mine}"]`)!.getAttribute('src')).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
     await toggle(); await toggle();
     expect(stickerPacks).toHaveBeenCalledTimes(1);   // asked for once
+    expect(stickerPacks).toHaveBeenCalledWith(C1);
+  });
+
+  it("asks for each conversation's own packs, since a pack may be only in some", async () => {
+    const mine = 'c-0f8fad5bd9cb469fa16570867728950e';
+    const stickerPacks = vi.fn(async (conversation?: string) => ok(conversation === C1 ? [{ id: 'p1', name: 'Mèo nhà', stickers: [{ id: '0f8fad5bd9cb469fa16570867728950e', code: mine }] }] : []));
+    open({ stickerPacks });
+    await flush();
+    await toggle(); await flush();
+    expect([...panel()!.querySelectorAll('[data-sticker-pack]')].map((b) => b.getAttribute('aria-label'))).toContain('Mèo nhà');
+    root.querySelector<HTMLAnchorElement>(`a[data-chat="${C2}"]`)!.click();
+    await flush();
+    if (panel() === null) await toggle();
+    await flush();
+    expect(stickerPacks).toHaveBeenLastCalledWith(C2);
+    expect([...panel()!.querySelectorAll('[data-sticker-pack]')].map((b) => b.getAttribute('aria-label'))).not.toContain('Mèo nhà');
   });
 
   it('sends a sticker at once with a tap, shows it as a picture while it goes, and keeps the panel open', async () => {

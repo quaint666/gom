@@ -29,11 +29,22 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<FcmDevice> FcmDevices => Set<FcmDevice>();
     public DbSet<StickerPack> StickerPacks => Set<StickerPack>();
     public DbSet<CustomSticker> CustomStickers => Set<CustomSticker>();
+    public DbSet<StickerPackChat> StickerPackChats => Set<StickerPackChat>();
+    public DbSet<StickerPackPerson> StickerPackPeople => Set<StickerPackPerson>();
+
+    /// <summary>
+    /// The text without its accents ("Phở" is "Pho"), in the database: PostgreSQL's unaccent with its dictionary named, declared
+    /// immutable so an index can be built on it (migration SearchIndex). Only for use inside a query.
+    /// </summary>
+    public static string Unaccent(string text) => throw new InvalidOperationException("Only inside a database query.");
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         // Search ignores accents ("pho" finds "Phở"). The extension ships with PostgreSQL's contrib package and is trusted, so the database's own owner can create it.
         b.HasPostgresExtension("unaccent");
+        // Search finds words inside messages through a trigram index on gom_unaccent(body) (migration SearchIndex); trusted too.
+        b.HasPostgresExtension("pg_trgm");
+        b.HasDbFunction(typeof(GomDbContext).GetMethod(nameof(Unaccent))!).HasName("gom_unaccent");
 
         b.Entity<SiteSettings>(e =>
         {
@@ -141,12 +152,14 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
                 t.HasCheckConstraint("ck_links_kind", "kind IN ('invite', 'reset')");
                 t.HasCheckConstraint("ck_links_target", "(kind = 'reset') = (target_user_id IS NOT NULL)");
                 t.HasCheckConstraint("ck_links_uses", "uses >= 0 AND (max_uses IS NULL OR (max_uses >= 1 AND uses <= max_uses))");
+                t.HasCheckConstraint("ck_links_group", "group_id IS NULL OR kind = 'invite'");
             });
             e.Property(x => x.Kind).HasConversion(v => v.ToString().ToLowerInvariant(), v => Enum.Parse<LinkKind>(v, true)).HasMaxLength(10);
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.TargetUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.ConsumedBy).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
         });
 
         b.Entity<InviteUse>(e =>
@@ -225,6 +238,23 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
         {
             e.ToTable("sticker_packs");
             e.Property(x => x.Name).HasMaxLength(Chat.StickerPacks.NameChars);
+            e.Property(x => x.Everywhere).HasDefaultValue(true).HasSentinel(true);
+        });
+        b.Entity<StickerPackChat>(e =>
+        {
+            e.ToTable("sticker_pack_chats");
+            e.HasKey(x => new { x.PackId, x.ConversationId });
+            e.HasOne<StickerPack>().WithMany().HasForeignKey(x => x.PackId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.ConversationId);
+        });
+        b.Entity<StickerPackPerson>(e =>
+        {
+            e.ToTable("sticker_pack_people");
+            e.HasKey(x => new { x.PackId, x.UserId });
+            e.HasOne<StickerPack>().WithMany().HasForeignKey(x => x.PackId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.UserId);
         });
         b.Entity<CustomSticker>(e =>
         {
@@ -238,7 +268,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.ToTable("messages", t =>
             {
                 t.HasCheckConstraint("ck_messages_seq", "seq > 0");
-                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8, 9)");
+                t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)");
                 t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
                 t.HasCheckConstraint("ck_messages_sticker", "sticker IS NULL OR (body = '' AND notice IS NULL)");
             });

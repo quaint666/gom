@@ -26,11 +26,13 @@ export function rememberEmoji(emoji: string): void {
 /** A message this many emoji or fewer, and nothing else, is drawn large without a bubble. */
 const JUMBO_MAX = 3;
 const PICTURE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+/** Made once: making one is slow, and every message on screen is asked about at every drawing. */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /** Whether these words are only one to three emoji (spaces between them allowed). */
 export function onlyEmoji(body: string): boolean {
   const text = body.replace(/\s+/gu, '');
   if (text === '') return false;
-  const parts = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((s) => s.segment);
+  const parts = [...GRAPHEMES.segment(text)].map((s) => s.segment);
   return parts.length <= JUMBO_MAX && parts.every((p) => PICTURE.test(p));
 }

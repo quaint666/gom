@@ -24,6 +24,20 @@ public class InstallableTests(WebApplicationFactory<Program> factory) : IClassFi
         Assert.Contains("<meta name=\"theme-color\"", html);
     }
 
+    /// <summary>Gom's mark is one drawing (design/icons.py): the browser's icon, the page's logo and the Android icons carry the same path.</summary>
+    [Fact]
+    public void The_mark_is_the_same_drawing_everywhere()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
+        string Read(params string[] parts) => File.ReadAllText(Path.Combine([dir!.FullName, .. parts]));
+        var svg = System.Text.RegularExpressions.Regex.Match(Read("src", "Gom.Web", "wwwroot", "icon.svg"), "<path[^>]* d=\"([^\"]+)\"").Groups[1].Value;
+        Assert.NotEmpty(svg);
+        Assert.Contains($"LOGO_PATH = '{svg}'", Read("src", "Gom.Web", "Scripts", "icons.ts"));
+        foreach (var drawable in new[] { "ic_launcher_foreground.xml", "ic_notification.xml" })
+            Assert.Contains($"android:pathData=\"{svg}\"", Read("android", "app", "src", "main", "res", "drawable", drawable));
+    }
+
     [Fact]
     public async Task The_manifest_makes_a_standalone_app_with_icons_that_exist_and_are_the_size_they_say()
     {

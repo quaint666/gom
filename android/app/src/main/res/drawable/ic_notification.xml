@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The same bubble for the status bar, which shows only its shape. -->
+<!-- The status bar icon: only its shape shows. Made by design/icons.py. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:pathData="M4,5h16v11H11l-4,4v-4H4z" android:strokeColor="#FFFFFF" android:strokeWidth="1.8"
-        android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M8,10h8" android:strokeColor="#FFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" />
+    <group android:translateX="0" android:translateY="0" android:scaleX="0.24" android:scaleY="0.24">
+        <path android:pathData="M24 18h52a12 12 0 0 1 12 12v32a12 12 0 0 1-12 12H46L30 86V74h-6a12 12 0 0 1-12-12V30a12 12 0 0 1 12-12zM24 47a9 9 0 1 0 18 0a9 9 0 1 0-18 0zM46.5 48a7.5 7.5 0 1 0 15 0a7.5 7.5 0 1 0-15 0zM65 49a6 6 0 1 0 12 0a6 6 0 1 0-12 0z" android:fillColor="#FFFFFF" android:fillType="evenOdd" />
+    </group>
 </vector>

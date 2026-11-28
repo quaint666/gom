@@ -85,6 +85,8 @@ export interface AppPusher extends Pusher {
   onKeyboardImage(callback: (file: File) => void): void;
   /** Calls made by the app: the page's call buttons ask it, and offer a call only once the app has said it takes them. */
   calls: Calls;
+  /** The app's own version ("1.1.0"), once it has said hello; Settings shows it beside the server's. */
+  appVersion(): string | null;
 }
 
 /**
@@ -126,6 +128,7 @@ export function createAppPusher(port: AppPort, w: Window & typeof globalThis = w
     // Until the app has said hello, it is assumed able: a build with no Firebase settings says so.
     support: () => (hello === null || hello.push ? 'ok' : 'unsupported'),
     permission: () => hello?.permission ?? 'default',
+    appVersion: () => hello?.app ?? null,
     async subscribe() {
       const answer = await new Promise<FromApp | null>((resolve) => {
         waiting = resolve;

@@ -4,7 +4,10 @@ import { say } from './say.js';
 import { longestVideo } from './videoPlan.js';
 
 /** A number as the page's language writes it: 4.000 and 1,2 in Vietnamese. */
-const number = (n: number): string => new Intl.NumberFormat(say.locale, { maximumFractionDigits: 1 }).format(n);
+const numberFormat = new Intl.NumberFormat(say.locale, { maximumFractionDigits: 1 });
+const number = (n: number): string => numberFormat.format(n);
+/** Made once: making one is slow, and pins and quotes are cut at every drawing. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /** The sentence for a failure, from the table. The sign-in sentence never says whether the ID exists. */
 export function errorText(failure: Failure): string {
@@ -117,7 +120,7 @@ export const passwordHint = (): string => say.common.passwordHint(limits().passw
 
 /** At most `chars` characters as a person counts them (a flag or a family emoji is one), with "…" when cut. */
 export function clip(text: string, chars: number): string {
-  const parts = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((s) => s.segment);
+  const parts = [...graphemes.segment(text)].map((s) => s.segment);
   return parts.length > chars ? parts.slice(0, chars).join('') + '…' : text;
 }
 

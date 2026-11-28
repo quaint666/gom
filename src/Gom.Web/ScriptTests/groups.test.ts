@@ -297,6 +297,33 @@ describe('group page: leader and deputies', () => {
     expect(row('u-plain').querySelector('[data-role]')).toBeNull();
   });
 
+  it("lets a leader or a deputy set and take away the group's picture, and a plain member only see it", async () => {
+    const conversations = vi.fn(async () => ok([{ id: G, kind: 'group', title: 'Nhà', avatar: 'pic-1' }]));
+    const setGroupAvatar = vi.fn(async () => ok({ avatar: 'pic-2' }));
+    const removeGroupAvatar = vi.fn(async () => ok(undefined));
+    mount('deputy', { conversations, setGroupAvatar, removeGroupAvatar });
+    await flush();
+    expect(root.querySelector<HTMLImageElement>('[data-group-picture] img')!.getAttribute('src')).toBe('/api/avatars/pic-1');
+    const input = root.querySelector<HTMLInputElement>('[data-group-picture-file]')!;
+    const file = new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(setGroupAvatar).toHaveBeenCalledWith(G, file);
+    expect(root.querySelector<HTMLImageElement>('[data-group-picture] img')!.getAttribute('src')).toBe('/api/avatars/pic-2');
+    click('[data-group-picture-remove]'); await flush();
+    expect(removeGroupAvatar).toHaveBeenCalledWith(G);
+    expect(root.querySelector('[data-group-picture] img')).toBeNull();
+
+    root = document.createElement('div');
+    document.body.replaceChildren(root);
+    mount('member', { conversations });
+    await flush();
+    expect(root.querySelector('[data-group-picture] img')).not.toBeNull();
+    expect(root.querySelector('[data-group-picture-file]')).toBeNull();
+    expect(root.querySelector('[data-group-picture-remove]')).toBeNull();
+  });
+
   it('gives a plain member no controls over anyone, and no way to disband', async () => {
     mount('member');
     await flush();

@@ -66,7 +66,9 @@ public static class Disappearing
             await using (var tx = await db.Database.BeginTransactionAsync(ct))
             {
                 await GroupEndpoints.LockGroup(db, conversation, ct);
-                var ids = await db.Messages.Where(m => m.ConversationId == conversation && m.ExpiresAt != null && m.ExpiresAt <= now).Select(m => m.Id).ToListAsync(ct);
+                // At most a batch, so the conversation is not locked for long; the next sweep takes the rest.
+                var ids = await db.Messages.Where(m => m.ConversationId == conversation && m.ExpiresAt != null && m.ExpiresAt <= now)
+                    .OrderBy(m => m.Seq).Select(m => m.Id).Take(MessageTrim.Batch).ToListAsync(ct);
                 if (ids.Count == 0) continue;
                 files = await MessageTrim.DeleteMessages(db, ids, ct);
                 await tx.CommitAsync(ct);

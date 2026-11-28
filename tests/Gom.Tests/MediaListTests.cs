@@ -94,6 +94,18 @@ public class MediaListTests(AppFixture app) : IClassFixture<AppFixture>
         var second = await Media(t, t.CA, "file", cursor);
         Assert.Equal(sent.Skip(24).ToArray(), Ids(second));
         Assert.False(second.GetProperty("hasMore").GetBoolean());
+
+        // The viewer opening on one further back than a page: everything back to it, in one answer.
+        using var jump = await app.Call(Get, $"/api/conversations/{t.Chat}/media?kind=file&to={sent[25]}", cookie: t.CA);
+        var all = await AppFixture.Json(jump);
+        Assert.Equal(sent.ToArray(), Ids(all));
+        Assert.False(all.GetProperty("hasMore").GetBoolean());
+        // One that is not in this list (a file of another conversation): the usual page.
+        var other = await NewTeam();
+        var elsewhere = await Upload(other, other.CA, [7], "x.bin");
+        await Say(other, other.CA, elsewhere);
+        using var usual = await app.Call(Get, $"/api/conversations/{t.Chat}/media?kind=file&to={elsewhere}", cookie: t.CA);
+        Assert.Equal(sent.Take(24).ToArray(), Ids(await AppFixture.Json(usual)));
     }
 
     [Fact]

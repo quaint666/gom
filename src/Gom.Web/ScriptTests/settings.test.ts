@@ -151,6 +151,23 @@ describe('settings: reloading Gom', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it("in the app, shows the app's own version beside the server's, and links to the source code", async () => {
+    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: '1.4.2', appVersion: () => '1.3.0', source: 'https://github.com/quaint666/gom', reload: vi.fn() });
+    await flush();
+    expect(text(root.querySelector('[data-versions]')!)).toBe('Phiên bản v1.4.2 · lấy bản mới nhất · ứng dụng 1.3.0');
+    const link = root.querySelector<HTMLAnchorElement>('[data-source-link]')!;
+    expect(link.getAttribute('href')).toBe('https://github.com/quaint666/gom');
+    expect(link.getAttribute('rel')).toBe('noopener');
+    expect(text(link)).toContain('Mã nguồn và báo lỗi');
+  });
+
+  it('has no source row when none is configured, and no app version in a browser', async () => {
+    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: '1.4.2', source: '', reload: vi.fn() });
+    await flush();
+    expect(root.querySelector('[data-source-link]')).toBeNull();
+    expect(text(root.querySelector('[data-versions]')!)).not.toContain('ứng dụng');
+  });
+
   it('says only "get the latest" without a version, and has no row when the page gives no way to reload', async () => {
     mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: null, reload: vi.fn() });
     await flush();
