@@ -810,6 +810,13 @@ export const en: Strings = {
     version: (version: string): string => `Version ${version}`,
     latest: (version: string): string => `Latest: v${version}`,
     releases: [
+      { version: '1.6.0', items: [
+        'A group\u2019s name, picture and members are changed right in its information panel, with no other page: tap the name or the picture of a group to open it.',
+        'In a one-to-one chat the picture at the top opens the person\u2019s card, as the name does.',
+        'On a phone, menus slide up as a list with big rows and a handle, as in Messenger.',
+        'Hold a finger on a friend in Contacts (or right-click) for a menu to write to them or start a group with them.',
+        'The information page slides in and out like the other pages.',
+      ] },
       { version: '1.5.0', items: [
         'A reaction is now a small round badge on the corner of the message, as in Messenger.',
         'The call screen no longer shows the small Gom label at the top.',

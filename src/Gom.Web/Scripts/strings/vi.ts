@@ -824,6 +824,13 @@ export const vi = {
     version: (version: string): string => `Bản ${version}`,
     latest: (version: string): string => `Mới nhất: v${version}`,
     releases: [
+      { version: '1.6.0', items: [
+        'Đổi tên, ảnh và thành viên của nhóm ngay trong bảng thông tin, không phải sang trang khác: chạm vào tên hoặc ảnh của nhóm để mở.',
+        'Trong trò chuyện một đối một, chạm vào ảnh ở đầu trang cũng mở thẻ của người đó, như chạm vào tên.',
+        'Trên điện thoại, menu trượt lên thành một danh sách có hàng lớn và thanh kéo, giống Messenger.',
+        'Giữ ngón tay vào một người bạn trong Danh bạ (hoặc bấm chuột phải) để nhắn tin hoặc tạo nhóm với họ.',
+        'Trang thông tin trượt vào và ra như các trang khác.',
+      ] },
       { version: '1.5.0', items: [
         'Biểu cảm giờ là một hình tròn nhỏ ở góc tin nhắn, giống Messenger.',
         'Màn hình cuộc gọi không còn dòng “Gom” nhỏ ở trên cùng.',

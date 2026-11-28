@@ -54,7 +54,7 @@ Each is discussed first (design, decisions, what cannot be verified), then built
 
 0. **Release 1.5.0** (`docs/releases.md`): staging, production, then the tag `v1.5.0` on `403d503` and the GitHub release
    ("Gom 1.5.0", web live, Android app not on Google Play yet, no APK attached), on H's word. Then **release 1.6.0** for
-   #235 to #240 (a minor: new things for people), with its emulator pass and `gom-1.6.0.apk` (start and stop the build VM
+   #235 to #240 (a minor: new things for people; its pull request is #241), with its emulator pass and `gom-1.6.0.apk` (start and stop the build VM
    with vmctl; the `gomci` login cannot delete older APKs, so H does; never open the netrc).
 1. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
    bundle in a closed test (12 testers for 14 days, `docs/testers.md`), the listing and declarations, then production.
