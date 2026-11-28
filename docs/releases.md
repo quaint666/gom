@@ -23,7 +23,20 @@ app takes it as its version name.
    release's entry under "What's new" below.
 3. That commit is deployed to staging, checked, and promoted to production.
 4. The commit production runs is tagged `v1.1.0`, and the release is published on GitHub with its generated notes. A tag
-   is public and permanent, so it is made only when the owner says so.
+   is public and permanent, so it is made only when the owner says so. The notes start with the versions line (below).
+
+## Which versions are current
+
+The web (the server and its pages) is always the newest release: production runs it, and every open page moves to it. The
+Android app is a frame around those pages plus what only an app can do (notifications, calls, the share sheet), so it is
+built and sent to Google Play less often and may be a release or two behind. That is expected: most of what a release
+brings reaches the app through the pages at once. Each release's notes on GitHub start with one line saying both, so
+nobody has to guess:
+
+    **Versions:** web 1.3.0 (live now) · Android app 1.1.0 (Google Play)
+
+The app's version number is the release it was built from. Settings shows both: "Phiên bản v1.3.0 · ứng dụng 1.1.0".
+APKs are not attached to releases: the app is installed from Google Play.
 
 Between releases, staging may run newer code than its number says: the number moves only with step 2.
 

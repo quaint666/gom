@@ -40,6 +40,12 @@ describe('welcome page', () => {
     expect(go).toHaveBeenCalledWith('/settings/profile');
   });
 
+  it('links to the source code when there is one', async () => {
+    mountWelcome(root, fakeApi({ me: vi.fn(async () => ok(me)), conversations: vi.fn(async () => ok([])) }), vi.fn(), null, 'https://github.com/quaint666/gom');
+    await flush();
+    expect(root.querySelector('[data-source-link]')!.getAttribute('href')).toBe('https://github.com/quaint666/gom');
+  });
+
   it('sends someone signed out to sign in', async () => {
     const go = vi.fn();
     mountWelcome(root, fakeApi({ me: vi.fn(async () => fail('unauthorized', 401)) }), go, null);

@@ -83,7 +83,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
     private static async Task<JsonElement> LimitsOf(HttpClient client, string path)
     {
         var html = await (await client.GetAsync(path)).Content.ReadAsStringAsync();
-        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\" data-operator=\"[^\"]*\" data-version=\"\\d+\\.\\d+\\.\\d+\" data-video-script=\"/js/video(\\.[0-9a-f]{10})?\\.js\">");
+        var attribute = Regex.Match(html, "<body data-page=\"[a-z]+\" data-limits=\"([^\"]*)\" data-operator=\"[^\"]*\" data-source=\"[^\"]*\" data-version=\"\\d+\\.\\d+\\.\\d+\" data-video-script=\"/js/video(\\.[0-9a-f]{10})?\\.js\">");
         Assert.True(attribute.Success);   // the video converter's address, fingerprinted when the build made a copy
         return JsonDocument.Parse(WebUtility.HtmlDecode(attribute.Groups[1].Value)).RootElement.Clone();
     }
@@ -140,6 +140,21 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         Assert.Matches(@"^\d+\.\d+\.\d+$", release);
         var html = await (await factory.CreateClient().GetAsync("/sign-in")).Content.ReadAsStringAsync();
         Assert.Contains($"data-version=\"{release}\"", html);
+    }
+
+    /// <summary>Where the code and bug reports are: from the configuration (the upstream repository by default), https only, escaped.</summary>
+    [Fact]
+    public async Task The_source_address_reaches_every_page_and_only_an_https_one()
+    {
+        var html = await (await factory.CreateClient().GetAsync("/sign-in")).Content.ReadAsStringAsync();
+        Assert.Contains("data-source=\"https://github.com/quaint666/gom\"", html);
+        using var own = factory.WithWebHostBuilder(b => b.UseSetting("Site:SourceUrl", "https://example.test/my-gom?a=1&b=2"));
+        Assert.Contains("data-source=\"https://example.test/my-gom?a=1&amp;b=2\"", await (await own.CreateClient().GetAsync("/privacy")).Content.ReadAsStringAsync());
+        foreach (var refused in new[] { "", "http://example.test/gom", "javascript:alert(1)", "not a url" })
+        {
+            using var none = factory.WithWebHostBuilder(b => b.UseSetting("Site:SourceUrl", refused));
+            Assert.Contains("data-source=\"\"", await (await none.CreateClient().GetAsync("/privacy")).Content.ReadAsStringAsync());
+        }
     }
 
     [Fact]

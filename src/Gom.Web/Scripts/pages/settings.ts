@@ -36,8 +36,12 @@ export function sectionOf(path: string): Section | null {
 }
 
 /** The version this page runs, and "Tải lại Gom": a reload that fetches every kept file again. */
-/** `version`: the release the server says it is ("1.0.0", `data-version`), shown as v1.0.0; null when it says none. */
-export interface AppReload { version: string | null; reload(): void }
+/**
+ * `version`: the release the server says it is ("1.0.0", `data-version`), shown as v1.0.0; null when it says none. `appVersion`: inside
+ * the Android app, the app's own (it may be a release or two behind: most of Gom is the pages). `source`: where the code and bug
+ * reports are (`data-source`, Site:SourceUrl); empty hides the row.
+ */
+export interface AppReload { version: string | null; appVersion?: () => string | null; source?: string; reload(): void }
 
 /**
  * `browserCalls`: this is a browser that can take calls (not the app, which rings natively), so Settings offers the switch for it.
@@ -281,8 +285,10 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     ${installStatus === '' ? nothing : html`<p class="hint" role="status" data-install-status>${installStatus}</p>`}
     ${app === undefined ? nothing : html`
       <ul class="nav"><li><button type="button" data-reload-app @click=${() => app.reload()}>
-        <span class="lead-i">${icons.reload()}</span><span class="t"><b>${say.settings.reloadRow}</b><small>${say.settings.reloadSummary(app.version)}</small></span>
-        </button></li></ul>`}
+        <span class="lead-i">${icons.reload()}</span><span class="t"><b>${say.settings.reloadRow}</b><small data-versions>${say.settings.reloadSummary(app.version)}${app.appVersion?.() ? ` · ${say.settings.appVersion(app.appVersion()!)}` : ''}</small></span>
+        </button></li>
+        ${app.source ? html`<li><a href=${app.source} target="_blank" rel="noopener" data-source-link><span class="lead-i">${icons.file()}</span>
+          <span class="t"><b>${say.settings.sourceRow}</b><small>${say.settings.sourceSummary}</small></span><span class="chev">${icons.chevron()}</span></a></li>` : nothing}</ul>`}
     <ul class="nav"><li><a href="/privacy" data-policy-link><span class="lead-i">${icons.shield()}</span><span class="t"><b>${say.settings.policyRow}</b></span>
       <span class="chev">${icons.chevron()}</span></a></li></ul>
     <button class="btn secondary signout" type="button" data-signout @click=${signOut}>${icons.signOut()}${say.common.signOut}</button>`;

@@ -1,4 +1,4 @@
-import { html, render } from 'lit-html';
+import { html, nothing, render } from 'lit-html';
 import type { Api, Failure } from '../api.js';
 import * as icons from '../icons.js';
 import { limits } from '../limits.js';
@@ -13,7 +13,7 @@ export const POLICY_DATE = '2026-11-26';
  * to write to the operator (Play wants a way to ask about privacy). Public: no sign-in needed. Who runs this Gom comes from the
  * server's configuration (`data-operator`, Site:Operator).
  */
-export function mountPrivacy(root: HTMLElement, operator: string, api: Pick<Api, 'contact'>): void {
+export function mountPrivacy(root: HTMLElement, operator: string, api: Pick<Api, 'contact'>, source = ''): void {
   const date = new Intl.DateTimeFormat(say.locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${POLICY_DATE}T00:00:00Z`));
   const who = operator.trim() === '' ? say.privacy.operatorFallback : operator.trim();
   let body = '';
@@ -53,6 +53,7 @@ export function mountPrivacy(root: HTMLElement, operator: string, api: Pick<Api,
       <p data-policy-intro>${say.privacy.intro(who)}</p>
       ${say.privacy.sections.map((s) => html`
         <section><h2>${s.heading}</h2><ul>${s.items.map((item) => html`<li>${item}</li>`)}</ul></section>`)}
+      ${source === '' ? nothing : html`<section data-source><h2>${say.privacy.sourceHeading}</h2><p>${say.privacy.sourceLead} <a href=${source} target="_blank" rel="noopener" data-source-link>${source}</a></p></section>`}
       <section data-contact><h2>${say.privacy.contactHeading}</h2><p>${say.privacy.contactLead(limits().contactKeepDays)}</p>${form()}</section>
       <a class="btn secondary home-btn" href="/" data-home>${icons.back()}${say.privacy.home}</a>
     </article>`;

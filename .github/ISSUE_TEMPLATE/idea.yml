@@ -1,0 +1,26 @@
+name: Suggest an idea
+description: Something that would make Gom better for a family or a group of friends. Tiếng Việt cũng được.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gom is a small chat for family and friends, not a Messenger or Zalo replacement for everyone: ideas that keep it simple fit
+        best. Please do not include other people's messages or names. Viết bằng tiếng Việt cũng được.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is hard or missing today
+      placeholder: My parents can't find old photos from last month.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like instead
+  - type: checkboxes
+    id: code
+    attributes:
+      label: Would you like to build it?
+      options:
+        - label: I'd like to send a pull request for this (we agree on the approach here first, see CONTRIBUTING.md)

@@ -215,7 +215,7 @@ if (root) {
   switch (document.body.dataset['page']) {
     case 'signin': mountSignIn(root, api, go, new URLSearchParams(location.search).get('next')); break;
     case 'join': mountJoin(root, api, go, token); break;
-    case 'welcome': mountWelcome(root, api, go, new URLSearchParams(location.search).get('group')); break;
+    case 'welcome': mountWelcome(root, api, go, new URLSearchParams(location.search).get('group'), document.body.dataset['source'] ?? ''); break;
     case 'signup': mountSignUp(root, api, go); break;
     case 'reset': mountReset(root, api, go, token); break;
     case 'home': {
@@ -233,12 +233,12 @@ if (root) {
       });
       break;
     }
-    case 'settings': mountSettings(root, api, go, installer, pusher, { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) }, { version: document.body.dataset['version'] || null, reload: () => { void reloadFresh(); } }, browserCanCall); break;
+    case 'settings': mountSettings(root, api, go, installer, pusher, { path: () => location.pathname, push: (path) => history.pushState(null, '', path), replace: (path) => history.replaceState(null, '', path), onPop: (callback) => addEventListener('popstate', callback) }, { version: document.body.dataset['version'] || null, appVersion: () => appPusher?.appVersion() ?? null, source: document.body.dataset['source'] ?? '', reload: () => { void reloadFresh(); } }, browserCanCall); break;
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
     case 'group': mountGroup(root, api, go, token); break;
-    case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? '', api); break;
+    case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? '', api, document.body.dataset['source'] ?? ''); break;
   }
 }
 

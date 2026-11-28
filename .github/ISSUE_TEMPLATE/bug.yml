@@ -1,0 +1,45 @@
+name: Report a bug
+description: Something in Gom does not work as it should. Tiếng Việt cũng được.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Please **do not** include other people's messages, names, phone numbers or pictures, and blur
+        them in any screenshot. A security hole goes to the private report instead (see SECURITY.md), not here.
+        Viết bằng tiếng Việt cũng được.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      placeholder: I tapped "Gửi" on a photo and it stayed grey; I expected it to send.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      placeholder: |
+        1. Open a group
+        2. Pick two photos
+        3. ...
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Android app
+        - Phone browser
+        - Computer browser
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser or Android version
+      placeholder: Pixel 7, Android 16 / Firefox 145 on Windows
+  - type: input
+    id: version
+    attributes:
+      label: Gom version
+      description: Settings › Tải lại Gom shows it ("Phiên bản v1.3.0", and in the app "ứng dụng 1.1.0").
