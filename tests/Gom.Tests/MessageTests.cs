@@ -461,6 +461,37 @@ public class MessageTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task A_jump_back_brings_everything_from_that_message_on_in_one_page_up_to_two_thousand_back()
+    {
+        var p = await NewPair();
+        await Seed(p.Chat, p.A, 2100);
+        async Task<Guid> IdAt(long seq)
+        {
+            await using var db = app.Db.NewContext();
+            return await db.Messages.Where(m => m.ConversationId == p.Chat && m.Seq == seq).Select(m => m.Id).SingleAsync();
+        }
+        async Task<(long[] Seqs, bool More)> Page(string query)
+        {
+            using var r = await app.Call(Get, $"/api/conversations/{p.Chat}/messages{query}", cookie: p.CookieB);
+            Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+            var json = await AppFixture.Json(r);
+            return (json.GetProperty("messages").EnumerateArray().Select(m => m.GetProperty("seq").GetInt64()).ToArray(), json.GetProperty("hasMore").GetBoolean());
+        }
+
+        // 2000 back: one page from 2100 down to it, newest first, with more before it.
+        var (seqs, more) = await Page($"?before=2101&to={await IdAt(101)}");
+        Assert.Equal(Enumerable.Range(101, 2000).Reverse().Select(i => (long)i), seqs);
+        Assert.True(more);
+
+        // 2001 back is past the most one jump loads, and a message of another conversation is not one to jump to: the usual page.
+        Assert.Equal(50, (await Page($"?before=2101&to={await IdAt(100)}")).Seqs.Length);
+        var other = await NewPair();
+        using var sent = await Send(other.CookieA, other.Chat, "elsewhere");
+        var elsewhere = (await AppFixture.Json(sent)).GetProperty("id").GetGuid();
+        Assert.Equal(50, (await Page($"?before=2101&to={elsewhere}")).Seqs.Length);
+    }
+
+    [Fact]
     public async Task History_shows_who_sent_each_message_and_is_for_members_only()
     {
         var p = await NewPair();
@@ -487,6 +518,17 @@ public class MessageTests(AppFixture app) : IClassFixture<AppFixture>
     {
         using var r = await app.Call(Get, "/api/conversations", cookie: cookie);
         return (await AppFixture.Json(r)).EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == chat);
+    }
+
+    /// <summary>The page shows "99+" past 99, so the count stops at 100: someone far behind in a big group is not kept waiting for it.</summary>
+    [Fact]
+    public async Task The_unread_count_goes_no_further_than_a_hundred()
+    {
+        var p = await NewPair();
+        await Seed(p.Chat, p.A, 99);
+        Assert.Equal(99, (await ListEntry(p.CookieB, p.Chat)).GetProperty("unread").GetInt32());
+        await Seed(p.Chat, p.A, 150);
+        Assert.Equal(100, (await ListEntry(p.CookieB, p.Chat)).GetProperty("unread").GetInt32());
     }
 
     [Fact]

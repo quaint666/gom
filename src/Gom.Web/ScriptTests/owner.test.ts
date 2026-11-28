@@ -183,6 +183,34 @@ describe('owner page', () => {
     expect(past.querySelectorAll('[data-invite]').length).toBe(5);
   });
 
+  it('makes a link that adds people to a group the owner leads, and lists that group on the link', async () => {
+    const groups = [
+      { id: 'g1', kind: 'group', title: 'Testers', role: 'leader' }, { id: 'g2', kind: 'group', title: 'Not mine', role: 'member' },
+      { id: 'c1', kind: 'direct', title: 'Minh', role: null },
+    ];
+    const a = api({
+      conversations: vi.fn(async () => ok(groups)),
+      createInvite: vi.fn(async () => ok({ id: 'i3', token: 'TOK', path: '/join/TOK', expiresAt: '2026-12-08T09:00:00Z' })),
+      invites: vi.fn(async () => ok([{ ...invites[0], group: { id: 'g1', title: 'Testers' } }])),
+    });
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'invites');
+    await flush();
+    const choice = root.querySelector<HTMLSelectElement>('select[name="invite-group"]')!;
+    expect([...choice.options].map((o) => o.textContent)).toEqual(['Không nhóm nào', 'Testers']);
+    choice.value = 'g1'; choice.dispatchEvent(new Event('change', { bubbles: true }));
+    root.querySelector<HTMLButtonElement>('button[data-create-invite]')!.click();
+    await flush();
+    expect(a.createInvite).toHaveBeenCalledWith({ days: 7, uses: 10, group: 'g1' });
+    expect(text(root.querySelector('.card .hint')!)).toContain('thêm vào nhóm “Testers”');
+    expect(text(root.querySelector('[data-invite="i1"] [data-invite-group]')!)).toBe('Vào nhóm: Testers');
+  });
+
+  it('offers no group when the owner leads none', async () => {
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'invites');
+    await flush();
+    expect(root.querySelector('select[name="invite-group"]')).toBeNull();
+  });
+
   it('says so when no link is working', async () => {
     mountOwner(root, api({ invites: vi.fn(async () => ok([])) }), vi.fn(), 'https://gom.test', 'invites');
     await flush();
@@ -245,6 +273,42 @@ describe('owner page: sticker packs', () => {
     expect(addSticker.mock.calls.map((c) => (c as unknown[])[1])).toEqual(files);
     expect(root.querySelector<HTMLImageElement>('[data-pack-sticker="s1"] img')!.getAttribute('src')).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
     expect(text(root.querySelector('[data-pack="p1"]')!)).toContain('1/100 nhãn dán');
+  });
+
+  it('shows a pack for everyone, or only for the people and in the chats ticked, saved with its button', async () => {
+    const setPackWhere = vi.fn(async () => ok(undefined));
+    const conversations = vi.fn(async () => ok([{ id: 'c1', kind: 'direct', title: 'Minh' }, { id: 'g1', kind: 'group', title: 'Nhà' }]));
+    const people = [
+      { gomId: 'boss', displayName: 'Boss', isOwner: true, disabled: false, createdAt: '2026-11-01T00:00:00Z' },
+      { gomId: 'lan', displayName: 'Lan', isOwner: false, disabled: false, createdAt: '2026-11-01T00:00:00Z' },
+      { gomId: 'khoa', displayName: 'Khóa', isOwner: false, disabled: true, createdAt: '2026-11-01T00:00:00Z' },
+      { gomId: 'mai', displayName: 'Đào Mai', isOwner: false, disabled: false, createdAt: '2026-11-01T00:00:00Z' },
+    ];
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([{ ...pack(), everywhere: true, chats: [], people: [] }])), conversations, members: vi.fn(async () => ok(people)), setPackWhere }), vi.fn(), 'https://gom.test', 'stickers');
+    await flush();
+    const box = root.querySelector('[data-pack-where="p1"]')!;
+    expect(box.querySelector<HTMLInputElement>('[data-where-everywhere]')!.checked).toBe(true);
+    expect(box.querySelector('[data-where-chat], [data-where-person]')).toBeNull();
+    const chosen = box.querySelector<HTMLInputElement>('[data-where-chosen]')!;
+    chosen.checked = true; chosen.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(text(root.querySelector('[data-where-none]')!)).toContain('chỉ bạn dùng được');
+    // Members still using Gom, not the owner (who has every pack) nor someone locked.
+    expect([...root.querySelectorAll('[data-where-person]')].map((i) => i.getAttribute('data-where-person'))).toEqual(['lan', 'mai']);
+    const find = root.querySelector<HTMLInputElement>('[data-where-find]')!;
+    find.value = 'dao'; find.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    expect([...root.querySelectorAll('[data-where-person]')].map((i) => i.getAttribute('data-where-person'))).toEqual(['mai']);
+    const mai = root.querySelector<HTMLInputElement>('[data-where-person="mai"]')!;
+    mai.checked = true; mai.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    const nha = root.querySelector<HTMLInputElement>('[data-where-chat="g1"]')!;
+    nha.checked = true; nha.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-pack-where="p1"] [data-where-save]')!.click();
+    await flush();
+    expect(setPackWhere).toHaveBeenCalledWith('p1', { everywhere: false, chats: ['g1'], people: ['mai'] });
+    expect(text(root.querySelector('[data-pack-where="p1"]')!)).toContain('Đã lưu.');
   });
 
   it('says why a picture was turned away', async () => {

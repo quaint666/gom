@@ -2,13 +2,16 @@
  * Every piece of text the pages show, in Vietnamese: the one place to change a word. A text with something in it is a
  * function. Another language is a file of the same shape (`Strings`), so a missing line is a build error.
  */
+/** An unread count as the list's badge shows it: past 99, "99+" (the server counts no further than 100). */
+const upTo99 = (n: number): string => (n > 99 ? '99+' : String(n));
+
 export const vi = {
   /** Dates and numbers are written as this locale writes them. */
   locale: 'vi-VN',
   /** Each page's title before " · Gom", by its script's name; a page not listed is just "Gom". */
   titles: {
     signin: 'Đăng nhập', join: 'Lời mời', signup: 'Xin tham gia', reset: 'Đặt lại mật khẩu', settings: 'Cài đặt', friends: 'Bạn bè',
-    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng', privacy: 'Chính sách quyền riêng tư',
+    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng', privacy: 'Chính sách quyền riêng tư', help: 'Hướng dẫn cài đặt',
   },
   /** The emoji panel's groups (emoji-data.ts) and the sticker packs (stickers.ts), by key. */
   emojiGroups: {
@@ -261,6 +264,9 @@ export const vi = {
     installSummary: 'Mở như một ứng dụng',
     reloadRow: 'Tải lại Gom',
     policyRow: 'Chính sách quyền riêng tư',
+    appVersion: (version: string) => `ứng dụng ${version}`,
+    sourceRow: 'Mã nguồn và báo lỗi',
+    sourceSummary: 'Trên GitHub: xem mã, báo lỗi, góp ý',
     reloadSummary: (version: string | null): string => version === null ? 'Lấy bản mới nhất' : `Phiên bản v${version} · lấy bản mới nhất`,
     pushSummaryOff: 'Tắt',
     pushSummaryNone: 'Không có trên thiết bị này',
@@ -430,13 +436,21 @@ export const vi = {
     onePerson: 'một người',
     upTo: (n: number) => `tối đa ${n} người`,
     stickers: 'Nhãn dán',
-    stickersNote: 'Bộ nhãn dán của bạn hiện cho mọi người trong bảng nhãn dán, sau các bộ của Gom. Ảnh PNG, WebP hoặc JPEG được thu nhỏ còn 240 điểm ảnh, giữ phần trong suốt; GIF hay WebP động giữ nguyên. Tối đa 1 MB mỗi ảnh và 100 ảnh mỗi bộ.',
+    stickersNote: 'Bộ nhãn dán của bạn hiện trong bảng nhãn dán, sau các bộ của Gom: cho mọi người, hoặc chỉ cho những người và ở những cuộc trò chuyện bạn chọn. Bạn luôn dùng được mọi bộ. Ảnh PNG, WebP hoặc JPEG được thu nhỏ còn 240 điểm ảnh, giữ phần trong suốt; GIF hay WebP động giữ nguyên. Tối đa 1 MB mỗi ảnh và 100 ảnh mỗi bộ.',
     packName: 'Tên bộ mới',
     makePack: 'Tạo bộ',
     stickerCount: (n: number) => `${n}/100 nhãn dán`,
     removeSticker: 'Bỏ nhãn dán này',
     addStickers: 'Thêm ảnh',
     deletePack: 'Xoá bộ',
+    packWhere: 'Hiện ở',
+    everywhere: 'Mọi cuộc trò chuyện',
+    onlyChosen: 'Chỉ những người và cuộc trò chuyện được chọn',
+    chosenPeople: 'Người (dùng được ở mọi cuộc trò chuyện của họ)',
+    chosenChats: 'Cuộc trò chuyện (mọi người trong đó dùng được)',
+    noneChosen: 'Chưa chọn ai hay cuộc trò chuyện nào: chỉ bạn dùng được bộ này.',
+    saveWhere: 'Lưu',
+    whereSaved: 'Đã lưu.',
     deletePackAsk: (name: string) => `Xoá bộ “${name}”? Nó biến khỏi bảng nhãn dán; nhãn dán đã gửi vẫn hiện.`,
     resetMade: 'Liên kết có hiệu lực 24 giờ và chỉ dùng được một lần. Hãy gửi cho đúng người đó.',
     signUp: 'Xin tham gia',
@@ -449,6 +463,11 @@ export const vi = {
     noActive: 'Chưa có liên kết nào đang dùng được.',
     noContact: 'Chưa có thư nào.',
     everyone: 'Tất cả',
+    addToGroup: 'Thêm vào nhóm',
+    approveInto: 'Khi duyệt, thêm vào nhóm',
+    noGroup: 'Không nhóm nào',
+    intoGroup: (title: string) => `Vào nhóm: ${title}`,
+    inviteGroup: (title: string) => `Người vào sẽ được thêm vào nhóm “${title}”.`,
     contactHeading: 'Thư liên hệ',
     contactNote: (days: number) => `Gửi từ trang Chính sách quyền riêng tư. Thư tự xóa sau ${days} ngày.`,
     contactReply: (how: string) => `liên lạc: ${how}`,
@@ -501,6 +520,7 @@ export const vi = {
     left: (who: string) => `${who} đã rời nhóm`,
     renamed: (who: string, title: string) => `${who} đã đổi tên nhóm thành "${title}"`,
     restyled: (who: string) => `${who} đã đổi màu và hình nền của cuộc trò chuyện`,
+    pictured: (who: string) => `${who} đã đổi ảnh nhóm`,
     disappearOn: (who: string, how: string) => `${who} đã bật tin nhắn tự xoá: ${how}`,
     disappearOff: (who: string) => `${who} đã tắt tin nhắn tự xoá`,
     filesTrimmed: (day: string) => `Ảnh và tệp gửi trước ${day} đã được dọn`,
@@ -550,6 +570,22 @@ export const vi = {
     closed: 'Gom hiện không nhận yêu cầu tham gia',
     closedNote: 'Gom chỉ dành cho người được mời. Hãy nhờ người quen gửi lời mời cho bạn.',
   },
+  /** The page shown once after an account is made. */
+  welcome: {
+    title: (name: string) => `Chào mừng ${name} đến Gom`,
+    titleNoName: 'Chào mừng bạn đến Gom',
+    lead: 'Chỗ trò chuyện riêng của gia đình và bạn bè.',
+    inviteOnly: 'Chỉ người được mời',
+    inviteOnlyNote: 'Chỉ ai có lời mời hoặc được duyệt mới vào được Gom. Bạn kết bạn bằng mã Gom.',
+    ownServer: 'Lịch sử ở máy chủ riêng',
+    ownServerNote: 'Đổi máy vẫn còn tin nhắn. Không quảng cáo.',
+    inGroup: (title: string) => `Bạn đã vào nhóm ${title}`,
+    inGroupNote: 'Nhóm đã có trong danh sách trò chuyện của bạn.',
+    openGroup: (title: string) => `Vào nhóm ${title}`,
+    start: 'Bắt đầu',
+    picture: 'Đặt ảnh đại diện trước',
+    source: 'Mã nguồn mở, báo lỗi và góp ý trên',
+  },
   waiting: {
     sent: 'Đã gửi yêu cầu tham gia',
     sentNote: 'Chủ Gom sẽ duyệt tài khoản của bạn; bạn có thể nhắn chủ Gom để được duyệt nhanh hơn.',
@@ -583,7 +619,7 @@ export const vi = {
     sentVideo: 'Đã gửi một video',
     pinnedMark: 'Đã ghim',
     mutedMark: 'Đã tắt thông báo',
-    unreadCount: (n: number) => `${n} tin chưa đọc`,
+    unreadCount: (n: number) => `${upTo99(n)} tin chưa đọc`,
     markRead: 'Đánh dấu đã đọc',
     markUnread: 'Đánh dấu chưa đọc',
     optionsFor: (title: string | null) => `Tùy chọn cho ${title ?? 'cuộc trò chuyện'}`,
@@ -678,7 +714,7 @@ export const vi = {
     notSent: 'Chưa gửi được.',
     resend: 'Gửi lại',
     discard: 'Xóa',
-    newMessages: (n: number) => `${n} tin nhắn mới`,
+    newMessages: (n: number) => `${upTo99(n)} tin nhắn mới`,
     newBelow: (n: number) => `${n} tin mới`,
     seenBy: (n: number) => `Đã xem bởi ${n}`,
     // pictures
@@ -762,6 +798,36 @@ export const vi = {
     muteAlways: 'Cho đến khi được mở lại',
   },
   /** The public privacy policy (/privacy), required by Google Play; anyone can read it, signed in or not. */
+  help: {
+    /** The link to this page, on the pages before signing in, the welcome page and Settings. */
+    link: 'Hướng dẫn cài đặt',
+    title: 'Hướng dẫn cài đặt',
+    lead: 'Vài bước để tin nhắn và cuộc gọi đến đúng lúc. Tên các mục có thể hơi khác trên máy của bạn.',
+    /** Beside the part for the device this page is open on. */
+    thisDevice: 'Máy này',
+    home: 'Về Gom',
+    android: { heading: 'Ứng dụng Gom trên Android', items: [
+      'Cài Gom từ Google Play bằng đường dẫn được gửi cho bạn, mở ra và đăng nhập.',
+      'Thông báo: khi Gom hỏi, chọn Cho phép. Nếu lỡ từ chối: Cài đặt › Ứng dụng › Gom › Thông báo, rồi bật lên.',
+      'Micrô, cho tin nhắn thoại và cuộc gọi: lần đầu dùng, chọn Cho phép khi dùng ứng dụng. Nếu lỡ từ chối: Cài đặt › Ứng dụng › Gom › Quyền › Micrô.',
+      'Pin, để cuộc gọi luôn đổ chuông: Cài đặt › Ứng dụng › Gom › Pin › Không hạn chế. Trên điện thoại Samsung, vào thêm Cài đặt › Chăm sóc thiết bị › Pin › Giới hạn sử dụng nền, và thêm Gom vào Ứng dụng không bao giờ ngủ.',
+      'Trên Xiaomi, Oppo, Vivo và vài hãng khác: nếu trang của Gom có mục Tự khởi chạy (Autostart), hãy bật lên.',
+      'Android 14 trở lên: để cuộc gọi hiện toàn màn hình khi máy khóa, bật Cho phép thông báo toàn màn hình cho Gom. Gom sẽ nhắc nếu cần.',
+    ] },
+    web: { heading: 'Trên trình duyệt (máy tính hoặc điện thoại)', items: [
+      'Dùng Chrome, Edge hoặc Firefox bản mới, mở Gom và đăng nhập.',
+      'Thông báo: trong Gom, vào Cài đặt › Thông báo và bật; khi trình duyệt hỏi, chọn Cho phép. Nếu lỡ chặn: bấm biểu tượng cạnh địa chỉ trang, tìm Thông báo, chọn Cho phép rồi tải lại trang.',
+      'Micrô, cho tin nhắn thoại và cuộc gọi: khi trình duyệt hỏi, chọn Cho phép. Nếu lỡ chặn: cũng ở biểu tượng cạnh địa chỉ trang.',
+      'Trên điện thoại Android, để thông báo hiện lên màn hình: Cài đặt › Ứng dụng › Chrome › Thông báo, chọn mục của trang Gom và bật Hiện trên màn hình.',
+      'Cài Gom lên màn hình chính để mở như một ứng dụng: trong Gom, Cài đặt › Cài Gom lên màn hình chính, hoặc từ menu của trình duyệt.',
+    ] },
+    iphone: { heading: 'Trên iPhone và iPad', items: [
+      'Cần iOS hoặc iPadOS 16.4 trở lên.',
+      'Mở Gom bằng Safari, bấm nút Chia sẻ, chọn "Thêm vào MH chính".',
+      'Mở Gom từ biểu tượng vừa thêm (không phải từ Safari), vào Cài đặt › Thông báo và bật; khi được hỏi, chọn Cho phép. Thông báo chỉ đến khi Gom được mở theo cách này.',
+      'Micrô, cho tin nhắn thoại và cuộc gọi: khi được hỏi, chọn Cho phép.',
+    ] },
+  },
   privacy: {
     title: 'Chính sách quyền riêng tư',
     updated: (date: string) => `Cập nhật ngày ${date}`,
@@ -811,6 +877,8 @@ export const vi = {
       ] },
     ],
     home: 'Về trang chính',
+    sourceHeading: 'Mã nguồn',
+    sourceLead: 'Gom là phần mềm mã nguồn mở (giấy phép MIT): ai cũng đọc được nó làm gì với dữ liệu của bạn, báo lỗi và góp ý tại',
     contactHeading: 'Liên hệ',
     contactLead: (days: number) => `Viết cho người vận hành về quyền riêng tư hay bất cứ điều gì. Chỉ người vận hành đọc được thư này, và nó tự xóa sau ${days} ngày. Nếu muốn được trả lời, hãy để lại cách liên lạc.`,
     contactBody: 'Lời nhắn',

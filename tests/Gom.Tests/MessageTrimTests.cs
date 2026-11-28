@@ -55,6 +55,34 @@ public class MessageTrimTests(AppFixture app) : IClassFixture<AppFixture>
 
     private static long Long(JsonElement e, params string[] path) => path.Aggregate(e, (x, p) => x.GetProperty(p)).GetInt64();
 
+    /// <summary>A trim goes a batch of 5,000 at a time, so a conversation is never locked for long: every batch, and one notice.</summary>
+    [Fact]
+    public async Task A_trim_bigger_than_one_batch_takes_them_all_and_says_so_once()
+    {
+        var s = await NewSetup();
+        var old = app.Clock.Now.AddDays(-2);
+        await using (var db = app.Db.NewContext())
+        {
+            var start = await db.Conversations.Where(c => c.Id == s.Group).Select(c => c.LastSeq).SingleAsync();
+            for (var i = 1; i <= 5050; i++)
+                db.Messages.Add(new Message { Id = Guid.NewGuid(), ConversationId = s.Group, Seq = start + i, SenderId = s.A.Id, ClientId = Guid.NewGuid(), Body = $"cũ {i}", CreatedAt = old });
+            await db.SaveChangesAsync();
+            await db.Conversations.Where(c => c.Id == s.Group).ExecuteUpdateAsync(x => x.SetProperty(c => c.LastSeq, start + 5050));
+        }
+        var kept = await Say(s.Group, s.CA, "mới");
+
+        using var r = await Trim(Rule(app.Clock.Now.AddDays(-1), where: s.Group.ToString()));
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var result = await AppFixture.Json(r);
+        Assert.Equal(5050, result.GetProperty("messages").GetInt32());
+        Assert.Equal(1, result.GetProperty("conversations").GetInt32());
+
+        await using var after = app.Db.NewContext();
+        Assert.False(await after.Messages.AnyAsync(m => m.ConversationId == s.Group && m.CreatedAt < app.Clock.Now.AddDays(-1)));
+        Assert.True(await after.Messages.AnyAsync(m => m.Id == kept));
+        Assert.Equal(1, await after.Messages.CountAsync(m => m.ConversationId == s.Group && m.Notice == NoticeKind.MessagesTrimmed));
+    }
+
     [Fact]
     public async Task Only_the_owner_may_preview_or_trim()
     {

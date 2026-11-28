@@ -29,6 +29,9 @@ public static class AttachmentEndpoints
     /// <summary>How many messages' worth of pictures (or files) one page of the media list holds.</summary>
     private const int MediaPage = 24;
 
+    /// <summary>The most messages with pictures one jump back loads at once (about what 40 pages reached before).</summary>
+    private const int MediaJumpMost = 1000;
+
     private static IResult Error(int status, string code) => Results.Json(new { error = code }, statusCode: status);
 
     public static AttachmentDto ToDto(Attachment a) => new(a.Id, KindName(a.Kind), a.Name, a.Size, a.Width, a.Height, a.RemovedAt != null, a.Animated, a.DurationMs, IsAudio(a));
@@ -58,7 +61,7 @@ public static class AttachmentEndpoints
     /// next page with before = the seq of the last item. Only what this person may fetch: said after they joined, not taken back, not
     /// hidden by them, and in a message (an upload not yet sent is not listed).
     /// </summary>
-    private static async Task<IResult> Media(Guid id, string? kind, long? before, HttpContext http, GomDbContext db, CancellationToken ct)
+    private static async Task<IResult> Media(Guid id, string? kind, long? before, Guid? to, HttpContext http, GomDbContext db, CancellationToken ct)
     {
         AttachmentKind[] wanted;
         if (kind == "image") wanted = Gallery;
@@ -82,6 +85,16 @@ public static class AttachmentEndpoints
         var seqs = await visible.Select(x => x.Seq).Distinct().OrderByDescending(s => s).Take(MediaPage + 1).ToListAsync(ct);
         var hasMore = seqs.Count > MediaPage;
         var page = seqs.Take(MediaPage).ToList();
+        // The viewer opened on an older picture: every message from its one on, in one page (at most MediaJumpMost of them).
+        if (to is { } target && await visible.Where(x => x.Attachment.Id == target).Select(x => (long?)x.Seq).FirstOrDefaultAsync(ct) is { } from)
+        {
+            var back = await visible.Select(x => x.Seq).Where(s => s >= from).Distinct().OrderByDescending(s => s).Take(MediaJumpMost + 1).ToListAsync(ct);
+            if (back.Count > page.Count && back.Count <= MediaJumpMost)
+            {
+                page = back;
+                hasMore = await visible.AnyAsync(x => x.Seq < from, ct);
+            }
+        }
         var rows = await visible.Where(x => page.Contains(x.Seq)).OrderByDescending(x => x.Seq).ThenBy(x => x.Attachment.Position).ThenBy(x => x.Attachment.CreatedAt).ToListAsync(ct);
         return Results.Ok(new { items = rows.Select(r => new MediaItem(ToDto(r.Attachment), r.Attachment.MessageId!.Value, r.Seq, r.CreatedAt, new MessageEndpoints.PersonDto(r.SenderId, r.DisplayName), r.Body)), hasMore });
     }

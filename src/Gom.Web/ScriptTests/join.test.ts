@@ -27,7 +27,22 @@ describe('join page', () => {
     expect(root.querySelector('button[type="submit"]')!.textContent).toContain('Tạo tài khoản');
   });
 
-  it('creates the account and goes to the home page', async () => {
+  it('goes to the welcome page with the group the invite put them in', async () => {
+    const api = fakeApi({
+      peekInvite: vi.fn(async () => ok({ invitedBy: 'Mẹ' })),
+      join: vi.fn(async () => ok({ gomId: 'minh_tam', displayName: 'Minh Tâm', isOwner: false, group: 'g1' })),
+    });
+    const go = vi.fn();
+    mountJoin(root, api, go, 'tok');
+    await flush();
+    fill(root, 'input[name="gomId"]', 'minh_tam');
+    fill(root, 'input[name="password"]', 'a long enough password');
+    submit(root);
+    await flush();
+    expect(go).toHaveBeenCalledWith('/welcome?group=g1');
+  });
+
+  it('creates the account and goes to the welcome page', async () => {
     const api = fakeApi({
       peekInvite: vi.fn(async () => ok({ invitedBy: 'Mẹ' })),
       join: vi.fn(async () => ok({ gomId: 'minh_tam', displayName: 'Minh Tâm', isOwner: false })),
@@ -41,7 +56,7 @@ describe('join page', () => {
     submit(root);
     await flush();
     expect(api.join).toHaveBeenCalledWith('tok', { gomId: 'minh_tam', password: 'a long enough password', displayName: 'Minh Tâm' });
-    expect(go).toHaveBeenCalledWith('/');
+    expect(go).toHaveBeenCalledWith('/welcome');
   });
 
   it('shows the reason in words and keeps the form when the ID is taken', async () => {

@@ -85,9 +85,9 @@ public static class StorageEndpoints
         await GroupEndpoints.LockGroup(db, id, ct);
         if (!await db.Conversations.AnyAsync(c => c.Id == id && c.Kind == ConversationKind.Group, ct)) return Results.NotFound();
         if (await db.Members.AnyAsync(m => m.ConversationId == id, ct)) return Results.Json(new { error = "group_not_empty" }, statusCode: StatusCodes.Status409Conflict);
-        var files = await GroupEndpoints.DeleteGroup(db, id, ct);
+        await GroupEndpoints.CloseGroup(db, id, ct);
         await tx.CommitAsync(ct);
-        AttachmentFiles.Forget(blobs, files);
+        AttachmentFiles.Forget(blobs, await GroupEndpoints.PurgeGroup(db, id));
         return Results.NoContent();
     }
 }

@@ -49,6 +49,10 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let only: 'all' | 'locked' = 'all';
   let days: number = limits().inviteDefaultDays;
   let uses: number = limits().inviteDefaultUses;
+  /** The owner's groups that new people can be put in (they lead it or are a deputy), and the one chosen for a link or for approving. */
+  let groups: { id: string; title: string }[] = [];
+  let group = '';
+  let approveInto = '';
   /** Asking to join: whether it is open, and who asked (waiting first, then refused). */
   let signUpOpen = false;
   let requests: JoinRequest[] = [];
@@ -64,6 +68,16 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let deletingPack: string | null = null;
   let packError: Failure | null = null;
   let packBusy = false;
+  /**
+   * Where each pack shows, as being chosen (saved with its own button): the people who have it wherever they talk, and the owner's
+   * chats where everyone has it; who and which chats there are to choose from; what was typed to find a person; the pack just saved.
+   */
+  type Where = { everywhere: boolean; chats: string[]; people: string[] };
+  let where: Record<string, Where> = {};
+  let chats: { id: string; title: string }[] = [];
+  let people: { gomId: string; name: string }[] = [];
+  let peopleQuery: Record<string, string> = {};
+  let whereSaved: string | null = null;
 
   /** Sticker packs (H): make one, add pictures to it, take one out, or delete a pack. Stickers already sent still show. */
   const packsView = () => html`
@@ -81,6 +95,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         ${p.stickers.length === 0 ? nothing : html`<div class="stk-grid">${p.stickers.map((s) => html`
           <div class="stk-own" data-pack-sticker=${s.id}><img src=${stickerUrl(s.code)} alt="" width="56" height="56" loading="lazy" draggable="false">
             <button class="ib tray-x" type="button" aria-label=${say.owner.removeSticker} data-remove-sticker @click=${() => void removeSticker(s.id)}>${icons.close()}</button></div>`)}</div>`}
+        ${whereView(p.id)}
         <label class="btn secondary ${packBusy ? 'busy' : ''}" data-add-stickers>${icons.image()} ${say.owner.addStickers}
           <input class="file-input" type="file" accept="image/png,image/webp,image/jpeg,image/gif" multiple ?disabled=${packBusy}
             @change=${(e: Event) => { const input = e.target as HTMLInputElement; void addStickers(p.id, [...(input.files ?? [])]); input.value = ''; }}></label>
@@ -91,9 +106,54 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         : html`<button class="btn secondary danger-text" type="button" data-delete-pack @click=${() => { deletingPack = p.id; update(); }}>${say.owner.deletePack}</button>`}
       </div>`)}`;
 
+  /**
+   * Every chat, or only for the people and in the chats chosen (the owner's own chats: they cannot see others); saved with its button.
+   * A person chosen has the pack in every chat they are in, even one between two others.
+   */
+  const whereView = (pack: string) => {
+    const w = where[pack] ?? { everywhere: true, chats: [], people: [] };
+    const set = (next: Where) => { where = { ...where, [pack]: next }; whereSaved = null; update(); };
+    const query = peopleQuery[pack] ?? '';
+    const found = people.filter((p) => query.trim() === '' || matches(`${p.name} ${p.gomId}`, query));
+    return html`
+      <fieldset class="pack-where" data-pack-where=${pack}>
+        <legend>${say.owner.packWhere}</legend>
+        <label class="check"><input type="radio" name=${`where-${pack}`} data-where-everywhere .checked=${w.everywhere} @change=${() => set({ ...w, everywhere: true })}> ${say.owner.everywhere}</label>
+        <label class="check"><input type="radio" name=${`where-${pack}`} data-where-chosen .checked=${!w.everywhere} @change=${() => set({ ...w, everywhere: false })}> ${say.owner.onlyChosen}</label>
+        ${w.everywhere ? nothing : html`
+          <p class="pack-sub">${say.owner.chosenPeople}</p>
+          <div class="searchfield input">${icons.search()}
+            <input type="search" aria-label=${say.owner.findMembers} placeholder=${say.owner.findMembers} autocomplete="off" maxlength=${limits().nameChars} data-where-find
+              .value=${query} @input=${(e: Event) => { peopleQuery = { ...peopleQuery, [pack]: (e.target as HTMLInputElement).value }; update(); }}></div>
+          <ul class="pack-chats">${found.map((p) => html`<li><label class="check"><input type="checkbox" data-where-person=${p.gomId} .checked=${w.people.includes(p.gomId)}
+            @change=${(e: Event) => set({ ...w, people: (e.target as HTMLInputElement).checked ? [...w.people, p.gomId] : w.people.filter((x) => x !== p.gomId) })}> ${p.name} <small>@${p.gomId}</small></label></li>`)}</ul>
+          <p class="pack-sub">${say.owner.chosenChats}</p>
+          <ul class="pack-chats">${chats.map((c) => html`<li><label class="check"><input type="checkbox" data-where-chat=${c.id} .checked=${w.chats.includes(c.id)}
+            @change=${(e: Event) => set({ ...w, chats: (e.target as HTMLInputElement).checked ? [...w.chats, c.id] : w.chats.filter((x) => x !== c.id) })}> ${c.title}</label></li>`)}</ul>
+          ${w.chats.length === 0 && w.people.length === 0 ? html`<p class="hint" data-where-none>${say.owner.noneChosen}</p>` : nothing}`}
+        <button class="btn secondary small" type="button" data-where-save ?disabled=${packBusy} @click=${() => void saveWhere(pack)}>${say.owner.saveWhere}</button>
+        ${whereSaved === pack ? html`<span class="hint" role="status">${say.owner.whereSaved}</span>` : nothing}
+      </fieldset>`;
+  };
+
+  async function saveWhere(pack: string): Promise<void> {
+    const w = where[pack] ?? { everywhere: true, chats: [], people: [] };
+    packError = null;
+    const result = await api.setPackWhere(pack, w.everywhere ? { everywhere: true, chats: [], people: [] } : w);
+    if (!result.ok) { packError = result; update(); return; }
+    whereSaved = pack;
+    update();
+  }
+
   async function loadPacks(): Promise<void> {
-    const result = await api.stickerPacks();
-    if (result.ok) packs = result.data; else packError = result;
+    const [result, list, everyone] = await Promise.all([api.stickerPacks(), api.conversations(), api.members()]);
+    if (result.ok) {
+      packs = result.data;
+      where = Object.fromEntries(packs.map((p) => [p.id, { everywhere: p.everywhere !== false, chats: p.chats ?? [], people: p.people ?? [] }]));
+    } else packError = result;
+    if (list.ok) chats = list.data.filter((c) => !c.hidden).map((c) => ({ id: c.id, title: c.title ?? '…' }));
+    // Members still using Gom; the owner has every pack already.
+    if (everyone.ok) people = everyone.data.filter((m) => !m.isOwner && !m.disabled && !m.deleted).map((m) => ({ gomId: m.gomId, name: m.displayName }));
     update();
   }
 
@@ -145,6 +205,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       <div class="t">
         <b>${STATUS[i.status]}</b>
         <small>${say.owner.inviteLine(i.uses, String(i.maxUses ?? '∞'), formatTime(i.createdAt), i.status === 'expired' ? say.owner.hasExpired : say.owner.expires(formatTime(i.expiresAt)))}</small>
+        ${i.group ? html`<small data-invite-group>${say.owner.intoGroup(i.group.title ?? '…')}</small>` : nothing}
         ${i.members.length === 0 ? nothing : html`<small data-joined>${say.owner.joined(i.members.map((m) => `${m.displayName} (@${m.gomId})`).join(', '))}</small>`}
       </div>
       ${i.status === 'active' ? moreButton('invite', i.id, say.owner.inviteOptions) : nothing}
@@ -198,12 +259,19 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
           <button class="btn secondary small" type="button" data-refuse-no @click=${() => { refusing = null; update(); }}>${say.common.no}</button></div>`
       : html`
         <div class="acts">
-          <button class="btn small" type="button" data-approve @click=${() => answer(() => api.approveJoin(r.gomId))}>${say.owner.approve}</button>
+          <button class="btn small" type="button" data-approve @click=${() => answer(() => approveInto === '' ? api.approveJoin(r.gomId) : api.approveJoin(r.gomId, approveInto))}>${say.owner.approve}</button>
           ${r.refused
             ? html`<button class="btn secondary small" type="button" data-delete-request @click=${() => answer(() => api.deleteJoin(r.gomId))}>${say.owner.remove}</button>`
             : html`<button class="btn secondary small" type="button" data-refuse @click=${() => { refusing = r.gomId; update(); }}>${say.owner.refuse}</button>`}
         </div>`}
     </li>`;
+
+  /** A choice of one of the owner's groups, or none; shown only when there is a group to choose. */
+  const groupField = (id: string, label: string, value: string, pick: (v: string) => void) => groups.length === 0 ? nothing : html`
+    <div class="field"><label for=${id}>${label}</label>
+      <select id=${id} name=${id} data-group-choice=${id} @change=${(e: Event) => pick((e.target as HTMLSelectElement).value)}>
+        <option value="" ?selected=${value === ''}>${say.owner.noGroup}</option>
+        ${groups.map((g) => html`<option value=${g.id} ?selected=${g.id === value}>${g.title}</option>`)}</select></div>`;
 
   /** A list that starts folded: past links, refused requests. Its count is in its title, so nothing hides unseen. */
   const folded = (title: string, attr: string, body: unknown) => html`
@@ -217,6 +285,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         @change=${(e: Event) => void setOpen((e.target as HTMLInputElement).checked)}><label for="sign-up-open">${say.owner.openSignUp}</label></div>
       ${waiting.length === 0 && !signUpOpen ? nothing : html`
         <h2 class="section">${say.owner.waitingCount(waiting.length)}</h2>
+        ${waiting.length === 0 ? nothing : groupField('approve-into', say.owner.approveInto, approveInto, (v) => { approveInto = v; })}
         ${waiting.length === 0 ? html`<p class="hint" data-none-waiting>${say.owner.noneWaiting}</p>` : html`<ul class="list" data-waiting-list>${waiting.map(requestRow)}</ul>`}`}
       ${refused.length === 0 ? nothing : folded(say.owner.refusedCount(refused.length), 'refused', html`<ul class="list" data-refused-list>${refused.map(requestRow)}</ul>`)}`;
   };
@@ -243,6 +312,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         <div class="field"><label for="invite-uses">${say.owner.letsIn}</label>
           <select id="invite-uses" name="uses" @change=${(e: Event) => { uses = Number((e.target as HTMLSelectElement).value); }}>
             ${USES.map((u) => html`<option value=${u} ?selected=${u === uses}>${u === 0 ? say.owner.anyNumber : say.owner.people(u)}</option>`)}</select></div>
+        ${groupField('invite-group', say.owner.addToGroup, group, (v) => { group = v; })}
         <button class="btn" type="button" data-create-invite @click=${makeInvite}>${say.owner.makeInvite}</button>
       </div>
       ${linkBox()}
@@ -286,6 +356,10 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   async function reload(): Promise<void> {
     if (part === 'stickers') { await loadPacks(); return; }
     if (part === 'invites') { const i = await api.invites(); if (i.ok) invites = i.data; else error = i; }
+    if (part === 'invites' || part === 'requests') {
+      const c = await api.conversations();
+      if (c.ok) groups = c.data.filter((x) => x.kind === 'group' && (x.role === 'leader' || x.role === 'deputy')).map((x) => ({ id: x.id, title: x.title ?? '…' }));
+    }
     if (part === 'members') { const m = await api.members(); if (m.ok) members = m.data; else error = m; }
     if (part === 'requests') { const r = await api.signUpRequests(); if (r.ok) { signUpOpen = r.data.open; requests = r.data.requests; } else error = r; }
     if (part === 'contact') { const c = await api.contactMessages(); if (c.ok) contacts = c.data.messages; else error = c; }
@@ -310,9 +384,11 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   }
 
   async function makeInvite(): Promise<void> {
-    const result = await api.createInvite({ days, uses });
+    const result = await api.createInvite(group === '' ? { days, uses } : { days, uses, group });
     if (!result.ok) { error = result; update(); return; }
-    show(result.data, say.owner.inviteMade(days, uses === 0 ? say.owner.anyone : uses === 1 ? say.owner.onePerson : say.owner.upTo(uses)));
+    const into = groups.find((g) => g.id === group);
+    show(result.data, say.owner.inviteMade(days, uses === 0 ? say.owner.anyone : uses === 1 ? say.owner.onePerson : say.owner.upTo(uses))
+      + (into === undefined ? '' : ` ${say.owner.inviteGroup(into.title)}`));
     await reload();
     changed();
   }

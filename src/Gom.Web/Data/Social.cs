@@ -58,6 +58,8 @@ public class Conversation
     /// good. Each message keeps the deadline it was sent with (<see cref="Message.ExpiresAt"/>), so a change counts from then on.
     /// </summary>
     public int? DisappearSeconds { get; set; }
+    /// <summary>A group's picture (its file is in the blob store under this id, as a profile picture's is); null: its initials.</summary>
+    public Guid? AvatarId { get; set; }
 }
 
 /// <summary>What a member may do in a group. A one-to-one chat has only plain members.</summary>
@@ -94,7 +96,7 @@ public class ConversationMember
 /// <see cref="FilesTrimmed"/> and <see cref="MessagesTrimmed"/>: the owner trimmed pictures and files, or messages, sent before a date
 /// (the date is the notice's body).
 /// </summary>
-public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7, Call = 8, Disappearing = 9 }
+public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7, Call = 8, Disappearing = 9, Pictured = 10 }
 
 public enum CallState { Ringing = 1, Active = 2, Ended = 3 }
 
@@ -235,6 +237,25 @@ public class StickerPack
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>Taken out of the picker; stickers of it already sent still show.</summary>
     public DateTimeOffset? DeletedAt { get; set; }
+    /// <summary>
+    /// In every conversation's picker (true), or only for the people (<see cref="StickerPackPerson"/>) and in the conversations
+    /// (<see cref="StickerPackChat"/>) the owner chose.
+    /// </summary>
+    public bool Everywhere { get; set; } = true;
+}
+
+/// <summary>Someone the owner chose for a pack that is not everywhere: they have it in every conversation they are in.</summary>
+public class StickerPackPerson
+{
+    public Guid PackId { get; set; }
+    public Guid UserId { get; set; }
+}
+
+/// <summary>A conversation the owner chose for a pack that is not everywhere: everyone in it has the pack there.</summary>
+public class StickerPackChat
+{
+    public Guid PackId { get; set; }
+    public Guid ConversationId { get; set; }
 }
 
 /// <summary>One of the owner's stickers: its picture is in the blob store under its id, as kept (a WebP, or a moving GIF or WebP as sent).</summary>

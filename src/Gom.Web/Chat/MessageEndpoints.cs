@@ -81,7 +81,7 @@ public static class MessageEndpoints
         if (existing is not null) return await Same(db, existing, id, sender, access.SeesAfter, ct);
 
         // A sticker is the whole message: no words and no files with it.
-        if (request.Sticker is not null && (!await StickerPacks.MaySend(db, request.Sticker, ct) || !string.IsNullOrWhiteSpace(request.Body) || request.Attachments is { Count: > 0 }))
+        if (request.Sticker is not null && (!await StickerPacks.MaySend(db, request.Sticker, id, me, http.User.FindFirst(GomClaims.IsOwner)?.Value == "true", ct) || !string.IsNullOrWhiteSpace(request.Body) || request.Attachments is { Count: > 0 }))
             return Error(StatusCodes.Status400BadRequest, "invalid_sticker");
         // A message may be only pictures and files; then its words may be empty. Otherwise it needs words.
         var attached = request.Attachments?.Distinct().ToList() ?? [];
@@ -117,8 +117,11 @@ public static class MessageEndpoints
         // The UPDATE locks the conversation row, so two sends queue up and the numbers follow the commit order.
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
-            var seq = (await db.Database.SqlQuery<long>(
-                $"UPDATE conversations SET last_seq = last_seq + 1, last_message_at = {now} WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
+            var numbered = await db.Database.SqlQuery<long>(
+                $"UPDATE conversations SET last_seq = last_seq + 1, last_message_at = {now} WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct);
+            // Gone while this send waited for it (a group disbanded at that moment): not found, as for any send to it from now on.
+            if (numbered.Count == 0) return Results.NotFound();
+            var seq = numbered[0];
 
             // Disappearing messages: the deadline is fixed now, from the setting as it is at this moment (the row is locked by the UPDATE).
             var lasts = await db.Conversations.Where(c => c.Id == id).Select(c => c.DisappearSeconds).SingleAsync(ct);
@@ -234,6 +237,9 @@ public static class MessageEndpoints
 
     /// <summary>Most results one search returns; the newest come first.</summary>
     private const int SearchLimit = 30;
+
+    /// <summary>The most messages one jump back loads at once (what 40 pages of 50 reached before).</summary>
+    private const int JumpMost = 2000;
     public const int SearchMaxChars = 100;
 
     /// <summary>
@@ -268,7 +274,8 @@ public static class MessageEndpoints
         {
             // % _ and \ typed by a person are ordinary characters.
             var pattern = "%" + word.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-            found = found.Where(m => EF.Functions.ILike(EF.Functions.Unaccent(m.Body), EF.Functions.Unaccent(pattern), "\\"));
+            // gom_unaccent, not unaccent: the same, but declared immutable, so the trigram index on it can find the words.
+            found = found.Where(m => EF.Functions.ILike(GomDbContext.Unaccent(m.Body), GomDbContext.Unaccent(pattern), "\\"));
         }
         return found;
     }
@@ -500,7 +507,7 @@ public static class MessageEndpoints
 
     // ---- history
 
-    private static async Task<IResult> History(Guid id, long? before, int? limit, HttpContext http, GomDbContext db, CancellationToken ct)
+    private static async Task<IResult> History(Guid id, long? before, int? limit, Guid? to, HttpContext http, GomDbContext db, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -508,6 +515,15 @@ public static class MessageEndpoints
 
         // "limit=abc" is a 400 (the framework refuses what does not bind), not a quiet 50.
         var take = Math.Clamp(limit ?? 50, 1, 100);
+        // A jump back to a message (a quote, a pin, a search result): everything from it up to `before` in one page, so the thread
+        // stays one unbroken run and the page is drawn once. There are at most before - seq messages from it on, so taking that many
+        // reaches it. Further back than JumpMost, or a message not here to see: the usual page.
+        if (to is { } target && before is { } upTo)
+        {
+            var at = await db.Messages.Where(m => m.Id == target && m.ConversationId == id && m.Seq > access.SeesAfter && m.Seq < upTo)
+                .Select(m => (long?)m.Seq).SingleOrDefaultAsync(ct);
+            if (at is { } seq && upTo - seq <= JumpMost) take = Math.Max(take, (int)(upTo - seq));
+        }
         var rows = await (
             from m in db.Messages.AsNoTracking()
             where m.ConversationId == id && m.Seq > access.SeesAfter && (before == null || m.Seq < before)

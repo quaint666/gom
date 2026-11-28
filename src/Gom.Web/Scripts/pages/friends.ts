@@ -84,7 +84,7 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
   }
 
   const groupRow = (c: Conversation) => html`
-    <li><a class="li person" href="/c/${c.id}" data-group=${c.id}>${avatar(c.title ?? '?')}
+    <li><a class="li person" href="/c/${c.id}" data-group=${c.id}>${avatar(c.title ?? '?', false, false, c.avatar)}
       <span class="t"><b>${c.title ?? '…'}</b><small>${say.common.members(c.memberCount ?? 0)}</small></span></a></li>`;
 
   const tabs = () => {

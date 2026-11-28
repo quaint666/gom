@@ -47,7 +47,7 @@ export function markWords(text: string, query: string): Run[] {
  * out, then marked: a word near the end of a long message still shows.
  */
 export function markedExcerpt(text: string, query: string, chars: number): Run[] {
-  const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((s) => s.segment);
+  const graphemes = [...SEGMENTER.segment(text)].map((s) => s.segment);
   if (graphemes.length <= chars) return markWords(text, query);
   const runs = markWords(text, query);
   const firstHit = runs.findIndex((r) => r.hit);
@@ -63,3 +63,5 @@ export function markedExcerpt(text: string, query: string, chars: number): Run[]
 
 /** How many characters before the first word found an excerpt keeps (at most a third of it), so the word is read in its sentence. */
 const LEAD = 30;
+/** Made once: making one is slow, and every result is cut at every drawing. */
+const SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' });

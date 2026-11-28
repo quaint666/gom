@@ -37,6 +37,38 @@ public class MessageSchemaTests(TestDatabase database) : IClassFixture<TestDatab
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
     }
 
+    /// <summary>
+    /// Search uses gom_unaccent (immutable, so it can be indexed) and a trigram index on it: on 10 million messages, a search that
+    /// found nothing took 6.6 s without the index and 0.3 ms with it (decisions, 2026-11-28).
+    /// </summary>
+    [Fact]
+    public async Task Words_in_messages_are_found_through_an_index_that_ignores_accents()
+    {
+        await using var db = database.NewContext();
+        await db.Database.OpenConnectionAsync();
+        var connection = db.Database.GetDbConnection();
+        async Task<string> One(string sql)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            return string.Join("\n", await Rows(command));
+        }
+        static async Task<List<string>> Rows(System.Data.Common.DbCommand command)
+        {
+            var rows = new List<string>();
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) rows.Add(reader.GetValue(0).ToString()!);
+            return rows;
+        }
+
+        Assert.Equal("Pho bo Ha Noi", await One("SELECT gom_unaccent('Phở bò Hà Nội')"));
+        Assert.Equal("i", await One("SELECT provolatile FROM pg_proc WHERE proname = 'gom_unaccent'"));
+        Assert.Contains("USING gin (gom_unaccent((body)::text) gin_trgm_ops)", await One("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_messages_body_trgm'"));
+        // The planner can use it for the search's own shape (with the table this small it would rather read it all, so that is off here).
+        await One("SET enable_seqscan = off");
+        Assert.Contains("ix_messages_body_trgm", await One("EXPLAIN SELECT id FROM messages WHERE gom_unaccent(body) ILIKE gom_unaccent('%phở%') ESCAPE '\\'"));
+    }
+
     [Fact]
     public async Task A_message_round_trips()
     {

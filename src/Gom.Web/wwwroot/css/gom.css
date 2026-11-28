@@ -133,13 +133,16 @@ a { color: var(--link); }
 .page.center { justify-content: center; align-items: stretch; min-block-size: 80dvh; }
 .logo { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; font-size: 26px; }
 .logo .i { inline-size: 34px; block-size: 34px; color: var(--link); }
+/* Gom's mark is filled, its three dots holes (the even-odd rule), unlike the line icons. */
+.i.logo-mark { fill: currentColor; fill-rule: evenodd; stroke: none; }
 .lead { color: var(--muted); font-size: 15px; }
 .foot { text-align: center; color: var(--muted); font-size: 14px; }
 /* The privacy policy: a page of reading, a little wider than a form, headed by the logo as a link home. */
 .page.policy { max-inline-size: 680px; gap: 10px; line-height: 1.55; }
 .policy h1 { margin: 8px 0 0; }
 .policy h2 { margin: 14px 0 4px; font-size: 18px; }
-.policy ul { margin: 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 6px; }
+.policy ul, .policy ol { margin: 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 6px; }
+.policy h2 small { font-size: 14px; font-weight: 400; }
 .policy-home { align-self: flex-start; color: inherit; text-decoration: none; }
 /* The way back to Gom from the policy: a button at the top (small) and at the foot, after the contact form. */
 .home-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
@@ -202,6 +205,16 @@ form { display: flex; flex-direction: column; gap: 14px; }
 /* A question asked inside a row (refusing a request): the words on their own line, its two buttons under them. */
 .li .ask { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
 .li .ask p { flex-basis: 100%; margin: 0; }
+/* Where a sticker pack shows: every chat, or a list of the owner's chats to tick. */
+.pack-where { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pack-where legend { padding: 0; font-weight: 600; font-size: 14px; margin-block-end: 4px; }
+.pack-chats { list-style: none; margin: 0 0 0 28px; padding: 0; max-block-size: 240px; overflow-y: auto; }
+.pack-where .btn { align-self: flex-start; }
+.pack-where .pack-sub { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pack-where .check small { color: var(--muted); }
+.pack-where .check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; margin: 0; font-weight: 400; font-size: 15px; }
+.pack-where .check input { margin: 0; }
+.pack-where .check input { inline-size: 20px; block-size: 20px; accent-color: var(--btn); flex: none; }
 /* An owner's list that starts folded (past links, refused requests): its title and count stay in view, a chevron that turns. */
 .fold { margin-block-start: 16px; }
 .fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; min-block-size: 44px; color: var(--muted); font-weight: 600; cursor: pointer; }
@@ -1032,6 +1045,12 @@ button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(-
 .nav { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
 .nav a, .nav button { display: flex; align-items: center; gap: 14px; inline-size: 100%; min-block-size: 58px; padding: 8px 14px; border: 0; border-block-end: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; text-align: start; text-decoration: none; cursor: pointer; }
 .nav li:last-child a, .nav li:last-child button { border-block-end: 0; }
+/* The welcome page: what Gom is, as three rows with an icon each. */
+.welcome-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.welcome-point { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.welcome-point .t b { display: block; font-weight: 600; }
+.welcome-point .t small { color: var(--muted); font-size: 13px; }
+.welcome .btn { text-decoration: none; }
 .lead-i { inline-size: 34px; block-size: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; background: var(--tint); color: var(--link); }
 .lead-i .i { inline-size: 20px; block-size: 20px; }
 .nav .t, a.profile .t { flex: 1; min-inline-size: 0; }

@@ -32,7 +32,8 @@ export type Result<T> = { ok: true; data: T } | Failure;
 export type Standing = 'member' | 'pending' | 'refused';
 export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean; appCalls?: boolean; twoStep?: boolean }
 /** Someone asking to join, as the owner sees them. */
-export interface CustomPack { id: string; name: string; stickers: { id: string; code: string }[] }
+/** One of the owner's packs: in every picker, or only for the chosen people (Gom IDs) and conversations (sent to the owner only). */
+export interface CustomPack { id: string; name: string; everywhere?: boolean; chats?: string[] | null; people?: string[] | null; stickers: { id: string; code: string }[] }
 export interface TwoStepKey { key: string; uri: string; qr: string }
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 /** A message to the owner from the privacy page's form. */
@@ -43,6 +44,8 @@ export interface SessionInfo { id: string; deviceLabel: string; createdAt: strin
 export interface Invite {
   id: string; createdAt: string; expiresAt: string; uses: number; maxUses: number | null;
   status: 'active' | 'full' | 'revoked' | 'expired'; members: { gomId: string; displayName: string; usedAt: string }[];
+  /** The group whoever joins is added to; null for none (or a group that is gone). */
+  group?: { id: string; title: string | null } | null;
 }
 export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; deleted?: boolean; createdAt: string }
 /** A count of pictures or files and the bytes they take. */
@@ -94,7 +97,7 @@ export interface CallInfo {
   caller: { id: string; displayName: string }; offer: string | null; answer: string | null; ringSeconds: number; aliveSeconds: number;
 }
 export interface CallLine { callerId: string; outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed'; startedAt: string; seconds: number }
-export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call' | 'disappearing'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null; seconds?: number | null }
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call' | 'disappearing' | 'pictured'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null; seconds?: number | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
   /** Set when the message is one sticker (its code): then it has no words and no files. */
   sticker?: string | null;
@@ -111,6 +114,10 @@ export interface Conversation {
   /** `peer.gomId` is there only while you are friends (the chat stays after an unfriend or a block; their ID does not). */
   id: string; kind: 'direct' | 'group'; title: string | null; peer: (Omit<Person, 'gomId'> & { gomId: string | null; id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
+  /** Your place in a group; null for a 1:1 chat. */
+  role?: 'leader' | 'deputy' | 'member' | null;
+  /** A group's picture (a 1:1 chat shows `peer.avatar`); null: its initials. */
+  avatar?: string | null;
   /** Its own colour and background, the same for everyone in it; null (or absent): each person's own. */
   palette?: string | null; pattern?: string | null;
   /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
@@ -148,13 +155,14 @@ export interface Api {
   signIn(gomId: string, password: string, code?: string): Promise<Result<User>>;
   signOut(): Promise<Result<void>>;
   peekInvite(token: string): Promise<Result<{ invitedBy: string }>>;
-  join(token: string, body: JoinBody): Promise<Result<User>>;
+  /** The new account; `group`: the group the invite put them in, if any. */
+  join(token: string, body: JoinBody): Promise<Result<User & { group?: string | null }>>;
   peekReset(token: string): Promise<Result<{ gomId: string; displayName: string }>>;
   reset(token: string, password: string): Promise<Result<User>>;
   sessions(): Promise<Result<SessionInfo[]>>;
   endSession(id: string): Promise<Result<void>>;
   /** `days` 1 to 30 and `uses` 1 to 100 (0 for any number); without them the server's defaults. */
-  createInvite(options?: { days: number; uses: number }): Promise<Result<Issued>>;
+  createInvite(options?: { days: number; uses: number; group?: string }): Promise<Result<Issued>>;
   invites(): Promise<Result<Invite[]>>;
   revokeInvite(id: string): Promise<Result<void>>;
   members(): Promise<Result<Member[]>>;
@@ -169,7 +177,7 @@ export interface Api {
   contactMessages(): Promise<Result<{ messages: ContactMessage[] }>>;
   deleteContact(id: string): Promise<Result<void>>;
   setSignUpOpen(open: boolean): Promise<Result<void>>;
-  approveJoin(gomId: string): Promise<Result<void>>;
+  approveJoin(gomId: string, group?: string): Promise<Result<void>>;
   refuseJoin(gomId: string): Promise<Result<void>>;
   deleteJoin(gomId: string): Promise<Result<void>>;
   storage(): Promise<Result<Storage>>;
@@ -193,12 +201,17 @@ export interface Api {
   /** Makes this picture your profile picture (the server keeps a square from its middle); the answer is its id. */
   setAvatar(picture: Blob): Promise<Result<{ avatar: string }>>;
   /** The owner's sticker packs, in everyone's picker after Gom's own. */
-  stickerPacks(): Promise<Result<CustomPack[]>>;
+  /** With a conversation: your picker there. Without: the packs you have anywhere; for the owner every pack with where it shows. */
+  stickerPacks(conversation?: string): Promise<Result<CustomPack[]>>;
+  setPackWhere(pack: string, where: { everywhere: boolean; chats: string[]; people: string[] }): Promise<Result<void>>;
   createStickerPack(name: string): Promise<Result<CustomPack>>;
   deleteStickerPack(id: string): Promise<Result<void>>;
   addSticker(pack: string, picture: Blob): Promise<Result<{ id: string; code: string }>>;
   deleteSticker(id: string): Promise<Result<void>>;
   removeAvatar(): Promise<Result<void>>;
+  /** A group's picture, by its leader or a deputy. */
+  setGroupAvatar(conversation: string, picture: Blob): Promise<Result<{ avatar: string }>>;
+  removeGroupAvatar(conversation: string): Promise<Result<void>>;
   /** The server's key for notifications and whether this device gets them; a failure (404) means push is off on this server. */
   pushState(): Promise<Result<PushState>>;
   setPush(subscription: DeviceSubscription, level: PushLevel): Promise<Result<void>>;
@@ -217,7 +230,8 @@ export interface Api {
   unblock(gomId: string): Promise<Result<void>>;
   conversations(): Promise<Result<Conversation[]>>;
   openDirect(gomId: string): Promise<Result<{ id: string }>>;
-  history(conversation: string, before?: number): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean; lastSeq: number }>>;
+  /** The newest page, or the page before `before`; with `to` as well, everything from that message up to `before` in one page (a jump back). */
+  history(conversation: string, before?: number, to?: string): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean; lastSeq: number }>>;
   recall(conversation: string, message: string): Promise<Result<void>>;
   /** The servers for a call's connection: before calling (the chat) or answering (the call), or again during a long call. */
   callServers(about: { conversationId: string } | { callId: string }): Promise<Result<CallServers>>;
@@ -245,7 +259,8 @@ export interface Api {
   /** Sends one sticker, the whole message (no words, no files). */
   sendSticker(conversation: string, clientId: string, sticker: string, replyTo?: string): Promise<Result<ChatMessage>>;
   /** The pictures ("image") or files ("file") of a conversation, newest first; `before` is the seq of the last item of the page you have. */
-  media(conversation: string, kind: 'image' | 'file', before?: number): Promise<Result<{ items: MediaItem[]; hasMore: boolean }>>;
+  /** A page of pictures or files; with `to`, every one from that picture's message on, so the viewer can open on it (one answer, one drawing). */
+  media(conversation: string, kind: 'image' | 'file', before?: number, to?: string): Promise<Result<{ items: MediaItem[]; hasMore: boolean }>>;
   /** Copies a picture or file you may see into another conversation as a new upload of yours (not yet in a message): this is how it is forwarded. */
   copyAttachment(conversation: string, from: string): Promise<Result<Attachment>>;
   /** A video's still picture, made on this device, sent after the video and before the message. */
@@ -408,7 +423,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     contactMessages: () => call('GET', '/api/contact'),
     deleteContact: (id) => call('DELETE', `/api/contact/${enc(id)}`),
     setSignUpOpen: (open) => call('PUT', '/api/sign-up-open', { open }),
-    approveJoin: (gomId) => call('POST', `/api/join-requests/${enc(gomId)}/approve`),
+    approveJoin: (gomId, group) => call('POST', `/api/join-requests/${enc(gomId)}/approve`, group === undefined ? undefined : { group }),
     refuseJoin: (gomId) => call('POST', `/api/join-requests/${enc(gomId)}/refuse`),
     deleteJoin: (gomId) => call('DELETE', `/api/join-requests/${enc(gomId)}`),
     storage: () => call('GET', '/api/owner/storage'),
@@ -425,12 +440,15 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     twoStepOff: (code, password) => call('POST', '/api/me/two-step/off', { code, password }),
     deleteAccount: (gomId) => call('DELETE', '/api/me', { gomId }),
     setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
-    stickerPacks: () => call('GET', '/api/sticker-packs'),
+    stickerPacks: (conversation) => call('GET', conversation === undefined ? '/api/sticker-packs' : `/api/sticker-packs?conversation=${enc(conversation)}`),
+    setPackWhere: (pack, where) => call('PUT', `/api/owner/sticker-packs/${enc(pack)}/where`, where),
     createStickerPack: (name) => call('POST', '/api/owner/sticker-packs', { name }),
     deleteStickerPack: (id) => call('DELETE', `/api/owner/sticker-packs/${enc(id)}`),
     addSticker: (pack, picture) => call('POST', `/api/owner/sticker-packs/${enc(pack)}/stickers`, picture),
     deleteSticker: (id) => call('DELETE', `/api/owner/stickers/${enc(id)}`),
     removeAvatar: () => call('DELETE', '/api/me/avatar'),
+    setGroupAvatar: (conversation, picture) => call('PUT', `/api/conversations/${enc(conversation)}/avatar`, picture),
+    removeGroupAvatar: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/avatar`),
     pushState: () => call('GET', '/api/push'),
     setPush: (subscription, level) => ('app' in subscription
       ? call('PUT', '/api/push/fcm', { token: subscription.app, level })
@@ -448,7 +466,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     unblock: (gomId) => call('DELETE', `/api/blocks/${enc(gomId)}`),
     conversations: () => call('GET', '/api/conversations'),
     openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
-    history: (conversation, before) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}`),
+    history: (conversation, before, to) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}${before === undefined || to === undefined ? '' : `&to=${enc(to)}`}`),
     send: (conversation, clientId, body, replyTo, attachments) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body, replyTo, ...(attachments && attachments.length > 0 ? { attachments } : {}) }),
     sendSticker: (conversation, clientId, sticker, replyTo) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, sticker, replyTo }),
     createGroup: (title, members) => call('POST', '/api/conversations/group', { title, members }),
@@ -490,7 +508,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     callSdp: (id, type, sdp) => call('POST', `/api/calls/${enc(id)}/sdp`, { type, sdp }),
     callAlive: (id) => call('POST', `/api/calls/${enc(id)}/alive`),
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
-    media: (conversation, kind, before) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}`),
+    media: (conversation, kind, before, to) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}${to === undefined ? '' : `&to=${enc(to)}`}`),
     copyAttachment: (conversation, from) => call('POST', `/api/conversations/${enc(conversation)}/attachments/copy`, { from }),
     setPoster: (attachment, picture) => call('PUT', `/api/attachments/${enc(attachment)}/poster`, picture),
     search: (conversation, query) => call('GET', `/api/conversations/${enc(conversation)}/search?q=${enc(query)}`),

@@ -138,6 +138,26 @@ public static class GroupEndpoints
         return null;
     }
 
+    /// <summary>A group the owner may put new people in from an invite or an approval: one they lead or are a deputy of.</summary>
+    internal static Task<bool> OwnerMayAddTo(GomDbContext db, Guid group, Guid owner, CancellationToken ct) =>
+        db.Members.AnyAsync(m => m.ConversationId == group && m.UserId == owner && m.Role != GroupRole.Member
+            && db.Conversations.Any(c => c.Id == group && c.Kind == ConversationKind.Group), ct);
+
+    /// <summary>
+    /// A new person joins one of the owner's groups through the owner's invite or approval, as if the owner added them. When that
+    /// cannot be (the owner no longer leads it or is a deputy, it is full, or it banned them) nothing happens and nothing is said: the
+    /// account is still made. Call it inside the transaction; the notice it returns is published after the commit.
+    /// </summary>
+    internal static async Task<Message?> AdmitFromOwnerAsync(GomDbContext db, Guid group, Guid owner, Guid person, DateTimeOffset now, int maxMembers, CancellationToken ct)
+    {
+        await LockGroup(db, group, ct);
+        if (!await OwnerMayAddTo(db, group, owner, ct)) return null;
+        if (await db.Bans.AnyAsync(b => b.ConversationId == group && b.UserId == person, ct)) return null;
+        if (await db.Members.AnyAsync(m => m.ConversationId == group && m.UserId == person, ct)) return null;
+        if (await AdmitAsync(db, group, person, now, maxMembers, ct) is not null) return null;
+        return await Notices.Write(db, group, owner, NoticeKind.Added, person, "", now, ct);
+    }
+
     private static async Task<IResult> Leave(Guid id, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
@@ -153,10 +173,10 @@ public static class GroupEndpoints
         {
             // The leader hands over first. Alone in the group, there is nobody to hand over to: leaving ends it.
             if (everyone.Count > 1) return Error(StatusCodes.Status409Conflict, "leader_must_hand_over");
-            var files = await DeleteGroup(db, id, ct);
+            await CloseGroup(db, id, ct);
             await tx.CommitAsync(ct);
-            AttachmentFiles.Forget(blobs, files);
             live.ConversationsChanged(everyone);
+            AttachmentFiles.Forget(blobs, await PurgeGroup(db, id));
             return Results.NoContent();
         }
 
@@ -172,21 +192,57 @@ public static class GroupEndpoints
     internal static Task<int> LockGroup(GomDbContext db, Guid id, CancellationToken ct) =>
         db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
 
-    /// <summary>Takes a group and everything in it out of the database. Every key is Restrict, so this goes from the leaves inward.</summary>
-    internal static async Task<List<Guid>> DeleteGroup(GomDbContext db, Guid id, CancellationToken ct)
+    /// <summary>
+    /// The first step of taking a group out of the database, inside the caller's transaction with the group locked, and quick:
+    /// nobody is in it any more, so it is gone from every list and a send to it is refused; nothing else points at it but its
+    /// messages and uploads. <see cref="PurgeGroup"/> then takes those, after the commit.
+    /// </summary>
+    internal static async Task CloseGroup(GomDbContext db, Guid id, CancellationToken ct)
     {
-        // The uploads of the conversation, used or not; their files are removed after the commit.
-        var files = await db.Attachments.Where(a => a.ConversationId == id).Select(a => a.Id).ToListAsync(ct);
-        await db.Attachments.Where(a => a.ConversationId == id).ExecuteDeleteAsync(ct);
+        await db.StickerPackChats.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
+        // An invite that added people to it still works, without the group.
+        await db.Links.Where(l => l.GroupId == id).ExecuteUpdateAsync(s => s.SetProperty(l => l.GroupId, (Guid?)null), ct);
         await db.JoinRequests.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Bans.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
-        await db.Reactions.Where(r => db.Messages.Any(m => m.Id == r.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
         await db.Pins.Where(p => p.ConversationId == id).ExecuteDeleteAsync(ct);
-        await db.Hides.Where(h => db.Messages.Any(m => m.Id == h.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);
-        await db.Events.Where(e => e.ConversationId == id).ExecuteDeleteAsync(ct);
-        await db.Messages.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Members.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);
-        await db.Conversations.Where(c => c.Id == id).ExecuteDeleteAsync(ct);
+    }
+
+    /// <summary>
+    /// Takes a closed group's messages out, MessageTrim.Batch at a time, each in its own short transaction, then the group itself
+    /// with the group locked (a send that got in before it closed is taken with it). One transaction for all of it kept the group
+    /// locked for 45 s with 900,000 messages: sends to it waited, held every database connection, and the whole site stopped
+    /// answering (2026-11-28). Not cancelled when the page that asked goes away: it would leave half a group. Every key is Restrict,
+    /// so this goes from the leaves inward. Returns the files to remove once it is done.
+    /// </summary>
+    internal static async Task<List<Guid>> PurgeGroup(GomDbContext db, Guid id)
+    {
+        var ct = CancellationToken.None;
+        var files = new List<Guid>();
+        while (true)
+        {
+            var batch = await db.Messages.Where(m => m.ConversationId == id).OrderBy(m => m.Seq).Select(m => m.Id).Take(Uploads.MessageTrim.Batch).ToListAsync(ct);
+            if (batch.Count == 0) break;
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            files.AddRange((await Uploads.MessageTrim.DeleteMessages(db, batch, ct)).Select(a => a.Id));
+            await tx.CommitAsync(ct);
+            if (batch.Count < Uploads.MessageTrim.Batch) break;
+        }
+
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            await LockGroup(db, id, ct);
+            var late = await db.Messages.Where(m => m.ConversationId == id).Select(m => m.Id).ToListAsync(ct);
+            if (late.Count > 0) files.AddRange((await Uploads.MessageTrim.DeleteMessages(db, late, ct)).Select(a => a.Id));
+            // The uploads of the conversation not in a message, and its picture.
+            files.AddRange(await db.Attachments.Where(a => a.ConversationId == id).Select(a => a.Id).ToListAsync(ct));
+            if (await db.Conversations.Where(c => c.Id == id).Select(c => c.AvatarId).SingleOrDefaultAsync(ct) is { } picture) files.Add(picture);
+            await db.Attachments.Where(a => a.ConversationId == id).ExecuteDeleteAsync(ct);
+            await db.Events.Where(e => e.ConversationId == id).ExecuteDeleteAsync(ct);
+            await db.Members.Where(m => m.ConversationId == id).ExecuteDeleteAsync(ct);
+            await db.Conversations.Where(c => c.Id == id).ExecuteDeleteAsync(ct);
+            await tx.CommitAsync(ct);
+        }
         return files;
     }
 
@@ -411,10 +467,10 @@ public static class GroupEndpoints
         await LockGroup(db, id, ct);
         if (!await db.Members.AnyAsync(m => m.ConversationId == id && m.UserId == me && m.Role == GroupRole.Leader, ct)) return Error(StatusCodes.Status403Forbidden, "not_allowed");
         var everyone = await db.Members.Where(m => m.ConversationId == id).Select(m => m.UserId).ToListAsync(ct);
-        var files = await DeleteGroup(db, id, ct);
+        await CloseGroup(db, id, ct);
         await tx.CommitAsync(ct);
-        AttachmentFiles.Forget(blobs, files);
-        live.ConversationsChanged(everyone);
+        live.ConversationsChanged(everyone);   // gone from every list now; its messages go next
+        AttachmentFiles.Forget(blobs, await PurgeGroup(db, id));
         return Results.NoContent();
     }
 
