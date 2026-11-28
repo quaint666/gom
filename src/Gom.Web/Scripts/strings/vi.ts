@@ -11,7 +11,7 @@ export const vi = {
   /** Each page's title before " · Gom", by its script's name; a page not listed is just "Gom". */
   titles: {
     signin: 'Đăng nhập', join: 'Lời mời', signup: 'Xin tham gia', reset: 'Đặt lại mật khẩu', settings: 'Cài đặt', friends: 'Bạn bè',
-    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng', privacy: 'Chính sách quyền riêng tư', help: 'Hướng dẫn cài đặt',
+    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng', privacy: 'Chính sách quyền riêng tư', help: 'Hướng dẫn cài đặt', whatsnew: 'Có gì mới',
   },
   /** The emoji panel's groups (emoji-data.ts) and the sticker packs (stickers.ts), by key. */
   emojiGroups: {
@@ -84,6 +84,7 @@ export const vi = {
     alreadyFriends: 'Hai bạn đã là bạn bè.',
     youBlockedThem: 'Bạn đã chặn người này. Hãy bỏ chặn trước nếu muốn kết bạn.',
     notFriends: 'Chỉ nhắn tin được với bạn bè.',
+    ownerOnly: 'Chỉ chủ Gom mới đăng được ở đây.',
     cannotChatSelf: 'Bạn không thể nhắn tin cho chính mình.',
     emptyMessage: 'Hãy nhập nội dung tin nhắn.',
     invalidMessage: 'Tin nhắn có ký tự không hợp lệ.',
@@ -783,6 +784,10 @@ export const vi = {
     cancelEdit: 'Hủy chỉnh sửa',
     replyingTo: (name: string) => `Đang trả lời ${name}`,
     /** Who is typing in a group: the names shown (joined with ", ", `shown` of them), then how many more. */
+    /** The announcement channel: its name, the line under the name, and what stands where the message field would be. */
+    announcements: 'Thông báo',
+    announcementsSub: 'Chỉ chủ Gom đăng',
+    ownerOnlyPost: 'Chỉ chủ Gom đăng được ở đây.',
     typing: (names: string, _shown: number, others: number) => `${names}${others > 0 ? ` và ${others} người khác` : ''} đang nhập…`,
     /** In a one-to-one chat the header already names the person. */
     typingDirect: 'đang nhập…',
@@ -807,6 +812,59 @@ export const vi = {
     muteAlways: 'Cho đến khi được mở lại',
   },
   /** The public privacy policy (/privacy), required by Google Play; anyone can read it, signed in or not. */
+  /** What changed in each release (pages/whatsnew.ts). */
+  whatsNew: {
+    /** "Có gì mới": the page, and what changed in each release (newest first; the first is the latest, and Settings' row names it). */
+    title: 'Có gì mới',
+    lead: 'Những gì đã đổi ở từng bản của Gom, bản mới nhất ở trên.',
+    back: 'Về Cài đặt',
+    version: (version: string): string => `Bản ${version}`,
+    latest: (version: string): string => `Mới nhất: v${version}`,
+    releases: [
+      { version: '1.4.0', items: [
+        'Nhắn @tên hoặc @all để báo người trong nhóm; người được nhắc vẫn nhận thông báo dù đã tắt tiếng.',
+        'Hiện “đang nhập…” khi ai đó đang gõ.',
+        'Trên điện thoại: vuốt tin nhắn để trả lời, chạm đúp để thả tim.',
+        'Cảm xúc nằm ở mép bong bóng tin nhắn: bên trái với tin của bạn, bên phải với tin của người khác.',
+        'Chạm vào ảnh đại diện trong nhóm để xem người đó. Sao chép tin nhắn có thông báo nhỏ ngay trên ô nhập.',
+        'Kênh Thông báo của chủ Gom: mọi người đọc và thả cảm xúc, chỉ chủ Gom đăng.',
+        'Trang Có gì mới này.',
+      ] },
+      { version: '1.3.0', items: [
+        'Mỗi nhóm có ảnh riêng, do trưởng nhóm hoặc phó nhóm đặt.',
+        'Biểu tượng Gom mới.',
+        'Hướng dẫn cài đặt thông báo, micro và pin cho từng loại máy.',
+        'Mở tin nhắn cũ và tìm trong lịch sử dài nhanh hơn nhiều.',
+        'Người mới thấy trang chào mừng một lần.',
+        'Chủ Gom: trang quản lý chia thành năm phần; lời mời và việc duyệt yêu cầu có thể thêm người vào một nhóm; gói nhãn dán hiện cho mọi người hoặc chỉ người được chọn.',
+      ] },
+      { version: '1.2.1', items: [
+        'Tin nhắn có 2 đến 5 ảnh hiện được trên Firefox và Safari (iPhone).',
+        'Cuộc trò chuyện mở đúng ở tin mới nhất dù ảnh phía trên tải chậm.',
+        'Trích dẫn một tin chỉ có ảnh, video hoặc tệp nói rõ đó là gì; chạm vào trích dẫn để đến tin được trả lời.',
+      ] },
+      { version: '1.2.0', items: [
+        'Tin nhắn thoại, và nghe được tệp âm thanh ngay trong tin nhắn.',
+        'Đăng nhập hai bước (mã 6 số từ ứng dụng xác thực), tùy mỗi người.',
+        'Tin nhắn tự xóa sau 15 phút đến một tuần, theo từng cuộc trò chuyện.',
+        'Gói nhãn dán của chủ Gom làm từ ảnh riêng; tám màu chuyển sắc cho tin nhắn của bạn.',
+        'Ô tìm kiếm trên danh sách tìm cả bạn bè và nhóm.',
+        'Chuyển trang và mở menu mượt hơn; trên máy tính có dải ảnh của cuộc trò chuyện dưới trình xem ảnh.',
+        'Trong ứng dụng Android: màn hình cuộc gọi đến gọn hơn, hiện ảnh người gọi.',
+      ] },
+      { version: '1.1.0', items: [
+        'Gọi thoại giữa bạn bè, một đối một, trên web và trong ứng dụng Android.',
+        'Cuộc gọi đến đổ chuông trên mọi thiết bị của bạn; mỗi cuộc gọi để lại một dòng trong cuộc trò chuyện.',
+        'Gửi ảnh GIF từ bàn phím trong ứng dụng Android.',
+        'Số phiên bản hiện trong Cài đặt.',
+      ] },
+      { version: '1.0.0', items: [
+        'Bản đầu tiên: kết bạn, nhắn tin cá nhân và theo nhóm với tin nhắn đến ngay và gửi được khi mất mạng.',
+        'Trả lời, chuyển tiếp, ghim, thả cảm xúc, sửa và thu hồi tin nhắn, báo đã xem.',
+        'Nhóm có vai trò, mời và duyệt người vào; tiếng Việt, hoặc tiếng Anh tùy mỗi người.',
+      ] },
+    ],
+  },
   help: {
     /** The link to this page, on the pages before signing in, the welcome page and Settings. */
     link: 'Hướng dẫn cài đặt',

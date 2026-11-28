@@ -223,6 +223,7 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
             (var i, var f, > 0) => say.SentAttachments(i + f + job.Videos),
             _ => say.NewMessage,
         };
+        if (kind == ConversationKind.Announce) return (say.Announcements, what);
         return kind == ConversationKind.Group ? (groupTitle ?? say.Group, mention switch
         {
             Mention.You => say.MentionedYou(job.SenderName, what),

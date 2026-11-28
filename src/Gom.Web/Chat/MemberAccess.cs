@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Gom.Web.Chat;
 
 /// <summary>What a person may see of a conversation they are in.</summary>
-/// <param name="Kind">One-to-one or group.</param>
+/// <param name="Kind">One-to-one, group, or the announcement channel.</param>
 /// <param name="SeesAfter">They see only messages after this number: what was said before they joined, or before they deleted the
 /// conversation for themself, is not theirs to read.</param>
 /// <param name="Role">Plain member, deputy or leader (only a group has the last two).</param>

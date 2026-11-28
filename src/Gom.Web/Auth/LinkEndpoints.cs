@@ -201,6 +201,7 @@ public static class LinkEndpoints
 
         var started = AuthEndpoints.StartSession(http, db, user.Id, now, options.Value);
         await db.SaveChangesAsync(ct);
+        await Chat.Announcements.JoinAsync(db, user.Id, clock, ct);
         // The invite's group, if it still can take them; the account is made either way.
         var added = link.GroupId is { } group ? await Social.GroupEndpoints.AdmitFromOwnerAsync(db, group, link.CreatedBy, user.Id, now, chat.Value.MaxGroupMembers, ct) : null;
         await tx.CommitAsync(ct);

@@ -200,7 +200,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
         {
             e.ToTable("conversations", t =>
             {
-                t.HasCheckConstraint("ck_conversations_kind", "kind IN ('direct', 'group')");
+                t.HasCheckConstraint("ck_conversations_kind", "kind IN ('direct', 'group', 'announce')");
                 t.HasCheckConstraint("ck_conversations_direct_key", "(kind = 'direct') = (direct_key IS NOT NULL)");
                 t.HasCheckConstraint("ck_conversations_last_seq", "last_seq >= 0");
             });
@@ -210,6 +210,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.Property(x => x.Palette).HasMaxLength(Chat.Appearance.CodeMaxLength);
             e.Property(x => x.Pattern).HasMaxLength(Chat.Appearance.CodeMaxLength);
             e.HasIndex(x => x.DirectKey).IsUnique();
+            e.HasIndex(x => x.Kind).IsUnique().HasFilter("kind = 'announce'");   // one announcement channel
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatedBy).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.JoinApproval).HasDefaultValue(false);
         });

@@ -79,4 +79,11 @@
 /* pressed states: a touch answers at once */
 .item:active, .mi:active, .brand:active, .person:is(a):active { background: var(--press); }
 .ib:active, .clear:active { background: var(--press); }
-
+/* what's new: a release is a card that folds */
+.rel { margin: 0 0 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.rel > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; cursor: pointer; list-style: none; font-weight: 600; }
+.rel > summary::-webkit-details-marker { display: none; }
+.rel > summary::after { content: "›"; transform: rotate(90deg); color: var(--muted); font-size: 20px; }
+.rel[open] > summary::after { transform: rotate(-90deg); }
+.rel ul { margin: 0; padding: 0 14px 12px 32px; }
+.rel li { margin-block: 4px; }

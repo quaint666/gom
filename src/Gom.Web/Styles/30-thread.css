@@ -240,6 +240,7 @@ label.btn.busy { opacity: .6; pointer-events: none; }
 .emoji { min-inline-size: 44px; min-block-size: 44px; border: 0; border-radius: 22px; background: none; font-size: 24px; cursor: pointer; }
 .emoji:hover { background: var(--border); }
 .reacts { align-self: flex-end; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-block: 2px 4px; }
+.out .reacts { align-self: flex-start; justify-content: flex-start; }   /* on your own message the reaction sits at the bubble's left edge; on others' at the right */
 .chip { display: inline-flex; align-items: center; gap: 4px; min-block-size: 28px; padding-inline: 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 .chip.mine { border-color: var(--btn); background: var(--out); }
 

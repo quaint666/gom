@@ -766,6 +766,23 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task Typing_in_the_announcements_is_told_to_nobody()
+    {
+        var (_, oc) = await app.Owner();
+        var (_, mc) = await app.Member();
+        await using var db = app.Db.NewContext();
+        await Gom.Web.Chat.Announcements.EnsureAsync(db, app.Clock, default);
+        var channel = await db.Conversations.Where(c => c.Kind == Gom.Web.Data.ConversationKind.Announce).Select(c => c.Id).SingleAsync();
+        using var owner = await ConnectReady(oc);
+        using var member = await ConnectReady(mc);
+
+        await Typing(member, channel);
+        await AssertSilent(owner);
+        await Typing(owner, channel);
+        await AssertSilent(member);
+    }
+
+    [Fact]
     public async Task Typing_in_a_conversation_you_are_not_in_is_told_to_nobody_and_costs_the_socket_nothing()
     {
         var p = await NewPair();

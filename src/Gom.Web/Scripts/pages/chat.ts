@@ -313,6 +313,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ? html`<img src=${avatarUrl(picture)} alt="" loading="lazy" decoding="async">` : initials(name)}</div>`;
   /** The picture of someone in a group, from its member list (asked for when the group opens). */
   /** A conversation's picture: the other person's in a 1:1 chat, the group's own in a group. */
+  /** The announcement channel has no name of its own on the server: each person's language names it. */
+  const named = (c: Conversation): Conversation => c.kind === 'announce' ? { ...c, title: say.chat.announcements } : c;
+  /** A conversation's picture: a megaphone for the announcements, else its picture or initials. */
+  const chatAvatar = (c: Conversation | undefined, size: '' | 'sm' | 'xl' = ''): TemplateResult => c?.kind === 'announce'
+    ? html`<div class="av a1 ${size}" aria-hidden="true">${icons.megaphone()}</div>` : avatar(c?.title ?? '?', c ? pictureOf(c) : null, size);
   const pictureOf = (c: Conversation): string | null | undefined => c.kind === 'group' ? c.avatar : c.peer?.avatar;
   const memberPicture = (conversation: string, userId: string): string | null | undefined => people.get(conversation)?.find((m) => m.id === userId)?.avatar;
 
@@ -321,7 +326,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (last === null) return say.chat.noMessagesYet;
     if (last.deleted) return recalledText(last.sender.id === me?.id, c.kind === 'group' ? last.sender.displayName : null);
     if (last.call) return callPreview(last.call, me?.id ?? '');
-    const who = last.sender.id === me?.id ? `${say.common.you}: ` : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
+    const who = c.kind === 'announce' ? '' : last.sender.id === me?.id ? `${say.common.you}: ` : c.kind === 'group' ? `${last.sender.displayName}: ` : '';
     return who + (last.body !== '' ? last.body : last.sticker ? say.chat.sentSticker : last.attachment === 'image' ? say.chat.sentPicture : last.attachment === 'video' ? say.chat.sentVideo : last.attachment === 'file' ? say.chat.sentFile : '');
   }
 
@@ -330,7 +335,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}
       @contextmenu=${(e: MouseEvent) => onRowContext(e, c.id)}
       @pointerdown=${(e: PointerEvent) => rowPressStart(e, c.id)} @pointermove=${rowPressMove} @pointerup=${rowPressEnd} @pointercancel=${rowPressEnd} @pointerleave=${rowPressEnd}>
-      ${avatar(c.title ?? '?', pictureOf(c))}
+      ${chatAvatar(c)}
       <div class="im">
         <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label=${say.chat.pinnedMark}>${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.palette ? html`<span class="look-dot" data-palette=${c.palette} role="img" aria-label=${say.chat.ownLook}></span>` : nothing}${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv ${c.lastMessage?.call && missedByMe(c.lastMessage.call, me?.id ?? '') ? 'missed-call' : ''}">${c.lastMessage?.call ? (c.lastMessage.call.callerId === me?.id ? icons.callOut() : icons.callIn()) : nothing}${preview(c)}</span>
@@ -393,9 +398,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="emoji-row" role="group" aria-label=${say.chat.react}>${EMOJI.map((e) => html`
           <button class="emoji" type="button" data-react=${e} aria-label=${say.chat.reactWith(e)} @click=${() => void setReaction(m, e)}>${e}</button>`)}</div>
         <div class="items-grid">
-        ${menuItem('reply', icons.reply(), say.chat.reply, () => startReply(m))}
+        ${chatOf(m.conversationId)?.kind === 'announce' ? nothing : menuItem('reply', icons.reply(), say.chat.reply, () => startReply(m))}
         ${m.sticker ? nothing : menuItem('copy', icons.copy(), say.chat.copy, () => void copyText(m))}
-        ${pinned ? menuItem('unpin', icons.pin(), say.chat.unpin, () => void setPin(m, false)) : menuItem('pin', icons.pin(), say.chat.pin, () => void setPin(m, true))}
+        ${chatOf(m.conversationId)?.kind === 'announce' && me?.isOwner !== true ? nothing : pinned ? menuItem('unpin', icons.pin(), say.chat.unpin, () => void setPin(m, false)) : menuItem('pin', icons.pin(), say.chat.pin, () => void setPin(m, true))}
         ${m.body === '' && !m.sticker && kept.length === 0 ? nothing : menuItem('forward', icons.forward(), say.chat.forward, () => { menu = null; startForward(m.body, kept, m.sticker ?? null); })}
         ${m.attachments?.length === 1 && kept.length === 1 ? saveItem(kept[0]!) : nothing}
         ${mine && !m.sticker ? menuItem('edit', icons.pencil(), say.chat.edit, () => startEdit(m)) : nothing}
@@ -732,11 +737,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${m.sticker && !m.deleted ? 'sticker' : ''} ${!m.deleted && !m.sticker && !m.reply && !m.attachments?.length && onlyEmoji(m.body) ? 'jumbo' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''} ${mentionsMe(m) ? 'mentioned' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
+    const answerable = hasMenu && chatOf(m.conversationId)?.kind !== 'announce';   // nobody answers a message in the announcements
     // A phone: a round arrow that comes in beside the message as it is dragged (see swipeMove).
-    const swipeIcon = hasMenu && deps.coarsePointer() ? html`<span class="swipe-ico" aria-hidden="true">${icons.reply()}</span>` : nothing;
+    const swipeIcon = answerable && deps.coarsePointer() ? html`<span class="swipe-ico" aria-hidden="true">${icons.reply()}</span>` : nothing;
     const tools = hasMenu ? html`
       <div class="tools" role="group" aria-label=${say.chat.messageOptions}>
-        <button class="ib small" type="button" data-quick-reply aria-label=${say.chat.reply} @click=${() => startReply(m)}>${icons.reply()}</button>
+        ${answerable ? html`<button class="ib small" type="button" data-quick-reply aria-label=${say.chat.reply} @click=${() => startReply(m)}>${icons.reply()}</button>` : nothing}
         <button class="ib small menu-btn" type="button" data-menu aria-label=${say.chat.messageOptions} aria-haspopup="menu" aria-expanded=${menu?.id === m.id ? 'true' : 'false'}
           @click=${(e: MouseEvent) => { menu = menu?.id === m.id ? null : { id: m.id, confirming: false, at: pointAt(e) }; update(); }}>${icons.more()}</button>
       </div>` : nothing;
@@ -749,7 +755,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? html`<button class="av-btn" type="button" data-avatar=${m.sender.id} aria-label=${m.sender.displayName} @click=${() => openCard(m.sender.id)}>${avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm')}</button>` : html`<div class="sp"></div>`) : nothing}
         <div class="bcol">
-        <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => { pressStart(e, m, hasMenu); swipeStart(e, m, item.mine, hasMenu); }}
+        <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => { pressStart(e, m, hasMenu); swipeStart(e, m, item.mine, answerable); }}
           @pointermove=${(e: PointerEvent) => { pressMove(e); swipeMove(e); }} @pointerup=${(e: PointerEvent) => { swipeEnd(true); tapEnd(e, m); pressEnd(); }}
           @pointercancel=${() => { swipeEnd(false); pressEnd(); }} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply, m.conversationId) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body, m)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">${say.chat.edited}</span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? say.chat.sending : say.chat.waiting}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? say.chat.seen : say.chat.delivered}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
@@ -847,7 +853,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    * and a note that is sent after it. It goes as a new message from you, with nothing saying who wrote it first.
    */
   const forwardPanel = (f: NonNullable<typeof forwarding>) => {
-    const shown = shownChats().filter((c) => matches(c.title ?? '', f.q));
+    const shown = shownChats().filter((c) => (c.kind !== 'announce' || me?.isOwner === true) && matches(c.title ?? '', f.q));
     // A hidden one ticked stays in view after the search is cleared, so what is ticked is always seen.
     const found = (chats ?? []).filter((c) => c.hidden === true && (hiddenMatches(f.q).includes(c) || f.picked.includes(c.id)));
     const full = f.picked.length >= FORWARD_MAX;
@@ -860,7 +866,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       return html`<li><label class="fwd-row">
         <input type="checkbox" data-forward-pick=${c.id} .checked=${on} ?disabled=${f.busy || (!on && full)}
           @change=${(e: Event) => { const yes = (e.target as HTMLInputElement).checked; f.picked = yes ? [...f.picked.filter((x) => x !== c.id), c.id] : f.picked.filter((x) => x !== c.id); update(); }}>
-        ${avatar(c.title ?? '?', pictureOf(c))}<span>${c.title ?? '…'}</span></label></li>`;
+        ${chatAvatar(c)}<span>${c.title ?? '…'}</span></label></li>`;
     };
     return html`
       <dialog class="fwd" aria-labelledby="fwd-title" data-forward-panel data-modal @close=${cancel}
@@ -999,17 +1005,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const infoPanel = (c: Conversation, t: Thread, page = false) => html`
     <aside class="info" aria-label=${say.chat.info} data-info-panel>
       <div class="info-top">
-        ${avatar(c.title ?? '?', pictureOf(c), 'xl')}
+        ${chatAvatar(c, 'xl')}
         <h2>${c.title ?? '…'}</h2>
-        <small>${c.kind === 'group' ? say.common.members(c.memberCount ?? 0) : c.peer ? peerLine(c) : ''}</small>
+        <small>${c.kind === 'group' ? say.common.members(c.memberCount ?? 0) : c.kind === 'announce' ? say.chat.announcementsSub : c.peer ? peerLine(c) : ''}</small>
       </div>
       <div class="info-actions">
         <button class="btn secondary small" type="button" data-info-search @click=${() => { if (page) closeInfoPage(); searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} ${say.chat.searchMessages}</button>
         <button class="btn secondary small" type="button" data-info-mute @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()} ${isMuted(c) ? say.common.unmute : say.common.mute}</button>
-        <button class="btn secondary small" type="button" data-info-look @click=${() => { looking = { id: c.id, tab: 'colour', palette: c.palette ?? null, pattern: c.pattern ?? null, busy: false, error: null }; update(); }}>${icons.palette()} ${say.chat.look}</button>
+        ${c.kind === 'announce' ? nothing : html`<button class="btn secondary small" type="button" data-info-look @click=${() => { looking = { id: c.id, tab: 'colour', palette: c.palette ?? null, pattern: c.pattern ?? null, busy: false, error: null }; update(); }}>${icons.palette()} ${say.chat.look}</button>`}
       </div>
       ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}
-      ${disappearRow(c)}
+      ${c.kind === 'announce' ? nothing : disappearRow(c)}
       ${t.pins.length === 0 ? nothing : html`
         <h3>${say.chat.pinned}</h3>
         <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
@@ -1029,7 +1035,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           <a class="btn secondary small" href="/groups/${c.id}">${say.chat.manageGroup}</a>
           ${leaveView(c)}
         </div>`}
-      ${page ? infoFoot(c) : nothing}
+      ${page && c.kind !== 'announce' ? infoFoot(c) : nothing}
     </aside>`;
 
   /** In a one-to-one chat either person may set it (the server checks they are still friends); in a group, the leader and the deputies. */
@@ -1172,7 +1178,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="empty"><p class="lead">${say.chat.chatNotFound}</p></div>
       </section>`;
     const t = threadOf(openId);
-    const items = buildThread(t.messages, me?.id ?? '', t.lastReadAtOpen, t.unreadAtOpen, deps.now(), t.pending);
+    const items = buildThread(t.messages, c?.kind === 'announce' ? '' : me?.id ?? '', t.lastReadAtOpen, t.unreadAtOpen, deps.now(), t.pending);
     // Worked out once a drawing, not once a message: seenText looks through the whole thread.
     const group = c?.kind === 'group', seen = seenText(t, group), tick = tickOf(t, c);
     return html`
@@ -1180,10 +1186,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
           <a class="ib back" href="/" aria-label=${say.common.back} @click=${onBack}>${icons.back()}</a>
-          ${avatar(c?.title ?? '?', c ? pictureOf(c) : null)}
+          ${chatAvatar(c)}
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
-            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : nothing}</div>`}
+            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : c?.kind === 'announce' ? html`<small>${say.chat.announcementsSub}</small>` : nothing}</div>`}
           ${c?.disappearSeconds ? html`<span class="th-timer" role="img" data-disappear-on aria-label=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}
             title=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}>${icons.clock()}</span>` : nothing}
           ${callable(c) ? html`<button class="ib" type="button" data-call-start aria-label=${say.calls.call} @click=${() => callIn(c)}>${icons.call()}</button>` : nothing}
@@ -1216,7 +1222,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${c === undefined ? nothing : typingLine(c.id, c.kind)}
         ${mentionView()}
         ${c?.peer?.deleted ? html`
-          <p class="closed-note" role="status" data-peer-deleted>${say.chat.peerDeletedNote}</p>` : html`
+          <p class="closed-note" role="status" data-peer-deleted>${say.chat.peerDeletedNote}</p>` : c?.kind === 'announce' && me?.isOwner !== true ? html`
+          <p class="closed-note" role="status" data-owner-only>${say.chat.ownerOnlyPost}</p>` : html`
           ${t.editing === null ? nothing : html`
             <div class="replybar" data-editbar>
               <div class="rb-text"><b>${say.chat.editing}</b></div>
@@ -1344,7 +1351,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (filter.trim() === '') return html`<div class="items"><ul class="rows">${repeat(shownChats(), (c) => c.id, row)}</ul></div>`;
     const shown = visibleChats();
     const directs = shown.filter((c) => c.kind === 'direct');
-    const groups = shown.filter((c) => c.kind === 'group');
+    const groups = shown.filter((c) => c.kind === 'group' || c.kind === 'announce');
     const talkedTo = new Set((chats ?? []).map((c) => c.peer?.gomId).filter((g) => g !== undefined));
     const others = (friends ?? []).filter((f) => !talkedTo.has(f.gomId) && matches(`${f.displayName} ${f.gomId}`, filter));
     const found = hiddenMatches(filter);
@@ -1605,7 +1612,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** Tells the others that you are typing, at most every `TYPING_REPEAT_MS`. Not when you have turned read receipts off (it is the same switch). */
   function sayTyping(id: string): void {
-    if (me?.readReceipts === false) return;
+    if (me?.readReceipts === false || chatOf(id)?.kind === 'announce') return;   // nobody types in the announcements
     const now = deps.now().getTime();
     const last = typedAt.get(id);
     if (last !== undefined && now - last < TYPING_REPEAT_MS) return;
@@ -1747,7 +1754,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   async function refreshList(): Promise<void> {
     const result = await api.conversations();
     if (!result.ok) { handleFailure(result); return; }
-    chats = result.data;
+    chats = result.data.map(named);
     error = null;
     update();
   }
@@ -2053,14 +2060,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="ask"><button class="btn small" type="button" data-confirm-clear @click=${() => void clearConversation(c)}>${say.chat.deleteForMe}</button>
         <button class="btn secondary small" type="button" data-cancel-clear @click=${closeRowMenu}>${say.common.cancel}</button></div>` : html`
         <div class="items-grid">
-        ${c.pinned ? menuItem('unpin-chat', icons.pin(), say.chat.unpinChat, () => void setPinned(c, false)) : menuItem('pin-chat', icons.pin(), say.chat.pinChat, () => void setPinned(c, true))}
+        ${c.kind === 'announce' ? nothing : c.pinned ? menuItem('unpin-chat', icons.pin(), say.chat.unpinChat, () => void setPinned(c, false)) : menuItem('pin-chat', icons.pin(), say.chat.pinChat, () => void setPinned(c, true))}
         ${unread ? menuItem('mark-read', icons.checks(), say.chat.markRead, () => void markAllRead(c)) : menuItem('mark-unread', icons.unread(), say.chat.markUnread, () => void setMarkedUnread(c))}
         ${isMuted(c) ? menuItem('unmute-chat', icons.bell(), say.common.unmute, () => { rowMenu = null; onBell(c); })
           : menuItem('mute-chat', icons.bellOff(), say.common.mute, () => { rowMenu = null; onBell(c); })}
         ${friend === null ? nothing : html`<a class="mi" role="menuitem" href=${`/groups/new?with=${encodeURIComponent(friend)}`} data-group-with>${icons.users()}<span>${say.chat.groupWith(c.title)}</span></a>`}
-        ${c.hidden ? menuItem('unhide-chat', icons.eye(), say.chat.unhide, () => void rowAction(api.setHidden(c.id, false)))
+        ${c.kind === 'announce' ? nothing : html`${c.hidden ? menuItem('unhide-chat', icons.eye(), say.chat.unhide, () => void rowAction(api.setHidden(c.id, false)))
           : menuItem('hide-chat', icons.eyeOff(), say.chat.hide, () => void hideConversation(c))}
-        ${menuItem('clear-chat', icons.trash(), say.chat.clear, () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}
+        ${menuItem('clear-chat', icons.trash(), say.chat.clear, () => { rowMenu = { ...rowMenu!, confirming: true }; update(); root.querySelector<HTMLElement>('[data-confirm-clear]')?.focus(); }, true)}`}
         </div>
         <button class="btn secondary small close-menu" type="button" data-close-row-menu @click=${() => dismissMenu(root, closeRowMenu)}>${say.common.close}</button>`}
       </div>`;

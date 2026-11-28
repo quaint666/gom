@@ -80,6 +80,7 @@ public static class ConversationEndpoints
     {
         if (request.On is not { } on) return InvalidSwitch();
         var me = GomClaims.User(http.User);
+        if (await Announcing(db, id, ct)) return NotAllowed();
         var newest = await db.Conversations.Where(c => c.Id == id).Select(c => (long?)c.LastSeq).SingleOrDefaultAsync(ct);
         long? hidden = on ? newest : null;
         var changed = newest is null ? 0 : await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s.SetProperty(m => m.HiddenSeq, hidden), ct);
@@ -95,6 +96,7 @@ public static class ConversationEndpoints
     private static async Task<IResult> Clear(Guid id, HttpContext http, GomDbContext db, Chat.Live.LiveDelivery live, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
+        if (await Announcing(db, id, ct)) return NotAllowed();
         var newest = await db.Conversations.Where(c => c.Id == id).Select(c => (long?)c.LastSeq).SingleOrDefaultAsync(ct);
         if (newest is not { } upTo) return Results.NotFound();
         var changed = await db.Members.Where(m => m.ConversationId == id && m.UserId == me).ExecuteUpdateAsync(s => s
@@ -165,6 +167,11 @@ public static class ConversationEndpoints
         return Results.NoContent();
     }
 
+    /// <summary>The announcement channel is the same for everyone: it is not hidden, cleared or restyled by one person.</summary>
+    private static Task<bool> Announcing(GomDbContext db, Guid id, CancellationToken ct) => db.Conversations.AnyAsync(c => c.Id == id && c.Kind == ConversationKind.Announce, ct);
+
+    private static IResult NotAllowed() => Results.Json(new { error = "not_allowed" }, statusCode: StatusCodes.Status403Forbidden);
+
     private static IResult InvalidMute() => Results.Json(new { error = "invalid_mute" }, statusCode: StatusCodes.Status400BadRequest);
 
     /// <summary>
@@ -179,6 +186,7 @@ public static class ConversationEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
+        if (access.Kind == ConversationKind.Announce) return Results.Json(new { error = "not_allowed" }, statusCode: StatusCodes.Status403Forbidden);   // the same for everyone
         if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, id, me, ct))
             return Results.Json(new { error = "not_friends" }, statusCode: StatusCodes.Status403Forbidden);
 
@@ -234,8 +242,8 @@ public static class ConversationEndpoints
                         && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).Select(x => new { x.Seq, x.Id }).FirstOrDefault(),
             }).ToListAsync(ct);
 
-        // Pinned ones first, the latest pin on top. Hidden ones are listed too, marked, so a search can find them; the page leaves them out of view.
-        var ordered = rows.OrderByDescending(r => r.PinnedAt.HasValue).ThenByDescending(r => r.PinnedAt).ToList();
+        // The announcements first, then pinned ones, the latest pin on top. Hidden ones are listed too, marked, so a search can find them; the page leaves them out of view.
+        var ordered = rows.OrderByDescending(r => r.Kind == ConversationKind.Announce).ThenByDescending(r => r.PinnedAt.HasValue).ThenByDescending(r => r.PinnedAt).ToList();
         return Results.Ok(ordered.Select(r => new
         {
             id = r.Id,
@@ -266,7 +274,7 @@ public static class ConversationEndpoints
             pinned = r.PinnedAt is not null,
             markedUnread = r.MarkedUnread,
             // Hidden until something is said after it was hidden (a notice does not bring it back).
-            hidden = r.HiddenSeq is { } h && (r.Last is null || r.Last.Seq <= h),
+            hidden = r.Kind != ConversationKind.Announce && r.HiddenSeq is { } h && (r.Last is null || r.Last.Seq <= h),
             lastMessage = r.Last is null ? null : new
             {
                 seq = r.Last.Seq, body = r.Last.Body, createdAt = r.Last.CreatedAt, deleted = r.Last.Deleted,

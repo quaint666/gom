@@ -29,7 +29,8 @@ public class Block
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-public enum ConversationKind { Direct, Group }
+/// <summary>One-to-one, a group, or the announcement channel (one in all: the owner writes, everyone reads; see <see cref="Chat.Announcements"/>). Stored in lower case, at most 10 characters.</summary>
+public enum ConversationKind { Direct, Group, Announce }
 
 public class Conversation
 {

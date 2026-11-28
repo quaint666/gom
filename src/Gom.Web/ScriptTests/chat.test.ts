@@ -6491,3 +6491,124 @@ describe('chat: disappearing messages', () => {
     expect(row().querySelector<HTMLSelectElement>('select')!.value).toBe('');
   });
 });
+
+describe('chat: the announcements', () => {
+  const A = '33333333-3333-4333-8333-333333333333';
+  const owner = { ...me, id: 'u-owner', gomId: 'bi_nha', displayName: 'Chủ Gom', isOwner: true };
+  const said = (seq: number, body: string): ChatMessage => ({ id: `n${seq}`, seq, conversationId: A, clientId: `c${seq}`, sender: { id: 'u-owner', displayName: 'Chủ Gom' }, body, createdAt: at(9, seq) });
+  const news = (extra: Partial<Conversation> = {}): Conversation => ({
+    id: A, kind: 'announce', title: null, peer: null, lastSeq: 2, lastReadSeq: 0, unread: 2, memberCount: 5,
+    lastMessage: { seq: 2, body: 'Họp mặt Chủ nhật 8h', createdAt: at(9, 2), sender: { id: 'u-owner', displayName: 'Chủ Gom' } }, ...extra,
+  });
+  const open = (who: 'member' | 'owner' = 'member', path = `/c/${A}`) => start({
+    path, chats: [news(), chat(C2, 'Lan')], history: { [A]: [said(1, 'Gom bảo trì lúc 23h'), said(2, 'Họp mặt Chủ nhật 8h')] },
+    api: { me: vi.fn(async () => ok(who === 'owner' ? owner : me)) },
+  });
+  const menuOf = async (id: string) => { root.querySelector<HTMLButtonElement>(`[data-msg="${id}"] button[data-menu]`)!.click(); await flush(); };
+
+  it('is named in the list by the reader’s language, with a megaphone, and its preview names nobody', async () => {
+    open('member', '/');
+    await flush();
+    const row = root.querySelector(`[data-chat="${A}"]`)!;
+    expect(text(row.querySelector('.nm')!)).toBe('Thông báo');
+    expect(row.querySelector('.av svg')).not.toBeNull();   // a picture, not initials
+    expect(text(row.querySelector('.pv')!)).toBe('Họp mặt Chủ nhật 8h');
+    expect(root.querySelector(`[data-chat="${A}"] .badge`)!.textContent).toBe('2');
+  });
+
+  it('names nobody in the preview, not even the owner\u2019s own "Bạn:"', async () => {
+    start({ path: '/', chats: [news({ lastMessage: { seq: 2, body: 'Tôi đã đăng', createdAt: at(9, 2), sender: { id: 'u-owner', displayName: 'Chủ Gom' } } })], api: { me: vi.fn(async () => ok(owner)) } });
+    await flush();
+    expect(text(root.querySelector(`[data-chat="${A}"] .pv`)!)).toBe('Tôi đã đăng');
+  });
+
+  it('offers mute and mark-unread in its menu, and no pin, hide or delete', async () => {
+    open('member', '/');
+    await flush();
+    root.querySelector<HTMLButtonElement>(`[data-row-menu="${A}"]`)!.click();
+    await flush();
+    const menu = root.querySelector('[data-conversation-menu]')!;
+    expect(menu.querySelector('[data-mute-chat]')).not.toBeNull();
+    expect(menu.querySelector('[data-mark-read]')).not.toBeNull();   // it has 2 unread
+    for (const gone of ['pin-chat', 'unpin-chat', 'hide-chat', 'clear-chat']) expect(menu.querySelector(`[data-${gone}]`)).toBeNull();
+    expect(menu.querySelectorAll('.mi')).toHaveLength(2);
+  });
+
+  it('reads as a member: a line under the name, every message on the left, a note where the message field would be', async () => {
+    open('member');
+    await flush();
+    expect(text(root.querySelector('.th-title b')!)).toBe('Thông báo');
+    expect(text(root.querySelector('.th-title small')!)).toBe('Chỉ chủ Gom đăng');
+    expect(root.querySelector('form.composer')).toBeNull();
+    expect(text(root.querySelector('[data-owner-only]')!)).toBe('Chỉ chủ Gom đăng được ở đây.');
+    expect(root.querySelectorAll('.mrow.in')).toHaveLength(2);
+    expect(root.querySelector('.mrow.out')).toBeNull();
+  });
+
+  it('has the composer for the owner, with their own messages on the left like everyone’s', async () => {
+    open('owner');
+    await flush();
+    expect(root.querySelector('form.composer')).not.toBeNull();
+    expect(root.querySelector('[data-owner-only]')).toBeNull();
+    expect(root.querySelector('.mrow.out')).toBeNull();
+  });
+
+  it('lets a member react and copy but not answer or pin; the owner can pin', async () => {
+    open('member');
+    await flush();
+    expect(root.querySelector('[data-quick-reply]')).toBeNull();
+    await menuOf('n1');
+    expect(root.querySelector('[data-react]')).not.toBeNull();
+    expect(root.querySelector('button[data-copy]')).not.toBeNull();
+    expect(root.querySelector('button[data-reply]')).toBeNull();
+    expect(root.querySelector('button[data-pin], button[data-unpin]')).toBeNull();
+  });
+
+  it('lets the owner pin there', async () => {
+    open('owner');
+    await flush();
+    await menuOf('n1');
+    expect(root.querySelector('button[data-pin]')).not.toBeNull();
+    expect(root.querySelector('button[data-reply]')).toBeNull();
+  });
+
+  it('has no look or disappearing setting in its information, and no swipe arrow on a phone', async () => {
+    const h = open('member');
+    h.coarse.value = true;
+    await flush();
+    if (root.querySelector('[data-info-panel]') === null) { root.querySelector<HTMLButtonElement>('button[data-info]')!.click(); await flush(); }   // the panel's open state is kept between tests
+    const panel = root.querySelector('[data-info-panel]')!;
+    expect(text(panel.querySelector('h2')!)).toBe('Thông báo');
+    expect(text(panel.querySelector('.info-top small')!)).toBe('Chỉ chủ Gom đăng');
+    expect(panel.querySelector('[data-info-look]')).toBeNull();
+    expect(panel.querySelector('[data-info-disappear]')).toBeNull();
+    expect(panel.querySelector('[data-info-mute]')).not.toBeNull();
+    expect(root.querySelector('.swipe-ico')).toBeNull();
+  });
+
+  it('is not typed in: the owner typing sends nothing', async () => {
+    const h = open('owner');
+    await flush();
+    const field = root.querySelector<HTMLTextAreaElement>('.composer textarea')!;
+    field.value = 'đang viết';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(h.live.typing).not.toHaveBeenCalled();
+  });
+
+  it('is offered to forward into by the owner only', async () => {
+    // Forwarding from the announcements to a friend: the list holds the friend, and the channel only for the owner.
+    const forwardList = async (who: 'member' | 'owner') => {
+      start({
+        path: `/c/${A}`, chats: [news(), chat(C2, 'Lan')], history: { [A]: [said(1, 'Gom bảo trì lúc 23h')] },
+        api: { me: vi.fn(async () => ok(who === 'owner' ? owner : me)) },
+      });
+      await flush();
+      await menuOf('n1');
+      root.querySelector<HTMLButtonElement>('button[data-forward]')!.click();
+      await flush();
+      return [...root.querySelectorAll('[data-forward-pick]')].map((x) => x.getAttribute('data-forward-pick'));
+    };
+    expect(await forwardList('member')).toEqual([C2]);
+    expect(await forwardList('owner')).toEqual([A, C2]);
+  });
+});

@@ -34,7 +34,7 @@ the owner approves. Then fix in small batches, one branch and pull request each,
    cursor; limits per user (and a "typing" frame over its pace is dropped, never an error or a close); Origin on the upgrade; membership checked on delivery, so a person removed from a group stops
    receiving at once; what a socket does when the session ends (4401) and when the database is down.
 3. **Privacy.** The Gom ID appears only to self and friends; a sender is `{id, displayName}`; blocks hide; read receipts
-   are one switch both ways, and "typing…" follows it; a mention names a member by the name the group already sees, never a Gom ID; a removed or left member sees nothing after. Search every response DTO for a field that
+   are one switch both ways, and "typing…" follows it; a mention names a member by the name the group already sees, never a Gom ID; the announcement channel is the same for everyone and only the owner writes in it (send, upload, copy, pin); a removed or left member sees nothing after. Search every response DTO for a field that
    leaks.
 4. **Auth and sessions.** Cookie flags, Origin on every state change, no state change on GET, rate limits, what a locked
    or disabled account can still do, password and invite handling, session end on reset.

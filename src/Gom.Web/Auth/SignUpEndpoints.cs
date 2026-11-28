@@ -167,6 +167,7 @@ public static class SignUpEndpoints
         var (low, high) = Friendship.Order(owner, user);
         db.Friendships.Add(new Friendship { UserLow = low, UserHigh = high, RequestedBy = owner, Status = FriendStatus.Accepted, CreatedAt = now, AcceptedAt = now });
         await db.SaveChangesAsync(ct);
+        await Chat.Announcements.JoinAsync(db, user, clock, ct);
         var added = request?.Group is { } group ? await Social.GroupEndpoints.AdmitFromOwnerAsync(db, group, owner, user, now, chat.Value.MaxGroupMembers, ct) : null;
         await tx.CommitAsync(ct);
         if (added is not null)

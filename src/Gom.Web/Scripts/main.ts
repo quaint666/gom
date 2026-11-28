@@ -12,6 +12,7 @@ import { mountWelcome } from './pages/welcome.js';
 import { mountReset } from './pages/reset.js';
 import { mountPrivacy } from './pages/privacy.js';
 import { helpDevice, mountHelp } from './pages/help.js';
+import { mountWhatsNew } from './pages/whatsnew.js';
 import { mountSettings } from './pages/settings.js';
 import { takesCallsHere } from './calls/here.js';
 import { appPort, createAppPusher, type AppPusher } from './app.js';
@@ -241,6 +242,7 @@ if (root) {
     case 'group': mountGroup(root, api, go, token); break;
     case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? '', api, document.body.dataset['source'] ?? ''); break;
     case 'help': mountHelp(root, helpDevice(port !== undefined)); break;
+    case 'whatsnew': mountWhatsNew(root); break;
   }
 }
 
