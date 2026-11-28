@@ -1,7 +1,7 @@
 # Next session: where things stand and what comes next
 
 Written 2026-11-25, brought up to date on 2026-11-26 (after #133), 2026-11-27 (after #171) and 2026-11-28 (after #193,
-and again after #207).
+after #207, and again after #211).
 Claims are marked **[verified]** (seen in the code or real output), **[stated]** (someone said so; who is given), or
 **[inferred]** (reasoned, not tried).
 
@@ -11,9 +11,20 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
 - Open as a stack, to merge in this order, each on the one before: small fixes (#199), the owner's page split into
   Settings parts (#200), an invite or approval that adds to a group (#201), the welcome page (#202), group pictures
   (#203), sticker packs per chat (#204), the new mark (#205), the GitHub link, issue forms, `SECURITY.md` and the
-  versions line (#206), then this docs sweep (#207).
-- Three add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed) and #204
-  (`sticker_packs.everywhere`, `sticker_pack_chats`, `sticker_pack_people`).
+  versions line (#206), the docs sweep (#207), then a jump back in one request and fewer redraws (#208), the setup
+  guide at `/help` (#209), the search index, the 30-connection pool and the unread cap (#210), and trims and disbands
+  in batches (#211).
+- Four add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed), #204
+  (`sticker_packs.everywhere`, `sticker_pack_chats`, `sticker_pack_people`) and #210 (`pg_trgm`, `gom_unaccent`, the
+  trigram index on messages, then `ANALYZE messages`). #210's index reads every message once: seconds at Gom's size, about
+  30 s for 10 million, past the bundle's 30 s command limit; a database that large needs `Command Timeout=600` on the
+  bundle's connection string for that run **[verified: on a local copy with 10 million messages]**.
+- Measured on a local copy with 10 million messages, 21 people sending 30 a second with their sockets open (#208 to #211,
+  2026-11-28): sends 17 to 50 ms in the middle; a far search 7 to 25 ms (was 6.6 s); a trim of a million messages and a
+  disband of 800,000 with no failed send and at most 21 connections. Still slow and left so: the owner's storage page
+  (2.9 s) and trim previews (1 to 1.5 s), which count every message **[verified]**.
+- PostgreSQL on staging and production now has 512 MB: at 256 MB the 10-million test got it killed for memory, at 512 MB
+  not **[stated: H raised it, 2026-11-28; verified: the local test at both sizes]**.
 - The top of the stack passed 1,068 page tests and 1,173 server tests, and a pass in Chrome at phone and desktop size on
   the local app: the welcome page, the owner's parts, refusing, the tester link with its group, sticker choices, a group
   picture and its line, the 1:1 header, the backgrounds, the privacy page's source section **[verified, 2026-11-28]**.

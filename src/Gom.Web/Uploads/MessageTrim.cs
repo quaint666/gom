@@ -18,6 +18,9 @@ public static class MessageTrim
 {
     public sealed record TrimRequest(DateTimeOffset? Before, string? Where, string? Confirm);
     /// <summary><see cref="Messages"/> counts what people wrote (notices go too, uncounted); the pictures and files are those the messages carried.</summary>
+    /// <summary>The most messages one transaction of a trim or of the disappearing sweep deletes: about a fifth of a second each.</summary>
+    public const int Batch = 5000;
+
     public sealed record TrimResult(int Messages, StorageEndpoints.Totals Pictures, StorageEndpoints.Totals Files, int Conversations, StorageEndpoints.Totals Videos);
 
     private sealed record Rule(DateTimeOffset Before, string Where, Guid? Group);
@@ -102,24 +105,39 @@ public static class MessageTrim
         var removed = new Tally();
         foreach (var conversation in conversations)
         {
-            List<Guid> gone;
+            // Oldest first, Batch at a time, each in its own short transaction: the conversation is locked as a send locks it, so
+            // one transaction for all of it kept sends there waiting (26 s for 400,000 messages, 2026-11-28).
+            var deleted = 0;
+            while (true)
+            {
+                List<MessageTrim.GoneFile> attached;
+                int count, said;
+                await using (var tx = await db.Database.BeginTransactionAsync(ct))
+                {
+                    await GroupEndpoints.LockGroup(db, conversation, ct);
+                    var batch = await Matching(db, rule).Where(m => m.ConversationId == conversation).OrderBy(m => m.Seq)
+                        .Select(m => new { m.Id, Said = m.Notice == null }).Take(Batch).ToListAsync(ct);
+                    if (batch.Count == 0) break;
+                    attached = await DeleteMessages(db, [.. batch.Select(b => b.Id)], ct);
+                    await tx.CommitAsync(ct);
+                    (count, said) = (batch.Count, batch.Count(b => b.Said));
+                }
+                deleted += count;
+                messages += said;
+                foreach (var a in attached.Where(a => a.RemovedAt == null)) removed.Add(a.Kind, a.Size);
+                AttachmentFiles.Forget(blobs, [.. attached.Select(a => a.Id)]);
+                if (count < Batch) break;
+            }
+            if (deleted == 0) continue;
+
             Message notice;
             await using (var tx = await db.Database.BeginTransactionAsync(ct))
             {
                 await GroupEndpoints.LockGroup(db, conversation, ct);
-                var ids = await Matching(db, rule).Where(m => m.ConversationId == conversation).Select(m => m.Id).ToListAsync(ct);
-                if (ids.Count == 0) continue;
-                var said = await db.Messages.CountAsync(m => ids.Contains(m.Id) && m.Notice == null, ct);
-                var attached = await DeleteMessages(db, ids, ct);
-                gone = [.. attached.Select(a => a.Id)];
                 notice = await Notices.Write(db, conversation, owner, NoticeKind.MessagesTrimmed, null, rule.Before.ToString("O"), now, ct);
                 await tx.CommitAsync(ct);
-
-                messages += said;
-                foreach (var a in attached.Where(a => a.RemovedAt == null)) removed.Add(a.Kind, a.Size);
             }
             touched++;
-            AttachmentFiles.Forget(blobs, gone);
             await Notices.Publish(db, live, notice, ct);
         }
         return Results.Ok(new TrimResult(messages, removed.Of(AttachmentKind.Image), removed.Of(AttachmentKind.File), touched, removed.Of(AttachmentKind.Video)));

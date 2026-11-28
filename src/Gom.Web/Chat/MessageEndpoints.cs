@@ -117,8 +117,11 @@ public static class MessageEndpoints
         // The UPDATE locks the conversation row, so two sends queue up and the numbers follow the commit order.
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
-            var seq = (await db.Database.SqlQuery<long>(
-                $"UPDATE conversations SET last_seq = last_seq + 1, last_message_at = {now} WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct)).Single();
+            var numbered = await db.Database.SqlQuery<long>(
+                $"UPDATE conversations SET last_seq = last_seq + 1, last_message_at = {now} WHERE id = {id} RETURNING last_seq AS \"Value\"").ToListAsync(ct);
+            // Gone while this send waited for it (a group disbanded at that moment): not found, as for any send to it from now on.
+            if (numbered.Count == 0) return Results.NotFound();
+            var seq = numbered[0];
 
             // Disappearing messages: the deadline is fixed now, from the setting as it is at this moment (the row is locked by the UPDATE).
             var lasts = await db.Conversations.Where(c => c.Id == id).Select(c => c.DisappearSeconds).SingleAsync(ct);
