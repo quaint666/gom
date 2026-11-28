@@ -1,6 +1,5 @@
 import { createApi } from './api.js';
 import { mountAdd } from './pages/add.js';
-import { mountGroup } from './pages/group.js';
 import { mountNewGroup } from './pages/newgroup.js';
 import { mountFriends } from './pages/friends.js';
 import { mountChat, type ChatDeps, type OutboxItem } from './pages/chat.js';
@@ -239,7 +238,6 @@ if (root) {
     case 'friends': mountFriends(root, api, go, location.origin); break;
     case 'add': mountAdd(root, api, go, token); break;
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
-    case 'group': mountGroup(root, api, go, token); break;
     case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? '', api, document.body.dataset['source'] ?? ''); break;
     case 'help': mountHelp(root, helpDevice(port !== undefined)); break;
     case 'whatsnew': mountWhatsNew(root); break;

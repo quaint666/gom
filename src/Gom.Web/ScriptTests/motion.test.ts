@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dismissMenu, leave, leaveInfo, leaveThread } from '../Scripts/motion.js';
+import { dismissMenu, leave, leaveInfo, leaveSheet, leaveThread } from '../Scripts/motion.js';
 
 /** An element that animates the way a browser would: `finish()` ends the last animation started on it. */
 function animated() {
@@ -73,6 +73,22 @@ describe('moving out', () => {
     vi.restoreAllMocks(); media();
     const wide = vi.fn();
     leaveThread(animated().el, wide);
+    expect(wide).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the information page closing on a phone', () => {
+  it('slides out to the right, and goes at once on a wide screen', async () => {
+    media('(max-width: 1199.98px)');
+    const page = animated();
+    const done = vi.fn();
+    leaveSheet(page.el, done);
+    expect(page.runs[0]!.frames[1]).toEqual({ transform: 'translateX(40%)', opacity: 0 });
+    await page.finish();
+    expect(done).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks(); media();
+    const wide = vi.fn();
+    leaveSheet(animated().el, wide);
     expect(wide).toHaveBeenCalledTimes(1);
   });
 });

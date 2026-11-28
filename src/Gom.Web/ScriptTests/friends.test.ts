@@ -232,12 +232,61 @@ describe('friends page', () => {
     tray('minh'); await flush();
     const menu = root.querySelector<HTMLElement>('[data-row-actions]')!;
     expect(menu.getAttribute('aria-label')).toBe('Tùy chọn cho Minh');
-    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => text(b))).toEqual(['Xóa bạn', 'Chặn']);
-    expect(document.activeElement).toBe(menu.querySelector('[data-unfriend]'));
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => text(b))).toEqual(['Nhắn tin', 'Tạo nhóm với Minh', 'Xóa bạn', 'Chặn']);
+    expect(document.activeElement).toBe(menu.querySelector('[data-message]'));
     root.querySelector<HTMLElement>('[data-scrim]')!.click(); await flush();
     expect(root.querySelector('[data-row-actions]')).toBeNull();
     expect(document.activeElement).toBe(root.querySelector('[data-friend="minh"] button[data-more]'));
     expect(a.unfriend).not.toHaveBeenCalled();
+  });
+
+  describe('a friend\'s menu from a long press, a right-click and its choices', () => {
+    const press = (type: string, x = 5, y = 5) => root.querySelector('[data-friend="minh"]')!.dispatchEvent(
+      Object.assign(new Event(type, { bubbles: true }), { pointerType: 'touch', clientX: x, clientY: y }));
+    const menuOpen = () => root.querySelector('[data-row-actions]') !== null;
+
+    it('opens after a finger is held for a second, and not before', async () => {
+      vi.useFakeTimers();
+      try {
+        mount(); await vi.advanceTimersByTimeAsync(0);
+        press('pointerdown');
+        await vi.advanceTimersByTimeAsync(900);
+        expect(menuOpen()).toBe(false);
+        await vi.advanceTimersByTimeAsync(150);
+        expect(menuOpen()).toBe(true);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it.each([['lifted', 'pointerup'], ['scrolling', 'pointermove']])('does not open when the finger is %s first', async (_n, type) => {
+      vi.useFakeTimers();
+      try {
+        mount(); await vi.advanceTimersByTimeAsync(0);
+        press('pointerdown');
+        press(type, 5, type === 'pointermove' ? 40 : 5);
+        await vi.advanceTimersByTimeAsync(1500);
+        expect(menuOpen()).toBe(false);
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('opens on a right-click, with the browser\'s own menu held back', async () => {
+      mount(); await flush();
+      const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
+      root.querySelector('[data-friend="minh"]')!.dispatchEvent(e);
+      await flush();
+      expect(e.defaultPrevented).toBe(true);
+      expect(menuOpen()).toBe(true);
+    });
+
+    it('"Nhắn tin" opens the one-to-one chat and "Tạo nhóm với" starts a group with them', async () => {
+      const go = vi.fn();
+      const a = api({ openDirect: vi.fn(async () => ok({ id: 'd1' })) });
+      mountFriends(root, a, go, 'https://gom.test'); await flush();
+      tray('minh'); await flush(); choose('message'); await flush();
+      expect(a.openDirect).toHaveBeenCalledWith('minh');
+      expect(go).toHaveBeenCalledWith('/c/d1');
+      tray('minh'); await flush(); choose('group-with'); await flush();
+      expect(go).toHaveBeenLastCalledWith('/groups/new?with=minh');
+    });
   });
 
   it('asks only under the friend you tapped, not under the others', async () => {

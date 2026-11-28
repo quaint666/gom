@@ -1,7 +1,7 @@
 # Next session: where things stand and what comes next
 
 Written 2026-11-25, brought up to date on 2026-11-26 (after #133), 2026-11-27 (after #171) and 2026-11-28 (after #193,
-and again for release 1.3.0, for the 1.4.0 stack, for what H added to it, and after the 1.4.0 release, and for 1.5.0, on 2026-11-29).
+and again for release 1.3.0, for the 1.4.0 stack, for what H added to it, and after the 1.4.0 release, for 1.5.0 and for the group-panel stack, on 2026-11-29).
 Claims are marked **[verified]** (seen in the code or real output), **[stated]** (someone said so; who is given), or
 **[inferred]** (reasoned, not tried).
 
@@ -13,10 +13,18 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
   bubble's edge, double tap to heart, swipe to reply, "is typing", mentions, the announcement channel ("Thông báo"),
   "Có gì mới", the copy toast and the group avatar that opens a card; migrations `Mentions` and `Announcements`. It
   passes 1,147 page tests and 1,252 server tests. Release 1.3.0 (#199 to #211, `v1.3.0`) ran in production before it.
-- Release 1.5.0 (#233, the release pull request after it) is two looks: reactions drawn as Messenger does (a round badge
+- Release 1.5.0 (#233 and #234, both merged 2026-11-29; `403d503` is the merge of #234) is two looks: reactions drawn as Messenger does (a round badge
   on the bubble's bottom corner) and the call screens without the old "Gom" label and logo, on the web and in the app
   (`CallScreen.kt`, so it needs `gom-1.5.0.apk`). H chose to release it alone so the app's call screen updates
-  **[stated: H, 2026-11-29]**. Seen in Chrome at phone width only.
+  **[stated: H, 2026-11-29]**. Seen in Chrome at phone width only. `gom-1.5.0.apk` is built (versionCode 10500; emulator
+  pass clean: no crash in logcat) and uploaded **[verified]**; the deploys and the tag `v1.5.0` on `403d503` wait for H.
+- Work after 1.5.0, stacked as #235 to #240 on `main` (2026-11-29, H's list): phone menus are list sheets (#235); a
+  friend's menu opens from a long press or right-click and offers "Nhắn tin" and "Tạo nhóm với …" (#236); the 1:1
+  header's picture opens the card, a group's name and picture open its information, the people icon is gone, and the info
+  page slides in and out (#237); a group's information is edited in place, in the panel, 340 px wide (#238); "Quản lý
+  nhóm", disbanding and the deletion of the `/groups/{id}` page (#239); these docs (#240). Seen in Chrome at desktop and
+  phone width on a local app **[verified]**; they need `gom-1.6.0.apk` for the phone sheets to show in the app **[inferred:
+  they are web changes, the WebView loads them]**. 1,138 page tests and the server's page tests pass.
 - Four add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed), #204
   (`sticker_packs.everywhere`, `sticker_pack_chats`, `sticker_pack_people`) and #210 (`pg_trgm`, `gom_unaccent`, the
   trigram index on messages, then `ANALYZE messages`). #210's index reads every message once: seconds at Gom's size, about
@@ -44,9 +52,10 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
-0. **Release 1.5.0** (`docs/releases.md`): the release pull request, then the emulator pass (the call screen is in the
-   app), `gom-1.5.0.apk` on the build VM (start and stop it with vmctl; delete the older APKs, though the `gomci` login
-   cannot, so H does; never open the netrc), staging, production, and the tag on H's word.
+0. **Release 1.5.0** (`docs/releases.md`): staging, production, then the tag `v1.5.0` on `403d503` and the GitHub release
+   ("Gom 1.5.0", web live, Android app not on Google Play yet, no APK attached), on H's word. Then **release 1.6.0** for
+   #235 to #240 (a minor: new things for people; its pull request is #241), with its emulator pass and `gom-1.6.0.apk` (start and stop the build VM
+   with vmctl; the `gomci` login cannot delete older APKs, so H does; never open the netrc).
 1. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
    bundle in a closed test (12 testers for 14 days, `docs/testers.md`), the listing and declarations, then production.
    Uploading from Gradle with a service account limited to test tracks comes after.
@@ -65,8 +74,6 @@ Each is discussed first (design, decisions, what cannot be verified), then built
    limit and a stored copy; title, picture and description, no price (a campaign price would go stale). Operations'
    check of what the container can reach on the host's own network comes first **[stated: operations]**.
    Link previews for any address were built once and removed in #61; their worker is in the git history.
-
-Raised, not changed: a group's page says "Trưởng nhóm" while the chat panel says "Nhóm trưởng".
 
 Not being built [H, 2026-11-25]: a cache for reads or message search. Measured instead (2026-11-28): reads were fast; what
 was slow got its own fix (#208, #210, #211).
@@ -135,6 +142,11 @@ the queue.
 
 ## 4. Not verified yet
 
+- The group panel, the list sheets and the friends' long press on a real phone and in the app's WebView; the panel between
+  900 and 1199 px (the info page now shows there); the handle on a sheet is drawn, not draggable; a picture chosen from a
+  phone's own picker for a group; a request waiting in "Quản lý nhóm" and a ban were covered by tests, not seen in a
+  browser. Seen: Chrome at 1500 and 390 px wide (rest, members, the "⋯" menu, the add dialog, "Quản lý nhóm", the
+  disband question, and a 404 at `/groups/{id}`).
 - The reaction badge on a phone's own browser and in the app's page, with three or more reactions wrapping, and the call screen
   without its label on the emulator (the app's change is untested; the web's is seen in Chrome only).
 - The announcement channel and "Có gì mới" on a real phone, and an announcement's notification (its title and the owner's

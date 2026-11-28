@@ -283,8 +283,11 @@ label.btn.busy { opacity: .6; pointer-events: none; }
 .menu p { text-align: center; }
 .menu .ask { display: flex; gap: 8px; justify-content: center; }
 .menu .emoji-row { justify-content: space-around; padding: 6px 4px; border-radius: 26px; background: var(--bg); }
-.items-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-.mi { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; min-block-size: 64px; padding: 8px 2px; border: 0; border-radius: 10px; background: none; color: var(--text); font: inherit; font-size: 12px; text-align: center; cursor: pointer; }
+/* A phone's menu is a sheet from the foot: a handle, then one row to a line, the icon in a column of its own (as Messenger's are). */
+.menu::before { content: ""; align-self: center; flex: none; inline-size: 40px; block-size: 4px; border-radius: 2px; background: var(--border); }
+.items-grid { display: grid; grid-template-columns: 1fr; gap: 0; }
+.mi { display: flex; align-items: center; justify-content: flex-start; gap: 16px; min-block-size: 56px; padding: 8px 12px; border: 0; border-radius: 10px; background: none; color: var(--text); font: inherit; font-size: 16px; text-align: start; cursor: pointer; }
+.mi .i { inline-size: 24px; block-size: 24px; flex: none; }
 .mi:hover { background: var(--hover); }
 a.mi { text-decoration: none; }
 .mi .i { color: var(--link); }
@@ -297,8 +300,8 @@ a.mi { text-decoration: none; }
   }
   .menu .emoji-row { gap: 0; padding: 2px; }
   .menu .emoji { min-inline-size: 32px; min-block-size: 36px; font-size: 20px; }
-  .items-grid { grid-template-columns: 1fr; gap: 0; }
-  .mi { flex-direction: row; justify-content: flex-start; gap: 12px; min-block-size: 36px; padding: 6px 10px; font-size: 14px; text-align: start; }
+  .menu::before { display: none; }
+  .mi { gap: 12px; min-block-size: 36px; padding: 6px 10px; font-size: 14px; }
   .mi .i { inline-size: 18px; block-size: 18px; }
   .menu .close-menu { display: none; }
 }

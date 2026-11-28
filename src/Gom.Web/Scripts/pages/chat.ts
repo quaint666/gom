@@ -8,7 +8,8 @@ import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, ini
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { menuItem, menuPoint, placeMenu as placeMenuAt } from '../menu.js';
-import { dismissMenu, leaveInfo, leaveThread, motionAllowed } from '../motion.js';
+import { createGroupPane } from '../chat/grouppane.js';
+import { dismissMenu, leaveInfo, leaveSheet, leaveThread, motionAllowed } from '../motion.js';
 import { swipeReady, swiped, SWIPE_READY } from '../swipe.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { markedExcerpt, matches, type Run } from '../search.js';
@@ -247,8 +248,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let card: { userId: string; data: PersonCard | null; error: Failure | null; asking: 'unfriend' | 'block' | null; busy: boolean } | null = null;
   /** What each card said last: the "N nhóm chung" under a 1:1 conversation's name comes from here. */
   const cards = new Map<string, PersonCard>();
-  /** The question before leaving a group from the side panel. */
-  let leaving = false;
   /** The conversation whose "for how long" choices are open, when its bell was tapped to mute it. */
   let muting: string | null = null;
   /** The colour and background being chosen for a conversation (null: each person's own), from its info panel. */
@@ -318,6 +317,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** A conversation's picture: a megaphone for the announcements, else its picture or initials. */
   const chatAvatar = (c: Conversation | undefined, size: '' | 'sm' | 'xl' = ''): TemplateResult => c?.kind === 'announce'
     ? html`<div class="av a1 ${size}" aria-hidden="true">${icons.megaphone()}</div>` : avatar(c?.title ?? '?', c ? pictureOf(c) : null, size);
+  /** The header's picture: in a one-to-one chat it opens the person's card, in a group the group's information, as the name beside it does. */
+  const headAvatar = (c: Conversation | undefined) => c?.peer ? html`<button class="av-btn" type="button" data-peer-card-pic aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>${chatAvatar(c)}</button>`
+    : c?.kind === 'group' ? html`<button class="av-btn" type="button" data-group-info-pic aria-label=${say.chat.groupInfo} @click=${openGroupInfo}>${chatAvatar(c)}</button>` : chatAvatar(c);
   const pictureOf = (c: Conversation): string | null | undefined => c.kind === 'group' ? c.avatar : c.peer?.avatar;
   const memberPicture = (conversation: string, userId: string): string | null | undefined => people.get(conversation)?.find((m) => m.id === userId)?.avatar;
 
@@ -920,10 +922,16 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** A phone: opens the information page as a step in the history, so the back gesture closes it. */
   function openInfoPage(): void {
     if (openId === null) return;
-    infoPage = true; infoClearing = false; leaving = false;
+    infoPage = true; infoClearing = false;
     deps.nav.push(`/c/${openId}#info`);
     void loadPeople(openId); void loadMedia(openId, 'image'); void loadMedia(openId, 'file');
     update();
+  }
+
+  /** The group's name or picture: beside the thread on a wide screen the panel opens (and stays), below that the page does. */
+  function openGroupInfo(): void {
+    if (typeof matchMedia !== 'function' || matchMedia('(min-width: 1200px)').matches) { if (!infoOpen) setInfo(true); return; }
+    openInfoPage();
   }
 
   /** The page's own back button: a step back in the history, as the back gesture is (the step back closes it). */
@@ -1002,41 +1010,50 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
    * The panel beside a thread: who it is, ways to find things in it, what is pinned, and who is in a group. As a phone's page
    * (`page`) it also ends with what the list's menu offers for the conversation.
    */
-  const infoPanel = (c: Conversation, t: Thread, page = false) => html`
+  const infoPanel = (c: Conversation, t: Thread, page = false) => {
+    paneNow = { t, page };
+    return html`
     <aside class="info" aria-label=${say.chat.info} data-info-panel>
+      ${c.kind === 'group' ? groupPane.view(c) : html`
       <div class="info-top">
         ${chatAvatar(c, 'xl')}
         <h2>${c.title ?? '…'}</h2>
-        <small>${c.kind === 'group' ? say.common.members(c.memberCount ?? 0) : c.kind === 'announce' ? say.chat.announcementsSub : c.peer ? peerLine(c) : ''}</small>
+        <small>${c.kind === 'announce' ? say.chat.announcementsSub : c.peer ? peerLine(c) : ''}</small>
       </div>
+      ${infoActions(c)}
+      ${c.kind === 'announce' ? nothing : disappearRow(c)}
+      ${infoPins()}
+      ${media(c.id)}`}
+      ${page && c.kind !== 'announce' && !(c.kind === 'group' && groupPane.inSub()) ? infoFoot(c) : nothing}
+    </aside>`;
+  };
+
+  /** What the panel is drawing now (the group pane asks for the thread's pins and whether this is a phone's page). */
+  let paneNow: { t: Thread; page: boolean } | null = null;
+
+  /** Search in the conversation, mute and its colours, with how long a mute lasts. */
+  const infoActions = (c: Conversation) => html`
       <div class="info-actions">
-        <button class="btn secondary small" type="button" data-info-search @click=${() => { if (page) closeInfoPage(); searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} ${say.chat.searchMessages}</button>
+        <button class="btn secondary small" type="button" data-info-search @click=${() => { if (paneNow?.page) closeInfoPage(); searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} ${say.chat.searchMessages}</button>
         <button class="btn secondary small" type="button" data-info-mute @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()} ${isMuted(c) ? say.common.unmute : say.common.mute}</button>
         ${c.kind === 'announce' ? nothing : html`<button class="btn secondary small" type="button" data-info-look @click=${() => { looking = { id: c.id, tab: 'colour', palette: c.palette ?? null, pattern: c.pattern ?? null, busy: false, error: null }; update(); }}>${icons.palette()} ${say.chat.look}</button>`}
       </div>
-      ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}
-      ${c.kind === 'announce' ? nothing : disappearRow(c)}
-      ${t.pins.length === 0 ? nothing : html`
+      ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}`;
+
+  const infoPins = () => (paneNow?.t.pins.length ?? 0) === 0 ? nothing : html`
         <h3>${say.chat.pinned}</h3>
-        <ul class="info-list">${t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
+        <ul class="info-list">${paneNow!.t.pins.map((p) => html`<li><button type="button" class="result" data-info-pin=${p.id} @click=${() => void reveal(p)}>
           <b>${p.sender.id === me?.id ? say.common.you : p.sender.displayName}</b><small>${listTime(p.createdAt, deps.now())}</small>
-          <span>${clip(p.body, CLIP.pin)}</span></button></li>`)}</ul>`}
-      ${media(c.id)}
-      ${c.kind !== 'group' ? nothing : html`
-        <h3>${say.chat.membersHeading}</h3>
-        <ul class="info-list">${(people.get(c.id) ?? []).map((m) => {
-          const inside = html`${avatar(m.displayName, m.avatar, 'sm')}
-            <span>${m.displayName}${m.isMe ? say.chat.youSuffix : ''}</span>${m.role === 'leader' ? html`<span class="tag">${say.common.leader}</span>` : m.role === 'deputy' ? html`<span class="tag">${say.common.deputy}</span>` : nothing}`;
-          return html`<li data-info-member=${m.id}>${m.isMe ? html`<div class="info-person">${inside}</div>`
-            : html`<button class="info-person" type="button" data-open-card=${m.id} @click=${() => openCard(m.id)}>${inside}</button>`}</li>`;
-        })}</ul>
-        <div class="info-actions">
-          <a class="btn secondary small" href="/groups/${c.id}#add" data-info-add>${icons.users()} ${say.chat.addMembers}</a>
-          <a class="btn secondary small" href="/groups/${c.id}">${say.chat.manageGroup}</a>
-          ${leaveView(c)}
-        </div>`}
-      ${page && c.kind !== 'announce' ? infoFoot(c) : nothing}
-    </aside>`;
+          <span>${clip(p.body, CLIP.pin)}</span></button></li>`)}</ul>`;
+
+  /** A group's information: its own pane (members, changes in place), with the shared pieces handed in. */
+  const groupPane = createGroupPane({
+    root, api, update, openCard: (id) => openCard(id),
+    members: (id) => people.get(id), setMembers: (id, m) => { people.set(id, m); },
+    refreshList: () => refreshList(), leave: (id) => leaveGroup(id), outside: (close) => outside(close),
+    actions: (c) => infoActions(c), pins: () => infoPins(), media: (c) => html`${media(c.id)}`, disappear: (c) => disappearRow(c),
+    disband: (id) => disbandGroup(id),
+  });
 
   /** In a one-to-one chat either person may set it (the server checks they are still friends); in a group, the leader and the deputies. */
   const maySetDisappear = (c: Conversation): boolean => c.kind === 'direct'
@@ -1092,25 +1109,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function peerLine(c: Conversation): string {
     if (c.peer?.deleted) return say.chat.accountDeletedShort;
     return c.peer?.gomId ? `@${c.peer.gomId}` : '';
-  }
-
-  /**
-   * Leaving the group from the side panel, after a question. The leader of a group with others in it hands over first (on the
-   * group's page); a leader alone in it ends the group by leaving, and the question says so.
-   */
-  function leaveView(c: Conversation): TemplateResult {
-    const members = people.get(c.id);
-    const mine = members?.find((m) => m.isMe);
-    if (mine?.role === 'leader' && (members?.length ?? 0) > 1) return html`
-      <button class="btn secondary small" type="button" disabled data-info-leave>${say.common.leaveGroup}</button>
-      <p class="hint" data-info-leader-note>${say.chat.leaderMustHandOver}</p>`;
-    if (!leaving) return html`<button class="btn secondary small danger-text" type="button" data-info-leave @click=${() => { leaving = true; update(); }}>${say.common.leaveGroup}</button>`;
-    return html`
-      <div class="ask" role="group" aria-labelledby="leave-q" data-info-leave-ask>
-        <p id="leave-q"><b>${say.chat.leaveQ}</b>${mine?.role === 'leader' ? html`<br><span class="hint">${say.chat.lastOneDeletes}</span>` : nothing}</p>
-        <button class="btn small" type="button" data-info-leave-yes @click=${() => void leaveGroup(c.id)}>${say.common.leaveGroup}</button>
-        <button class="btn secondary small" type="button" data-info-leave-no @click=${() => { leaving = false; update(); }}>${say.chat.stay}</button>
-      </div>`;
   }
 
   /** Someone's card: who they are to you, what you can do, and the groups you are both in. */
@@ -1186,10 +1184,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
           <a class="ib back" href="/" aria-label=${say.common.back} @click=${onBack}>${icons.back()}</a>
-          ${chatAvatar(c)}
+          ${headAvatar(c)}
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
-            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : c?.kind === 'announce' ? html`<small>${say.chat.announcementsSub}</small>` : nothing}</div>`}
+            : c?.kind === 'group' ? html`<button class="th-title as-link" type="button" data-group-info aria-label=${say.chat.groupInfo} @click=${openGroupInfo}>
+              <b>${c.title ?? '…'}</b><small>${say.common.members(c.memberCount ?? 0)}</small></button>`
+            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'announce' ? html`<small>${say.chat.announcementsSub}</small>` : nothing}</div>`}
           ${c?.disappearSeconds ? html`<span class="th-timer" role="img" data-disappear-on aria-label=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}
             title=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}>${icons.clock()}</span>` : nothing}
           ${callable(c) ? html`<button class="ib" type="button" data-call-start aria-label=${say.calls.call} @click=${() => callIn(c)}>${icons.call()}</button>` : nothing}
@@ -1197,7 +1197,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
           <button class="ib wide" type="button" data-mute aria-pressed=${isMuted(c) ? 'true' : 'false'}
             aria-label=${isMuted(c) ? say.chat.unmuteAgain : say.common.mute} @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()}</button>`}
-          ${c?.kind === 'group' ? html`<a class="ib wide" href="/groups/${c.id}" aria-label=${say.chat.groupInfo}>${icons.users()}</a>` : nothing}
           ${c === undefined ? nothing : html`<button class="ib info-btn" type="button" data-info aria-label=${say.chat.info} aria-pressed=${infoOpen ? 'true' : 'false'} @click=${toggleInfo}>${icons.info()}</button>
             <button class="ib info-page-btn" type="button" data-info-page-open aria-label=${say.chat.info} @click=${openInfoPage}>${icons.info()}</button>`}
         </header>
@@ -1394,6 +1393,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       ${openId !== null && infoPage && chatOf(openId) !== undefined ? infoSheet(chatOf(openId)!, threadOf(openId)) : nothing}
       ${rowMenuView()}
       ${muteView()}
+      ${openId !== null && chatOf(openId)?.kind === 'group' ? groupPane.overlays(chatOf(openId)!) : nothing}
       ${appFileView()}
       ${lookView()}
       ${undoView()}
@@ -1691,7 +1691,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     t.stick = true;
     t.jump = t.unreadAtOpen > 0;
     t.below = 0;
-    leaving = false;
     picker = null;
     update();
     deps.clearNotifications?.(id);
@@ -2468,15 +2467,25 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     open(result.data.id);
   }
 
-  async function leaveGroup(id: string): Promise<void> {
-    const result = await api.leaveGroup(id);
-    leaving = false;
-    if (!result.ok) { handleFailure(result); return; }
+  /** The group is no longer yours (you left it, or it was ended): out of the list, and back to the list. */
+  function groupGone(id: string): void {
     chats = (chats ?? []).filter((c) => c.id !== id);
     deps.nav.push('/');
     openId = null;
     update();
     void refreshList();
+  }
+
+  async function leaveGroup(id: string): Promise<void> {
+    const result = await api.leaveGroup(id);
+    if (!result.ok) { handleFailure(result); return; }
+    groupGone(id);
+  }
+
+  async function disbandGroup(id: string): Promise<void> {
+    const result = await api.disband(id);
+    if (!result.ok) { handleFailure(result); return; }
+    groupGone(id);
   }
 
   // ---- searching
@@ -3016,7 +3025,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   };
 
   // Back from the information page (its own step in the history) only closes it.
-  deps.nav.onPop(() => { infoPage = false; const id = idFromPath(); if (id === null) toList(); else show(id); });
+  deps.nav.onPop(() => {
+    const done = () => { infoPage = false; const id = idFromPath(); if (id === null) toList(); else show(id); };
+    // Stepping back from the information page slides it out, as it slid in.
+    if (infoPage && idFromPath() === openId) leaveSheet(root.querySelector('.info-sheet'), done); else done();
+  });
   document.addEventListener('visibilitychange', () => {
     if (!deps.visible()) return;
     live?.retryNow();

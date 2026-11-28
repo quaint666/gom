@@ -44,6 +44,19 @@ Between releases, staging may run newer code than its number says: the number mo
 
 ## What's new
 
+### 1.6.0 (29 November 2026)
+
+A group's information is edited where it is shown, and menus on a phone look like Messenger's (#235 to #240). These are
+web changes: the app's page loads them, so `gom-1.6.0.apk` carries the new version number, not new native code.
+
+**Changes**
+- A group's name, picture, members, requests and bans are changed in its information panel (beside the thread from 1200
+  px, a page below), in small dialogs; the people icon and the page `/groups/{id}` are gone (#237, #238, #239).
+- In a one-to-one chat the header's picture opens the person's card, as the name does (#237).
+- On a phone every menu is a list sheet with a handle (#235).
+- A finger held on a friend, or a right-click, opens a menu with "Nhắn tin" and "Tạo nhóm với …" above "Xóa bạn" and
+  "Chặn" (#236).
+- The information page slides in and out on a phone, and shows from 900 px, where it had no door (#237).
 ### 1.5.0 (29 November 2026)
 
 Two looks changed after 1.4.0 (#233). The web side is live on deploy; the Android app needs this build for the call

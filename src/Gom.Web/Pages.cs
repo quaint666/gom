@@ -64,7 +64,6 @@ public static class Pages
         new($"/settings/{{section:regex(^({string.Join('|', SettingsSections)})$)}}", "settings"),
         new("/friends", "friends"),
         new("/groups/new", "newgroup"),
-        new("/groups/{id}", "group"),
         new("/add/{gomId}", "add"),
         new("/privacy", "privacy"),
         new("/help", "help"),
