@@ -13,8 +13,8 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
   (#203), sticker packs per chat (#204), the new mark (#205), the GitHub link, issue forms, `SECURITY.md` and the
   versions line (#206), then this docs sweep (#207).
 - Three add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed) and #204
-  (`sticker_packs.everywhere`, `sticker_pack_chats`).
-- The top of the stack passed 1,068 page tests and 1,172 server tests, and a pass in Chrome at phone and desktop size on
+  (`sticker_packs.everywhere`, `sticker_pack_chats`, `sticker_pack_people`).
+- The top of the stack passed 1,068 page tests and 1,173 server tests, and a pass in Chrome at phone and desktop size on
   the local app: the welcome page, the owner's parts, refusing, the tester link with its group, sticker choices, a group
   picture and its line, the 1:1 header, the backgrounds, the privacy page's source section **[verified, 2026-11-28]**.
 - The Android app changes in #200 (the fallback paths of owner notices) and #205 (the launcher and status-bar icons):
