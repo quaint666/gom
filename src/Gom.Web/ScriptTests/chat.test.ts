@@ -15,6 +15,8 @@ const me = { id: 'u-mom', gomId: 'mom', displayName: 'Mẹ', isOwner: false };
 const C1 = '11111111-1111-4111-8111-111111111111';
 const C2 = '22222222-2222-4222-8222-222222222222';
 const NOW = new Date(Date.UTC(2026, 11, 10, 12, 30));
+/** How far the page's clock has moved on from NOW (a test sets it to make time pass). */
+const later = { ms: 0 };
 const at = (hh: number, mm = 0) => new Date(Date.UTC(2026, 11, 10, hh, mm)).toISOString();
 
 const msg = (seq: number, from: 'mom' | 'minh', body = `m${seq}`, when = at(10, seq), conv = C1): ChatMessage => ({
@@ -32,7 +34,7 @@ const withLast = (m: ChatMessage, extra: Partial<Conversation> = {}) =>
 interface Harness {
   api: ReturnType<typeof fakeApi>;
   handlers: () => LiveHandlers;
-  live: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; sync: ReturnType<typeof vi.fn>; retryNow: ReturnType<typeof vi.fn> };
+  live: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; sync: ReturnType<typeof vi.fn>; typing: ReturnType<typeof vi.fn>; retryNow: ReturnType<typeof vi.fn> };
   nav: { path: string; push: ReturnType<typeof vi.fn>; replace: ReturnType<typeof vi.fn>; back: ReturnType<typeof vi.fn<() => void>>; pop: () => void; history: string[] };
   go: ReturnType<typeof vi.fn>;
   visible: { value: boolean };
@@ -48,6 +50,7 @@ interface Harness {
 
 function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; recordVoice?: ChatDeps['recordVoice']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages']; calls?: ChatDeps['calls']; callsOn?: boolean } = {}): Harness {
   const history = opts.history ?? {};
+  later.ms = 0;
   const api = fakeApi({
     me: vi.fn(async () => ok(opts.callsOn ? { ...me, calls: true } : me)),
     // A fresh copy each time, as a real server gives: the page changes what it is handed.
@@ -56,7 +59,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     ...(opts.api ?? {}),
   });
   let captured: LiveHandlers | null = null;
-  const live = { start: vi.fn(), stop: vi.fn(), sync: vi.fn(), retryNow: vi.fn() };
+  const live = { start: vi.fn(), stop: vi.fn(), sync: vi.fn(), typing: vi.fn(), retryNow: vi.fn() };
   let popCallback: () => void = () => undefined;
   // Like the browser's history: the path is location.pathname (no #part), and going back fires the pop handler.
   const nav = {
@@ -93,7 +96,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     outbox: () => ({ load: () => outbox.items.map((i) => ({ ...i })), save: (items) => { outbox.items = items.map((i) => ({ ...i })); outbox.saves++; } }),
     live: (h) => { captured = h; return live as unknown as LiveControl; },
     nav: { path: () => nav.path, push: nav.push, replace: nav.replace, back: nav.back, onPop: (cb) => { popCallback = cb; } },
-    now: () => NOW,
+    now: () => new Date(NOW.getTime() + later.ms),
     newId: () => `new-${++n}`,
     coarsePointer: () => coarse.value,
     visible: () => visible.value,
@@ -2880,6 +2883,447 @@ describe('chat: pinned messages', () => {
   });
 });
 
+describe('chat: mentions', () => {
+  const G = '44444444-4444-4444-8444-444444444444';
+  const group = (extra: Partial<Conversation> = {}): Conversation => ({ id: G, kind: 'group', title: 'Nhóm nhà', peer: null, lastSeq: 2, lastReadSeq: 2, unread: 0, lastMessage: null, memberCount: 3, ...extra });
+  const person = (id: string, displayName: string, isMe = false) => ({ id, displayName, isMe, isFriend: false, gomId: null, request: 'none' as const, role: 'member' as const });
+  const members = [person('u-mom', 'Mẹ', true), person('u-minh', 'Minh'), person('u-lan', 'Lan Đào')];
+  const open = (messages: ChatMessage[] = [msg(1, 'minh', 'chào cả nhà', at(10), G)], chats: Conversation[] = [group()], api: Record<string, unknown> = {}) =>
+    start({ path: `/c/${G}`, chats, history: { [G]: messages }, api: { groupMembers: vi.fn(async () => ok(members)), person: vi.fn(async () => ok({ id: 'u-lan', displayName: 'Lan Đào', gomId: null, friend: 'none', commonGroups: [] })), ...api } });
+  const field = () => root.querySelector<HTMLTextAreaElement>('.composer textarea')!;
+  const typeAt = async (value: string, caret = value.length) => {
+    const f = field();
+    f.value = value;
+    f.setSelectionRange(caret, caret);
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+  };
+  const choices = () => [...root.querySelectorAll('[data-mention-pick]')].map((b) => b.getAttribute('data-mention-pick'));
+  const press = async (key: string) => { field().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); await flush(); };
+
+  it('opens a list when "@" starts a word in a group: "everyone" first, then the other members', async () => {
+    open();
+    await flush();
+    await typeAt('@');
+    expect(choices()).toEqual(['all', 'u-minh', 'u-lan']);   // not yourself
+    expect(root.querySelector('[data-mention-list]')!.getAttribute('aria-label')).toBe('Nhắc đến ai đó');
+    expect(text(root.querySelector('[data-mention-pick="all"]')!)).toContain('Báo cho cả nhóm');
+  });
+
+  it('narrows the list as you type, with no accents or capitals needed', async () => {
+    open();
+    await flush();
+    await typeAt('ơi @DAO');
+    expect(choices()).toEqual(['u-lan']);
+    await typeAt('ơi @mi');
+    expect(choices()).toEqual(['u-minh']);
+    await typeAt('ơi @al');
+    expect(choices()).toEqual(['all']);
+  });
+
+  it('opens only for an "@" that begins a word, with the name straight after it', async () => {
+    open();
+    await flush();
+    await typeAt('mail a@');
+    expect(choices()).toEqual([]);
+    await typeAt('@ ');
+    expect(choices()).toEqual([]);
+    await typeAt('xin chào, @');
+    expect(choices()).toHaveLength(3);
+    await typeAt('(@');
+    expect(choices()).toHaveLength(3);
+  });
+
+  it('opens in no one-to-one chat', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 1 })], history: { [C1]: [msg(1, 'minh')] }, api: {} });
+    await flush();
+    await typeAt('@');
+    expect(root.querySelector('[data-mention-list]')).toBeNull();
+  });
+
+  it('puts "@" and the name where the "@" was when one is chosen, and sends that member with the message', async () => {
+    const h = open();
+    await flush();
+    await typeAt('ơi @Mi nhé', 'ơi @Mi'.length);
+    root.querySelector<HTMLButtonElement>('[data-mention-pick="u-minh"]')!.click();
+    await flush();
+    expect(field().value).toBe('ơi @Minh  nhé');
+    expect(root.querySelector('[data-mention-list]')).toBeNull();
+    expect(field().selectionStart).toBe('ơi @Minh '.length);
+    field().form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(h.api.send).toHaveBeenCalledWith(G, expect.any(String), 'ơi @Minh  nhé', undefined, undefined, ['u-minh']);
+  });
+
+  it('chooses with the keyboard: the arrows move, Enter takes, Escape closes', async () => {
+    open();
+    await flush();
+    await typeAt('@');
+    await press('ArrowDown');
+    expect(root.querySelector('.mi-pick.sel')!.getAttribute('data-mention-pick')).toBe('u-minh');
+    await press('ArrowDown'); await press('ArrowDown');
+    expect(root.querySelector('.mi-pick.sel')!.getAttribute('data-mention-pick')).toBe('all');   // round again
+    await press('ArrowUp');
+    expect(root.querySelector('.mi-pick.sel')!.getAttribute('data-mention-pick')).toBe('u-lan');
+    await press('Enter');
+    expect(field().value).toBe('@Lan Đào ');
+    await typeAt('@');
+    await press('Escape');
+    expect(root.querySelector('[data-mention-list]')).toBeNull();
+  });
+
+  it('inserts "@all" for the everyone row, and sends no member for it', async () => {
+    const h = open();
+    await flush();
+    await typeAt('@');
+    root.querySelector<HTMLButtonElement>('[data-mention-pick="all"]')!.click();
+    await flush();
+    expect(field().value).toBe('@all ');
+    field().form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(h.api.send).toHaveBeenCalledWith(G, expect.any(String), '@all', undefined);
+  });
+
+  it('sends no member whose name was taken out of the words again', async () => {
+    const h = open();
+    await flush();
+    await typeAt('@');
+    root.querySelector<HTMLButtonElement>('[data-mention-pick="u-minh"]')!.click();
+    await flush();
+    await typeAt('thôi, không nhắc nữa');
+    field().form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(h.api.send).toHaveBeenCalledWith(G, expect.any(String), 'thôi, không nhắc nữa', undefined);
+  });
+
+  it('keeps the mentions of a message you change, and sends the change with them', async () => {
+    const mine = { ...msg(1, 'mom', '@Minh ơi', at(10), G), mentions: ['u-minh'] };
+    const h = open([mine]);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    await typeAt('@Minh ơi, đến chưa');
+    field().form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(h.api.edit).toHaveBeenCalledWith(G, 'id1', '@Minh ơi, đến chưa', ['u-minh']);
+  });
+
+  it('lights a mention of you, outlines the message, and makes someone else\'s a name that opens their card', async () => {
+    const h = open([
+      { ...msg(1, 'minh', 'ơi @Mẹ xem nhé', at(10), G), mentions: ['u-mom'] },
+      { ...msg(2, 'minh', 'còn @Lan Đào thì sao', at(10), G), mentions: ['u-lan'] },
+    ]);
+    await flush();
+    const mine = root.querySelector('[data-msg="id1"]')!;
+    expect(mine.classList.contains('mentioned')).toBe(true);
+    expect(text(mine.querySelector('[data-mention-me]')!)).toBe('@Mẹ');
+    const other = root.querySelector('[data-msg="id2"]')!;
+    expect(other.classList.contains('mentioned')).toBe(false);
+    expect(other.querySelector('[data-mention-me]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-msg="id2"] [data-mention="u-lan"]')!.click();
+    await flush();
+    expect(h.api.person).toHaveBeenCalledWith('u-lan');
+  });
+
+  it('lights "@all" for everyone but the writer, and leaves plain a name that is no longer a member or no longer matches', async () => {
+    open([
+      { ...msg(1, 'minh', '@all họp tối nay', at(10), G), mentionsAll: true },
+      { ...msg(2, 'mom', '@all ăn cơm', at(10), G), mentionsAll: true },
+      { ...msg(3, 'minh', 'ơi @Cũ Tên', at(10), G), mentions: ['u-gone'] },
+    ]);
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('mentioned')).toBe(true);
+    expect(root.querySelector('[data-msg="id1"] [data-mention-me]')).not.toBeNull();
+    expect(root.querySelector('[data-msg="id2"]')!.classList.contains('mentioned')).toBe(false);   // your own
+    expect(root.querySelector('[data-msg="id3"] .mention')).toBeNull();
+    expect(text(root.querySelector('[data-msg="id3"] .txt')!)).toContain('@Cũ Tên');
+  });
+
+  it('does not light a name that is only part of a longer word', async () => {
+    open([{ ...msg(1, 'minh', '@Mẹo hay, a@Mẹ.com', at(10), G), mentions: ['u-mom'] }]);
+    await flush();
+    expect(root.querySelector('[data-msg="id1"] .mention')).toBeNull();
+  });
+
+  it('marks the list with an "@" beside the unread count until the chat is read', async () => {
+    start({ path: '/', chats: [group({ unread: 3, lastReadSeq: 0, mentioned: true, firstMentionSeq: 2, firstMentionId: 'id2' })], history: { [G]: [msg(1, 'minh', 'a', at(10), G), msg(2, 'minh', 'b', at(10), G)] }, api: {} });
+    await flush();
+    expect(root.querySelector(`[data-chat="${G}"] [data-mentioned]`)).not.toBeNull();
+    expect(root.querySelector(`[data-chat="${G}"] .badge:not(.at)`)).not.toBeNull();
+  });
+
+  it('marks the list for a mention that arrives in a chat that is not open, and not for one that does not name you', async () => {
+    const h = start({ path: '/', chats: [group({ lastSeq: 1 })], history: {}, api: {} });
+    await flush();
+    h.handlers().event(G, created({ ...msg(2, 'minh', 'xin chào', at(10), G) }));
+    await flush();
+    expect(root.querySelector(`[data-chat="${G}"] [data-mentioned]`)).toBeNull();
+    h.handlers().event(G, created({ ...msg(3, 'minh', '@Mẹ ơi', at(10), G), mentions: ['u-mom'] }));
+    await flush();
+    expect(root.querySelector(`[data-chat="${G}"] [data-mentioned]`)).not.toBeNull();
+  });
+
+  it('opens at a chat with an unread mention with an arrow that takes you to it, once, and the list mark goes with reading', async () => {
+    const h = open([msg(1, 'minh', 'a', at(10), G), { ...msg(2, 'minh', '@Mẹ ơi', at(10), G), mentions: ['u-mom'] }, msg(3, 'minh', 'c', at(10), G)],
+      [group({ lastSeq: 3, lastReadSeq: 0, unread: 3, mentioned: true, firstMentionSeq: 2, firstMentionId: 'id2' })]);
+    await flush();
+    const arrow = root.querySelector<HTMLButtonElement>('[data-to-mention]')!;
+    expect(arrow).not.toBeNull();
+    expect(arrow.getAttribute('aria-label')).toBe('Đến tin nhắn có nhắc đến bạn');
+    arrow.click();
+    await flush();
+    expect(root.querySelector('[data-to-mention]')).toBeNull();
+    expect(root.querySelector('[data-msg="id2"]')!.classList.contains('found')).toBe(true);
+    expect(h.api.markRead).toHaveBeenCalled();
+    expect(root.querySelector(`[data-chat="${G}"] [data-mentioned]`)).toBeNull();   // read now: the list's mark is gone
+  });
+
+  it('shows no arrow when the chat has no unread mention', async () => {
+    open();
+    await flush();
+    expect(root.querySelector('[data-to-mention]')).toBeNull();
+  });
+});
+
+describe('chat: who is typing', () => {
+  const base = [msg(1, 'minh', 'tin của Minh')];
+  const open = (kind: 'direct' | 'group' = 'group', meExtra: Record<string, unknown> = {}) => {
+    const chats = [chat(C1, 'Minh', { lastSeq: 1, kind })];
+    return start({ path: `/c/${C1}`, chats, history: { [C1]: base }, api: { me: vi.fn(async () => ok({ ...me, ...meExtra })) } });
+  };
+  const line = () => root.querySelector('[data-typing]')!;
+  const typing = (h: Harness, name: string, id = `u-${name}`) => h.handlers().typing?.(C1, id, name);
+  const field = () => root.querySelector<HTMLTextAreaElement>('.composer textarea')!;
+  const type = (text: string) => { const f = field(); f.value = text; f.dispatchEvent(new Event('input', { bubbles: true })); };
+
+  it('shows who is typing in a group, in the order they began, above the message field', async () => {
+    const h = open();
+    await flush();
+    expect(text(line())).toBe('');
+    typing(h, 'Bảo'); typing(h, 'Mai');
+    await flush();
+    expect(text(line())).toBe('Bảo, Mai đang nhập…');
+    expect(line().compareDocumentPosition(root.querySelector('.composer')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    typing(h, 'Bảo');   // a repeat keeps its place
+    await flush();
+    expect(text(line())).toBe('Bảo, Mai đang nhập…');
+  });
+
+  it('gives at most three names, then how many more', async () => {
+    const h = open();
+    await flush();
+    for (const n of ['Bảo', 'Mai', 'Lan']) typing(h, n);
+    await flush();
+    expect(text(line())).toBe('Bảo, Mai, Lan đang nhập…');
+    typing(h, 'Hà'); typing(h, 'Sơn');
+    await flush();
+    expect(text(line())).toBe('Bảo, Mai, Lan và 2 người khác đang nhập…');
+  });
+
+  it('says only "đang nhập…" in a one-to-one chat, where the header names them', async () => {
+    const h = open('direct');
+    await flush();
+    typing(h, 'Minh');
+    await flush();
+    expect(text(line())).toBe('đang nhập…');
+  });
+
+  it('stops showing someone after five seconds with no sign, and a new sign starts the five again', async () => {
+    const h = open();
+    await flush();
+    typing(h, 'Bảo');
+    await flush();
+    const first = h.timers.filter((t) => t.ms === 5000 && t.live);
+    expect(first).toHaveLength(1);
+    typing(h, 'Bảo');                       // the timer is replaced, not added to
+    expect(h.timers.filter((t) => t.ms === 5000 && t.live)).toHaveLength(1);
+    expect(first[0]!.live).toBe(false);
+    h.timers.filter((t) => t.ms === 5000 && t.live)[0]!.fn();
+    await flush();
+    expect(text(line())).toBe('');
+  });
+
+  it('stops showing someone the moment their message arrives', async () => {
+    const h = open();
+    await flush();
+    typing(h, 'Minh', 'u-minh');
+    await flush();
+    expect(text(line())).not.toBe('');
+    h.handlers().event(C1, { seq: 2, kind: 'created', message: msg(2, 'minh', 'xong rồi') });
+    await flush();
+    expect(text(line())).toBe('');
+  });
+
+  it('ignores your own typing, and shows nothing for a conversation that is not open', async () => {
+    const h = open();
+    await flush();
+    typing(h, 'Mẹ', 'u-mom');
+    h.handlers().typing?.('another-chat', 'u-x', 'Xa');
+    await flush();
+    expect(text(line())).toBe('');
+  });
+
+  it('shows nothing, and keeps no room for it, when you have turned read receipts off', async () => {
+    const h = open('group', { readReceipts: false });
+    await flush();
+    typing(h, 'Bảo');
+    await flush();
+    expect(root.querySelector('[data-typing]')).toBeNull();
+  });
+
+  it('tells the others that you are typing, at most every three seconds, and not for an empty field', async () => {
+    const h = open();
+    await flush();
+    type('');
+    expect(h.live.typing).not.toHaveBeenCalled();
+    type('x');
+    expect(h.live.typing).toHaveBeenCalledWith(C1);
+    type('xy'); type('xyz');
+    expect(h.live.typing).toHaveBeenCalledTimes(1);
+    later.ms = 3000;
+    type('xyzw');
+    expect(h.live.typing).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not say you are typing with read receipts off', async () => {
+    const h = open('group', { readReceipts: false });
+    await flush();
+    type('x');
+    expect(h.live.typing).not.toHaveBeenCalled();
+  });
+
+  it('does not say you are typing while you change a sent message', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 1, kind: 'group' })], history: { [C1]: [msg(1, 'mom', 'của mình')] }, api: {} });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    type('đã sửa');
+    expect(h.live.typing).not.toHaveBeenCalled();
+  });
+});
+
+describe('chat: swipe to reply on a phone', () => {
+  const base = [msg(1, 'minh', 'tin của Minh'), msg(2, 'mom', 'tin của mẹ')];
+  const open = (coarse = true) => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: base }, api: {} });
+    h.coarse.value = coarse;
+    return h;
+  };
+  const bub = (id: string) => root.querySelector(`[data-msg="${id}"] .bub`)!;
+  const rowOf = (id: string) => root.querySelector<HTMLElement>(`[data-msg="${id}"]`)!;
+  const at = (type: string, x: number, y = 100, pointerType = 'touch') =>
+    Object.assign(new Event(type, { bubbles: true }), { pointerType, clientX: x, clientY: y });
+  const drag = (id: string, dx: number, dy = 0, lift = true) => {
+    bub(id).dispatchEvent(at('pointerdown', 200));
+    for (let i = 1; i <= 10; i++) bub(id).dispatchEvent(at('pointermove', 200 + dx * i / 10, 100 + dy * i / 10));
+    if (lift) bub(id).dispatchEvent(at('pointerup', 200 + dx, 100 + dy));
+  };
+  const replying = () => root.querySelector('[data-replybar]');
+
+  it('replies to someone else\'s message dragged right past the ready distance', async () => {
+    open();
+    await flush();
+    drag('id1', 80);
+    await flush();
+    expect(replying()).not.toBeNull();
+    expect(text(replying()!)).toContain('tin của Minh');
+  });
+
+  it('replies to your own message dragged left', async () => {
+    open();
+    await flush();
+    drag('id2', -80);
+    await flush();
+    expect(replying()).not.toBeNull();
+    expect(text(replying()!)).toContain('tin của mẹ');
+  });
+
+  it('does not reply when it is let go before the ready distance', async () => {
+    open();
+    await flush();
+    drag('id1', 40);
+    await flush();
+    expect(replying()).toBeNull();
+    expect(rowOf('id1').classList.contains('swiping')).toBe(false);
+  });
+
+  it('does not reply for a drag the wrong way, or one that is mostly up or down (a scroll)', async () => {
+    open();
+    await flush();
+    drag('id1', -90);
+    drag('id2', 90);
+    await flush();
+    expect(replying()).toBeNull();
+    drag('id1', 90, 120, false);   // far enough across, but further down: a scroll, so the row stays put
+    expect(rowOf('id1').classList.contains('swiping')).toBe(false);
+    bub('id1').dispatchEvent(at('pointerup', 290, 220));
+    await flush();
+    expect(replying()).toBeNull();
+  });
+
+  it('moves the row with the finger while dragged, shows the arrow, and leaves nothing behind after', async () => {
+    open();
+    await flush();
+    drag('id1', 50, 0, false);
+    const row = rowOf('id1');
+    expect(row.classList.contains('swiping')).toBe(true);
+    expect(row.style.getPropertyValue('--swipe')).toBe('50px');
+    expect(row.hasAttribute('data-swipe-ready')).toBe(false);
+    bub('id1').dispatchEvent(at('pointermove', 280));
+    expect(row.hasAttribute('data-swipe-ready')).toBe(true);
+    bub('id1').dispatchEvent(at('pointerup', 280));
+    expect(row.classList.contains('swiping')).toBe(false);
+    expect(row.style.getPropertyValue('--swipe')).toBe('');
+    expect(row.hasAttribute('data-swipe-ready')).toBe(false);
+  });
+
+  it('a touch the browser takes away (it began scrolling) replies to nothing', async () => {
+    open();
+    await flush();
+    drag('id1', 90, 0, false);
+    bub('id1').dispatchEvent(at('pointercancel', 290));
+    await flush();
+    expect(replying()).toBeNull();
+    expect(rowOf('id1').classList.contains('swiping')).toBe(false);
+  });
+
+  it('is for a phone only: a mouse, or a screen with no touch, drags nothing', async () => {
+    open();
+    await flush();
+    bub('id1').dispatchEvent(at('pointerdown', 200, 100, 'mouse'));
+    for (let i = 1; i <= 10; i++) bub('id1').dispatchEvent(at('pointermove', 200 + 9 * i, 100, 'mouse'));
+    bub('id1').dispatchEvent(at('pointerup', 290, 100, 'mouse'));
+    await flush();
+    expect(replying()).toBeNull();
+    expect(root.querySelector('.swipe-ico')).not.toBeNull();   // drawn, but only shown while dragged
+  });
+
+  it('draws no arrow where there is no touch screen, and does nothing there', async () => {
+    open(false);
+    await flush();
+    expect(root.querySelector('.swipe-ico')).toBeNull();
+    drag('id1', 90);
+    await flush();
+    expect(replying()).toBeNull();
+  });
+
+  it('a drag is not also a long press or a double tap', async () => {
+    const h = open();
+    await flush();
+    bub('id1').dispatchEvent(at('pointerdown', 200));
+    const timer = h.timers[h.timers.length - 1]!;
+    for (let i = 1; i <= 10; i++) bub('id1').dispatchEvent(at('pointermove', 200 + 9 * i));
+    expect(timer.live).toBe(false);   // the hold was cancelled by the drag
+    bub('id1').dispatchEvent(at('pointerup', 290));
+    await flush();
+    expect(h.api.react).not.toHaveBeenCalled();
+  });
+});
+
 describe('chat: reactions', () => {
   const minhReacts = (emoji: string, who = [{ id: 'u-minh', displayName: 'Minh' }]) => ({ emoji, users: who });
   const base = [msg(1, 'minh', 'tin của Minh'), msg(2, 'mom', 'tin của mẹ')];
@@ -2931,6 +3375,104 @@ describe('chat: reactions', () => {
     root.querySelector<HTMLButtonElement>('[data-chip="❤️"]')!.click();
     await flush();
     expect(h.api.unreact).toHaveBeenCalledWith(C1, 'id1');
+  });
+
+  describe('a double tap with a finger', () => {
+    const touch = (target: Element, type: 'pointerdown' | 'pointerup', pointerType = 'touch') =>
+      target.dispatchEvent(Object.assign(new Event(type, { bubbles: true }), { pointerType, clientX: 100, clientY: 100 }));
+    const bub = (id: string) => row(id).querySelector('.bub')!;
+    const tap = (target: Element, pointerType = 'touch') => { touch(target, 'pointerdown', pointerType); touch(target, 'pointerup', pointerType); };
+
+    it('hearts the message', async () => {
+      const h = open();
+      await flush();
+      tap(bub('id1'));
+      later.ms = 200;
+      tap(bub('id1'));
+      await flush();
+      expect(h.api.react).toHaveBeenCalledTimes(1);
+      expect(h.api.react).toHaveBeenCalledWith(C1, 'id1', '❤️');
+    });
+
+    it('does nothing for one tap, or for two that are too far apart', async () => {
+      const h = open();
+      await flush();
+      tap(bub('id1'));
+      later.ms = 301;
+      tap(bub('id1'));
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for a tap on one message and then on another', async () => {
+      const h = open();
+      await flush();
+      tap(bub('id1'));
+      tap(bub('id2'));
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('replaces another reaction of yours, and never takes the heart back', async () => {
+      const h = open({}, [{ ...base[0]!, reactions: [minhReacts('👍', [{ id: 'u-minh', displayName: 'Minh' }])] }, base[1]!]);
+      await flush();
+      tap(bub('id1')); tap(bub('id1'));
+      await flush();
+      expect(h.api.react).toHaveBeenCalledWith(C1, 'id1', '❤️');
+      h.api.react.mockClear();
+      const hearted = open({}, [{ ...base[0]!, reactions: [minhReacts('❤️', [{ id: 'u-mom', displayName: 'Mẹ' }, { id: 'u-minh', displayName: 'Minh' }])] }, base[1]!]);
+      await flush();
+      tap(bub('id1')); tap(bub('id1'));
+      await flush();
+      expect(hearted.api.react).not.toHaveBeenCalled();
+      expect(hearted.api.unreact).not.toHaveBeenCalled();
+    });
+
+    it('leaves a tap with a meaning of its own alone: a link, a button', async () => {
+      const h = open({}, [{ ...base[0]!, body: 'xem https://example.com/a nhé' }, base[1]!]);
+      await flush();
+      const link = row('id1').querySelector('a')!;
+      expect(link).not.toBeNull();
+      tap(link); tap(link);
+      tap(row('id1').querySelector('button[data-sender], .bub')!); // a plain tap after them is only a first tap
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('is for a finger only, not a mouse', async () => {
+      const h = open();
+      await flush();
+      tap(bub('id1'), 'mouse'); tap(bub('id1'), 'mouse');
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('does not count a hold (the menu opened) as a tap', async () => {
+      const h = open();
+      await flush();
+      touch(bub('id1'), 'pointerdown');
+      h.timers[h.timers.length - 1]!.fn();   // 450 ms passed: the menu is open
+      touch(bub('id1'), 'pointerup');
+      tap(bub('id1'));
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('does not heart a message that is not there yet or was taken back', async () => {
+      const h = open({ send: vi.fn(async () => fail('network', 0)) }, [{ ...base[0]!, deleted: true, body: '' }, base[1]!]);
+      await flush();
+      tap(bub('id1')); tap(bub('id1'));
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+  });
+
+  it('puts the chips inside the message row, in the same column as the bubble, so they can sit at its edge', async () => {
+    open({}, [{ ...base[0]!, reactions: [minhReacts('👍')] }, base[1]!]);
+    await flush();
+    const chips = root.querySelector('[data-msg="id1"] .bcol > .reacts');
+    expect(chips).not.toBeNull();
+    expect(chips!.previousElementSibling!.classList.contains('bub')).toBe(true);
   });
 
   it('says why when the server refuses', async () => {

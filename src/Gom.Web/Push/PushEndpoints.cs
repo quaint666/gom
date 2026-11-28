@@ -151,10 +151,11 @@ public static class PushEndpoints
         if (found is null) return Results.NotFound();
 
         var (url, tag) = ($"/c/{chat}", chat.ToString());
-        if (level == PushLevel.Nothing) return Results.Ok(new NoticeDto("Gom", say.NewMessage, url, tag));
         var files = found.Message.DeletedAt is null ? (await MessageAttachments.For(db, [id], ct)).GetValueOrDefault(id)?.Attachments : null;
         var job = PushJob.From(found.Message, found.DisplayName, files);
-        var (title, body) = PushSender.Words(job, access.Kind, found.Title, say, words: level == PushLevel.Words);
+        var mention = job.MentionOf(me);
+        if (level == PushLevel.Nothing) return Results.Ok(new NoticeDto("Gom", PushSender.NamelessWords(say, mention), url, tag));
+        var (title, body) = PushSender.Words(job, access.Kind, found.Title, say, words: level == PushLevel.Words, mention);
         return Results.Ok(new NoticeDto(title, found.Message.DeletedAt is null ? body : say.Recalled, url, tag));
     }
 

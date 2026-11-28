@@ -43,6 +43,8 @@ export interface LiveHandlers {
   read(conversation: string, userId: string, seq: number): void;
   /** The pinned messages of this conversation changed: ask for them again. */
   pins(conversation: string): void;
+  /** Someone is typing here (only sent if you and they both share your reading); it lasts a few seconds unless another comes. */
+  typing?(conversation: string, userId: string, name: string): void;
   /** You deleted this message for yourself, on another device: drop it here too. */
   hidden(conversation: string, message: string): void;
   /** You deleted this whole conversation for yourself, on another device, up to this number: drop what this page holds of it. */
@@ -66,6 +68,8 @@ export interface LiveControl {
   stop(): void;
   /** Ask for the events after this sequence number. Only while connected. */
   sync(conversation: string, after: number): void;
+  /** Tell the others in this conversation that you are typing. Only while connected; a hint, so nothing comes back. */
+  typing(conversation: string): void;
   /** Try now instead of waiting: the network came back, or the page was shown again. */
   retryNow(): void;
 }
@@ -127,7 +131,7 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
     s.onmessage = (e) => {
       if (socket !== s) return;
       lastFrameAt = deps.now();
-      let frame: { t?: unknown; v?: unknown; c?: unknown; u?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown; m?: unknown; error?: unknown };
+      let frame: { t?: unknown; v?: unknown; c?: unknown; u?: unknown; n?: unknown; seq?: unknown; event?: unknown; events?: unknown; hasMore?: unknown; m?: unknown; error?: unknown };
       try { frame = JSON.parse(e.data) as typeof frame; } catch { return; }
       if (typeof frame !== 'object' || frame === null) return;
       if (frame.t === 'ready') { ready = true; attempt = 0; handlers.state(true); if (typeof frame.v === 'string') handlers.version?.(frame.v); }
@@ -135,6 +139,7 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
       else if (frame.t === 'conversations') handlers.conversations();
       else if (frame.t === 'read' && typeof frame.c === 'string' && typeof frame.u === 'string' && typeof frame.seq === 'number') handlers.read(frame.c, frame.u, frame.seq);
       else if (frame.t === 'pins' && typeof frame.c === 'string') handlers.pins(frame.c);
+      else if (frame.t === 'typing' && typeof frame.c === 'string' && typeof frame.u === 'string' && typeof frame.n === 'string') handlers.typing?.(frame.c, frame.u, frame.n);
       else if (frame.t === 'hidden' && typeof frame.c === 'string' && typeof frame.m === 'string') handlers.hidden(frame.c, frame.m);
       else if (frame.t === 'cleared' && typeof frame.c === 'string' && typeof frame.seq === 'number') handlers.cleared(frame.c, frame.seq);
       else if (frame.t === 'error' && frame.error === 'slow_down' && typeof frame.c === 'string') handlers.slow(frame.c);
@@ -169,6 +174,7 @@ export function createLive(url: string, handlers: LiveHandlers, deps: LiveDeps =
       s?.close();
     },
     sync(conversation, after) { if (ready && socket) socket.send(JSON.stringify({ t: 'sync', c: conversation, after })); },
+    typing(conversation) { if (ready && socket) socket.send(JSON.stringify({ t: 'typing', c: conversation })); },
     retryNow() {
       if (stopped) return;
       // The browser still calls it open, but nothing has come for a while: it is not.

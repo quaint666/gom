@@ -736,4 +736,105 @@ public class WebSocketTests(AppFixture app) : IClassFixture<AppFixture>
         Assert.Equal(WebSocketState.Open, sockets[5].State);
         foreach (var s in sockets) s.Dispose();
     }
+
+    // ---- typing
+
+    /// <summary>Reads and drops what is already on its way.</summary>
+    private static async Task Drain(WebSocket ws)
+    {
+        while (true) { try { await Next(ws, TimeSpan.FromMilliseconds(300)); } catch (OperationCanceledException) { return; } }
+    }
+
+    private static Task Typing(WebSocket ws, Guid chat) => SendText(ws, $"{{\"t\":\"typing\",\"c\":\"{chat}\"}}");
+
+    [Fact]
+    public async Task Typing_is_told_to_the_other_members_with_the_typers_name_and_to_nobody_else()
+    {
+        var p = await NewPair();
+        var (_, stranger) = await app.Member();
+        using var a = await ConnectReady(p.CA);
+        using var bSelf = await ConnectReady(p.CB);
+        using var other = await ConnectReady(stranger);
+
+        await Typing(bSelf, p.Chat);
+
+        var frame = await Next(a);
+        Assert.Equal("typing", frame.GetProperty("t").GetString());
+        Assert.Equal((p.Chat, p.B.Id, p.B.DisplayName), (frame.GetProperty("c").GetGuid(), frame.GetProperty("u").GetGuid(), frame.GetProperty("n").GetString()));
+        await AssertSilent(bSelf);    // not told of your own typing
+        await AssertSilent(other);
+    }
+
+    [Fact]
+    public async Task Typing_in_a_conversation_you_are_not_in_is_told_to_nobody_and_costs_the_socket_nothing()
+    {
+        var p = await NewPair();
+        var (_, stranger) = await app.Member();
+        using var a = await ConnectReady(p.CA);
+        using var outsider = await ConnectReady(stranger);
+
+        await Typing(outsider, p.Chat);
+
+        await AssertSilent(a);
+        await AssertSilent(outsider);   // no error frame either: it is only a hint
+        Assert.Equal(WebSocketState.Open, outsider.State);
+    }
+
+    [Fact]
+    public async Task Typing_is_shown_only_between_people_who_both_share_their_reading()
+    {
+        var p = await NewPair();
+        using var a = await ConnectReady(p.CA);
+        using var b = await ConnectReady(p.CB);
+        await Receipts(p.CB, false);
+        await ExpectListChanged(a);
+        await Typing(b, p.Chat);
+        await AssertSilent(a);                    // B hides their reading: their typing is hidden too
+
+        await Receipts(p.CB, true);
+        await ExpectListChanged(a);
+        await Receipts(p.CA, false);
+        foreach (var ws in new[] { a, b }) await Drain(ws);   // what the switches announced
+        await Typing(b, p.Chat);
+        await AssertSilent(a);                    // A hides theirs: A is told nothing either
+    }
+
+    [Fact]
+    public async Task Typing_in_a_one_to_one_chat_stops_with_the_friendship()
+    {
+        var p = await NewPair();
+        using var a = await ConnectReady(p.CA);
+        using var b = await ConnectReady(p.CB);
+        using var gone = await app.Call(HttpMethod.Delete, $"/api/friends/{p.B.GomId}", cookie: p.CA);
+        Assert.Equal(HttpStatusCode.NoContent, gone.StatusCode);
+        await Drain(a);   // whatever the unfriend announced
+
+        await Typing(b, p.Chat);
+        await AssertSilent(a);
+    }
+
+    [Fact]
+    public async Task Typing_over_the_pace_is_dropped_without_a_word_and_the_socket_stays_open()
+    {
+        var p = await NewPair();
+        using var a = await ConnectReady(p.CA);
+        using var b = await ConnectReady(p.CB);
+
+        for (var i = 0; i < 30; i++) await Typing(b, p.Chat);
+
+        var told = 0;
+        while (true) { try { await Next(a, TimeSpan.FromMilliseconds(500)); told++; } catch (OperationCanceledException) { break; } }
+        Assert.InRange(told, 1, 5);                              // the burst gets through (3, with a little refill), the rest does not
+        Assert.Equal(WebSocketState.Open, b.State);              // and it is never an error: B is not turned away, not closed
+        await AssertSilent(b);
+    }
+
+    [Fact]
+    public async Task A_typing_frame_with_no_conversation_is_a_bad_frame_like_any_other()
+    {
+        var p = await NewPair();
+        using var b = await ConnectReady(p.CB);
+        await SendText(b, "{\"t\":\"typing\"}");
+        Assert.Equal("bad_request", (await Next(b)).GetProperty("error").GetString());
+    }
 }

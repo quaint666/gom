@@ -102,7 +102,9 @@ export interface ChatMessage { id: string; seq: number; conversationId: string; 
   /** Set when the message is one sticker (its code): then it has no words and no files. */
   sticker?: string | null;
   /** Disappearing messages: when it is deleted for good (fixed when it was sent); absent or null: kept. */
-  expiresAt?: string | null }
+  expiresAt?: string | null;
+  /** The members it names (ids), and whether it says "@all"; the words carry "@" and each one's name. Absent: none. */
+  mentions?: string[] | null; mentionsAll?: boolean }
 /** One step of a conversation's stream, as the server sends it (live or in a sync page). */
 export interface ChatEvent { seq: number; kind: 'created' | 'deleted' | 'updated'; message: ChatMessage }
 /** `attachment` is what the last message carries (its first one), so the list can say "Hình ảnh" when there are no words. */
@@ -114,6 +116,8 @@ export interface Conversation {
   /** `peer.gomId` is there only while you are friends (the chat stays after an unfriend or a block; their ID does not). */
   id: string; kind: 'direct' | 'group'; title: string | null; peer: (Omit<Person, 'gomId'> & { gomId: string | null; id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
+  /** Someone wrote your name (or "@all") in what you have not read; the first such message is `firstMentionId` (`firstMentionSeq`). */
+  mentioned?: boolean; firstMentionSeq?: number | null; firstMentionId?: string | null;
   /** Your place in a group; null for a 1:1 chat. */
   role?: 'leader' | 'deputy' | 'member' | null;
   /** A group's picture (a 1:1 chat shows `peer.avatar`); null: its initials. */
@@ -255,7 +259,7 @@ export interface Api {
   setPalette(palette: string): Promise<Result<void>>;
   /** The background behind the person's messages, for every device. */
   setPattern(pattern: string): Promise<Result<void>>;
-  send(conversation: string, clientId: string, body: string, replyTo?: string, attachments?: string[]): Promise<Result<ChatMessage>>;
+  send(conversation: string, clientId: string, body: string, replyTo?: string, attachments?: string[], mentions?: string[]): Promise<Result<ChatMessage>>;
   /** Sends one sticker, the whole message (no words, no files). */
   sendSticker(conversation: string, clientId: string, sticker: string, replyTo?: string): Promise<Result<ChatMessage>>;
   /** The pictures ("image") or files ("file") of a conversation, newest first; `before` is the seq of the last item of the page you have. */
@@ -268,7 +272,7 @@ export interface Api {
   /** Sends one picture or file to a conversation (not yet in a message). `onProgress` gets 0 to 1 while the bytes go up. */
   upload(conversation: string, file: Blob & { name?: string }, onProgress: (fraction: number) => void): Promise<Result<Attachment>>;
   markRead(conversation: string, seq: number): Promise<Result<void>>;
-  edit(conversation: string, message: string, body: string): Promise<Result<void>>;
+  edit(conversation: string, message: string, body: string, mentions?: string[]): Promise<Result<void>>;
   react(conversation: string, message: string, emoji: string): Promise<Result<void>>;
   unreact(conversation: string, message: string): Promise<Result<void>>;
   search(conversation: string, query: string): Promise<Result<{ results: ChatMessage[] }>>;
@@ -467,7 +471,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     conversations: () => call('GET', '/api/conversations'),
     openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
     history: (conversation, before, to) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}${before === undefined || to === undefined ? '' : `&to=${enc(to)}`}`),
-    send: (conversation, clientId, body, replyTo, attachments) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body, replyTo, ...(attachments && attachments.length > 0 ? { attachments } : {}) }),
+    send: (conversation, clientId, body, replyTo, attachments, mentions) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body, replyTo, ...(attachments && attachments.length > 0 ? { attachments } : {}), ...(mentions && mentions.length > 0 ? { mentions } : {}) }),
     sendSticker: (conversation, clientId, sticker, replyTo) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, sticker, replyTo }),
     createGroup: (title, members) => call('POST', '/api/conversations/group', { title, members }),
     groupMembers: (conversation) => call('GET', `/api/conversations/${enc(conversation)}/members`),
@@ -517,7 +521,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     unpin: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/pin`),
     react: (conversation, message, emoji) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/reaction`, { emoji }),
     unreact: (conversation, message) => call('DELETE', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/reaction`),
-    edit: (conversation, message, body) => call('PATCH', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`, { body }),
+    edit: (conversation, message, body, mentions) => call('PATCH', `/api/conversations/${enc(conversation)}/messages/${enc(message)}`, { body, ...(mentions && mentions.length > 0 ? { mentions } : {}) }),
     markRead: (conversation, seq) => call('POST', `/api/conversations/${enc(conversation)}/read`, { seq }),
   };
 }

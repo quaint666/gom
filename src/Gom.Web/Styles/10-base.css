@@ -1,0 +1,102 @@
+/* page column */
+.page { max-inline-size: 440px; margin-inline: auto; padding: 24px 18px 32px; display: flex; flex-direction: column; gap: 14px; }
+.page.center, .center { text-align: center; }
+.page.center { justify-content: center; align-items: stretch; min-block-size: 80dvh; }
+.logo { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; font-size: 26px; }
+.logo .i { inline-size: 34px; block-size: 34px; color: var(--link); }
+/* Gom's mark is filled, its three dots holes (the even-odd rule), unlike the line icons. */
+.i.logo-mark { fill: currentColor; fill-rule: evenodd; stroke: none; }
+.lead { color: var(--muted); font-size: 15px; }
+.foot { text-align: center; color: var(--muted); font-size: 14px; }
+/* The privacy policy: a page of reading, a little wider than a form, headed by the logo as a link home. */
+.page.policy { max-inline-size: 680px; gap: 10px; line-height: 1.55; }
+.policy h1 { margin: 8px 0 0; }
+.policy h2 { margin: 14px 0 4px; font-size: 18px; }
+.policy ul, .policy ol { margin: 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 6px; }
+.policy h2 small { font-size: 14px; font-weight: 400; }
+.policy-home { align-self: flex-start; color: inherit; text-decoration: none; }
+/* The way back to Gom from the policy: a button at the top (small) and at the foot, after the contact form. */
+.home-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.home-btn .i { inline-size: 18px; block-size: 18px; }
+.home-btn.small { align-self: flex-start; }
+.foot a { font-weight: 600; }
+form { display: flex; flex-direction: column; gap: 14px; }
+
+/* fields */
+.field label, .card label { display: block; font-weight: 600; font-size: 14px; margin-block-end: 6px; }
+.input {
+  display: flex; align-items: center; gap: 8px; min-block-size: 48px; padding-inline: 14px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.input:focus-within { border-color: var(--btn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent); }
+.input input { flex: 1; min-inline-size: 0; min-block-size: 44px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; outline: 0; }
+.input textarea { flex: 1; min-inline-size: 0; min-block-size: 64px; padding-block: 10px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; outline: 0; resize: vertical; }
+.input .prefix { color: var(--muted); }
+.hint { margin-block-start: 6px; font-size: 13px; color: var(--muted); }
+
+/* buttons */
+.btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; min-block-size: 48px; inline-size: 100%; padding-inline: 16px;
+  border: 0; border-radius: 10px; background: var(--btn); color: var(--on-btn); font: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.btn:hover { background: var(--btn-hover); }
+.btn:disabled { opacity: .6; cursor: progress; }
+.btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.btn.secondary:hover { background: color-mix(in srgb, var(--tint) 60%, var(--surface)); }
+.btn.danger { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
+.btn.danger:hover { background: color-mix(in srgb, var(--err-border) 20%, var(--err-bg)); }
+.btn.small { min-block-size: 44px; inline-size: auto; padding-inline: 14px; font-size: 14px; flex: none; }
+.ib {
+  display: inline-grid; place-items: center; inline-size: 44px; block-size: 44px; flex: none; border: 0; border-radius: 50%;
+  background: transparent; color: var(--muted); cursor: pointer; text-decoration: none;
+}
+.ib:hover { background: var(--tint); color: var(--tint-text); }
+.ib[aria-pressed="true"] { color: var(--link); }
+
+/* messages */
+.alert { display: flex; gap: 10px; padding: 10px 12px; border: 1px solid var(--err-border); border-radius: 10px; background: var(--err-bg); color: var(--err-text); font-size: 14px; }
+.note { display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--tint); color: var(--tint-text); font-size: 14px; }
+.big-icon { inline-size: 72px; block-size: 72px; margin-inline: auto; display: grid; place-items: center; border-radius: 50%; background: var(--tint); color: var(--tint-text); }
+.big-icon .i { inline-size: 34px; block-size: 34px; }
+.empty { display: flex; flex-direction: column; align-items: center; gap: 14px; padding-block: 40px; text-align: center; }
+
+/* app pages */
+.bar { display: flex; align-items: center; gap: 6px; min-block-size: 62px; padding: 8px 10px; background: var(--surface); border-block-end: 1px solid var(--border); border-block-start: 3px solid var(--btn); }
+.bar h1 { flex: 1; padding-inline-start: 8px; font-size: 17px; font-weight: 600; }
+.section { margin-block-start: 8px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.list:empty { display: none; }
+.li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-block-size: 64px; padding: 8px 14px; border-block-end: 1px solid var(--border); }
+.li:last-child { border-block-end: 0; }
+.li .t { flex: 1 1 10rem; min-inline-size: 0; }
+.li .t b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.li .t small { color: var(--muted); font-size: 13px; }
+/* A row's buttons stay together when the row wraps. */
+.li .acts { display: flex; gap: 8px; }
+/* A question asked inside a row (refusing a request): the words on their own line, its two buttons under them. */
+.li .ask { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+.li .ask p { flex-basis: 100%; margin: 0; }
+/* Where a sticker pack shows: every chat, or a list of the owner's chats to tick. */
+.pack-where { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pack-where legend { padding: 0; font-weight: 600; font-size: 14px; margin-block-end: 4px; }
+.pack-chats { list-style: none; margin: 0 0 0 28px; padding: 0; max-block-size: 240px; overflow-y: auto; }
+.pack-where .btn { align-self: flex-start; }
+.pack-where .pack-sub { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pack-where .check small { color: var(--muted); }
+.pack-where .check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; margin: 0; font-weight: 400; font-size: 15px; }
+.pack-where .check input { margin: 0; }
+.pack-where .check input { inline-size: 20px; block-size: 20px; accent-color: var(--btn); flex: none; }
+/* An owner's list that starts folded (past links, refused requests): its title and count stay in view, a chevron that turns. */
+.fold { margin-block-start: 16px; }
+.fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; min-block-size: 44px; color: var(--muted); font-weight: 600; cursor: pointer; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold[open] > summary .i { transform: rotate(90deg); }
+.owner-part > .tabs, .owner-part > .searchfield { margin-block-end: 12px; }
+.tag { margin-inline-start: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 18px; vertical-align: middle; }
+.card { display: flex; flex-direction: column; gap: 6px; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+.card .hint { margin: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn, .ib { transition: background-color .12s; }
+}
+

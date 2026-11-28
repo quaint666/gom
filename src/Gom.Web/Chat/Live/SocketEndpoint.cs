@@ -33,10 +33,10 @@ public static class SocketEndpoint
     /// <summary>Maps /ws. <paramref name="version"/> is the pages' version (<see cref="Assets.Version"/>), told to each connection when it is ready.</summary>
     public static void MapSocket(this IEndpointRouteBuilder app, string? version) =>
         app.MapGet("/ws", (HttpContext http, ConnectionRegistry registry, IServiceScopeFactory scopes, IOptions<ChatOptions> options,
-            TimeProvider clock, ILoggerFactory loggers) => Handle(http, registry, scopes, options, clock, loggers, version)).RequireAuthorization();
+            TimeProvider clock, ILoggerFactory loggers, LiveDelivery live) => Handle(http, registry, scopes, options, clock, loggers, live, version)).RequireAuthorization();
 
     private static async Task<IResult> Handle(HttpContext http, ConnectionRegistry registry, IServiceScopeFactory scopes,
-        IOptions<ChatOptions> options, TimeProvider clock, ILoggerFactory loggers, string? version)
+        IOptions<ChatOptions> options, TimeProvider clock, ILoggerFactory loggers, LiveDelivery live, string? version)
     {
         if (!http.WebSockets.IsWebSocketRequest) return Results.BadRequest(new { error = "websocket_required" });
 
@@ -61,7 +61,7 @@ public static class SocketEndpoint
         try
         {
             connection.TryEnqueue(Frames.Ready(version));
-            await ReceiveLoop(socket, connection, scopes, o, new SyncBucket(clock, o.SyncBurst, o.SyncPerSecond), http.RequestAborted);
+            await ReceiveLoop(socket, connection, scopes, o, new SyncBucket(clock, o.SyncBurst, o.SyncPerSecond), new SyncBucket(clock, o.TypingBurst, o.TypingPerSecond), live, http.RequestAborted);
         }
         catch (WebSocketException) { lost = "line lost, no close frame"; }
         catch (IOException) { lost = "line lost, no close frame"; }
@@ -120,7 +120,7 @@ public static class SocketEndpoint
         catch (OperationCanceledException) { }
     }
 
-    private static async Task ReceiveLoop(WebSocket socket, Connection connection, IServiceScopeFactory scopes, ChatOptions o, SyncBucket bucket, CancellationToken ct)
+    private static async Task ReceiveLoop(WebSocket socket, Connection connection, IServiceScopeFactory scopes, ChatOptions o, SyncBucket bucket, SyncBucket typingBucket, LiveDelivery live, CancellationToken ct)
     {
         var buffer = new byte[MaxFrameBytes];
         var bad = 0;
@@ -140,6 +140,17 @@ public static class SocketEndpoint
                 if (++bad >= o.MaxBadFrames) { connection.Close(1008, "too many bad frames"); return; }
                 continue;
             }
+            // "Typing" is only a hint: over the pace it is dropped without a word (it never counts against the socket), and one that cannot be
+            // delivered is dropped too.
+            if (asked.Typing)
+            {
+                if (typingBucket.TryTake())
+                {
+                    await using var typed = scopes.CreateAsyncScope();
+                    await live.TypingAsync(typed.ServiceProvider.GetRequiredService<GomDbContext>(), asked.Conversation, connection.UserId, ct);
+                }
+                continue;
+            }
             // Each ask costs a few queries, so a socket may only make so many. The page waits a moment and asks again; one that
             // does not wait, and keeps asking, is let go (1013: try again later, so the page reconnects by itself, slowly).
             if (!bucket.TryTake())
@@ -153,9 +164,9 @@ public static class SocketEndpoint
         }
     }
 
-    private sealed record Asked(Guid Conversation, long After);
+    private sealed record Asked(Guid Conversation, long After, bool Typing = false);
 
-    /// <summary>What a "sync" frame asks for, or the error frame to send back when it cannot be read.</summary>
+    /// <summary>What a "sync" or "typing" frame says, or the error frame to send back when it cannot be read.</summary>
     private static (Asked? Asked, byte[]? Problem) Parse(ReadOnlyMemory<byte> frame)
     {
         Guid conversation;
@@ -164,10 +175,11 @@ public static class SocketEndpoint
         {
             using var doc = JsonDocument.Parse(frame);
             var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("t", out var t) || t.ValueKind != JsonValueKind.String || t.GetString() != "sync")
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("t", out var t) || t.ValueKind != JsonValueKind.String || t.GetString() is not ("sync" or "typing"))
                 return (null, Frames.Error("bad_request"));
             if (!root.TryGetProperty("c", out var c) || c.ValueKind != JsonValueKind.String || !Guid.TryParse(c.GetString(), out conversation))
                 return (null, Frames.Error("bad_request"));
+            if (t.GetString() == "typing") return (new Asked(conversation, 0, Typing: true), null);
             if (!root.TryGetProperty("after", out var a) || a.ValueKind != JsonValueKind.Number || !a.TryGetInt64(out after) || after < 0)
                 return (null, Frames.Error("bad_request", conversation));
         }
@@ -177,7 +189,7 @@ public static class SocketEndpoint
 
     private static async Task<byte[]> Answer(Asked asked, Guid me, IServiceScopeFactory scopes, CancellationToken ct)
     {
-        var (conversation, after) = asked;
+        var (conversation, after, _) = asked;
 
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<GomDbContext>();

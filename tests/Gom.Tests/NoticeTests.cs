@@ -69,6 +69,33 @@ public class NoticeTests(CallFixture app) : IClassFixture<CallFixture>
     }
 
     [Fact]
+    public async Task A_message_that_names_the_person_is_worded_so_at_each_level_and_one_that_says_at_all_is_worded_for_everyone()
+    {
+        var (a, ca) = await app.Member(); var (b, cb) = await app.Member(); var (c, cc) = await app.Member();
+        await app.Befriend(a, b); await app.Befriend(a, c);
+        using var made = await app.Call(HttpMethod.Post, "/api/conversations/group", new { title = "Nhà", members = new[] { b.GomId, c.GomId } }, ca);
+        var chat = (await AppFixture.Json(made)).GetProperty("id").GetGuid();
+        using var named = await app.Call(HttpMethod.Post, $"/api/conversations/{chat}/messages", new { clientId = Guid.NewGuid(), body = $"@{b.DisplayName} họp", mentions = new[] { b.Id } }, ca);
+        var idNamed = (await AppFixture.Json(named)).GetProperty("id").GetGuid();
+        var idAll = await Say(ca, chat, "@all ăn cơm");
+
+        await app.App(cb, "words");
+        var (_, forB) = await Notice(cb, $"c={chat}&m={idNamed}");
+        Assert.Equal(($"{a.DisplayName} đã nhắc đến bạn: @{b.DisplayName} họp"), forB.GetProperty("body").GetString());
+        await app.App(cc, "words");
+        var (_, forC) = await Notice(cc, $"c={chat}&m={idNamed}");   // C is not named
+        Assert.Equal($"{a.DisplayName}: @{b.DisplayName} họp", forC.GetProperty("body").GetString());
+        var (_, everyone) = await Notice(cb, $"c={chat}&m={idAll}");
+        Assert.Equal($"{a.DisplayName} nhắc mọi người: @all ăn cơm", everyone.GetProperty("body").GetString());
+
+        await app.App(cb, "nothing");
+        var (_, nameless) = await Notice(cb, $"c={chat}&m={idNamed}");
+        Assert.Equal(("Gom", "Có người nhắc đến bạn"), (nameless.GetProperty("title").GetString(), nameless.GetProperty("body").GetString()));
+        var (_, namelessAll) = await Notice(cb, $"c={chat}&m={idAll}");
+        Assert.Equal("Tin nhắn mới", namelessAll.GetProperty("body").GetString());
+    }
+
+    [Fact]
     public async Task In_a_group_the_title_is_the_group_and_the_writer_leads_the_words()
     {
         var (a, ca) = await app.Member();

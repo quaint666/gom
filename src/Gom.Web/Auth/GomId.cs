@@ -13,7 +13,7 @@ public static partial class GomId
 
     // Names that could pass for the service itself or for staff.
     private static readonly HashSet<string> Reserved =
-        ["admin", "administrator", "gom", "ops", "root", "staff", "support", "system", "owner", "bot", "help", "null"];
+        ["admin", "administrator", "all", "gom", "ops", "root", "staff", "support", "system", "owner", "bot", "help", "null"];
 
     public static bool IsValid(string? id) =>
         id is not null && Pattern().IsMatch(id) && !Reserved.Contains(id);

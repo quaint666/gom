@@ -20,7 +20,7 @@ COPY src/Gom.Web/package.json src/Gom.Web/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY src/Gom.Web/build.mjs ./
 COPY src/Gom.Web/Scripts ./Scripts
-COPY src/Gom.Web/wwwroot/css ./wwwroot/css
+COPY src/Gom.Web/Styles ./Styles
 COPY src/Gom.Web/wwwroot/theme-init.js ./wwwroot/
 # The check fails the build if nothing came out.
 RUN npm run build && [ -s wwwroot/js/main.js ] && [ -s wwwroot/js/video.js ] && [ -s wwwroot/assets.json ]

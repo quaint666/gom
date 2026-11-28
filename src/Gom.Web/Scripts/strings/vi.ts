@@ -220,7 +220,7 @@ export const vi = {
     scheme: 'Màu giao diện',
     privacy: 'Quyền riêng tư',
     receipts: 'Cho người khác biết khi tôi đã xem tin nhắn',
-    receiptsNote: 'Nếu tắt, bạn cũng không thấy người khác đã xem tin nhắn của bạn.',
+    receiptsNote: 'Nếu tắt, bạn cũng không thấy người khác đã xem tin nhắn của bạn. Điều này cũng áp dụng cho "đang nhập…".',
     security: 'Bảo mật',
     currentPassword: 'Mật khẩu hiện tại',
     newPassword: 'Mật khẩu mới',
@@ -782,6 +782,15 @@ export const vi = {
     editing: 'Đang chỉnh sửa tin nhắn',
     cancelEdit: 'Hủy chỉnh sửa',
     replyingTo: (name: string) => `Đang trả lời ${name}`,
+    /** Who is typing in a group: the names shown (joined with ", ", `shown` of them), then how many more. */
+    typing: (names: string, _shown: number, others: number) => `${names}${others > 0 ? ` và ${others} người khác` : ''} đang nhập…`,
+    /** In a one-to-one chat the header already names the person. */
+    typingDirect: 'đang nhập…',
+    /** The "@" list: the row that mentions everyone, the list's name, the list's mark for a mention, and the arrow that goes to one. */
+    mentionAll: 'Báo cho cả nhóm',
+    mentionList: 'Nhắc đến ai đó',
+    mentionedYou: 'Có người nhắc đến bạn',
+    toMention: 'Đến tin nhắn có nhắc đến bạn',
     yourself: 'chính bạn',
     cancelReply: 'Hủy trả lời',
     attach: 'Đính kèm tệp',

@@ -37,6 +37,33 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
         }
     }
 
+    /// <summary>
+    /// Tells the other members' open pages that this person is typing. Only when both share their reading (the same switch as read
+    /// receipts: someone who hides when they read does not show when they type, and does not see it either), to members of the
+    /// conversation only, and in a one-to-one chat only while the two are still friends. Lost when a page is behind; never kept.
+    /// </summary>
+    public async Task TypingAsync(GomDbContext db, Guid conversation, Guid person, CancellationToken ct)
+    {
+        try
+        {
+            var access = await Access.Of(db, conversation, person, ct);
+            if (access is null) return;
+            var name = await db.Users.AsNoTracking().Where(u => u.Id == person && u.ShareReadReceipts).Select(u => u.DisplayName).SingleOrDefaultAsync(ct);
+            if (name is null) return;
+            if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, conversation, person, ct)) return;
+            var watchers = await (from m in db.Members.AsNoTracking() where m.ConversationId == conversation && m.UserId != person
+                                  join u in db.Users on m.UserId equals u.Id where u.ShareReadReceipts && u.DisabledAt == null select m.UserId).ToListAsync(ct);
+            var frame = Frames.Typing(conversation, person, name);
+            foreach (var user in watchers)
+                foreach (var connection in registry.For(user))
+                    connection.TryEnqueueLossy(frame);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            logger.LogDebug(e, "typing notification failed");   // a hint: nothing to catch up
+        }
+    }
+
     /// <summary>Tells everyone in a conversation that its pinned messages changed.</summary>
     public async Task PinsChangedAsync(GomDbContext db, Guid conversation)
     {

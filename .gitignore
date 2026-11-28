@@ -22,8 +22,9 @@ src/Gom.Web/wwwroot/js/
 .DS_Store
 .vscode/
 .idea/
-# Fingerprinted copies of the files a page loads, and their list (made by `npm run build`)
+# The stylesheet joined from Styles/, the fingerprinted copies of the files a page loads, and their list (made by `npm run build`)
 src/Gom.Web/wwwroot/assets.json
+src/Gom.Web/wwwroot/css/gom.css
 src/Gom.Web/wwwroot/css/gom.*.css
 src/Gom.Web/wwwroot/theme-init.*.js
 # What the Playwright browser tool leaves behind

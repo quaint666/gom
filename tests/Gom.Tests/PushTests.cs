@@ -426,6 +426,134 @@ public class PushTests(PushFixture app) : IClassFixture<PushFixture>
         Assert.Equal(before + 1, app.Push.To(phone.Endpoint).Count);
     }
 
+    // ---- mentions: named people are told even through a mute
+
+    private async Task<(Gom.Web.Data.User A, string CA, Gom.Web.Data.User B, string CB, Gom.Web.Data.User C, string CC, Guid Chat)> Group()
+    {
+        var (a, ca) = await app.Member(); var (b, cb) = await app.Member(); var (c, cc) = await app.Member();
+        await app.Befriend(a, b); await app.Befriend(a, c);
+        using var made = await app.Call(HttpMethod.Post, "/api/conversations/group", new { title = "Nhà", members = new[] { b.GomId, c.GomId } }, ca);
+        return (a, ca, b, cb, c, cc, (await AppFixture.Json(made)).GetProperty("id").GetGuid());
+    }
+
+    private Task Mute(Guid chat, Gom.Web.Data.User who) =>
+        Db(db => db.Members.Where(m => m.ConversationId == chat && m.UserId == who.Id).ExecuteUpdateAsync(s => s.SetProperty(m => m.Muted, true)));
+
+    private Task Mentioning(Guid chat, long seq, Gom.Web.Data.User from, IReadOnlyList<Guid>? named, bool all = false, bool only = false) =>
+        app.Factory.Services.GetRequiredService<PushSender>().DeliverAsync(
+            new PushJob(chat, seq, from.Id, from.DisplayName, 0, 0, Text: "họp tối nay", Mentioned: named, MentionsAll: all, OnlyMentioned: only), CancellationToken.None);
+
+    [Fact]
+    public async Task A_member_named_in_a_message_is_told_even_if_they_muted_the_chat_and_others_who_muted_are_not()
+    {
+        var g = await Group();
+        using var phoneB = new FakeBrowser(); using var phoneC = new FakeBrowser();
+        await Subscribe(g.CB, phoneB); await Subscribe(g.CC, phoneC);
+        var seq = await Say(g.CA, g.Chat);
+        await app.Push.Next(phoneB.Endpoint); await app.Push.Next(phoneC.Endpoint);
+        var (beforeB, beforeC) = (app.Push.To(phoneB.Endpoint).Count, app.Push.To(phoneC.Endpoint).Count);
+        await Mute(g.Chat, g.B); await Mute(g.Chat, g.C);
+
+        await Mentioning(g.Chat, seq, g.A, [g.B.Id]);
+
+        Assert.Equal(beforeB + 1, app.Push.To(phoneB.Endpoint).Count);
+        Assert.Equal(beforeC, app.Push.To(phoneC.Endpoint).Count);
+        var note = phoneB.Read(app.Push.To(phoneB.Endpoint)[^1].Body);
+        Assert.Equal("Nhà", note.GetProperty("title").GetString());
+        Assert.Equal($"{g.A.DisplayName} đã nhắc đến bạn: họp tối nay", note.GetProperty("body").GetString());
+    }
+
+    [Fact]
+    public async Task At_all_is_worded_for_everyone_but_never_rings_through_a_mute()
+    {
+        var g = await Group();
+        using var phoneB = new FakeBrowser(); using var phoneC = new FakeBrowser();
+        await Subscribe(g.CB, phoneB); await Subscribe(g.CC, phoneC);
+        var seq = await Say(g.CA, g.Chat);
+        await app.Push.Next(phoneB.Endpoint); await app.Push.Next(phoneC.Endpoint);
+        var (beforeB, beforeC) = (app.Push.To(phoneB.Endpoint).Count, app.Push.To(phoneC.Endpoint).Count);
+        await Mute(g.Chat, g.C);
+
+        await Mentioning(g.Chat, seq, g.A, [], all: true);
+
+        Assert.Equal(beforeB + 1, app.Push.To(phoneB.Endpoint).Count);
+        Assert.Equal($"{g.A.DisplayName} nhắc mọi người: họp tối nay", phoneB.Read(app.Push.To(phoneB.Endpoint)[^1].Body).GetProperty("body").GetString());
+        Assert.Equal(beforeC, app.Push.To(phoneC.Endpoint).Count);   // C muted it
+    }
+
+    [Fact]
+    public async Task A_mention_from_someone_you_blocked_does_not_ring_through_your_mute()
+    {
+        var g = await Group();
+        using var phoneB = new FakeBrowser();
+        await Subscribe(g.CB, phoneB);
+        var seq = await Say(g.CA, g.Chat);
+        await app.Push.Next(phoneB.Endpoint);
+        var before = app.Push.To(phoneB.Endpoint).Count;
+        await Mute(g.Chat, g.B);
+        using (var block = await app.Call(HttpMethod.Post, $"/api/blocks/{g.A.GomId}", cookie: g.CB)) Assert.True(block.IsSuccessStatusCode);
+
+        await Mentioning(g.Chat, seq, g.A, [g.B.Id]);
+
+        Assert.Equal(before, app.Push.To(phoneB.Endpoint).Count);
+    }
+
+    [Fact]
+    public async Task Taking_back_a_mention_replaces_the_notification_of_a_member_who_muted_the_chat_too()
+    {
+        var g = await Group();
+        using var phoneB = new FakeBrowser();
+        await Subscribe(g.CB, phoneB);
+        using var sent = await app.Call(HttpMethod.Post, $"/api/conversations/{g.Chat}/messages", new { clientId = Guid.NewGuid(), body = $"@{g.B.DisplayName} họp", mentions = new[] { g.B.Id } }, g.CA);
+        var id = (await AppFixture.Json(sent)).GetProperty("id").GetGuid();
+        await app.Push.Next(phoneB.Endpoint);
+        await Mute(g.Chat, g.B);
+        var before = app.Push.To(phoneB.Endpoint).Count;
+
+        using var recall = await app.Call(HttpMethod.Delete, $"/api/conversations/{g.Chat}/messages/{id}", cookie: g.CA);
+        Assert.Equal(HttpStatusCode.NoContent, recall.StatusCode);
+
+        await app.Push.Next(phoneB.Endpoint, before);
+        Assert.True(phoneB.Read(app.Push.To(phoneB.Endpoint)[^1].Body).GetProperty("recalled").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_mention_at_the_level_that_names_nobody_says_only_that_someone_mentioned_you()
+    {
+        var g = await Group();
+        using var phoneB = new FakeBrowser();
+        await Subscribe(g.CB, phoneB, level: "nothing");
+        var seq = await Say(g.CA, g.Chat);
+        await app.Push.Next(phoneB.Endpoint);
+        var before = app.Push.To(phoneB.Endpoint).Count;
+
+        await Mentioning(g.Chat, seq, g.A, [g.B.Id]);
+
+        var note = phoneB.Read(app.Push.To(phoneB.Endpoint)[before].Body);
+        Assert.Equal("Gom", note.GetProperty("title").GetString());
+        Assert.Equal("Có người nhắc đến bạn", note.GetProperty("body").GetString());
+    }
+
+    [Fact]
+    public async Task A_mention_added_by_an_edit_tells_only_the_person_newly_named()
+    {
+        var g = await Group();
+        using var phoneB = new FakeBrowser(); using var phoneC = new FakeBrowser();
+        await Subscribe(g.CB, phoneB); await Subscribe(g.CC, phoneC);
+        using var sent = await app.Call(HttpMethod.Post, $"/api/conversations/{g.Chat}/messages", new { clientId = Guid.NewGuid(), body = $"@{g.B.DisplayName} họp tối nay", mentions = new[] { g.B.Id } }, g.CA);
+        var id = (await AppFixture.Json(sent)).GetProperty("id").GetGuid();
+        await app.Push.Next(phoneB.Endpoint); await app.Push.Next(phoneC.Endpoint);
+        var (beforeB, beforeC) = (app.Push.To(phoneB.Endpoint).Count, app.Push.To(phoneC.Endpoint).Count);
+
+        using var edit = await app.Call(HttpMethod.Patch, $"/api/conversations/{g.Chat}/messages/{id}", new { body = $"@{g.B.DisplayName} họp tối nay @{g.C.DisplayName}", mentions = new[] { g.B.Id, g.C.Id } }, g.CA);
+        Assert.Equal(HttpStatusCode.NoContent, edit.StatusCode);
+
+        await app.Push.Next(phoneC.Endpoint, beforeC);
+        Assert.Equal(beforeC + 1, app.Push.To(phoneC.Endpoint).Count);
+        await Task.Delay(300);
+        Assert.Equal(beforeB, app.Push.To(phoneB.Endpoint).Count);   // B was named already and heard of it then
+    }
+
     [Fact]
     public async Task Nobody_hears_of_a_message_from_before_they_joined()
     {

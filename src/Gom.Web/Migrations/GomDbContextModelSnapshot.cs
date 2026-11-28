@@ -695,6 +695,19 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.PrimitiveCollection<Guid[]>("Mentions")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("mentions")
+                        .HasDefaultValueSql("'{}'");
+
+                    b.Property<bool>("MentionsAll")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("mentions_all");
+
                     b.Property<int?>("Notice")
                         .HasColumnType("integer")
                         .HasColumnName("notice");

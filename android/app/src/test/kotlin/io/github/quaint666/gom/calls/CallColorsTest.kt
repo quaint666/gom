@@ -6,7 +6,9 @@ import org.junit.Test
 
 /** The call screens' colours are the page's: each `call_` colour is gom.css's token of that name, light and dark. */
 class CallColorsTest {
-    private val css = File("../../src/Gom.Web/wwwroot/css/gom.css").readText().let { it.substring(it.indexOf(":root")) }
+    /** The page's stylesheet: its parts in `Styles/`, in name order, as `build.mjs` joins them (the built `gom.css` is not in git). */
+    private val css = File("../../src/Gom.Web/Styles").listFiles { f -> f.name.endsWith(".css") }!!.sortedBy { it.name }
+        .joinToString("") { it.readText() }.let { it.substring(it.indexOf(":root")) }
 
     private fun colours(folder: String): Map<String, String> = Regex("""<color name="([a-z_]+)">(#[0-9A-Fa-f]{6})</color>""")
         .findAll(File("src/main/res/$folder/colors.xml").readText()).associate { it.groupValues[1] to it.groupValues[2].uppercase() }
@@ -16,7 +18,7 @@ class CallColorsTest {
         Regex("""--$name:\s*light-dark\((#[0-9A-Fa-f]{6}),\s*(?:var\(--[a-z-]+,\s*)?(#[0-9A-Fa-f]{6})""").find(css)?.let {
             return it.groupValues[1].uppercase() to it.groupValues[2].uppercase()
         }
-        val one = Regex("""--$name:\s*(#[0-9A-Fa-f]{6})""").find(css) ?: error("--$name is not in gom.css")
+        val one = Regex("""--$name:\s*(#[0-9A-Fa-f]{6})""").find(css) ?: error("--$name is not in the stylesheet")
         return one.groupValues[1].uppercase() to one.groupValues[1].uppercase()
     }
 

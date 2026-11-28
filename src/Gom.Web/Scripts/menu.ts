@@ -4,7 +4,7 @@ import { dismissMenu } from './motion.js';
 import { say } from './say.js';
 
 /**
- * A row's menu of actions, the one a conversation's "..." opens (`.menu` in gom.css): beside the button on a computer, a sheet from
+ * A row's menu of actions, the one a conversation's "..." opens (`.menu` in Styles/30-thread.css): beside the button on a computer, a sheet from
  * the bottom on a phone. The chat list, the owner's page and Contacts all use it, so every "..." in Gom behaves alike.
  */
 

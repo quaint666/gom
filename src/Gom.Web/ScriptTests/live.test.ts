@@ -37,7 +37,7 @@ const deps = (random = 1): LiveDeps => ({
 });
 
 function handlers(): LiveHandlers & { [K in keyof LiveHandlers]: ReturnType<typeof vi.fn> } {
-  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), read: vi.fn(), pins: vi.fn(), hidden: vi.fn(), cleared: vi.fn(), ended: vi.fn(), replaced: vi.fn(), slow: vi.fn() } as never;
+  return { state: vi.fn(), event: vi.fn(), events: vi.fn(), conversations: vi.fn(), read: vi.fn(), pins: vi.fn(), hidden: vi.fn(), cleared: vi.fn(), ended: vi.fn(), replaced: vi.fn(), slow: vi.fn(), typing: vi.fn() } as never;
 }
 const last = () => FakeSocket.all[FakeSocket.all.length - 1]!;
 const fireTimer = () => { const t = timers.shift()!; t.fn(); };
@@ -155,6 +155,28 @@ describe('live socket', () => {
     last().accept(); last().say({ t: 'ready' });
     live.sync('c1', 5);
     expect(last().sent.map((s) => JSON.parse(s))).toEqual([{ t: 'sync', c: 'c1', after: 5 }]);
+  });
+
+  it('tells the page who is typing where, and ignores a typing frame that lacks a part', () => {
+    const h = handlers();
+    createLive('ws://x/ws', h, deps()).start();
+    last().accept(); last().say({ t: 'ready' });
+    last().say({ t: 'typing', c: 'c1', u: 'u1', n: 'Bảo' });
+    last().say({ t: 'typing', c: 'c1', u: 'u1' });
+    last().say({ t: 'typing', u: 'u1', n: 'Bảo' });
+    last().say({ t: 'typing', c: 'c1', u: 5, n: 'Bảo' });
+    expect(h.typing).toHaveBeenCalledTimes(1);
+    expect(h.typing).toHaveBeenCalledWith('c1', 'u1', 'Bảo');
+  });
+
+  it('says that you are typing with a typing frame, only while open', () => {
+    const live = createLive('ws://x/ws', handlers(), deps());
+    live.start();
+    live.typing('c1');
+    expect(last().sent).toEqual([]);
+    last().accept(); last().say({ t: 'ready' });
+    live.typing('c1');
+    expect(last().sent.map((s) => JSON.parse(s))).toEqual([{ t: 'typing', c: 'c1' }]);
   });
 
   it('reconnects after a drop, waiting longer each time, and starts again once ready', () => {

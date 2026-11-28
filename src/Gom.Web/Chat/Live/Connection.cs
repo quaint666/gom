@@ -42,6 +42,12 @@ public sealed class Connection(Guid userId, Guid sessionId, IFrameSink sink, int
         return false;
     }
 
+    /// <summary>
+    /// Queues a frame that may be lost ("is typing"): when the queue is full it is simply dropped. Unlike <see cref="TryEnqueue"/> it never
+    /// closes the connection, so a hint can never cost a slow client its socket.
+    /// </summary>
+    public bool TryEnqueueLossy(byte[] frame) => Volatile.Read(ref _closing) == 0 && _queue.Writer.TryWrite(frame);
+
     /// <summary>Ends it now: what is still queued is dropped. The first reason given is the one the client hears.</summary>
     public void Close(int code, string reason)
     {

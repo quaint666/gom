@@ -274,6 +274,9 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             });
             e.Property(x => x.Body).HasMaxLength(16000);
             e.Property(x => x.Sticker).HasMaxLength(Chat.Stickers.MaxCodeLength);
+            // Constant defaults, so adding the columns to a table of millions of messages changes no row.
+            e.Property(x => x.Mentions).HasDefaultValueSql("'{}'");
+            e.Property(x => x.MentionsAll).HasDefaultValue(false);
             // Order inside a conversation, and "this device already sent this one".
             e.HasIndex(x => new { x.ConversationId, x.Seq }).IsUnique();
             // Disappearing messages: the job finds those that are due without a scan.
