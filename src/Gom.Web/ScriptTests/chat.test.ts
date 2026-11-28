@@ -4386,6 +4386,13 @@ describe('chat: notices in a group', () => {
     ({ ...msg(seq, by, '', at(10, seq), G), notice: { type, target: target ?? null, title: title ?? null } });
   const open = (history: ChatMessage[]) => start({ path: `/c/${G}`, chats: [group()], history: { [G]: history } });
 
+  it("draws a group's own picture in the list and the header", async () => {
+    start({ path: `/c/${G}`, chats: [group({ avatar: 'pic-g' })], history: { [G]: [] } });
+    await flush();
+    const pictures = [...root.querySelectorAll<HTMLImageElement>('.av img')].map((i) => i.getAttribute('src'));
+    expect(pictures.filter((src) => src === '/api/avatars/pic-g').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('draws a notice as a line between the messages, in words, not as a bubble', async () => {
     open([msg(1, 'minh', 'tin', at(10), G), notice(2, 'added', 'minh', { id: 'u-bao', displayName: 'Bảo' })]);
     await flush();

@@ -506,6 +506,7 @@ export const vi = {
     left: (who: string) => `${who} đã rời nhóm`,
     renamed: (who: string, title: string) => `${who} đã đổi tên nhóm thành "${title}"`,
     restyled: (who: string) => `${who} đã đổi màu và hình nền của cuộc trò chuyện`,
+    pictured: (who: string) => `${who} đã đổi ảnh nhóm`,
     disappearOn: (who: string, how: string) => `${who} đã bật tin nhắn tự xoá: ${how}`,
     disappearOff: (who: string) => `${who} đã tắt tin nhắn tự xoá`,
     filesTrimmed: (day: string) => `Ảnh và tệp gửi trước ${day} đã được dọn`,

@@ -503,6 +503,7 @@ export const en: Strings = {
     left: (who: string) => `${who} left the group`,
     renamed: (who: string, title: string) => `${who} renamed the group "${title}"`,
     restyled: (who: string) => `${who} changed the conversation's colour and background`,
+    pictured: (who: string) => `${who} changed the group picture`,
     disappearOn: (who: string, how: string) => `${who} turned on disappearing messages: ${how}`,
     disappearOff: (who: string) => `${who} turned off disappearing messages`,
     filesTrimmed: (day: string) => `Pictures and files sent before ${day} were cleared out`,

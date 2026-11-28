@@ -197,6 +197,8 @@ public static class GroupEndpoints
     {
         // The uploads of the conversation, used or not; their files are removed after the commit.
         var files = await db.Attachments.Where(a => a.ConversationId == id).Select(a => a.Id).ToListAsync(ct);
+        // Its picture's file goes with it.
+        if (await db.Conversations.Where(c => c.Id == id).Select(c => c.AvatarId).SingleOrDefaultAsync(ct) is { } picture) files.Add(picture);
         await db.Attachments.Where(a => a.ConversationId == id).ExecuteDeleteAsync(ct);
         // An invite that added people to it still works, without the group.
         await db.Links.Where(l => l.GroupId == id).ExecuteUpdateAsync(s => s.SetProperty(l => l.GroupId, (Guid?)null), ct);

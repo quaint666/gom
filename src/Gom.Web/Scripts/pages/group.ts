@@ -1,7 +1,9 @@
 import { html, nothing, render } from 'lit-html';
 import { live as liveValue } from 'lit-html/directives/live.js';
 import type { Api, BanRow, Failure, GroupMember, JoinRequestRow, Person } from '../api.js';
+import * as icons from '../icons.js';
 import { appBar, avatar, errorBox } from '../ui.js';
+import { errorText } from '../text.js';
 import { limits } from '../limits.js';
 import { say } from '../say.js';
 
@@ -12,6 +14,10 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
   let draftTitle = '';
   let renaming = false;
   let joinApproval = false;
+  /** The group's picture (null: its initials), and what happened to the last change of it. */
+  let picture: string | null = null;
+  let pictureStatus = '';
+  let pictureBusy = false;
   let requests: JoinRequestRow[] = [];
   let bans: BanRow[] = [];
   /** "Do not let them back" ticked in the question about removing someone. */
@@ -93,6 +99,36 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
   /** The leader and the deputies may rename; everyone else just sees the name. */
   const mayRename = () => mine()?.role === 'leader' || mine()?.role === 'deputy';
 
+  /** The group's picture, big; its leader and deputies change it with the camera button (the middle square is kept) or take it away. */
+  const pictureSection = () => html`
+    <div class="me" data-group-picture>
+      <div class="me-pic">${avatar(title || '?', false, true, picture)}
+        ${mayRename() ? html`
+          <label class="me-cam" for="group-picture-file" title=${picture ? say.settings.changePicture : say.settings.choosePicture}>${icons.camera()}
+            <span class="sr-only">${picture ? say.settings.changePicture : say.settings.choosePicture}</span></label>
+          <input class="file-input" id="group-picture-file" type="file" accept="image/jpeg,image/png,image/webp" data-group-picture-file ?disabled=${pictureBusy}
+            @change=${(e: Event) => { const input = e.target as HTMLInputElement; const file = input.files?.[0]; input.value = ''; if (file) void setPicture(file); }}>` : nothing}
+      </div>
+      ${mayRename() && picture ? html`<button class="btn secondary small" type="button" data-group-picture-remove ?disabled=${pictureBusy} @click=${() => void removePicture()}>${say.settings.removePicture}</button>` : nothing}
+      <p class="hint" role="status" data-group-picture-status>${pictureStatus}</p>
+    </div>`;
+
+  async function setPicture(file: File): Promise<void> {
+    pictureBusy = true; pictureStatus = say.settings.saving; update();
+    const result = await api.setGroupAvatar(conversation, file);
+    pictureBusy = false;
+    if (result.ok) { picture = result.data.avatar; pictureStatus = say.settings.pictureSaved; } else pictureStatus = errorText(result);
+    update();
+  }
+
+  async function removePicture(): Promise<void> {
+    pictureBusy = true; update();
+    const result = await api.removeGroupAvatar(conversation);
+    pictureBusy = false;
+    if (result.ok) { picture = null; pictureStatus = say.settings.pictureRemoved; } else pictureStatus = errorText(result);
+    update();
+  }
+
   const nameSection = () => !mayRename()
     ? html`<h2 class="section" data-group-name>${title}</h2>`
     : html`
@@ -108,6 +144,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     <div class="page">
       ${errorBox(error)}
       ${members === null ? nothing : html`
+        ${pictureSection()}
         ${nameSection()}
         <h2 class="section">${say.common.members(members.length)}</h2>
         <ul class="list">${members.map(memberRow)}</ul>
@@ -190,7 +227,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
     const [m, f, c] = await Promise.all([api.groupMembers(conversation), api.friends(), api.conversations()]);
     if (m.ok) members = m.data; else { error = m; update(); return; }
     if (f.ok) friends = f.data.friends;
-    if (c.ok) { const row = c.data.find((x) => x.id === conversation); title = row?.title ?? ''; draftTitle = title; joinApproval = row?.joinApproval === true; }
+    if (c.ok) { const row = c.data.find((x) => x.id === conversation); title = row?.title ?? ''; draftTitle = title; joinApproval = row?.joinApproval === true; picture = row?.avatar ?? null; }
     // The leader and the deputies also see what waits for an answer and who may not come back.
     requests = []; bans = [];
     if (mayManage()) {

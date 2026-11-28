@@ -58,6 +58,8 @@ public class Conversation
     /// good. Each message keeps the deadline it was sent with (<see cref="Message.ExpiresAt"/>), so a change counts from then on.
     /// </summary>
     public int? DisappearSeconds { get; set; }
+    /// <summary>A group's picture (its file is in the blob store under this id, as a profile picture's is); null: its initials.</summary>
+    public Guid? AvatarId { get; set; }
 }
 
 /// <summary>What a member may do in a group. A one-to-one chat has only plain members.</summary>
@@ -94,7 +96,7 @@ public class ConversationMember
 /// <see cref="FilesTrimmed"/> and <see cref="MessagesTrimmed"/>: the owner trimmed pictures and files, or messages, sent before a date
 /// (the date is the notice's body).
 /// </summary>
-public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7, Call = 8, Disappearing = 9 }
+public enum NoticeKind { Added = 1, Removed = 2, Left = 3, Renamed = 4, FilesTrimmed = 5, MessagesTrimmed = 6, Restyled = 7, Call = 8, Disappearing = 9, Pictured = 10 }
 
 public enum CallState { Ringing = 1, Active = 2, Ended = 3 }
 

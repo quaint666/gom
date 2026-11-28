@@ -96,7 +96,7 @@ export interface CallInfo {
   caller: { id: string; displayName: string }; offer: string | null; answer: string | null; ringSeconds: number; aliveSeconds: number;
 }
 export interface CallLine { callerId: string; outcome: 'completed' | 'missed' | 'declined' | 'busy' | 'failed'; startedAt: string; seconds: number }
-export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call' | 'disappearing'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null; seconds?: number | null }
+export interface Notice { type: 'added' | 'removed' | 'left' | 'renamed' | 'filesTrimmed' | 'messagesTrimmed' | 'restyled' | 'call' | 'disappearing' | 'pictured'; target?: Sender | null; title?: string | null; before?: string | null; call?: CallLine | null; seconds?: number | null }
 export interface ChatMessage { id: string; seq: number; conversationId: string; clientId: string; sender: Sender; body: string; createdAt: string; deleted?: boolean; reply?: Reply | null; reactions?: Reaction[] | null; editedAt?: string | null; attachments?: Attachment[] | null; notice?: Notice | null;
   /** Set when the message is one sticker (its code): then it has no words and no files. */
   sticker?: string | null;
@@ -115,6 +115,8 @@ export interface Conversation {
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
   /** Your place in a group; null for a 1:1 chat. */
   role?: 'leader' | 'deputy' | 'member' | null;
+  /** A group's picture (a 1:1 chat shows `peer.avatar`); null: its initials. */
+  avatar?: string | null;
   /** Its own colour and background, the same for everyone in it; null (or absent): each person's own. */
   palette?: string | null; pattern?: string | null;
   /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
@@ -204,6 +206,9 @@ export interface Api {
   addSticker(pack: string, picture: Blob): Promise<Result<{ id: string; code: string }>>;
   deleteSticker(id: string): Promise<Result<void>>;
   removeAvatar(): Promise<Result<void>>;
+  /** A group's picture, by its leader or a deputy. */
+  setGroupAvatar(conversation: string, picture: Blob): Promise<Result<{ avatar: string }>>;
+  removeGroupAvatar(conversation: string): Promise<Result<void>>;
   /** The server's key for notifications and whether this device gets them; a failure (404) means push is off on this server. */
   pushState(): Promise<Result<PushState>>;
   setPush(subscription: DeviceSubscription, level: PushLevel): Promise<Result<void>>;
@@ -436,6 +441,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     addSticker: (pack, picture) => call('POST', `/api/owner/sticker-packs/${enc(pack)}/stickers`, picture),
     deleteSticker: (id) => call('DELETE', `/api/owner/stickers/${enc(id)}`),
     removeAvatar: () => call('DELETE', '/api/me/avatar'),
+    setGroupAvatar: (conversation, picture) => call('PUT', `/api/conversations/${enc(conversation)}/avatar`, picture),
+    removeGroupAvatar: (conversation) => call('DELETE', `/api/conversations/${enc(conversation)}/avatar`),
     pushState: () => call('GET', '/api/push'),
     setPush: (subscription, level) => ('app' in subscription
       ? call('PUT', '/api/push/fcm', { token: subscription.app, level })

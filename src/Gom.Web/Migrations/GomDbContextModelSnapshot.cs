@@ -288,6 +288,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -735,7 +739,7 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("messages", null, t =>
                         {
-                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8, 9)");
+                            t.HasCheckConstraint("ck_messages_notice", "notice IS NULL OR notice IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)");
 
                             t.HasCheckConstraint("ck_messages_notice_target", "(notice IS NOT NULL AND notice IN (1, 2)) = (notice_target_id IS NOT NULL)");
 

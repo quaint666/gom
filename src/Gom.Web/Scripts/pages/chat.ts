@@ -280,6 +280,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     html`<div class="av a${avatarTone(name)} ${size} ${picture ? 'has-pic' : ''}" aria-hidden="true">${picture
       ? html`<img src=${avatarUrl(picture)} alt="" loading="lazy" decoding="async">` : initials(name)}</div>`;
   /** The picture of someone in a group, from its member list (asked for when the group opens). */
+  /** A conversation's picture: the other person's in a 1:1 chat, the group's own in a group. */
+  const pictureOf = (c: Conversation): string | null | undefined => c.kind === 'group' ? c.avatar : c.peer?.avatar;
   const memberPicture = (conversation: string, userId: string): string | null | undefined => people.get(conversation)?.find((m) => m.id === userId)?.avatar;
 
   function preview(c: Conversation): string {
@@ -296,7 +298,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       aria-current=${c.id === openId ? 'page' : nothing} @click=${(e: MouseEvent) => onRowClick(e, c.id)}
       @contextmenu=${(e: MouseEvent) => onRowContext(e, c.id)}
       @pointerdown=${(e: PointerEvent) => rowPressStart(e, c.id)} @pointermove=${rowPressMove} @pointerup=${rowPressEnd} @pointercancel=${rowPressEnd} @pointerleave=${rowPressEnd}>
-      ${avatar(c.title ?? '?', c.peer?.avatar)}
+      ${avatar(c.title ?? '?', pictureOf(c))}
       <div class="im">
         <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label=${say.chat.pinnedMark}>${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.palette ? html`<span class="look-dot" data-palette=${c.palette} role="img" aria-label=${say.chat.ownLook}></span>` : nothing}${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv ${c.lastMessage?.call && missedByMe(c.lastMessage.call, me?.id ?? '') ? 'missed-call' : ''}">${c.lastMessage?.call ? (c.lastMessage.call.callerId === me?.id ? icons.callOut() : icons.callIn()) : nothing}${preview(c)}</span>
@@ -783,7 +785,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       return html`<li><label class="fwd-row">
         <input type="checkbox" data-forward-pick=${c.id} .checked=${on} ?disabled=${f.busy || (!on && full)}
           @change=${(e: Event) => { const yes = (e.target as HTMLInputElement).checked; f.picked = yes ? [...f.picked.filter((x) => x !== c.id), c.id] : f.picked.filter((x) => x !== c.id); update(); }}>
-        ${avatar(c.title ?? '?', c.peer?.avatar)}<span>${c.title ?? '…'}</span></label></li>`;
+        ${avatar(c.title ?? '?', pictureOf(c))}<span>${c.title ?? '…'}</span></label></li>`;
     };
     return html`
       <dialog class="fwd" aria-labelledby="fwd-title" data-forward-panel data-modal @close=${cancel}
@@ -921,7 +923,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const infoPanel = (c: Conversation, t: Thread, page = false) => html`
     <aside class="info" aria-label=${say.chat.info} data-info-panel>
       <div class="info-top">
-        ${avatar(c.title ?? '?', c.peer?.avatar, 'xl')}
+        ${avatar(c.title ?? '?', pictureOf(c), 'xl')}
         <h2>${c.title ?? '…'}</h2>
         <small>${c.kind === 'group' ? say.common.members(c.memberCount ?? 0) : c.peer ? peerLine(c) : ''}</small>
       </div>
@@ -1100,7 +1102,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
           <a class="ib back" href="/" aria-label=${say.common.back} @click=${onBack}>${icons.back()}</a>
-          ${avatar(c?.title ?? '?', c?.peer?.avatar)}
+          ${avatar(c?.title ?? '?', c ? pictureOf(c) : null)}
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
             : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : nothing}</div>`}

@@ -27,7 +27,7 @@ public static class Notices
 {
     private static string Name(NoticeKind kind) => kind switch
     {
-        NoticeKind.Added => "added", NoticeKind.Removed => "removed", NoticeKind.Left => "left", NoticeKind.FilesTrimmed => "filesTrimmed", NoticeKind.MessagesTrimmed => "messagesTrimmed", NoticeKind.Restyled => "restyled", NoticeKind.Call => "call", NoticeKind.Disappearing => "disappearing", _ => "renamed",
+        NoticeKind.Added => "added", NoticeKind.Removed => "removed", NoticeKind.Left => "left", NoticeKind.FilesTrimmed => "filesTrimmed", NoticeKind.MessagesTrimmed => "messagesTrimmed", NoticeKind.Restyled => "restyled", NoticeKind.Call => "call", NoticeKind.Disappearing => "disappearing", NoticeKind.Pictured => "pictured", _ => "renamed",
     };
 
     private static NoticeDto Dto(NoticeKind kind, MessageEndpoints.PersonDto? target, string body, CallNoticeDto? call = null) => new(Name(kind), target,
