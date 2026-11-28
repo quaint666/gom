@@ -490,7 +490,6 @@ export const en: Strings = {
     calling: 'Calling…',
     ringing: 'Ringing…',
     connecting: 'Connecting…',
-    gomCall: 'Gom voice call',
     answer: 'Answer',
     decline: 'Decline',
     end: 'End',

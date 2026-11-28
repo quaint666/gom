@@ -88,7 +88,7 @@ private fun palette(): Palette = Palette(colorResource(R.color.page), colorResou
 
 /** The page's icons (`Scripts/icons.ts`, and the mockups' for the sound routes): 24-unit strokes. */
 private object Icons {
-    val logo = listOf("M4 5h16v11H11l-4 4v-4H4z", "M8 10h8")
+    val chat = listOf("M4 5h16v11H11l-4 4v-4H4z")
     val call = listOf("M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z")
     val mic = listOf("M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3z", "M5 11a7 7 0 0014 0", "M12 18v3")
     val micOff = mic + "M3 3l18 18"
@@ -198,11 +198,6 @@ private fun Header(c: Palette, showMinimise: Boolean, minimise: () -> Unit) {
                 .clickable(role = Role.Button, onClick = minimise).semantics { contentDescription = label }, contentAlignment = Alignment.Center) {
                 Icon(Icons.chevronDown, c.text)
             }
-        }
-        Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.logo, c.link, 16.dp)
-            Spacer(Modifier.width(6.dp))
-            BasicText(stringResource(R.string.app_name), style = TextStyle(color = c.muted, fontSize = 13.sp))
         }
     }
 }
@@ -335,7 +330,7 @@ private fun Controls(v: CallView?, routes: Routes, c: Palette, act: CallActions,
                 RoundButton(Icons.close, stringResource(R.string.call_close), Look.PLAIN, c, onClick = act.close)
             v.phase == Phase.ENDED -> if (v.mine || v.ending is Ending.Talked) {
                 RoundButton(Icons.call, stringResource(R.string.call_back), Look.ANSWER, c, onClick = act.callBack)
-                RoundButton(Icons.logo, stringResource(R.string.call_message), Look.PLAIN, c, onClick = act.message)
+                RoundButton(Icons.chat, stringResource(R.string.call_message), Look.PLAIN, c, onClick = act.message)
             }
             else -> {
                 // The left button: the speaker, or a choice of where the sound goes when a headset is there too (mockups 25, 26).

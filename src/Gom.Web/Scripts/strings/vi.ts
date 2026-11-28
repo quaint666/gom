@@ -494,7 +494,6 @@ export const vi = {
     calling: 'Đang gọi…',
     ringing: 'Đang đổ chuông…',
     connecting: 'Đang kết nối…',
-    gomCall: 'Cuộc gọi thoại Gom',
     answer: 'Trả lời',
     decline: 'Từ chối',
     end: 'Kết thúc',

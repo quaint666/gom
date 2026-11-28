@@ -423,7 +423,6 @@ export function createCalls(deps: CallDeps): Calls {
     return html`<div class="call-screen" role="dialog" aria-modal="true" aria-label=${c.phase === 'incoming' ? say.calls.incoming : say.calls.voiceCall} data-phase=${c.phase}>
       <div class="call-box">
         ${going(c) ? html`<button class="call-min" type="button" data-call="minimise" aria-label=${say.calls.minimise} @click=${() => minimise(c, true)}>${icons.chevronDown()}</button>` : nothing}
-        <p class="call-app">${icons.logo()}<span>${say.calls.gomCall}</span></p>
         <div class="call-who">${avatar(c.peer.name, false, true, c.peer.avatar)}
           <h2>${c.peer.name}</h2>
           <p class="call-state ${c.problem ? 'problem' : ''} ${down ? 'warn' : ''}" role=${c.problem ? 'alert' : 'status'} data-call-state>${down ? icons.wifiOff() : nothing}${statusOf(c)}</p></div>
