@@ -113,6 +113,28 @@ public class AnnouncementTests(AppFixture app) : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task Pins_there_are_the_owners_a_member_neither_pins_nor_unpins()
+    {
+        var channel = await Channel();
+        var (_, oc) = await app.Owner();
+        var (_, mc) = await app.Member();
+        await Channel();
+        var said = (await Say(oc, channel, "Nội quy nhóm")).GetProperty("id").GetGuid();
+
+        using var no = await app.Call(Put, $"/api/conversations/{channel}/messages/{said}/pin", cookie: mc);
+        Assert.Equal(HttpStatusCode.Forbidden, no.StatusCode);
+        Assert.Equal("owner_only", await ErrorOf(no));
+        using var yes = await app.Call(Put, $"/api/conversations/{channel}/messages/{said}/pin", cookie: oc);
+        Assert.Equal(HttpStatusCode.NoContent, yes.StatusCode);
+        using var noUnpin = await app.Call(Delete, $"/api/conversations/{channel}/messages/{said}/pin", cookie: mc);
+        Assert.Equal(HttpStatusCode.Forbidden, noUnpin.StatusCode);
+        using var pins = await app.Call(Get, $"/api/conversations/{channel}/pins", cookie: mc);
+        Assert.Single((await AppFixture.Json(pins)).GetProperty("pins").EnumerateArray());   // still pinned, and a member reads them
+        using var gone = await app.Call(Delete, $"/api/conversations/{channel}/messages/{said}/pin", cookie: oc);
+        Assert.Equal(HttpStatusCode.NoContent, gone.StatusCode);
+    }
+
+    [Fact]
     public async Task A_member_reads_all_of_it_and_reacts_but_nobody_answers_a_message()
     {
         var channel = await Channel();

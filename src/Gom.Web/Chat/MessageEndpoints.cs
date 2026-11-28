@@ -323,7 +323,7 @@ public static class MessageEndpoints
         return Results.Ok(new { pins = rows.Select(r => ToDto(r.Message, new PersonDto(r.Id, r.DisplayName), null, null, withFiles.GetValueOrDefault(r.Message.Id))) });
     }
 
-    /// <summary>Pins a message for everyone in the conversation (any member may). A few at most; pinning again changes nothing.</summary>
+    /// <summary>Pins a message for everyone in the conversation (any member may; in the announcements, only the owner). A few at most; pinning again changes nothing.</summary>
     private static async Task<IResult> Pin(Guid id, Guid messageId, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
@@ -331,6 +331,7 @@ public static class MessageEndpoints
         if (access is null) return Results.NotFound();
         if (!await db.Messages.AnyAsync(m => m.Id == messageId && m.ConversationId == id && m.Seq > access.SeesAfter && m.DeletedAt == null && m.Notice == null
                 && !db.Hides.Any(h => h.UserId == me && h.MessageId == m.Id), ct)) return Results.NotFound();
+        if (!Announcements.MayPost(access.Kind, http.User)) return Error(StatusCodes.Status403Forbidden, Announcements.OwnerOnly);   // the pins there are the owner's
         if (access.Kind == ConversationKind.Direct && !await StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -351,7 +352,9 @@ public static class MessageEndpoints
     private static async Task<IResult> Unpin(Guid id, Guid messageId, HttpContext http, GomDbContext db, LiveDelivery live, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
-        if (await Access.Of(db, id, me, ct) is null) return Results.NotFound();
+        var access = await Access.Of(db, id, me, ct);
+        if (access is null) return Results.NotFound();
+        if (!Announcements.MayPost(access.Kind, http.User)) return Error(StatusCodes.Status403Forbidden, Announcements.OwnerOnly);
         var removed = await db.Pins.Where(p => p.ConversationId == id && p.MessageId == messageId).ExecuteDeleteAsync(ct);
         if (removed > 0) await live.PinsChangedAsync(db, id);
         return Results.NoContent();
