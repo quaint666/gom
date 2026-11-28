@@ -8,7 +8,7 @@ export const en: Strings = {
   locale: 'en-GB',
   titles: {
     signin: 'Sign in', join: 'Invitation', signup: 'Ask to join', reset: 'Reset password', settings: 'Settings', friends: 'Friends',
-    newgroup: 'New group', group: 'Group members', add: 'Add friend', owner: 'Invites and members', storage: 'Storage', privacy: 'Privacy policy',
+    newgroup: 'New group', group: 'Group members', add: 'Add friend', owner: 'Invites and members', storage: 'Storage', privacy: 'Privacy policy', help: 'Setup guide',
   },
   emojiGroups: {
     smileys: 'Smileys', people: 'People', nature: 'Animals and nature', food: 'Food and drink', travel: 'Travel and places',
@@ -781,6 +781,34 @@ export const en: Strings = {
     muteFor4h: 'For 4 hours',
     muteTill8: 'Until 8:00 in the morning',
     muteAlways: 'Until I turn them back on',
+  },
+  help: {
+    link: 'Setup guide',
+    title: 'Setup guide',
+    lead: 'A few steps so messages and calls reach you on time. The names of the settings may differ a little on your phone.',
+    thisDevice: 'This device',
+    home: 'Back to Gom',
+    android: { heading: 'The Gom app on Android', items: [
+      'Install Gom from Google Play with the link you were sent, open it and sign in.',
+      'Notifications: when Gom asks, choose Allow. If you refused: Settings › Apps › Gom › Notifications, and turn them on.',
+      'Microphone, for voice messages and calls: the first time, choose Allow while using the app. If you refused: Settings › Apps › Gom › Permissions › Microphone.',
+      'Battery, so calls always ring: Settings › Apps › Gom › Battery › Unrestricted. On a Samsung phone, also go to Settings › Device care › Battery › Background usage limits, and add Gom to Never sleeping apps.',
+      'On Xiaomi, Oppo, Vivo and some other phones: if Gom\'s page has Autostart, turn it on.',
+      'Android 14 and later: so calls show full screen on a locked phone, turn on Allow full-screen notifications for Gom. Gom reminds you if it is needed.',
+    ] },
+    web: { heading: 'In a browser (computer or phone)', items: [
+      'Use a recent Chrome, Edge or Firefox, open Gom and sign in.',
+      'Notifications: in Gom, go to Settings › Notifications and turn them on; when the browser asks, choose Allow. If you blocked them: click the icon beside the address, find Notifications, choose Allow, then reload the page.',
+      'Microphone, for voice messages and calls: when the browser asks, choose Allow. If you blocked it: also from the icon beside the address.',
+      'On an Android phone, so notifications pop up on screen: Settings › Apps › Chrome › Notifications, choose the Gom site\'s entry and turn on Pop on screen.',
+      'Add Gom to your home screen to open it like an app: in Gom, Settings › Add Gom to your home screen, or from the browser\'s menu.',
+    ] },
+    iphone: { heading: 'On iPhone and iPad', items: [
+      'You need iOS or iPadOS 16.4 or later.',
+      'Open Gom in Safari, tap the Share button and choose "Add to Home Screen".',
+      'Open Gom from that icon (not from Safari), go to Settings › Notifications and turn them on; when asked, choose Allow. Notifications only come when Gom is opened this way.',
+      'Microphone, for voice messages and calls: when asked, choose Allow.',
+    ] },
   },
   privacy: {
     title: 'Privacy policy',

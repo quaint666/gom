@@ -67,6 +67,7 @@ public static class Pages
         new("/groups/{id}", "group"),
         new("/add/{gomId}", "add"),
         new("/privacy", "privacy"),
+        new("/help", "help"),
     ];
 
     /// <summary>

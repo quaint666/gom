@@ -289,7 +289,9 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
         </button></li>
         ${app.source ? html`<li><a href=${app.source} target="_blank" rel="noopener" data-source-link><span class="lead-i">${icons.file()}</span>
           <span class="t"><b>${say.settings.sourceRow}</b><small>${say.settings.sourceSummary}</small></span><span class="chev">${icons.chevron()}</span></a></li>` : nothing}</ul>`}
-    <ul class="nav"><li><a href="/privacy" data-policy-link><span class="lead-i">${icons.shield()}</span><span class="t"><b>${say.settings.policyRow}</b></span>
+    <ul class="nav"><li><a href="/help" data-help-link><span class="lead-i">${icons.info()}</span><span class="t"><b>${say.help.link}</b></span>
+      <span class="chev">${icons.chevron()}</span></a></li>
+      <li><a href="/privacy" data-policy-link><span class="lead-i">${icons.shield()}</span><span class="t"><b>${say.settings.policyRow}</b></span>
       <span class="chev">${icons.chevron()}</span></a></li></ul>
     <button class="btn secondary signout" type="button" data-signout @click=${signOut}>${icons.signOut()}${say.common.signOut}</button>`;
 

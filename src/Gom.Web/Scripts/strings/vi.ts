@@ -8,7 +8,7 @@ export const vi = {
   /** Each page's title before " · Gom", by its script's name; a page not listed is just "Gom". */
   titles: {
     signin: 'Đăng nhập', join: 'Lời mời', signup: 'Xin tham gia', reset: 'Đặt lại mật khẩu', settings: 'Cài đặt', friends: 'Bạn bè',
-    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng', privacy: 'Chính sách quyền riêng tư',
+    newgroup: 'Nhóm mới', group: 'Thành viên nhóm', add: 'Kết bạn', owner: 'Lời mời và thành viên', storage: 'Dung lượng', privacy: 'Chính sách quyền riêng tư', help: 'Hướng dẫn cài đặt',
   },
   /** The emoji panel's groups (emoji-data.ts) and the sticker packs (stickers.ts), by key. */
   emojiGroups: {
@@ -795,6 +795,36 @@ export const vi = {
     muteAlways: 'Cho đến khi được mở lại',
   },
   /** The public privacy policy (/privacy), required by Google Play; anyone can read it, signed in or not. */
+  help: {
+    /** The link to this page, on the pages before signing in, the welcome page and Settings. */
+    link: 'Hướng dẫn cài đặt',
+    title: 'Hướng dẫn cài đặt',
+    lead: 'Vài bước để tin nhắn và cuộc gọi đến đúng lúc. Tên các mục có thể hơi khác trên máy của bạn.',
+    /** Beside the part for the device this page is open on. */
+    thisDevice: 'Máy này',
+    home: 'Về Gom',
+    android: { heading: 'Ứng dụng Gom trên Android', items: [
+      'Cài Gom từ Google Play bằng đường dẫn được gửi cho bạn, mở ra và đăng nhập.',
+      'Thông báo: khi Gom hỏi, chọn Cho phép. Nếu lỡ từ chối: Cài đặt › Ứng dụng › Gom › Thông báo, rồi bật lên.',
+      'Micrô, cho tin nhắn thoại và cuộc gọi: lần đầu dùng, chọn Cho phép khi dùng ứng dụng. Nếu lỡ từ chối: Cài đặt › Ứng dụng › Gom › Quyền › Micrô.',
+      'Pin, để cuộc gọi luôn đổ chuông: Cài đặt › Ứng dụng › Gom › Pin › Không hạn chế. Trên điện thoại Samsung, vào thêm Cài đặt › Chăm sóc thiết bị › Pin › Giới hạn sử dụng nền, và thêm Gom vào Ứng dụng không bao giờ ngủ.',
+      'Trên Xiaomi, Oppo, Vivo và vài hãng khác: nếu trang của Gom có mục Tự khởi chạy (Autostart), hãy bật lên.',
+      'Android 14 trở lên: để cuộc gọi hiện toàn màn hình khi máy khóa, bật Cho phép thông báo toàn màn hình cho Gom. Gom sẽ nhắc nếu cần.',
+    ] },
+    web: { heading: 'Trên trình duyệt (máy tính hoặc điện thoại)', items: [
+      'Dùng Chrome, Edge hoặc Firefox bản mới, mở Gom và đăng nhập.',
+      'Thông báo: trong Gom, vào Cài đặt › Thông báo và bật; khi trình duyệt hỏi, chọn Cho phép. Nếu lỡ chặn: bấm biểu tượng cạnh địa chỉ trang, tìm Thông báo, chọn Cho phép rồi tải lại trang.',
+      'Micrô, cho tin nhắn thoại và cuộc gọi: khi trình duyệt hỏi, chọn Cho phép. Nếu lỡ chặn: cũng ở biểu tượng cạnh địa chỉ trang.',
+      'Trên điện thoại Android, để thông báo hiện lên màn hình: Cài đặt › Ứng dụng › Chrome › Thông báo, chọn mục của trang Gom và bật Hiện trên màn hình.',
+      'Cài Gom lên màn hình chính để mở như một ứng dụng: trong Gom, Cài đặt › Cài Gom lên màn hình chính, hoặc từ menu của trình duyệt.',
+    ] },
+    iphone: { heading: 'Trên iPhone và iPad', items: [
+      'Cần iOS hoặc iPadOS 16.4 trở lên.',
+      'Mở Gom bằng Safari, bấm nút Chia sẻ, chọn "Thêm vào MH chính".',
+      'Mở Gom từ biểu tượng vừa thêm (không phải từ Safari), vào Cài đặt › Thông báo và bật; khi được hỏi, chọn Cho phép. Thông báo chỉ đến khi Gom được mở theo cách này.',
+      'Micrô, cho tin nhắn thoại và cuộc gọi: khi được hỏi, chọn Cho phép.',
+    ] },
+  },
   privacy: {
     title: 'Chính sách quyền riêng tư',
     updated: (date: string) => `Cập nhật ngày ${date}`,

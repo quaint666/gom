@@ -32,6 +32,7 @@ export function mountWaiting(root: HTMLElement, api: Api, go: (path: string) => 
         <button class="btn" type="button" data-check ?disabled=${busy} @click=${() => void check()}>${say.waiting.check}</button>
         ${status === '' ? nothing : html`<p class="hint" role="status" data-waiting-status>${status}</p>`}`}
       <button class="btn secondary" type="button" data-signout ?disabled=${busy} @click=${() => void signOut()}>${say.common.signOut}</button>
+      <p class="foot"><a href="/help" data-help-link>${say.help.link}</a></p>
     </div>`;
   const update = () => render(view(), root);
 

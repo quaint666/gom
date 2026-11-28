@@ -51,6 +51,7 @@ export function mountSignUp(root: HTMLElement, api: Api, go: (path: string) => v
           <button class="btn" type="submit" ?disabled=${busy}>${say.signUp.send}</button>
         </form>
         <p class="foot">${say.account.haveAccount} <a href="/sign-in">${say.account.signIn}</a></p>
+        <p class="foot"><a href="/help" data-help-link>${say.help.link}</a></p>
       </div>`;
   };
   const update = () => render(view(), root);

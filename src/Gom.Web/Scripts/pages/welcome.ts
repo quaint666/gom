@@ -31,6 +31,7 @@ export function mountWelcome(root: HTMLElement, api: Api, go: (path: string) => 
         ? html`<a class="btn" href="/" data-welcome-start @click=${(e: MouseEvent) => { e.preventDefault(); go('/'); }}>${say.welcome.start}</a>`
         : html`<a class="btn" href=${`/c/${into.id}`} data-welcome-group @click=${(e: MouseEvent) => { e.preventDefault(); go(`/c/${into!.id}`); }}>${say.welcome.openGroup(into.title)}</a>`}
       <a class="btn secondary" href="/settings/profile" data-welcome-picture @click=${(e: MouseEvent) => { e.preventDefault(); go('/settings/profile'); }}>${say.welcome.picture}</a>
+      <a class="btn secondary" href="/help" data-help-link>${say.help.link}</a>
       ${source === '' ? nothing : html`<p class="foot">${say.welcome.source} <a href=${source} target="_blank" rel="noopener" data-source-link>GitHub</a></p>`}
     </div>`;
   const update = () => render(view(), root);

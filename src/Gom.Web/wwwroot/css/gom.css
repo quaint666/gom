@@ -141,7 +141,8 @@ a { color: var(--link); }
 .page.policy { max-inline-size: 680px; gap: 10px; line-height: 1.55; }
 .policy h1 { margin: 8px 0 0; }
 .policy h2 { margin: 14px 0 4px; font-size: 18px; }
-.policy ul { margin: 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 6px; }
+.policy ul, .policy ol { margin: 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 6px; }
+.policy h2 small { font-size: 14px; font-weight: 400; }
 .policy-home { align-self: flex-start; color: inherit; text-decoration: none; }
 /* The way back to Gom from the policy: a button at the top (small) and at the foot, after the contact form. */
 .home-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }

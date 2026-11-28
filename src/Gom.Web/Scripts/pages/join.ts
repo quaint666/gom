@@ -40,6 +40,7 @@ export function mountJoin(root: HTMLElement, api: Api, go: (path: string) => voi
           <button class="btn" type="submit" ?disabled=${busy}>${say.account.createAccount}</button>
         </form>
         <p class="foot">${say.account.haveAccount} <a href="/sign-in">${say.account.signIn}</a></p>
+        <p class="foot"><a href="/help" data-help-link>${say.help.link}</a></p>
       </div>`;
   };
   const update = () => render(view(), root);

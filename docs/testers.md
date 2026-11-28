@@ -28,3 +28,7 @@ The owner posts this in Testers and pins it. It is text, not code: change it in 
 > Found a bug or something awkward? Just say it here or on GitHub. Thanks!
 
 Voice calls are between friends only, so testers send each other a friend request from the group's member list first.
+
+An optional last line for each half, pointing at the setup guide (notifications, the microphone, and on Android the battery),
+with this Gom's own address: "Cài đặt lần đầu: https://…/help" and "First-time setup: https://…/help". The guide is public, so
+it can also go in the invite message.

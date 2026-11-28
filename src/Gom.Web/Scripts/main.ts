@@ -11,6 +11,7 @@ import { mountJoin } from './pages/join.js';
 import { mountWelcome } from './pages/welcome.js';
 import { mountReset } from './pages/reset.js';
 import { mountPrivacy } from './pages/privacy.js';
+import { helpDevice, mountHelp } from './pages/help.js';
 import { mountSettings } from './pages/settings.js';
 import { takesCallsHere } from './calls/here.js';
 import { appPort, createAppPusher, type AppPusher } from './app.js';
@@ -239,6 +240,7 @@ if (root) {
     case 'newgroup': mountNewGroup(root, api, go, new URLSearchParams(location.search).get('with')); break;
     case 'group': mountGroup(root, api, go, token); break;
     case 'privacy': mountPrivacy(root, document.body.dataset['operator'] ?? '', api, document.body.dataset['source'] ?? ''); break;
+    case 'help': mountHelp(root, helpDevice(port !== undefined)); break;
   }
 }
 
