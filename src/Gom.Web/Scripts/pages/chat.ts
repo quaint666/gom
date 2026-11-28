@@ -1052,7 +1052,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     members: (id) => people.get(id), setMembers: (id, m) => { people.set(id, m); },
     refreshList: () => refreshList(), leave: (id) => leaveGroup(id), outside: (close) => outside(close),
     actions: (c) => infoActions(c), pins: () => infoPins(), media: (c) => html`${media(c.id)}`, disappear: (c) => disappearRow(c),
-    extraRows: (c, mayManage) => mayManage ? html`<li><a href="/groups/${c.id}" data-info-manage><span class="lead-i">${icons.shield()}</span><span class="t"><b>${say.chat.manageGroup}</b></span><span class="chev">${icons.chevron()}</span></a></li>` : nothing,
+    disband: (id) => disbandGroup(id),
   });
 
   /** In a one-to-one chat either person may set it (the server checks they are still friends); in a group, the leader and the deputies. */
@@ -2467,14 +2467,25 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     open(result.data.id);
   }
 
-  async function leaveGroup(id: string): Promise<void> {
-    const result = await api.leaveGroup(id);
-    if (!result.ok) { handleFailure(result); return; }
+  /** The group is no longer yours (you left it, or it was ended): out of the list, and back to the list. */
+  function groupGone(id: string): void {
     chats = (chats ?? []).filter((c) => c.id !== id);
     deps.nav.push('/');
     openId = null;
     update();
     void refreshList();
+  }
+
+  async function leaveGroup(id: string): Promise<void> {
+    const result = await api.leaveGroup(id);
+    if (!result.ok) { handleFailure(result); return; }
+    groupGone(id);
+  }
+
+  async function disbandGroup(id: string): Promise<void> {
+    const result = await api.disband(id);
+    if (!result.ok) { handleFailure(result); return; }
+    groupGone(id);
   }
 
   // ---- searching

@@ -5382,6 +5382,88 @@ describe('chat: the side panel of a group', () => {
       expect(root.querySelector('[data-remove]')).not.toBeNull();
     });
 
+    it('sets a new picture from the file the camera menu asks for, and shows the group with it', async () => {
+      const setGroupAvatar = vi.fn(async () => ok({ avatar: 'pic-2' }));
+      openPanel('leader', { setGroupAvatar }); await flush();
+      const input = root.querySelector<HTMLInputElement>('[data-group-picture-file]')!;
+      const file = new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' });
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush(); await flush();
+      expect(setGroupAvatar).toHaveBeenCalledWith(G, file);
+    });
+
+    const ask = (id: string, name: string, by: string) => ({ id, displayName: name, by: { id: 'u-minh', displayName: by } });
+    const manage = { joinRequests: vi.fn(async () => ok({ requests: [ask('r1', 'Hạnh', 'Minh')] })), bans: vi.fn(async () => ok({ bans: [{ id: 'b1', displayName: 'Khách' }] })) };
+
+    it('shows "Quản lý nhóm" with a count of what waits to the leader, and nothing of it to a plain member', async () => {
+      openPanel('leader', manage); await flush(); await flush();
+      expect(text(root.querySelector('[data-group-row="manage"]')!)).toContain('1');
+      root.querySelector<HTMLButtonElement>('[data-group-row="manage"]')!.click(); await flush();
+      expect(text(root.querySelector('[data-request="r1"]')!)).toContain('Hạnh');
+      expect(text(root.querySelector('[data-request="r1"]')!)).toContain('Minh');
+      expect(root.querySelector('[data-ban-row="b1"]')).not.toBeNull();
+    });
+
+    it('does not offer "Quản lý nhóm" to a plain member', async () => {
+      openPanel('member', manage); await flush(); await flush();
+      expect(root.querySelector('[data-group-row="manage"]')).toBeNull();
+    });
+
+    it('approves and declines a request, and lets only the leader lift a ban', async () => {
+      const joinRequests = vi.fn().mockResolvedValueOnce(ok({ requests: [ask('r1', 'Hạnh', 'Minh'), ask('r2', 'Vy', 'Minh')] })).mockResolvedValue(ok({ requests: [ask('r2', 'Vy', 'Minh')] }));
+      const h = openPanel('leader', { ...manage, joinRequests, approveRequest: vi.fn(async () => ok(undefined)), declineRequest: vi.fn(async () => ok(undefined)), unban: vi.fn(async () => ok(undefined)) });
+      await flush(); await flush();
+      await click('[data-group-row="manage"]');
+      await click('[data-request="r1"] [data-approve]');
+      expect(h.api.approveRequest).toHaveBeenCalledWith(G, 'r1');
+      expect(root.querySelector('[data-request="r1"]')).toBeNull();   // the list is asked for again
+      await click('[data-request="r2"] [data-decline]');
+      expect(h.api.declineRequest).toHaveBeenCalledWith(G, 'r2');
+      await click('[data-unban]');
+      expect(h.api.unban).toHaveBeenCalledWith(G, 'b1');
+    });
+
+    it('lets a deputy see the bans but not lift one, and does not show them the approval switch or disbanding', async () => {
+      openPanel('member', { ...manage, ...withRoles({ ...me_, role: 'deputy' }, minh) }); await flush(); await flush();
+      await click('[data-group-row="manage"]');
+      expect(root.querySelector('[data-ban-row="b1"]')).not.toBeNull();
+      expect(root.querySelector('[data-unban]')).toBeNull();
+      expect(root.querySelector('[data-join-approval]')).toBeNull();
+      expect(root.querySelector('[data-disband]')).toBeNull();
+    });
+
+    it('turns the approval switch on and off through the server', async () => {
+      const h = openPanel('leader', { ...manage, setJoinApproval: vi.fn(async () => ok(undefined)) }); await flush(); await flush();
+      await click('[data-group-row="manage"]');
+      const box = root.querySelector<HTMLInputElement>('[data-join-approval]')!;
+      expect(box.checked).toBe(false);
+      box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); await flush();
+      expect(h.api.setJoinApproval).toHaveBeenCalledWith(G, true);
+    });
+
+    it('asks before disbanding, and goes to the list after yes', async () => {
+      const h = openPanel('leader', { ...manage, disband: vi.fn(async () => ok(undefined)) }); await flush(); await flush();
+      await click('[data-group-row="manage"]');
+      await click('[data-disband]');
+      expect(h.api.disband).not.toHaveBeenCalled();
+      expect(text(dialog()!)).toContain('Giải tán nhóm này?');
+      await click('[data-cancel-sure]');
+      expect(dialog()).toBeNull();
+      await click('[data-disband]');
+      await click('[data-confirm-sure]');
+      expect(h.api.disband).toHaveBeenCalledWith(G);
+      expect(h.nav.path).toBe('/');
+    });
+
+    it('lets a leader who is alone leave, and says it ends the group', async () => {
+      const h = openPanel('leader', withRoles({ ...me_, role: 'leader' })); await flush();
+      await click('[data-group-row="leave"]');
+      expect(text(dialog()!)).toContain('nhóm sẽ bị xóa');
+      await click('[data-info-leave-yes]');
+      expect(h.api.leaveGroup).toHaveBeenCalledWith(G);
+    });
+
     it('keeps a refusal inside the dialog, where it was asked', async () => {
       openPanel('leader', { removeMember: vi.fn(async () => fail('forbidden', 403)) }); await flush();
       await click('[data-group-row="members"]');

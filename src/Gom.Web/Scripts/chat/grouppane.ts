@@ -1,6 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit-html';
 import { live } from 'lit-html/directives/live.js';
-import type { Api, Conversation, Failure, GroupMember, Person } from '../api.js';
+import type { Api, BanRow, Conversation, Failure, GroupMember, JoinRequestRow, Person } from '../api.js';
 import * as icons from '../icons.js';
 import { limits } from '../limits.js';
 import { menuItem, menuPoint, menuView, placeMenu } from '../menu.js';
@@ -28,16 +28,17 @@ export interface GroupPaneContext {
   pins(c: Conversation): TemplateResult | typeof nothing;
   media(c: Conversation): TemplateResult;
   disappear(c: Conversation): TemplateResult;
-  /** Something extra at the foot of the rows (the old page's link, until the work moves in). */
-  extraRows(c: Conversation, mayManage: boolean): TemplateResult | typeof nothing;
+  /** Ends the group for everyone (the server first, then the list and the page). */
+  disband(conversation: string): Promise<void>;
 }
 
-type Sub = 'members' | 'media' | 'disappear';
+type Sub = 'members' | 'media' | 'disappear' | 'manage';
 type Dialog =
   | { kind: 'rename'; draft: string }
   | { kind: 'add'; picked: Set<string>; query: string }
   | { kind: 'ask'; ask: 'remove' | 'handover'; member: GroupMember; ban: boolean }
-  | { kind: 'leave' };
+  | { kind: 'leave' }
+  | { kind: 'disband' };
 
 /**
  * A group's information, in the panel beside the thread or on a phone's page: its picture, name and size, then rows that open inside
@@ -54,8 +55,12 @@ export function createGroupPane(ctx: GroupPaneContext) {
   let busy = false;
   let error: Failure | null = null;
   let status = '';
+  /** What waits for the leader or a deputy: who asked to be added, and who may not come back. */
+  let requests: JoinRequestRow[] = [];
+  let bans: BanRow[] = [];
+  let loadedFor = '';
 
-  const reset = (id: string) => { current = id; sub = null; dialog = null; menuFor = null; pictureMenu = null; friends = null; busy = false; error = null; status = ''; };
+  const reset = (id: string) => { current = id; sub = null; dialog = null; menuFor = null; pictureMenu = null; friends = null; busy = false; error = null; status = ''; requests = []; bans = []; loadedFor = ''; };
   const mine = (id: string) => ctx.members(id)?.find((m) => m.isMe);
   const leads = (id: string) => mine(id)?.role === 'leader';
   const mayEdit = (id: string) => mine(id)?.role === 'leader' || mine(id)?.role === 'deputy';
@@ -64,6 +69,16 @@ export function createGroupPane(ctx: GroupPaneContext) {
     const me = mine(id);
     return !!me && !m.isMe && (me.role === 'leader' || (me.role === 'deputy' && m.role === 'member'));
   };
+
+  /** The requests and the bans, once for each group the panel shows, and again after a change. */
+  async function loadManage(id: string): Promise<void> {
+    loadedFor = id;
+    const [rq, bn] = await Promise.all([ctx.api.joinRequests(id), ctx.api.bans(id)]);
+    if (current !== id) return;
+    requests = rq.ok ? rq.data.requests : [];
+    bans = bn.ok ? bn.data.bans : [];
+    ctx.update();
+  }
 
   /** Runs a change on the server, then shows the group as it now is; a failure stays in view (in the dialog if one is open). */
   async function run(id: string, call: () => Promise<{ ok: true } | Failure>): Promise<boolean> {
@@ -74,6 +89,7 @@ export function createGroupPane(ctx: GroupPaneContext) {
     const fresh = await ctx.api.groupMembers(id);
     if (fresh.ok) ctx.setMembers(id, fresh.data);
     await ctx.refreshList();
+    if (mayEdit(id)) await loadManage(id);
     ctx.update();
     return true;
   }
@@ -132,9 +148,10 @@ export function createGroupPane(ctx: GroupPaneContext) {
 
   // ---- the rows
 
-  const row = (key: string, icon: TemplateResult, label: string, value: string | null, open: () => void, danger = false) => html`
+  const row = (key: string, icon: TemplateResult, label: string, value: string | null, open: () => void, danger = false, count = 0) => html`
     <li><button class=${danger ? 'danger' : ''} type="button" data-group-row=${key} @click=${open}>
       <span class="lead-i">${icon}</span><span class="t"><b>${label}</b></span>${value === null ? nothing : html`<span class="gval">${value}</span>`}
+      ${count === 0 ? nothing : html`<span class="badge" data-group-count aria-label=${say.chat.waitingCount(count)}>${count}</span>`}
       <span class="chev">${icons.chevron()}</span></button></li>`;
 
   const rest = (c: Conversation) => {
@@ -148,7 +165,7 @@ export function createGroupPane(ctx: GroupPaneContext) {
         ${row('members', icons.users(), say.chat.membersHeading, String(members?.length ?? c.memberCount ?? 0), () => { sub = 'members'; ctx.update(); })}
         ${row('media', icons.image(), say.chat.mediaRow, null, () => { sub = 'media'; ctx.update(); })}
         ${row('disappear', icons.clock(), say.chat.disappear, off ? say.chat.disappearOffChoice : say.chat.lasts(c.disappearSeconds!), () => { sub = 'disappear'; ctx.update(); })}
-        ${ctx.extraRows(c, mayEdit(c.id))}
+        ${mayEdit(c.id) ? row('manage', icons.shield(), say.chat.manageGroup, null, () => { sub = 'manage'; ctx.update(); }, false, requests.length) : nothing}
         ${row('leave', icons.signOut(), say.common.leaveGroup, null, () => { dialog = { kind: 'leave' }; error = null; ctx.update(); }, true)}
       </ul>`;
   };
@@ -182,6 +199,36 @@ export function createGroupPane(ctx: GroupPaneContext) {
       ...(leads(c.id) ? [menuItem('hand-over', icons.key(), say.group.handOver, () => { menuFor = null; dialog = { kind: 'ask', ask: 'handover', member: m, ban: false }; error = null; ctx.update(); })] : []),
       menuItem('remove', icons.close(), say.group.remove, () => { menuFor = null; dialog = { kind: 'ask', ask: 'remove', member: m, ban: false }; error = null; ctx.update(); }, true)], closeMenus);
   };
+
+  // ---- management: who waits, who may not come back, and ending the group
+
+  const manageView = (c: Conversation) => html`
+    ${leads(c.id) ? html`<label class="gswitch" data-approval-switch><input type="checkbox" data-join-approval .checked=${live(c.joinApproval === true)}
+      @change=${(e: Event) => { const on = (e.target as HTMLInputElement).checked; void run(c.id, () => ctx.api.setJoinApproval(c.id, on)); }}>
+      <span>${say.group.approvalSwitch}</span></label>` : nothing}
+    ${requests.length === 0 && bans.length === 0 ? html`<p class="hint" data-manage-empty>${say.chat.manageEmpty}</p>` : nothing}
+    ${requests.length === 0 ? nothing : html`
+      <h3>${say.group.waiting}</h3>
+      <ul class="info-list gmembers" data-requests>${requests.map((r) => html`
+        <li class="gm gm-ask" data-request=${r.id}>
+          <span class="gm-text"><b class="gm-name">${r.displayName}</b><small>${say.group.wantsToAdd(r.by.displayName)}</small>
+            <span class="gm-btns"><button class="btn small" type="button" data-approve ?disabled=${busy} @click=${() => void run(c.id, () => ctx.api.approveRequest(c.id, r.id))}>${say.group.approve}</button>
+              <button class="btn secondary small" type="button" data-decline ?disabled=${busy} @click=${() => void run(c.id, () => ctx.api.declineRequest(c.id, r.id))}>${say.group.decline}</button></span></span>
+        </li>`)}</ul>`}
+    ${bans.length === 0 ? nothing : html`
+      <h3>${say.group.banned}</h3>
+      <ul class="info-list gmembers" data-bans>${bans.map((b) => html`
+        <li class="gm" data-ban-row=${b.id}>
+          <span class="gm-main"><span class="gm-text"><b class="gm-name">${b.displayName}</b></span></span>
+          ${leads(c.id) ? html`<button class="btn secondary small" type="button" data-unban ?disabled=${busy} @click=${() => void run(c.id, () => ctx.api.unban(c.id, b.id))}>${say.group.unban}</button>` : nothing}
+        </li>`)}</ul>`}
+    ${leads(c.id) ? html`<ul class="nav gnav"><li><button class="danger" type="button" data-disband @click=${() => { dialog = { kind: 'disband' }; error = null; ctx.update(); }}>
+      <span class="lead-i">${icons.trash()}</span><span class="t"><b>${say.group.disband}</b></span><span class="chev">${icons.chevron()}</span></button></li></ul>` : nothing}`;
+
+  const disbandDialog = (c: Conversation) => dlg(say.group.disbandQ, html`
+    <p class="hint">${say.group.disbandNote}</p>
+    <div class="gd-foot"><button class="btn secondary" type="button" data-cancel-sure @click=${close}>${say.common.cancel}</button>
+      <button class="btn danger" type="button" data-confirm-sure @click=${() => { dialog = null; ctx.update(); void ctx.disband(c.id); }}>${say.group.disband}</button></div>`);
 
   // ---- the dialogs
 
@@ -297,9 +344,11 @@ export function createGroupPane(ctx: GroupPaneContext) {
     /** What goes inside the information panel for this group. */
     view(c: Conversation): TemplateResult {
       if (c.id !== current) reset(c.id);
+      // What waits for a leader or deputy loads once the members are known (it needs to know who you are).
+      if (loadedFor !== c.id && mayEdit(c.id)) void loadManage(c.id);
       return html`
-        ${sub === null ? rest(c) : html`${subHead(sub === 'members' ? say.chat.membersHeading : sub === 'media' ? say.chat.mediaRow : say.chat.disappear)}
-          ${sub === 'members' ? membersView(c) : sub === 'media' ? ctx.media(c) : ctx.disappear(c)}`}
+        ${sub === null ? rest(c) : html`${subHead(sub === 'members' ? say.chat.membersHeading : sub === 'media' ? say.chat.mediaRow : sub === 'manage' ? say.chat.manageGroup : say.chat.disappear)}
+          ${sub === 'members' ? membersView(c) : sub === 'media' ? ctx.media(c) : sub === 'manage' ? manageView(c) : ctx.disappear(c)}`}
         ${dialog === null && error !== null ? errorBox(error) : nothing}`;
     },
     /** The menus and dialogs, drawn beside the page (not inside the scrolling panel). */
@@ -307,7 +356,7 @@ export function createGroupPane(ctx: GroupPaneContext) {
       if (c.id !== current) return html``;
       return html`${pictureMenuView(c)}${memberMenu(c)}
         ${dialog === null ? nothing : dialog.kind === 'rename' ? renameDialog(c, dialog) : dialog.kind === 'add' ? addDialog(c, dialog)
-          : dialog.kind === 'ask' ? askDialog(c, dialog) : leaveDialog(c)}`;
+          : dialog.kind === 'ask' ? askDialog(c, dialog) : dialog.kind === 'disband' ? disbandDialog(c) : leaveDialog(c)}`;
     },
   };
 }
