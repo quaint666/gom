@@ -239,10 +239,12 @@ label.btn.busy { opacity: .6; pointer-events: none; }
 .emoji-row { display: flex; flex-basis: 100%; justify-content: space-between; gap: 4px; }
 .emoji { min-inline-size: 44px; min-block-size: 44px; border: 0; border-radius: 22px; background: none; font-size: 24px; cursor: pointer; }
 .emoji:hover { background: var(--border); }
-.reacts { align-self: flex-end; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-block: 2px 4px; }
-.out .reacts { align-self: flex-start; justify-content: flex-start; }   /* on your own message the reaction sits at the bubble's left edge; on others' at the right */
-.chip { display: inline-flex; align-items: center; gap: 4px; min-block-size: 28px; padding-inline: 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
-.chip.mine { border-color: var(--btn); background: var(--out); }
+/* As Messenger draws them: a small round badge on the bubble's bottom corner, cut out of the page by a ring of its background colour. */
+.reacts { align-self: flex-end; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; margin-block: -10px 8px; margin-inline: 0 10px; position: relative; z-index: 1; }
+.bub:has(+ .reacts) { padding-block-end: 14px; }   /* room under the words, so the badge does not cover the time */
+.out .reacts { align-self: flex-start; justify-content: flex-start; margin-inline: 10px 0; }   /* on your own message the badge sits at the bubble's left corner; on others' at the right */
+.chip { display: inline-flex; align-items: center; gap: 3px; min-block-size: 24px; padding-inline: 6px; border: 2px solid var(--bg); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; box-shadow: 0 0 0 1px var(--border); }
+.chip.mine { background: var(--out); box-shadow: 0 0 0 1px var(--btn); }
 
 /* edited messages */
 .edited { color: var(--muted); }
