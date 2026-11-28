@@ -55,22 +55,57 @@ export function mountFriends(root: HTMLElement, api: Api, go: (path: string) => 
     </li>`;
   };
 
+  /**
+   * A finger held on a friend for a second opens the same menu as the "...", as it does on the conversation list (a right-click does too;
+   * a held finger's own menu from the browser is held back). A finger that moves is scrolling.
+   */
+  const HOLD_MS = 1000;
+  const SLOP_PX = 10;
+  let hold: { timer: number; x: number; y: number } | null = null;
+
+  function holdEnd(): void {
+    if (hold === null) return;
+    clearTimeout(hold.timer);
+    hold = null;
+  }
+
+  function holdStart(e: PointerEvent, gomId: string): void {
+    holdEnd();
+    if (e.pointerType !== 'touch') return;
+    const at = { x: e.clientX, y: e.clientY };
+    hold = { timer: window.setTimeout(() => { hold = null; openMenu(gomId, at); }, HOLD_MS), ...at };
+  }
+
+  function holdMove(e: PointerEvent): void {
+    if (hold !== null && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > SLOP_PX) holdEnd();
+  }
+
+  function openMenu(gomId: string, at: { x: number; y: number }): void {
+    menu = { gomId, at };
+    update();
+    root.querySelector<HTMLElement>('[data-row-actions] [role="menuitem"]')?.focus();
+  }
+
   const friendRow = (p: Person) => html`
-    <li class="li person" data-friend=${p.gomId}>
+    <li class="li person" data-friend=${p.gomId} @pointerdown=${(e: PointerEvent) => holdStart(e, p.gomId)} @pointermove=${holdMove}
+      @pointerup=${holdEnd} @pointercancel=${holdEnd} @pointerleave=${holdEnd}
+      @contextmenu=${(e: MouseEvent) => { e.preventDefault(); if (typeof matchMedia !== 'function' || !matchMedia('(pointer: coarse)').matches) openMenu(p.gomId, menuPoint(e)); }}>
       <button class="rowmain" type="button" data-action="message" @click=${() => void message(p.gomId)}>${avatar(p.displayName, false, false, p.avatar)}
         <span class="t"><b>${p.displayName}</b><small>@${p.gomId}</small></span></button>
       <button class="ib li-more" type="button" data-more=${p.gomId} aria-label=${say.friends.optionsFor(p.displayName)} aria-haspopup="menu"
         aria-expanded=${menu?.gomId === p.gomId ? 'true' : 'false'}
-        @click=${(e: MouseEvent) => { menu = { gomId: p.gomId, at: menuPoint(e) }; update(); root.querySelector<HTMLElement>('[data-row-actions] [role="menuitem"]')?.focus(); }}>${icons.more()}</button>
+        @click=${(e: MouseEvent) => openMenu(p.gomId, menuPoint(e))}>${icons.more()}</button>
     </li>
     ${sure?.person.gomId === p.gomId ? question(sure) : nothing}`;
 
-  /** The open friend's menu; either choice asks first, under the friend's row. */
+  /** The open friend's menu: write to them, start a group with them, or (asking first, under their row) unfriend or block. */
   const menuOf = () => {
     const p = menu === null ? undefined : lists.friends.find((f) => f.gomId === menu!.gomId);
     if (p === undefined) return nothing;
     const ask = (kind: 'unfriend' | 'block') => () => { menu = null; sure = { kind, person: p }; update(); root.querySelector<HTMLElement>('[data-confirm-sure]')?.focus(); };
     return menuView(say.friends.optionsFor(p.displayName), [
+      menuItem('message', icons.send(), say.chat.message, () => { menu = null; void message(p.gomId); }),
+      menuItem('group-with', icons.users(), say.chat.groupWith(p.displayName), () => go(`/groups/new?with=${encodeURIComponent(p.gomId)}`)),
       menuItem('unfriend', icons.userMinus(), say.common.unfriend, ask('unfriend')),
       menuItem('block', icons.block(), say.common.block, ask('block'), true)], closeMenu);
   };
