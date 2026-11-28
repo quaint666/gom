@@ -202,7 +202,7 @@ public static class ConversationEndpoints
             orderby (c.LastMessageAt ?? c.CreatedAt) descending
             select new
             {
-                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, c.Palette, c.Pattern, c.DisappearSeconds, m.LastReadSeq, m.Muted, m.MutedUntil, m.PinnedAt, m.MarkedUnread, m.HiddenSeq,
+                c.Id, c.Kind, c.Title, c.LastSeq, c.JoinApproval, c.Palette, c.Pattern, c.DisappearSeconds, m.Role, m.LastReadSeq, m.Muted, m.MutedUntil, m.PinnedAt, m.MarkedUnread, m.HiddenSeq,
                 MemberCount = db.Members.Count(o => o.ConversationId == c.Id),
                 Peer = db.Members.Where(o => o.ConversationId == c.Id && o.UserId != me)
                     .Join(db.Users, o => o.UserId, u => u.Id, (o, u) => new
@@ -240,6 +240,8 @@ public static class ConversationEndpoints
             muted = r.Muted || r.MutedUntil > now,
             mutedUntil = r.MutedUntil > now ? r.MutedUntil : null,
             joinApproval = r.Kind == ConversationKind.Group && r.JoinApproval,
+            // Your place in a group (the owner's invite can add people only to a group they lead or are a deputy of); null for a 1:1 chat.
+            role = r.Kind == ConversationKind.Group ? r.Role.ToString().ToLowerInvariant() : null,
             // Its own colour and background, the same for everyone in it; null: each person's own.
             palette = r.Palette,
             pattern = r.Pattern,

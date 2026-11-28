@@ -138,6 +138,26 @@ public static class GroupEndpoints
         return null;
     }
 
+    /// <summary>A group the owner may put new people in from an invite or an approval: one they lead or are a deputy of.</summary>
+    internal static Task<bool> OwnerMayAddTo(GomDbContext db, Guid group, Guid owner, CancellationToken ct) =>
+        db.Members.AnyAsync(m => m.ConversationId == group && m.UserId == owner && m.Role != GroupRole.Member
+            && db.Conversations.Any(c => c.Id == group && c.Kind == ConversationKind.Group), ct);
+
+    /// <summary>
+    /// A new person joins one of the owner's groups through the owner's invite or approval, as if the owner added them. When that
+    /// cannot be (the owner no longer leads it or is a deputy, it is full, or it banned them) nothing happens and nothing is said: the
+    /// account is still made. Call it inside the transaction; the notice it returns is published after the commit.
+    /// </summary>
+    internal static async Task<Message?> AdmitFromOwnerAsync(GomDbContext db, Guid group, Guid owner, Guid person, DateTimeOffset now, int maxMembers, CancellationToken ct)
+    {
+        await LockGroup(db, group, ct);
+        if (!await OwnerMayAddTo(db, group, owner, ct)) return null;
+        if (await db.Bans.AnyAsync(b => b.ConversationId == group && b.UserId == person, ct)) return null;
+        if (await db.Members.AnyAsync(m => m.ConversationId == group && m.UserId == person, ct)) return null;
+        if (await AdmitAsync(db, group, person, now, maxMembers, ct) is not null) return null;
+        return await Notices.Write(db, group, owner, NoticeKind.Added, person, "", now, ct);
+    }
+
     private static async Task<IResult> Leave(Guid id, HttpContext http, GomDbContext db, TimeProvider clock, LiveDelivery live, IBlobStore blobs, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
@@ -178,6 +198,8 @@ public static class GroupEndpoints
         // The uploads of the conversation, used or not; their files are removed after the commit.
         var files = await db.Attachments.Where(a => a.ConversationId == id).Select(a => a.Id).ToListAsync(ct);
         await db.Attachments.Where(a => a.ConversationId == id).ExecuteDeleteAsync(ct);
+        // An invite that added people to it still works, without the group.
+        await db.Links.Where(l => l.GroupId == id).ExecuteUpdateAsync(s => s.SetProperty(l => l.GroupId, (Guid?)null), ct);
         await db.JoinRequests.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Bans.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
         await db.Reactions.Where(r => db.Messages.Any(m => m.Id == r.MessageId && m.ConversationId == id)).ExecuteDeleteAsync(ct);

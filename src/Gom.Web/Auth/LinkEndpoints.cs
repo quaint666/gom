@@ -1,3 +1,4 @@
+using Gom.Web.Chat;
 using Gom.Web.Chat.Live;
 using Gom.Web.Data;
 using Microsoft.EntityFrameworkCore;
@@ -64,27 +65,30 @@ public static class LinkEndpoints
 
     // ---- the owner
 
-    public sealed record InviteRequest(int? Days = null, int? Uses = null);
+    public sealed record InviteRequest(int? Days = null, int? Uses = null, Guid? Group = null);
 
     /// <summary>Most days and most people an invite may be made for.</summary>
     public const int MaxInviteDays = 30, MaxInviteUses = 100;
 
     /// <summary>
     /// A link the owner can hand to several people. It works until it expires (1 to 30 days), is revoked, or has let in as many as chosen
-    /// (1 to 100, or 0 for any number). Without a choice: the configured days and number of people.
+    /// (1 to 100, or 0 for any number). Without a choice: the configured days and number of people. With a group the owner leads or is a
+    /// deputy of, whoever joins is added to it too (the testers' link, or "join and land in the family group").
     /// </summary>
     private static async Task<IResult> CreateInvite(InviteRequest? request, HttpContext http, GomDbContext db, TimeProvider clock, IOptions<AuthOptions> options, CancellationToken ct)
     {
         var days = request?.Days ?? options.Value.InviteDays;
         var uses = request?.Uses ?? options.Value.InviteMaxUses;
         if (days is < 1 or > MaxInviteDays || uses is < 0 or > MaxInviteUses) return Results.BadRequest(new { error = "invalid_invite" });
+        if (request?.Group is { } group && !await Social.GroupEndpoints.OwnerMayAddTo(db, group, GomClaims.User(http.User), ct))
+            return Results.BadRequest(new { error = "invalid_invite" });
 
         var now = clock.GetUtcNow();
         var issued = Tokens.New();
         var link = new OneTimeLink
         {
             Id = Guid.NewGuid(), Kind = LinkKind.Invite, TokenHash = issued.Hash, CreatedBy = GomClaims.User(http.User),
-            CreatedAt = now, ExpiresAt = now.AddDays(days), MaxUses = uses == 0 ? null : uses,
+            CreatedAt = now, ExpiresAt = now.AddDays(days), MaxUses = uses == 0 ? null : uses, GroupId = request?.Group,
         };
         db.Links.Add(link);
         await db.SaveChangesAsync(ct);
@@ -95,7 +99,8 @@ public static class LinkEndpoints
     {
         var now = clock.GetUtcNow();
         var rows = await db.Links.Where(l => l.Kind == LinkKind.Invite).OrderByDescending(l => l.CreatedAt)
-            .Select(l => new { l.Id, l.CreatedAt, l.ExpiresAt, l.RevokedAt, l.MaxUses, l.Uses }).ToListAsync(ct);
+            .Select(l => new { l.Id, l.CreatedAt, l.ExpiresAt, l.RevokedAt, l.MaxUses, l.Uses,
+                Group = db.Conversations.Where(c => c.Id == l.GroupId).Select(c => new { id = c.Id, title = c.Title }).FirstOrDefault() }).ToListAsync(ct);
         var ids = rows.Select(r => r.Id).ToList();
         var joined = await (from u in db.InviteUses where ids.Contains(u.LinkId)
                             join p in db.Users on u.UserId equals p.Id
@@ -103,7 +108,7 @@ public static class LinkEndpoints
                             select new { u.LinkId, p.GomId, p.DisplayName, u.UsedAt }).ToListAsync(ct);
         return Results.Ok(rows.Select(r => new
         {
-            id = r.Id, createdAt = r.CreatedAt, expiresAt = r.ExpiresAt, uses = r.Uses, maxUses = r.MaxUses,
+            id = r.Id, createdAt = r.CreatedAt, expiresAt = r.ExpiresAt, uses = r.Uses, maxUses = r.MaxUses, group = r.Group,
             // revoked beats the rest: the owner's choice is what they want to see
             status = r.RevokedAt is not null ? "revoked" : r.ExpiresAt <= now ? "expired" : r.MaxUses is { } max && r.Uses >= max ? "full" : "active",
             members = joined.Where(j => j.LinkId == r.Id).Select(j => new { gomId = j.GomId, displayName = j.DisplayName, usedAt = j.UsedAt }),
@@ -156,7 +161,7 @@ public static class LinkEndpoints
     }
 
     private static async Task<IResult> Join(string token, JoinRequest request, HttpContext http, GomDbContext db, PasswordService passwords,
-        HashLimiter limiter, TimeProvider clock, IOptions<AuthOptions> options, CancellationToken ct)
+        HashLimiter limiter, TimeProvider clock, IOptions<AuthOptions> options, IOptions<ChatOptions> chat, LiveDelivery live, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
         var link = await Live(db, token, LinkKind.Invite, now).SingleOrDefaultAsync(ct);
@@ -196,10 +201,17 @@ public static class LinkEndpoints
 
         var started = AuthEndpoints.StartSession(http, db, user.Id, now, options.Value);
         await db.SaveChangesAsync(ct);
+        // The invite's group, if it still can take them; the account is made either way.
+        var added = link.GroupId is { } group ? await Social.GroupEndpoints.AdmitFromOwnerAsync(db, group, link.CreatedBy, user.Id, now, chat.Value.MaxGroupMembers, ct) : null;
         await tx.CommitAsync(ct);
 
         SessionCookie.Set(http.Response, started.Token, started.Expires);
-        return Results.Ok(new { id = user.Id, gomId = user.GomId, displayName = user.DisplayName, isOwner = false });
+        if (added is not null)
+        {
+            live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == added.ConversationId).Select(m => m.UserId).ToListAsync(ct));
+            await Notices.Publish(db, live, added, ct);
+        }
+        return Results.Ok(new { id = user.Id, gomId = user.GomId, displayName = user.DisplayName, isOwner = false, group = added?.ConversationId });
     }
 
     // ---- password reset

@@ -43,6 +43,8 @@ export interface SessionInfo { id: string; deviceLabel: string; createdAt: strin
 export interface Invite {
   id: string; createdAt: string; expiresAt: string; uses: number; maxUses: number | null;
   status: 'active' | 'full' | 'revoked' | 'expired'; members: { gomId: string; displayName: string; usedAt: string }[];
+  /** The group whoever joins is added to; null for none (or a group that is gone). */
+  group?: { id: string; title: string | null } | null;
 }
 export interface Member { gomId: string; displayName: string; isOwner: boolean; disabled: boolean; deleted?: boolean; createdAt: string }
 /** A count of pictures or files and the bytes they take. */
@@ -111,6 +113,8 @@ export interface Conversation {
   /** `peer.gomId` is there only while you are friends (the chat stays after an unfriend or a block; their ID does not). */
   id: string; kind: 'direct' | 'group'; title: string | null; peer: (Omit<Person, 'gomId'> & { gomId: string | null; id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
+  /** Your place in a group; null for a 1:1 chat. */
+  role?: 'leader' | 'deputy' | 'member' | null;
   /** Its own colour and background, the same for everyone in it; null (or absent): each person's own. */
   palette?: string | null; pattern?: string | null;
   /** Muted, until turned back on or, with `mutedUntil`, until then (the list says so only while that is ahead). */
@@ -154,7 +158,7 @@ export interface Api {
   sessions(): Promise<Result<SessionInfo[]>>;
   endSession(id: string): Promise<Result<void>>;
   /** `days` 1 to 30 and `uses` 1 to 100 (0 for any number); without them the server's defaults. */
-  createInvite(options?: { days: number; uses: number }): Promise<Result<Issued>>;
+  createInvite(options?: { days: number; uses: number; group?: string }): Promise<Result<Issued>>;
   invites(): Promise<Result<Invite[]>>;
   revokeInvite(id: string): Promise<Result<void>>;
   members(): Promise<Result<Member[]>>;
@@ -169,7 +173,7 @@ export interface Api {
   contactMessages(): Promise<Result<{ messages: ContactMessage[] }>>;
   deleteContact(id: string): Promise<Result<void>>;
   setSignUpOpen(open: boolean): Promise<Result<void>>;
-  approveJoin(gomId: string): Promise<Result<void>>;
+  approveJoin(gomId: string, group?: string): Promise<Result<void>>;
   refuseJoin(gomId: string): Promise<Result<void>>;
   deleteJoin(gomId: string): Promise<Result<void>>;
   storage(): Promise<Result<Storage>>;
@@ -408,7 +412,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     contactMessages: () => call('GET', '/api/contact'),
     deleteContact: (id) => call('DELETE', `/api/contact/${enc(id)}`),
     setSignUpOpen: (open) => call('PUT', '/api/sign-up-open', { open }),
-    approveJoin: (gomId) => call('POST', `/api/join-requests/${enc(gomId)}/approve`),
+    approveJoin: (gomId, group) => call('POST', `/api/join-requests/${enc(gomId)}/approve`, group === undefined ? undefined : { group }),
     refuseJoin: (gomId) => call('POST', `/api/join-requests/${enc(gomId)}/refuse`),
     deleteJoin: (gomId) => call('DELETE', `/api/join-requests/${enc(gomId)}`),
     storage: () => call('GET', '/api/owner/storage'),

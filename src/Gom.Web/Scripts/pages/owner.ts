@@ -49,6 +49,10 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let only: 'all' | 'locked' = 'all';
   let days: number = limits().inviteDefaultDays;
   let uses: number = limits().inviteDefaultUses;
+  /** The owner's groups that new people can be put in (they lead it or are a deputy), and the one chosen for a link or for approving. */
+  let groups: { id: string; title: string }[] = [];
+  let group = '';
+  let approveInto = '';
   /** Asking to join: whether it is open, and who asked (waiting first, then refused). */
   let signUpOpen = false;
   let requests: JoinRequest[] = [];
@@ -145,6 +149,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       <div class="t">
         <b>${STATUS[i.status]}</b>
         <small>${say.owner.inviteLine(i.uses, String(i.maxUses ?? '∞'), formatTime(i.createdAt), i.status === 'expired' ? say.owner.hasExpired : say.owner.expires(formatTime(i.expiresAt)))}</small>
+        ${i.group ? html`<small data-invite-group>${say.owner.intoGroup(i.group.title ?? '…')}</small>` : nothing}
         ${i.members.length === 0 ? nothing : html`<small data-joined>${say.owner.joined(i.members.map((m) => `${m.displayName} (@${m.gomId})`).join(', '))}</small>`}
       </div>
       ${i.status === 'active' ? moreButton('invite', i.id, say.owner.inviteOptions) : nothing}
@@ -198,12 +203,19 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
           <button class="btn secondary small" type="button" data-refuse-no @click=${() => { refusing = null; update(); }}>${say.common.no}</button></div>`
       : html`
         <div class="acts">
-          <button class="btn small" type="button" data-approve @click=${() => answer(() => api.approveJoin(r.gomId))}>${say.owner.approve}</button>
+          <button class="btn small" type="button" data-approve @click=${() => answer(() => approveInto === '' ? api.approveJoin(r.gomId) : api.approveJoin(r.gomId, approveInto))}>${say.owner.approve}</button>
           ${r.refused
             ? html`<button class="btn secondary small" type="button" data-delete-request @click=${() => answer(() => api.deleteJoin(r.gomId))}>${say.owner.remove}</button>`
             : html`<button class="btn secondary small" type="button" data-refuse @click=${() => { refusing = r.gomId; update(); }}>${say.owner.refuse}</button>`}
         </div>`}
     </li>`;
+
+  /** A choice of one of the owner's groups, or none; shown only when there is a group to choose. */
+  const groupField = (id: string, label: string, value: string, pick: (v: string) => void) => groups.length === 0 ? nothing : html`
+    <div class="field"><label for=${id}>${label}</label>
+      <select id=${id} name=${id} data-group-choice=${id} @change=${(e: Event) => pick((e.target as HTMLSelectElement).value)}>
+        <option value="" ?selected=${value === ''}>${say.owner.noGroup}</option>
+        ${groups.map((g) => html`<option value=${g.id} ?selected=${g.id === value}>${g.title}</option>`)}</select></div>`;
 
   /** A list that starts folded: past links, refused requests. Its count is in its title, so nothing hides unseen. */
   const folded = (title: string, attr: string, body: unknown) => html`
@@ -217,6 +229,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         @change=${(e: Event) => void setOpen((e.target as HTMLInputElement).checked)}><label for="sign-up-open">${say.owner.openSignUp}</label></div>
       ${waiting.length === 0 && !signUpOpen ? nothing : html`
         <h2 class="section">${say.owner.waitingCount(waiting.length)}</h2>
+        ${waiting.length === 0 ? nothing : groupField('approve-into', say.owner.approveInto, approveInto, (v) => { approveInto = v; })}
         ${waiting.length === 0 ? html`<p class="hint" data-none-waiting>${say.owner.noneWaiting}</p>` : html`<ul class="list" data-waiting-list>${waiting.map(requestRow)}</ul>`}`}
       ${refused.length === 0 ? nothing : folded(say.owner.refusedCount(refused.length), 'refused', html`<ul class="list" data-refused-list>${refused.map(requestRow)}</ul>`)}`;
   };
@@ -243,6 +256,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         <div class="field"><label for="invite-uses">${say.owner.letsIn}</label>
           <select id="invite-uses" name="uses" @change=${(e: Event) => { uses = Number((e.target as HTMLSelectElement).value); }}>
             ${USES.map((u) => html`<option value=${u} ?selected=${u === uses}>${u === 0 ? say.owner.anyNumber : say.owner.people(u)}</option>`)}</select></div>
+        ${groupField('invite-group', say.owner.addToGroup, group, (v) => { group = v; })}
         <button class="btn" type="button" data-create-invite @click=${makeInvite}>${say.owner.makeInvite}</button>
       </div>
       ${linkBox()}
@@ -286,6 +300,10 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   async function reload(): Promise<void> {
     if (part === 'stickers') { await loadPacks(); return; }
     if (part === 'invites') { const i = await api.invites(); if (i.ok) invites = i.data; else error = i; }
+    if (part === 'invites' || part === 'requests') {
+      const c = await api.conversations();
+      if (c.ok) groups = c.data.filter((x) => x.kind === 'group' && (x.role === 'leader' || x.role === 'deputy')).map((x) => ({ id: x.id, title: x.title ?? '…' }));
+    }
     if (part === 'members') { const m = await api.members(); if (m.ok) members = m.data; else error = m; }
     if (part === 'requests') { const r = await api.signUpRequests(); if (r.ok) { signUpOpen = r.data.open; requests = r.data.requests; } else error = r; }
     if (part === 'contact') { const c = await api.contactMessages(); if (c.ok) contacts = c.data.messages; else error = c; }
@@ -310,9 +328,11 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   }
 
   async function makeInvite(): Promise<void> {
-    const result = await api.createInvite({ days, uses });
+    const result = await api.createInvite(group === '' ? { days, uses } : { days, uses, group });
     if (!result.ok) { error = result; update(); return; }
-    show(result.data, say.owner.inviteMade(days, uses === 0 ? say.owner.anyone : uses === 1 ? say.owner.onePerson : say.owner.upTo(uses)));
+    const into = groups.find((g) => g.id === group);
+    show(result.data, say.owner.inviteMade(days, uses === 0 ? say.owner.anyone : uses === 1 ? say.owner.onePerson : say.owner.upTo(uses))
+      + (into === undefined ? '' : ` ${say.owner.inviteGroup(into.title)}`));
     await reload();
     changed();
   }

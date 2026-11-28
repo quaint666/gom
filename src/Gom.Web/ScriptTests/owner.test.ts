@@ -183,6 +183,34 @@ describe('owner page', () => {
     expect(past.querySelectorAll('[data-invite]').length).toBe(5);
   });
 
+  it('makes a link that adds people to a group the owner leads, and lists that group on the link', async () => {
+    const groups = [
+      { id: 'g1', kind: 'group', title: 'Testers', role: 'leader' }, { id: 'g2', kind: 'group', title: 'Not mine', role: 'member' },
+      { id: 'c1', kind: 'direct', title: 'Minh', role: null },
+    ];
+    const a = api({
+      conversations: vi.fn(async () => ok(groups)),
+      createInvite: vi.fn(async () => ok({ id: 'i3', token: 'TOK', path: '/join/TOK', expiresAt: '2026-12-08T09:00:00Z' })),
+      invites: vi.fn(async () => ok([{ ...invites[0], group: { id: 'g1', title: 'Testers' } }])),
+    });
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'invites');
+    await flush();
+    const choice = root.querySelector<HTMLSelectElement>('select[name="invite-group"]')!;
+    expect([...choice.options].map((o) => o.textContent)).toEqual(['Không nhóm nào', 'Testers']);
+    choice.value = 'g1'; choice.dispatchEvent(new Event('change', { bubbles: true }));
+    root.querySelector<HTMLButtonElement>('button[data-create-invite]')!.click();
+    await flush();
+    expect(a.createInvite).toHaveBeenCalledWith({ days: 7, uses: 10, group: 'g1' });
+    expect(text(root.querySelector('.card .hint')!)).toContain('thêm vào nhóm “Testers”');
+    expect(text(root.querySelector('[data-invite="i1"] [data-invite-group]')!)).toBe('Vào nhóm: Testers');
+  });
+
+  it('offers no group when the owner leads none', async () => {
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'invites');
+    await flush();
+    expect(root.querySelector('select[name="invite-group"]')).toBeNull();
+  });
+
   it('says so when no link is working', async () => {
     mountOwner(root, api({ invites: vi.fn(async () => ok([])) }), vi.fn(), 'https://gom.test', 'invites');
     await flush();

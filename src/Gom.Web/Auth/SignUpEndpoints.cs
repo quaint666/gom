@@ -18,6 +18,8 @@ public static class SignUpEndpoints
 
     public sealed record SignUpRequest(string? GomId, string? Password, string? DisplayName, string? Note);
     public sealed record OpenRequest(bool Open);
+    /// <summary>Approving: optionally, a group of the owner's to add the new member to as well.</summary>
+    public sealed record ApproveRequest(Guid? Group = null);
 
     public static void MapSignUp(this IEndpointRouteBuilder app)
     {
@@ -146,12 +148,17 @@ public static class SignUpEndpoints
         return db.Users.Where(u => u.GomId == id && u.RequestedAt != null).Select(u => u.Id).SingleOrDefaultAsync(ct);
     }
 
-    /// <summary>The request becomes a member, and the owner who approved it its first friend (as an invite makes the inviter).</summary>
-    private static async Task<IResult> Approve(string gomId, HttpContext http, GomDbContext db, TimeProvider clock, CancellationToken ct)
+    /// <summary>
+    /// The request becomes a member, and the owner who approved it its first friend (as an invite makes the inviter); with a group the
+    /// owner leads or is a deputy of, a member of that group too.
+    /// </summary>
+    private static async Task<IResult> Approve(string gomId, ApproveRequest? request, HttpContext http, GomDbContext db, TimeProvider clock,
+        IOptions<Chat.ChatOptions> chat, Chat.Live.LiveDelivery live, CancellationToken ct)
     {
         var user = await RequestId(db, gomId, ct);
         if (user == Guid.Empty) return Results.NotFound();
         var owner = GomClaims.User(http.User);
+        if (request?.Group is { } wanted && !await Social.GroupEndpoints.OwnerMayAddTo(db, wanted, owner, ct)) return Error(StatusCodes.Status400BadRequest, "not_allowed");
         var now = clock.GetUtcNow();
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         if (await db.Users.Where(u => u.Id == user && u.RequestedAt != null)
@@ -160,7 +167,13 @@ public static class SignUpEndpoints
         var (low, high) = Friendship.Order(owner, user);
         db.Friendships.Add(new Friendship { UserLow = low, UserHigh = high, RequestedBy = owner, Status = FriendStatus.Accepted, CreatedAt = now, AcceptedAt = now });
         await db.SaveChangesAsync(ct);
+        var added = request?.Group is { } group ? await Social.GroupEndpoints.AdmitFromOwnerAsync(db, group, owner, user, now, chat.Value.MaxGroupMembers, ct) : null;
         await tx.CommitAsync(ct);
+        if (added is not null)
+        {
+            live.ConversationsChanged(await db.Members.Where(m => m.ConversationId == added.ConversationId).Select(m => m.UserId).ToListAsync(ct));
+            await Chat.Notices.Publish(db, live, added, ct);
+        }
         return Results.NoContent();
     }
 

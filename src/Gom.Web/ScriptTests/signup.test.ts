@@ -165,6 +165,17 @@ describe('the owner: requests to join', () => {
     expect(a.deleteJoin).toHaveBeenCalledWith('spam');
   });
 
+  it('approves into a chosen group', async () => {
+    const a = api({ conversations: vi.fn(async () => ok([{ id: 'g1', kind: 'group', title: 'Testers', role: 'deputy' }])) });
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'requests');
+    await flush(); await flush();
+    const choice = root.querySelector<HTMLSelectElement>('select[name="approve-into"]')!;
+    choice.value = 'g1'; choice.dispatchEvent(new Event('change', { bubbles: true }));
+    root.querySelector<HTMLButtonElement>('[data-join-request="bi"] [data-approve]')!.click();
+    await flush(); await flush();
+    expect(a.approveJoin).toHaveBeenCalledWith('bi', 'g1');
+  });
+
   it('opens and closes asking to join', async () => {
     const a = api({ signUpRequests: vi.fn(async () => ok({ open: false, requests: [] })) });
     mountOwner(root, a, vi.fn(), 'https://gom.test', 'requests');

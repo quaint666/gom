@@ -892,6 +892,10 @@ namespace Gom.Web.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -928,6 +932,9 @@ namespace Gom.Web.Migrations
                     b.HasIndex("CreatedBy")
                         .HasDatabaseName("ix_one_time_links_created_by");
 
+                    b.HasIndex("GroupId")
+                        .HasDatabaseName("ix_one_time_links_group_id");
+
                     b.HasIndex("TargetUserId")
                         .HasDatabaseName("ix_one_time_links_target_user_id");
 
@@ -937,6 +944,8 @@ namespace Gom.Web.Migrations
 
                     b.ToTable("one_time_links", null, t =>
                         {
+                            t.HasCheckConstraint("ck_links_group", "group_id IS NULL OR kind = 'invite'");
+
                             t.HasCheckConstraint("ck_links_kind", "kind IN ('invite', 'reset')");
 
                             t.HasCheckConstraint("ck_links_target", "(kind = 'reset') = (target_user_id IS NOT NULL)");
@@ -1573,6 +1582,12 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_one_time_links_created_by");
+
+                    b.HasOne("Gom.Web.Data.Conversation", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_one_time_links_group_id");
 
                     b.HasOne("Gom.Web.Data.User", null)
                         .WithMany()
