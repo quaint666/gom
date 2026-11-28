@@ -1,19 +1,16 @@
 # Next session: where things stand and what comes next
 
 Written 2026-11-25, brought up to date on 2026-11-26 (after #133), 2026-11-27 (after #171) and 2026-11-28 (after #193,
-after #207, and again after #211).
+and again for release 1.3.0).
 Claims are marked **[verified]** (seen in the code or real output), **[stated]** (someone said so; who is given), or
 **[inferred]** (reasoned, not tried).
 
 ## 1. Where things stand
 
-- Release 1.2.1 is tagged (`v1.2.1`, #198) and runs on production and staging **[stated: H, 2026-11-28]**.
-- Open as a stack, to merge in this order, each on the one before: small fixes (#199), the owner's page split into
-  Settings parts (#200), an invite or approval that adds to a group (#201), the welcome page (#202), group pictures
-  (#203), sticker packs per chat (#204), the new mark (#205), the GitHub link, issue forms, `SECURITY.md` and the
-  versions line (#206), the docs sweep (#207), then a jump back in one request and fewer redraws (#208), the setup
-  guide at `/help` (#209), the search index, the 30-connection pool and the unread cap (#210), and trims and disbands
-  in batches (#211).
+- Release 1.3.0 is #199 to #211, all on `main` (#201 to #211 through #214: stacked pull requests merge into the one below
+  unless each is moved onto `main` first, since merged branches are not deleted here). Its release pull request sets
+  `VERSION`; then staging, production, and the tag on H's word. 1.2.1 (`v1.2.1`) is what production ran before it
+  **[stated: H, 2026-11-28]**.
 - Four add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed), #204
   (`sticker_packs.everywhere`, `sticker_pack_chats`, `sticker_pack_people`) and #210 (`pg_trgm`, `gom_unaccent`, the
   trigram index on messages, then `ANALYZE messages`). #210's index reads every message once: seconds at Gom's size, about
@@ -25,9 +22,10 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
   (2.9 s) and trim previews (1 to 1.5 s), which count every message **[verified]**.
 - PostgreSQL on staging and production now has 512 MB: at 256 MB the 10-million test got it killed for memory, at 512 MB
   not **[stated: H raised it, 2026-11-28; verified: the local test at both sizes]**.
-- The top of the stack passed 1,068 page tests and 1,173 server tests, and a pass in Chrome at phone and desktop size on
-  the local app: the welcome page, the owner's parts, refusing, the tester link with its group, sticker choices, a group
-  picture and its line, the 1:1 header, the backgrounds, the privacy page's source section **[verified, 2026-11-28]**.
+- `main` at 1.3.0 passes 1,076 page tests and 1,186 server tests. Seen in Chrome at phone and desktop size on the local
+  app: the welcome page, the owner's parts, refusing, the tester link with its group, sticker choices, a group picture
+  and its line, the 1:1 header, the backgrounds, the privacy page's source section, and `/help` in both languages
+  **[verified, 2026-11-28]**.
 - The Android app changes in #200 (the fallback paths of owner notices) and #205 (the launcher and status-bar icons):
   it needs a build and an emulator pass before the next Play bundle **[verified: their diffs]**.
 - Google Play: the first bundle (1.1.0) is built; H's developer account is still waiting for Google's identity check
@@ -40,10 +38,9 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
-1. **Release 1.3.0** once the stack is merged: `VERSION`, "What's new" with the versions line (`docs/releases.md`),
-   staging, then production; the tag only when H says so.
+1. **Release 1.3.0**: deploy the release commit to staging, then production; the tag only when H says so.
 2. **The app's 1.3.0 build** (new icons, owner notice paths): staging and prod APKs on the build VM, the emulator pass
-   (themed icon on, a notification's small icon), then the Play bundle.
+   (themed icon on, a notification's small icon), then the APK for the family and the Play bundle.
 3. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
    bundle in a closed test (12 testers for 14 days, `docs/testers.md`), the listing and declarations, then production.
    Uploading from Gradle with a service account limited to test tracks comes after.
@@ -65,9 +62,12 @@ Each is discussed first (design, decisions, what cannot be verified), then built
 
 Raised, not changed: a group's page says "Trưởng nhóm" while the chat panel says "Nhóm trưởng".
 
-Not being built [H, 2026-11-25]: a cache for reads or message search (measure first if anything ever feels slow; a trigram index is the first step for search).
+Not being built [H, 2026-11-25]: a cache for reads or message search. Measured instead (2026-11-28): reads were fast; what
+was slow got its own fix (#208, #210, #211).
 
-Later: a load test at the app's 512 MB memory limit with several people uploading; the next whole-repository review (`docs/repo-review.md`) at the end of the queue.
+Later: a load test of the app at its 512 MB limit with several people uploading pictures and videos (the 2026-11-28 test
+sent text only; the app peaked at about 220 MB); the next whole-repository review (`docs/repo-review.md`) at the end of
+the queue.
 
 ## 3. Known limits
 
@@ -104,6 +104,13 @@ Later: a load test at the app's 512 MB memory limit with several people uploadin
   owner. The key is stored as it is, not encrypted.
 - Tapping play in the split second while a just-sent sound message turns from "sending" to sent does nothing; a second
   tap plays it.
+- A search for a word of one or two letters still reads the whole conversation: the index works on three letters at a
+  time. A jump back reaches at most 2,000 messages, the picture viewer 1,000 messages with pictures; past that the
+  message is not shown.
+- Disbanding a group of hundreds of thousands of messages takes about a minute: it is gone for everyone at once, but the
+  leader's page may give up waiting and show an error. A server restart in that minute leaves it with no members, on
+  the owner's storage page as an empty group to delete there **[verified: 800,000 messages, and a page that hung up
+  after 2 s]**.
 
 ## 4. Not verified yet
 
@@ -112,15 +119,12 @@ Later: a load test at the app's 512 MB memory limit with several people uploadin
 - Helium itself: the fix follows its issue tracker and fakes in tests; neither Helium nor Brave is installed here.
 - The 62 new stickers on an iPhone, and on a slow phone line (the largest are about 60 KB).
 - The storage page and the trim placeholders in Firefox and Safari (only Chromium-based browsers were used).
-- A trim on a large history: one statement per conversation is enough at family size **[inferred]**; not measured.
 - That a picture still in a browser's one-day cache after a trim does not reappear.
 - Videos beyond H's phone: Samsung Internet, iPhone Safari, HEVC from an iPhone, and how long a long video takes to
   convert on a slower phone (on this Linux PC's Chrome a 4-minute 1080p clip took 35 s, a 6⅔-minute one 57 s **[verified]**).
 - Reloading by itself on a real phone: the checks hid the tab by overriding `visibilityState`; how soon a phone that has
   slept for hours notices a new version depends on when its browser wakes the tab. The minimum page version was checked
   in Chrome and Firefox only.
-- Search in a conversation on a long history: one `ILIKE` per word with no index is enough at family size
-  **[inferred]**; not measured.
 - Why one call in 50 between two apps failed after #171: one phone may have run out of its three tries for addresses, or
   no route between the phones worked. The failing phone's `adb logcat -d -s GomCall` tells which; H reports it if it
   happens again. The retry was seen only on the answering side, on an emulator (it fixed every empty first answer).
