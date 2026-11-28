@@ -104,6 +104,15 @@ describe('api', () => {
       'DELETE /api/invites/i1', 'GET /api/users', 'POST /api/users/mom/reset-link', 'DELETE /api/session',
     ]);
   });
+
+  it('asks for the newest page, the page before one, and a jump back to a message', async () => {
+    const fetchFn = vi.fn(async () => json({ messages: [], hasMore: false, lastSeq: 0 }));
+    const api = createApi(fetchFn);
+    await api.history('c1'); await api.history('c1', 51); await api.history('c1', 51, 'm9');
+    expect(fetchFn.mock.calls.map((c) => (c as unknown as [string])[0])).toEqual([
+      '/api/conversations/c1/messages', '/api/conversations/c1/messages?before=51', '/api/conversations/c1/messages?before=51&to=m9',
+    ]);
+  });
 });
 
 describe('api: voice calls', () => {

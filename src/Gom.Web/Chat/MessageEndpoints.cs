@@ -234,6 +234,9 @@ public static class MessageEndpoints
 
     /// <summary>Most results one search returns; the newest come first.</summary>
     private const int SearchLimit = 30;
+
+    /// <summary>The most messages one jump back loads at once (what 40 pages of 50 reached before).</summary>
+    private const int JumpMost = 2000;
     public const int SearchMaxChars = 100;
 
     /// <summary>
@@ -500,7 +503,7 @@ public static class MessageEndpoints
 
     // ---- history
 
-    private static async Task<IResult> History(Guid id, long? before, int? limit, HttpContext http, GomDbContext db, CancellationToken ct)
+    private static async Task<IResult> History(Guid id, long? before, int? limit, Guid? to, HttpContext http, GomDbContext db, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -508,6 +511,15 @@ public static class MessageEndpoints
 
         // "limit=abc" is a 400 (the framework refuses what does not bind), not a quiet 50.
         var take = Math.Clamp(limit ?? 50, 1, 100);
+        // A jump back to a message (a quote, a pin, a search result): everything from it up to `before` in one page, so the thread
+        // stays one unbroken run and the page is drawn once. There are at most before - seq messages from it on, so taking that many
+        // reaches it. Further back than JumpMost, or a message not here to see: the usual page.
+        if (to is { } target && before is { } upTo)
+        {
+            var at = await db.Messages.Where(m => m.Id == target && m.ConversationId == id && m.Seq > access.SeesAfter && m.Seq < upTo)
+                .Select(m => (long?)m.Seq).SingleOrDefaultAsync(ct);
+            if (at is { } seq && upTo - seq <= JumpMost) take = Math.Max(take, (int)(upTo - seq));
+        }
         var rows = await (
             from m in db.Messages.AsNoTracking()
             where m.ConversationId == id && m.Seq > access.SeesAfter && (before == null || m.Seq < before)

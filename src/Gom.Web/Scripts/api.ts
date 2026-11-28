@@ -230,7 +230,8 @@ export interface Api {
   unblock(gomId: string): Promise<Result<void>>;
   conversations(): Promise<Result<Conversation[]>>;
   openDirect(gomId: string): Promise<Result<{ id: string }>>;
-  history(conversation: string, before?: number): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean; lastSeq: number }>>;
+  /** The newest page, or the page before `before`; with `to` as well, everything from that message up to `before` in one page (a jump back). */
+  history(conversation: string, before?: number, to?: string): Promise<Result<{ messages: ChatMessage[]; hasMore: boolean; lastSeq: number }>>;
   recall(conversation: string, message: string): Promise<Result<void>>;
   /** The servers for a call's connection: before calling (the chat) or answering (the call), or again during a long call. */
   callServers(about: { conversationId: string } | { callId: string }): Promise<Result<CallServers>>;
@@ -258,7 +259,8 @@ export interface Api {
   /** Sends one sticker, the whole message (no words, no files). */
   sendSticker(conversation: string, clientId: string, sticker: string, replyTo?: string): Promise<Result<ChatMessage>>;
   /** The pictures ("image") or files ("file") of a conversation, newest first; `before` is the seq of the last item of the page you have. */
-  media(conversation: string, kind: 'image' | 'file', before?: number): Promise<Result<{ items: MediaItem[]; hasMore: boolean }>>;
+  /** A page of pictures or files; with `to`, every one from that picture's message on, so the viewer can open on it (one answer, one drawing). */
+  media(conversation: string, kind: 'image' | 'file', before?: number, to?: string): Promise<Result<{ items: MediaItem[]; hasMore: boolean }>>;
   /** Copies a picture or file you may see into another conversation as a new upload of yours (not yet in a message): this is how it is forwarded. */
   copyAttachment(conversation: string, from: string): Promise<Result<Attachment>>;
   /** A video's still picture, made on this device, sent after the video and before the message. */
@@ -464,7 +466,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     unblock: (gomId) => call('DELETE', `/api/blocks/${enc(gomId)}`),
     conversations: () => call('GET', '/api/conversations'),
     openDirect: (gomId) => call('POST', '/api/conversations/direct', { gomId }),
-    history: (conversation, before) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}`),
+    history: (conversation, before, to) => call('GET', `/api/conversations/${enc(conversation)}/messages${before === undefined ? '' : `?before=${before}`}${before === undefined || to === undefined ? '' : `&to=${enc(to)}`}`),
     send: (conversation, clientId, body, replyTo, attachments) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, body, replyTo, ...(attachments && attachments.length > 0 ? { attachments } : {}) }),
     sendSticker: (conversation, clientId, sticker, replyTo) => call('POST', `/api/conversations/${enc(conversation)}/messages`, { clientId, sticker, replyTo }),
     createGroup: (title, members) => call('POST', '/api/conversations/group', { title, members }),
@@ -506,7 +508,7 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     callSdp: (id, type, sdp) => call('POST', `/api/calls/${enc(id)}/sdp`, { type, sdp }),
     callAlive: (id) => call('POST', `/api/calls/${enc(id)}/alive`),
     hideMessage: (conversation, message) => call('PUT', `/api/conversations/${enc(conversation)}/messages/${enc(message)}/hidden`),
-    media: (conversation, kind, before) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}`),
+    media: (conversation, kind, before, to) => call('GET', `/api/conversations/${enc(conversation)}/media?kind=${kind}${before === undefined ? '' : `&before=${before}`}${to === undefined ? '' : `&to=${enc(to)}`}`),
     copyAttachment: (conversation, from) => call('POST', `/api/conversations/${enc(conversation)}/attachments/copy`, { from }),
     setPoster: (attachment, picture) => call('PUT', `/api/attachments/${enc(attachment)}/poster`, picture),
     search: (conversation, query) => call('GET', `/api/conversations/${enc(conversation)}/search?q=${enc(query)}`),
