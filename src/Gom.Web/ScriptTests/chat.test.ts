@@ -4034,8 +4034,11 @@ describe('chat: the desktop shell (rail, gear menu, info panel)', () => {
     await flush();
     const panel = root.querySelector('[data-info-panel]')!;
     expect(text(panel)).toContain('Nhóm nhà');
-    expect(panel.querySelectorAll('[data-info-member]')).toHaveLength(2);
     expect(panel.querySelector('[data-info-pin]')).not.toBeNull();
+    expect(text(panel.querySelector('[data-group-row="members"]')!)).toContain('2');
+    panel.querySelector<HTMLButtonElement>('[data-group-row="members"]')!.click();
+    await flush();
+    expect(root.querySelectorAll('[data-info-member]')).toHaveLength(2);
     expect(h.api.groupMembers).toHaveBeenCalledWith(G);
     expect(localStorage.getItem('gom-info')).toBe('1');
     root.querySelector<HTMLButtonElement>('[data-info]')!.click();
@@ -5143,6 +5146,7 @@ describe("chat: someone's card", () => {
       const person = vi.fn(async () => ok(cardOf()));
       inGroup({ person, groupMembers: vi.fn(async () => ok([member('u-mom', 'Mẹ', { isMe: true, role: 'leader' }), member('u-minh', 'Minh')])) });
       await flush();
+      await click('[data-group-row="members"]');
       expect(root.querySelector('[data-open-card="u-mom"]')).toBeNull();
       await click('[data-open-card="u-minh"]');
       expect(person).toHaveBeenCalledWith('u-minh');
@@ -5261,20 +5265,141 @@ describe('chat: the side panel of a group', () => {
   afterEach(() => localStorage.removeItem('gom-info'));
   const click = async (selector: string) => { root.querySelector<HTMLElement>(selector)!.click(); await flush(); await flush(); };
 
-  it('links to adding members on the group page', async () => {
+  it('adds people from the members view, without leaving the conversation', async () => {
     openPanel('member');
     await flush();
-    expect(root.querySelector('[data-info-add]')!.getAttribute('href')).toBe(`/groups/${G}#add`);
+    await click('[data-group-row="members"]');
+    expect(root.querySelector('a[href^="/groups/"]')).toBeNull();
+    expect(root.querySelector('[data-group-add]')).not.toBeNull();
+  });
+
+  describe('changes made in place', () => {
+    const fr = (gomId: string, displayName: string) => ({ gomId, displayName });
+    const lists = { friends: [fr('minh', 'Minh'), fr('tuan', 'Tuấn'), fr('hanh', 'Hạnh')], incoming: [], outgoing: [] };
+    const dialog = () => root.querySelector<HTMLElement>('[data-group-dialog]');
+    const withRoles = (...rest: Array<ReturnType<typeof Object.assign>>) => ({ groupMembers: vi.fn(async () => ok(rest)) });
+    const lan = { id: 'u-lan', displayName: 'Lan', isMe: false, isFriend: true, gomId: 'lan', request: 'none' as const, role: 'deputy' as const };
+
+    it('shows no pencil and no camera to a plain member', async () => {
+      openPanel('member'); await flush();
+      expect(root.querySelector('[data-group-rename]')).toBeNull();
+      expect(root.querySelector('[data-group-picture]')).toBeNull();
+    });
+
+    it('shows the pencil and the camera to the leader', async () => {
+      openPanel('leader'); await flush();
+      expect(root.querySelector('[data-group-rename]')).not.toBeNull();
+      expect(root.querySelector('[data-group-picture]')).not.toBeNull();
+    });
+
+    it('renames from a small dialog, asking the server once and closing', async () => {
+      const h = openPanel('leader', { renameGroup: vi.fn(async () => ok(undefined)) }); await flush();
+      await click('[data-group-rename]');
+      expect(dialog()).not.toBeNull();
+      const form = dialog()!.querySelector<HTMLFormElement>('[data-rename]')!;
+      expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);   // unchanged
+      fill(form, 'input[name="title"]', '  Nhà mới ');
+      await flush();
+      form.requestSubmit(); await flush(); await flush();
+      expect(h.api.renameGroup).toHaveBeenCalledOnce();
+      expect(h.api.renameGroup).toHaveBeenCalledWith(G, 'Nhà mới');
+      expect(dialog()).toBeNull();
+    });
+
+    it('takes the picture away from the camera\'s menu', async () => {
+      const h = openPanel('leader', { removeGroupAvatar: vi.fn(async () => ok(undefined)),
+        conversations: vi.fn(async () => ok([{ ...structuredClone(group), avatar: 'pic1' }, chat(C2, 'Lan')])) }); await flush();
+      await click('[data-group-picture]');
+      expect(root.querySelector('[data-group-picture-choose]')).not.toBeNull();
+      await click('[data-group-picture-remove]');
+      expect(h.api.removeGroupAvatar).toHaveBeenCalledWith(G);
+    });
+
+    it('adds friends who are not in it yet: search, tick, one press, and no one already inside is offered', async () => {
+      const h = openPanel('leader', { friends: vi.fn(async () => ok(lists)), addMember: vi.fn(async () => ok({ status: 'added' })) }); await flush();
+      await click('[data-group-row="members"]');
+      await click('[data-group-add]');
+      expect([...dialog()!.querySelectorAll('[data-addable]')].map((e) => e.getAttribute('data-addable'))).toEqual(['tuan', 'hanh']);
+      fill(dialog()!, '[data-add-search]', 'tuan'); await flush();
+      expect(dialog()!.querySelectorAll('[data-addable]')).toHaveLength(1);
+      const box = dialog()!.querySelector<HTMLInputElement>('[data-addable="tuan"] input')!;
+      box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); await flush();
+      expect(text(dialog()!.querySelector('[data-add-confirm]')!)).toBe('Thêm 1 người');
+      await click('[data-add-confirm]');
+      expect(h.api.addMember).toHaveBeenCalledWith(G, 'tuan');
+      expect(dialog()).toBeNull();
+    });
+
+    it('says a group that asks for approval will wait, after adding', async () => {
+      openPanel('leader', { friends: vi.fn(async () => ok(lists)), addMember: vi.fn(async () => ok({ status: 'pending' })) }); await flush();
+      await click('[data-group-row="members"]');
+      await click('[data-group-add]');
+      const box = dialog()!.querySelector<HTMLInputElement>('[data-addable="tuan"] input')!;
+      box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); await flush();
+      await click('[data-add-confirm]');
+      expect(text(root.querySelector('[data-add-status]')!)).toContain('chờ');
+    });
+
+    it('removes someone after a question that offers to keep them out, and drops the question on Hủy', async () => {
+      const h = openPanel('leader', { removeMember: vi.fn(async () => ok(undefined)) }); await flush();
+      await click('[data-group-row="members"]');
+      await click('[data-manage="u-minh"]');
+      await click('[data-remove]');
+      expect(text(dialog()!)).toContain('Xóa Minh khỏi nhóm?');
+      await click('[data-cancel-sure]');
+      expect(dialog()).toBeNull();
+      expect(h.api.removeMember).not.toHaveBeenCalled();
+      await click('[data-manage="u-minh"]');
+      await click('[data-remove]');
+      const ban = dialog()!.querySelector<HTMLInputElement>('[data-ban]')!;
+      ban.checked = true; ban.dispatchEvent(new Event('change', { bubbles: true }));
+      await click('[data-confirm-sure]');
+      expect(h.api.removeMember).toHaveBeenCalledWith(G, 'u-minh', true);
+      expect(dialog()).toBeNull();
+    });
+
+    it('hands over and makes a deputy from the same menu, for the leader', async () => {
+      const h = openPanel('leader', { handOver: vi.fn(async () => ok(undefined)), setRole: vi.fn(async () => ok(undefined)) }); await flush();
+      await click('[data-group-row="members"]');
+      await click('[data-manage="u-minh"]');
+      await click('[data-make-deputy]');
+      expect(h.api.setRole).toHaveBeenCalledWith(G, 'u-minh', 'deputy');
+      await click('[data-manage="u-minh"]');
+      await click('[data-hand-over]');
+      expect(text(dialog()!)).toContain('Chuyển quyền trưởng nhóm cho Minh?');
+      await click('[data-confirm-sure]');
+      expect(h.api.handOver).toHaveBeenCalledWith(G, 'u-minh');
+    });
+
+    it('gives a deputy a menu only on plain members, and without handing over', async () => {
+      openPanel('member', withRoles({ ...me_, role: 'deputy' }, minh, lan)); await flush();
+      await click('[data-group-row="members"]');
+      expect(root.querySelector('[data-manage="u-minh"]')).not.toBeNull();
+      expect(root.querySelector('[data-manage="u-lan"]')).toBeNull();
+      await click('[data-manage="u-minh"]');
+      expect(root.querySelector('[data-hand-over]')).toBeNull();
+      expect(root.querySelector('[data-make-deputy]')).toBeNull();
+      expect(root.querySelector('[data-remove]')).not.toBeNull();
+    });
+
+    it('keeps a refusal inside the dialog, where it was asked', async () => {
+      openPanel('leader', { removeMember: vi.fn(async () => fail('forbidden', 403)) }); await flush();
+      await click('[data-group-row="members"]');
+      await click('[data-manage="u-minh"]');
+      await click('[data-remove]');
+      await click('[data-confirm-sure]');
+      expect(dialog()!.querySelector('[role="alert"], .err')).not.toBeNull();
+    });
   });
 
   it('leaves after a question, and goes back to the list', async () => {
     const h = openPanel('member');
     await flush();
-    await click('[data-info-leave]');
+    await click('[data-group-row="leave"]');
     expect(h.api.leaveGroup).not.toHaveBeenCalled();
     await click('[data-info-leave-no]');
-    expect(root.querySelector('[data-info-leave-ask]')).toBeNull();
-    await click('[data-info-leave]');
+    expect(root.querySelector('[data-group-dialog]')).toBeNull();
+    await click('[data-group-row="leave"]');
     await click('[data-info-leave-yes]');
     expect(h.api.leaveGroup).toHaveBeenCalledWith(G);
     expect(h.nav.path).toBe('/');
@@ -5284,14 +5409,15 @@ describe('chat: the side panel of a group', () => {
   it('tells the leader of a group with others in it to hand over first', async () => {
     openPanel('leader');
     await flush();
-    expect(root.querySelector<HTMLButtonElement>('[data-info-leave]')!.disabled).toBe(true);
+    await click('[data-group-row="leave"]');
     expect(root.querySelector('[data-info-leader-note]')).not.toBeNull();
+    expect(root.querySelector('[data-info-leave-yes]')).toBeNull();
   });
 
   it('says why when leaving is refused', async () => {
     openPanel('member', { leaveGroup: vi.fn(async () => fail('leader_must_hand_over', 409)) });
     await flush();
-    await click('[data-info-leave]');
+    await click('[data-group-row="leave"]');
     await click('[data-info-leave-yes]');
     expect(text(root)).toContain('Trưởng nhóm cần chuyển quyền');
   });
@@ -6161,7 +6287,7 @@ describe('chat: the information page on a phone', () => {
     await flush();
     expect(page()!.querySelector('[data-info-block]')).toBeNull();
     expect(page()!.querySelector('[data-info-hide]')).not.toBeNull();
-    expect(page()!.querySelector('[data-info-leave]')).not.toBeNull();
+    expect(page()!.querySelector('[data-group-row="leave"]')).not.toBeNull();
   });
 });
 
@@ -6508,6 +6634,7 @@ describe('chat: disappearing messages', () => {
     start({ path: `/c/${G}`, chats: [group({ disappearSeconds: 604_800 })], history: { [G]: [] }, api: { groupMembers: vi.fn(async () => ok(person('member'))) } });
     await flush();
     await openInfo();
+    root.querySelector<HTMLElement>('[data-group-row="disappear"]')!.click(); await flush();
     expect(row().querySelector('select')).toBeNull();
     expect(text(row())).toContain('1 tuần');
     root.replaceChildren();
@@ -6517,6 +6644,7 @@ describe('chat: disappearing messages', () => {
     start({ path: `/c/${G}`, chats: [group()], history: { [G]: [] }, api: { groupMembers: vi.fn(async () => ok(person('deputy'))) } });
     await flush();
     await openInfo();
+    root.querySelector<HTMLElement>('[data-group-row="disappear"]')!.click(); await flush();
     expect(row().querySelector('select')).not.toBeNull();
   });
 

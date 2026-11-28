@@ -20,7 +20,7 @@
 }
 @media (min-width: 1200px) {
   .info-btn { display: inline-grid; }
-  .chat[data-infostate="open"] { grid-template-columns: 64px 340px minmax(0, 1fr) 300px; }
+  .chat[data-infostate="open"] { grid-template-columns: 64px 340px minmax(0, 1fr) 340px; }
   .info { display: flex; border-inline-start: 1px solid var(--border); }
 }
 /* What is inside the panel, beside a thread on a wide screen or as its own page on a phone. */
@@ -63,3 +63,44 @@
 .ib[aria-pressed="true"].info-btn .i path:not(:first-child) { stroke: var(--surface); }
 .letter { margin: 12px 4px 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
 
+
+/* A group's information: the picture, name and size centred; the pencil in the corner; rows that open inside the panel; small dialogs. */
+.gtop { position: relative; padding-block: 4px 8px; }
+.gtop h2 { margin: 12px 0 0; font-size: 20px; line-height: 1.25; text-wrap: balance; overflow-wrap: anywhere; }
+.gtop-edit { position: absolute; inset-block-start: -8px; inset-inline-end: -6px; background: var(--hover); }
+.gtop-pic { position: relative; display: flex; line-height: 0; }
+.gtop-cam { position: absolute; inset-inline-end: -2px; inset-block-end: -2px; display: grid; place-items: center; inline-size: 32px; block-size: 32px; padding: 0; border: 3px solid var(--surface); border-radius: 50%; background: var(--btn); color: var(--on-btn); cursor: pointer; }
+.gtop-cam .i { inline-size: 16px; block-size: 16px; }
+.gnav .gval { color: var(--muted); font-size: 14px; }
+.gnav .danger, .gnav .danger .lead-i { color: var(--err-text); }
+.gnav .danger .lead-i { background: transparent; }
+.gsub { display: flex; align-items: center; gap: 6px; margin-inline-start: -8px; }
+.gsub b { font-size: 17px; }
+.gadd { display: flex; align-items: center; gap: 14px; min-block-size: 56px; padding: 8px 0; border: 0; background: none; color: var(--link); font: inherit; font-weight: 600; text-align: start; cursor: pointer; }
+.gmembers { gap: 0; }
+.gm { display: flex; align-items: center; gap: 8px; min-block-size: 60px; border-block-end: 1px solid var(--border); }
+.gm:last-child { border-block-end: 0; }
+.gm-main { display: flex; align-items: center; gap: 12px; flex: 1; min-inline-size: 0; padding: 6px 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; }
+button.gm-main { cursor: pointer; }
+.gm-text { display: flex; flex-direction: column; flex: 1; min-inline-size: 0; }
+.gm-line { display: flex; align-items: center; gap: 8px; min-inline-size: 0; }
+.gm-name { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.gm-line .tag { flex: none; margin: 0; }
+.gm-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.gm-slot { display: grid; place-items: center; flex: none; inline-size: 44px; }
+.gdlg .gd-head { justify-content: space-between; align-items: center; }
+.gd-head h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.gd-foot { display: flex; justify-content: flex-end; gap: 8px; margin-block-start: 16px; }
+.gd-foot .btn { inline-size: auto; padding-inline: 18px; }
+.gdlg .hint { margin: 8px 0; }
+.gsearch { display: flex; align-items: center; gap: 8px; min-block-size: 44px; padding-inline: 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); }
+.gsearch .i { inline-size: 18px; block-size: 18px; flex: none; }
+.gsearch input { flex: 1; min-inline-size: 0; border: 0; background: none; color: var(--text); font: inherit; outline: none; }
+.gpick { max-block-size: 40dvh; overflow-y: auto; margin-block-start: 8px; }
+.gpick-row { display: flex; align-items: center; gap: 12px; min-block-size: 56px; cursor: pointer; }
+.gpick-row input { inline-size: 20px; block-size: 20px; flex: none; accent-color: var(--btn); }
+.info > * { flex-shrink: 0; }
+/* In a group the three actions are round buttons in a row, the name under each, as the mockups drew them. */
+.info:has(.gtop) .info-actions { flex-direction: row; justify-content: center; gap: 20px; }
+.info:has(.gtop) .info-actions .btn { flex-direction: column; gap: 6px; inline-size: auto; min-block-size: 0; padding: 0; border: 0; background: none; font-size: 12.5px; font-weight: 500; color: var(--text); }
+.info:has(.gtop) .info-actions .btn .i { inline-size: 20px; block-size: 20px; box-sizing: content-box; padding: 12px; border-radius: 50%; background: var(--hover); }
