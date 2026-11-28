@@ -1034,9 +1034,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** Search in the conversation, mute and its colours, with how long a mute lasts. */
   const infoActions = (c: Conversation) => html`
       <div class="info-actions">
-        <button class="btn secondary small" type="button" data-info-search @click=${() => { if (paneNow?.page) closeInfoPage(); searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()} ${say.chat.searchMessages}</button>
-        <button class="btn secondary small" type="button" data-info-mute @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()} ${isMuted(c) ? say.common.unmute : say.common.mute}</button>
-        ${c.kind === 'announce' ? nothing : html`<button class="btn secondary small" type="button" data-info-look @click=${() => { looking = { id: c.id, tab: 'colour', palette: c.palette ?? null, pattern: c.pattern ?? null, busy: false, error: null }; update(); }}>${icons.palette()} ${say.chat.look}</button>`}
+        <button class="btn secondary small" type="button" data-info-search aria-label=${say.chat.searchMessages} title=${say.chat.searchMessages} @click=${() => { if (paneNow?.page) closeInfoPage(); searching ??= { q: '', results: null, asked: '', ticket: 0 }; update(); root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}<span class="lbl">${say.chat.searchMessages}</span></button>
+        <button class="btn secondary small" type="button" data-info-mute aria-label=${isMuted(c) ? say.common.unmute : say.common.mute} title=${isMuted(c) ? say.common.unmute : say.common.mute} @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()}<span class="lbl">${isMuted(c) ? say.common.unmute : say.common.mute}</span></button>
+        ${c.kind === 'announce' ? nothing : html`<button class="btn secondary small" type="button" data-info-look aria-label=${say.chat.look} title=${say.chat.look} @click=${() => { looking = { id: c.id, tab: 'colour', palette: c.palette ?? null, pattern: c.pattern ?? null, busy: false, error: null }; update(); }}>${icons.palette()}<span class="lbl">${say.chat.look}</span></button>`}
       </div>
       ${isMuted(c) && c.mutedUntil ? html`<p class="hint" data-muted-until>${say.chat.mutedUntil(clock(c.mutedUntil))}</p>` : nothing}`;
 
