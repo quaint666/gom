@@ -555,6 +555,21 @@ export const vi = {
     closed: 'Gom hiện không nhận yêu cầu tham gia',
     closedNote: 'Gom chỉ dành cho người được mời. Hãy nhờ người quen gửi lời mời cho bạn.',
   },
+  /** The page shown once after an account is made. */
+  welcome: {
+    title: (name: string) => `Chào mừng ${name} đến Gom`,
+    titleNoName: 'Chào mừng bạn đến Gom',
+    lead: 'Chỗ trò chuyện riêng của gia đình và bạn bè.',
+    inviteOnly: 'Chỉ người được mời',
+    inviteOnlyNote: 'Chỉ ai có lời mời hoặc được duyệt mới vào được Gom. Bạn kết bạn bằng mã Gom.',
+    ownServer: 'Lịch sử ở máy chủ riêng',
+    ownServerNote: 'Đổi máy vẫn còn tin nhắn. Không quảng cáo.',
+    inGroup: (title: string) => `Bạn đã vào nhóm ${title}`,
+    inGroupNote: 'Nhóm đã có trong danh sách trò chuyện của bạn.',
+    openGroup: (title: string) => `Vào nhóm ${title}`,
+    start: 'Bắt đầu',
+    picture: 'Đặt ảnh đại diện trước',
+  },
   waiting: {
     sent: 'Đã gửi yêu cầu tham gia',
     sentNote: 'Chủ Gom sẽ duyệt tài khoản của bạn; bạn có thể nhắn chủ Gom để được duyệt nhanh hơn.',

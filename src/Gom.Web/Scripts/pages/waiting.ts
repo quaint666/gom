@@ -35,13 +35,13 @@ export function mountWaiting(root: HTMLElement, api: Api, go: (path: string) => 
     </div>`;
   const update = () => render(view(), root);
 
-  /** Approved: the whole app, from its start. Still waiting: says so. Refused meanwhile: shows that. */
+  /** Approved: the welcome page, then the whole app. Still waiting: says so. Refused meanwhile: shows that. */
   async function check(): Promise<void> {
     busy = true; error = null; update();
     const result = await api.me();
     busy = false;
     if (!result.ok) { if (result.error === 'unauthorized') { go('/sign-in'); return; } error = result; update(); return; }
-    if ((result.data.standing ?? 'member') === 'member') { go('/'); return; }
+    if ((result.data.standing ?? 'member') === 'member') { go('/welcome'); return; }
     standing = result.data.standing ?? 'pending';
     status = say.waiting.stillWaiting;
     update();

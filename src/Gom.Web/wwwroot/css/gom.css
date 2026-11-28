@@ -1032,6 +1032,12 @@ button.info-person:hover { background: color-mix(in srgb, var(--tint) 50%, var(-
 .nav { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
 .nav a, .nav button { display: flex; align-items: center; gap: 14px; inline-size: 100%; min-block-size: 58px; padding: 8px 14px; border: 0; border-block-end: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; text-align: start; text-decoration: none; cursor: pointer; }
 .nav li:last-child a, .nav li:last-child button { border-block-end: 0; }
+/* The welcome page: what Gom is, as three rows with an icon each. */
+.welcome-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.welcome-point { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.welcome-point .t b { display: block; font-weight: 600; }
+.welcome-point .t small { color: var(--muted); font-size: 13px; }
+.welcome .btn { text-decoration: none; }
 .lead-i { inline-size: 34px; block-size: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; background: var(--tint); color: var(--link); }
 .lead-i .i { inline-size: 20px; block-size: 20px; }
 .nav .t, a.profile .t { flex: 1; min-inline-size: 0; }

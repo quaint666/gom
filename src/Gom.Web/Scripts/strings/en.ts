@@ -552,6 +552,21 @@ export const en: Strings = {
     closed: 'Gom is not taking requests to join',
     closedNote: 'Gom is for invited people only. Ask someone you know for an invite.',
   },
+  /** The page shown once after an account is made. */
+  welcome: {
+    title: (name: string) => `Welcome to Gom, ${name}`,
+    titleNoName: 'Welcome to Gom',
+    lead: 'A private place to talk with family and friends.',
+    inviteOnly: 'Invite only',
+    inviteOnlyNote: 'Only people with an invite, or approved by the owner, can join. You add friends by their Gom ID.',
+    ownServer: 'History on its own server',
+    ownServerNote: 'A new phone still has your messages. No ads.',
+    inGroup: (title: string) => `You're in ${title}`,
+    inGroupNote: 'The group is already in your chat list.',
+    openGroup: (title: string) => `Open ${title}`,
+    start: 'Get started',
+    picture: 'Add a profile picture first',
+  },
   waiting: {
     sent: 'Your request to join is sent',
     sentNote: 'Gom\'s owner will approve your account; message them if you want it sooner.',

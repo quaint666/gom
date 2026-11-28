@@ -75,7 +75,7 @@ describe('the waiting screen', () => {
     expect(text(root.querySelector('[data-waiting-status]')!)).toBe('Vẫn đang chờ duyệt.');
     root.querySelector<HTMLButtonElement>('[data-check]')!.click();
     await flush();
-    expect(go).toHaveBeenCalledWith('/');
+    expect(go).toHaveBeenCalledWith('/welcome');
   });
 
   it('checks again by itself when the person comes back to the page', async () => {

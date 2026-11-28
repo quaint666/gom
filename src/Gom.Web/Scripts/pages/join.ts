@@ -49,7 +49,8 @@ export function mountJoin(root: HTMLElement, api: Api, go: (path: string) => voi
     if (busy) return;
     busy = true; error = null; update();
     const result = await api.join(token, { gomId, password, displayName });
-    if (result.ok) { go('/'); return; }
+    // A new account sees the welcome page once, with the group the invite put them in.
+    if (result.ok) { go(result.data.group ? `/welcome?group=${encodeURIComponent(result.data.group)}` : '/welcome'); return; }
     busy = false;
     if (result.error === 'invalid_link') state = { kind: 'dead' }; else error = result;
     update();

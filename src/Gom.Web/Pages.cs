@@ -56,6 +56,7 @@ public static class Pages
         new("/c/{id}", "home"),
         new("/sign-in", "signin"),
         new("/join/{token}", "join"),
+        new("/welcome", "welcome"),
         new("/sign-up", "signup"),
         new("/reset/{token}", "reset"),
         new("/settings", "settings"),

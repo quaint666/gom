@@ -8,6 +8,7 @@ import { createInstaller } from './install.js';
 import { createLive } from './chat/live.js';
 import { limits } from './limits.js';
 import { mountJoin } from './pages/join.js';
+import { mountWelcome } from './pages/welcome.js';
 import { mountReset } from './pages/reset.js';
 import { mountPrivacy } from './pages/privacy.js';
 import { mountSettings } from './pages/settings.js';
@@ -214,6 +215,7 @@ if (root) {
   switch (document.body.dataset['page']) {
     case 'signin': mountSignIn(root, api, go, new URLSearchParams(location.search).get('next')); break;
     case 'join': mountJoin(root, api, go, token); break;
+    case 'welcome': mountWelcome(root, api, go, new URLSearchParams(location.search).get('group')); break;
     case 'signup': mountSignUp(root, api, go); break;
     case 'reset': mountReset(root, api, go, token); break;
     case 'home': {

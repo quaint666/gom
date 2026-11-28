@@ -152,7 +152,8 @@ export interface Api {
   signIn(gomId: string, password: string, code?: string): Promise<Result<User>>;
   signOut(): Promise<Result<void>>;
   peekInvite(token: string): Promise<Result<{ invitedBy: string }>>;
-  join(token: string, body: JoinBody): Promise<Result<User>>;
+  /** The new account; `group`: the group the invite put them in, if any. */
+  join(token: string, body: JoinBody): Promise<Result<User & { group?: string | null }>>;
   peekReset(token: string): Promise<Result<{ gomId: string; displayName: string }>>;
   reset(token: string, password: string): Promise<Result<User>>;
   sessions(): Promise<Result<SessionInfo[]>>;
