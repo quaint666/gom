@@ -109,6 +109,10 @@ button.mention { padding: 0; border: 0; background: none; color: var(--link); fo
 .mrow { gap: 8px; align-items: flex-end; }
 .av.sm { inline-size: 32px; block-size: 32px; font-size: 12px; }
 .sp { inline-size: 32px; flex: none; }
+.av-btn { flex: none; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.copy-note { position: absolute; inset-block-end: 10px; inset-inline: 12px; margin-inline: auto; inline-size: fit-content; max-inline-size: calc(100% - 24px); padding: 8px 14px; border-radius: 12px; background: var(--tint); color: var(--tint-text); font-size: 14px; box-shadow: 0 4px 16px rgb(0 0 0 / .25); pointer-events: none; z-index: 4; }
+/* A sticker or a big emoji has its time under it, outside the bubble: the sender's picture lines up with the picture, not the time. */
+.mrow.sticker .av-btn, .mrow.jumbo .av-btn { margin-block-end: 20px; }
 .sender { display: block; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; font-weight: 600; margin-block-end: 1px; cursor: pointer; text-align: start; }
 .sender:hover { text-decoration: underline; }
 .picks { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }

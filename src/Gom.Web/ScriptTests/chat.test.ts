@@ -1788,13 +1788,19 @@ describe('chat: answering and copying', () => {
   it('copies the text of a message and says so', async () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    open();
+    const h = open();
     await flush();
     await menuOf('id1');
     root.querySelector<HTMLButtonElement>('button[data-copy]')!.click();
     await flush();
     expect(writeText).toHaveBeenCalledWith('Tối nay ăn gì?');
-    expect(text(root)).toContain('Đã sao chép tin nhắn');
+    // A small toast over the thread, just above the message field; not the note in the list column.
+    expect(text(root.querySelector('.thread-pane [data-copy-note]')!)).toBe('Đã sao chép tin nhắn.');
+    expect(root.querySelector('.list-pane .note')).toBeNull();
+    // It goes by itself.
+    h.timers.filter((t) => t.live && t.ms === 2000).forEach((t) => t.fn());
+    await flush();
+    expect(root.querySelector('[data-copy-note]')).toBeNull();
   });
 
   it('says when copying is not possible', async () => {
@@ -1804,7 +1810,7 @@ describe('chat: answering and copying', () => {
     await menuOf('id1');
     root.querySelector<HTMLButtonElement>('button[data-copy]')!.click();
     await flush();
-    expect(text(root)).toContain('Không sao chép được');
+    expect(text(root.querySelector('.thread-pane [data-copy-note]')!)).toContain('Không sao chép được');
   });
 });
 
@@ -5093,6 +5099,18 @@ describe("chat: someone's card", () => {
     expect(askMember).toHaveBeenCalledWith(G, 'u-minh');
     expect(card()!.querySelector('[data-card-sent]')).not.toBeNull();
     expect(card()!.querySelector('[data-card-befriend]')).toBeNull();
+  });
+
+  it("opens from the sender's picture beside their last message, the same card as the name", async () => {
+    const person = vi.fn(async () => ok(cardOf()));
+    inGroup({ person });
+    await flush();
+    const pic = root.querySelector<HTMLElement>('[data-avatar="u-minh"]')!;
+    expect(pic.tagName).toBe('BUTTON');
+    expect(pic.getAttribute('aria-label')).toBe('Minh');
+    await click('[data-avatar="u-minh"]');
+    expect(person).toHaveBeenCalledWith('u-minh');
+    expect(text(card()!)).toContain('Minh');
   });
 
   it('offers to accept a request they sent', async () => {

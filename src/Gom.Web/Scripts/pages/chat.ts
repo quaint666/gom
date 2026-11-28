@@ -78,6 +78,7 @@ const FORWARD_MAX = 5;
 const CLIP = { pin: 100, result: 160, forward: 120 } as const;
 /** How long "Hoàn tác" stays after a conversation is hidden. */
 const UNDO_HIDE_MS = 5000;
+const COPY_NOTE_MS = 2000;
 /** How long typing must pause before a search is sent, and the fewest characters that search as you type (Enter searches any). */
 const SEARCH_WAIT_MS = 300;
 const SEARCH_AS_YOU_TYPE_CHARS = 2;
@@ -260,6 +261,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let picker: 'emoji' | 'stickers' | null = null;
   /** The conversation just hidden, while "Hoàn tác" is offered (UNDO_HIDE_MS), and the timer that takes the offer away. */
   let undoHide: { id: string; timer: number } | null = null;
+  /** What copying a message said ("copied", or that it could not be), and the timer (COPY_NOTE_MS) that takes it away. It shows just above the message field. */
+  let copyNote: { text: string; timer: number } | null = null;
   /** The pack of stickers shown: -1 is "Gần đây" (the ones this device sent lately). */
   let stickerPack = -1;
   /**
@@ -744,7 +747,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
         ${swipeIcon}
         ${item.mine ? tools : nothing}
-        ${others ? (item.last ? avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm') : html`<div class="sp"></div>`) : nothing}
+        ${others ? (item.last ? html`<button class="av-btn" type="button" data-avatar=${m.sender.id} aria-label=${m.sender.displayName} @click=${() => openCard(m.sender.id)}>${avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm')}</button>` : html`<div class="sp"></div>`) : nothing}
         <div class="bcol">
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => { pressStart(e, m, hasMenu); swipeStart(e, m, item.mine, hasMenu); }}
           @pointermove=${(e: PointerEvent) => { pressMove(e); swipeMove(e); }} @pointerup=${(e: PointerEvent) => { swipeEnd(true); tapEnd(e, m); pressEnd(); }}
@@ -1202,6 +1205,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>${say.chat.older}</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, group, seen, tick))}
         </div>
+        ${copyNote === null ? nothing : html`<div class="copy-note" role="status" data-copy-note>${copyNote.text}</div>`}
         </div>
         ${menuOverlay(t)}
         ${viewerView()}
@@ -2310,7 +2314,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   async function copyText(m: Shown): Promise<void> {
     menu = null;
-    try { await navigator.clipboard.writeText(m.body); notice = say.chat.copied; } catch { notice = say.chat.copyFailed; }
+    let text: string;
+    try { await navigator.clipboard.writeText(m.body); text = say.chat.copied; } catch { text = say.chat.copyFailed; }
+    if (copyNote !== null) deps.timer.clear(copyNote.timer);
+    copyNote = { text, timer: deps.timer.set(() => { copyNote = null; update(); }, COPY_NOTE_MS) };
     update();
   }
 
