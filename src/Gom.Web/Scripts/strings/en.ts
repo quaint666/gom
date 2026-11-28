@@ -81,6 +81,7 @@ export const en: Strings = {
     alreadyFriends: 'You are already friends.',
     youBlockedThem: 'You blocked this person. Unblock them first to add them.',
     notFriends: 'You can only message friends.',
+    ownerOnly: 'Only the Gom owner can post here.',
     cannotChatSelf: 'You cannot message yourself.',
     emptyMessage: 'Please type a message.',
     invalidMessage: 'This message has characters that cannot be sent.',
@@ -771,6 +772,10 @@ export const en: Strings = {
     cancelEdit: 'Cancel editing',
     replyingTo: (name: string) => `Replying to ${name}`,
     /** Who is typing in a group: the names shown (joined with ", ", `shown` of them), then how many more. */
+    /** The announcement channel: its name, the line under the name, and what stands where the message field would be. */
+    announcements: 'Announcements',
+    announcementsSub: 'Only the Gom owner posts',
+    ownerOnlyPost: 'Only the Gom owner can post here.',
     typing: (names: string, shown: number, others: number) => `${names}${others > 0 ? ` and ${count(others, 'other', 'others')}` : ''} ${shown + others === 1 ? 'is' : 'are'} typing…`,
     /** In a one-to-one chat the header already names the person. */
     typingDirect: 'typing…',

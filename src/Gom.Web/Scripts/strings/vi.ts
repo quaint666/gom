@@ -84,6 +84,7 @@ export const vi = {
     alreadyFriends: 'Hai bạn đã là bạn bè.',
     youBlockedThem: 'Bạn đã chặn người này. Hãy bỏ chặn trước nếu muốn kết bạn.',
     notFriends: 'Chỉ nhắn tin được với bạn bè.',
+    ownerOnly: 'Chỉ chủ Gom mới đăng được ở đây.',
     cannotChatSelf: 'Bạn không thể nhắn tin cho chính mình.',
     emptyMessage: 'Hãy nhập nội dung tin nhắn.',
     invalidMessage: 'Tin nhắn có ký tự không hợp lệ.',
@@ -783,6 +784,10 @@ export const vi = {
     cancelEdit: 'Hủy chỉnh sửa',
     replyingTo: (name: string) => `Đang trả lời ${name}`,
     /** Who is typing in a group: the names shown (joined with ", ", `shown` of them), then how many more. */
+    /** The announcement channel: its name, the line under the name, and what stands where the message field would be. */
+    announcements: 'Thông báo',
+    announcementsSub: 'Chỉ chủ Gom đăng',
+    ownerOnlyPost: 'Chỉ chủ Gom đăng được ở đây.',
     typing: (names: string, _shown: number, others: number) => `${names}${others > 0 ? ` và ${others} người khác` : ''} đang nhập…`,
     /** In a one-to-one chat the header already names the person. */
     typingDirect: 'đang nhập…',

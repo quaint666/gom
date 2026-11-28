@@ -8,7 +8,7 @@ const SERVER_CODE_LIST = [
   'confirm_mismatch', 'owner_cannot_delete', 'account_deleted', 'group_not_empty', 'invalid_trim', 'trim_not_confirmed',
   'user_not_found', 'cannot_add_self', 'already_friends', 'you_blocked_them', 'not_friends', 'cannot_chat_self',
   'empty_message', 'message_too_long', 'invalid_message', 'too_many_messages', 'invalid_client_id', 'client_id_reused', 'invalid_seq',
-  'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
+  'owner_only', 'invalid_title', 'no_members', 'group_too_big', 'already_member', 'group_full', 'not_a_group', 'not_your_message',
   'not_allowed', 'leader_must_hand_over', 'invalid_role', 'invalid_member', 'use_leave', 'invalid_reply', 'invalid_query',
   'pin_limit', 'invalid_reaction', 'banned', 'already_requested', 'invalid_setting',
   'invalid_invite', 'too_large', 'animated_too_large', 'video_too_large', 'image_dimensions', 'invalid_image', 'busy', 'too_many_uploads', 'daily_upload_limit', 'uploads_disabled', 'empty_upload', 'invalid_attachment', 'too_many_attachments',
@@ -114,7 +114,7 @@ export type PushLevel = 'words' | 'name' | 'nothing';
 export interface PushState { key: string; subscribed: boolean; level: PushLevel }
 export interface Conversation {
   /** `peer.gomId` is there only while you are friends (the chat stays after an unfriend or a block; their ID does not). */
-  id: string; kind: 'direct' | 'group'; title: string | null; peer: (Omit<Person, 'gomId'> & { gomId: string | null; id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
+  id: string; kind: 'direct' | 'group' | 'announce'; title: string | null; peer: (Omit<Person, 'gomId'> & { gomId: string | null; id: string; deleted?: boolean }) | null; lastSeq: number; lastReadSeq: number;
   unread: number; lastMessage: LastMessage | null; memberCount?: number; joinApproval?: boolean;
   /** Someone wrote your name (or "@all") in what you have not read; the first such message is `firstMentionId` (`firstMentionSeq`). */
   mentioned?: boolean; firstMentionSeq?: number | null; firstMentionId?: string | null;

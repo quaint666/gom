@@ -38,6 +38,7 @@ export function errorText(failure: Failure): string {
     case 'already_friends': return say.errors.alreadyFriends;
     case 'you_blocked_them': return say.errors.youBlockedThem;
     case 'not_friends': return say.errors.notFriends;
+    case 'owner_only': return say.errors.ownerOnly;
     case 'cannot_chat_self': return say.errors.cannotChatSelf;
     case 'empty_message': return say.errors.emptyMessage;
     case 'message_too_long': return say.errors.messageTooLong(number(l.messageChars));
