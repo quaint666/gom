@@ -717,7 +717,6 @@ export const vi = {
     addMembers: 'Thêm thành viên',
     manageGroup: 'Quản lý nhóm',
     accountDeletedShort: 'Tài khoản đã bị xóa',
-    sharedGroups: (n: number) => `${n} nhóm chung`,
     commonGroups: (n: number) => `Nhóm chung (${n})`,
     leaderMustHandOver: 'Chuyển quyền trưởng nhóm cho người khác trước khi rời nhóm.',
     leaveQ: 'Rời nhóm này?',

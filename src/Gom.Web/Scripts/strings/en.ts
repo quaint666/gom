@@ -707,7 +707,6 @@ export const en: Strings = {
     addMembers: 'Add members',
     manageGroup: 'Manage group',
     accountDeletedShort: 'Account deleted',
-    sharedGroups: (n: number) => count(n, 'group in common', 'groups in common'),
     commonGroups: (n: number) => `Groups in common (${n})`,
     leaderMustHandOver: 'Hand over leadership to someone else before leaving.',
     leaveQ: 'Leave this group?',

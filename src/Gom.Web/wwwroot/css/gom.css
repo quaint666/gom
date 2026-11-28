@@ -620,7 +620,8 @@ a.mi { text-decoration: none; }
 .pattern-tile { position: relative; display: block; block-size: 76px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); cursor: pointer; }
 .pattern-tile input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
 .pattern-tile .backdrop { position: absolute; inset: 0; }
-.pattern-tile .name { position: absolute; inset-inline-start: 6px; inset-block-end: 6px; padding: 0 6px; border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; }
+/* The name keeps 6px from both sides of the tile: on a narrow phone tile a two-word name wraps, with room above and below. */
+.pattern-tile .name { position: absolute; inset-inline-start: 6px; inset-block-end: 6px; max-inline-size: calc(100% - 12px); box-sizing: border-box; padding: 2px 6px; border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 1.25; }
 .pattern-tile:has(input:checked) { outline: 3px solid var(--btn); outline-offset: 2px; }
 .pattern-tile:has(input:focus-visible) { outline: 3px solid var(--ring); outline-offset: 4px; }
 /* A conversation's own colour and background (its info panel): the same dots and tiles, "each person's own" first as a dashed ring. */
