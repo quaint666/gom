@@ -133,6 +133,8 @@ a { color: var(--link); }
 .page.center { justify-content: center; align-items: stretch; min-block-size: 80dvh; }
 .logo { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; font-size: 26px; }
 .logo .i { inline-size: 34px; block-size: 34px; color: var(--link); }
+/* Gom's mark is filled, its three dots holes (the even-odd rule), unlike the line icons. */
+.i.logo-mark { fill: currentColor; fill-rule: evenodd; stroke: none; }
 .lead { color: var(--muted); font-size: 15px; }
 .foot { text-align: center; color: var(--muted); font-size: 14px; }
 /* The privacy policy: a page of reading, a little wider than a form, headed by the logo as a link home. */
