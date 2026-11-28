@@ -1,7 +1,7 @@
 # Next session: where things stand and what comes next
 
 Written 2026-11-25, brought up to date on 2026-11-26 (after #133), 2026-11-27 (after #171) and 2026-11-28 (after #193,
-and again for release 1.3.0, for the 1.4.0 stack, for what H added to it, and after the 1.4.0 release on 2026-11-29).
+and again for release 1.3.0, for the 1.4.0 stack, for what H added to it, and after the 1.4.0 release, and for 1.5.0, on 2026-11-29).
 Claims are marked **[verified]** (seen in the code or real output), **[stated]** (someone said so; who is given), or
 **[inferred]** (reasoned, not tried).
 
@@ -13,9 +13,10 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
   bubble's edge, double tap to heart, swipe to reply, "is typing", mentions, the announcement channel ("Thông báo"),
   "Có gì mới", the copy toast and the group avatar that opens a card; migrations `Mentions` and `Announcements`. It
   passes 1,147 page tests and 1,252 server tests. Release 1.3.0 (#199 to #211, `v1.3.0`) ran in production before it.
-- After 1.4.0, on a branch of its own (not released yet): reactions drawn as Messenger does (a round badge on the
-  bubble's bottom corner) and the call screens without the old "Gom" label and logo, on the web and in the app
-  (`CallScreen.kt`, so it needs a new APK). Seen in Chrome at phone width only.
+- Release 1.5.0 (#233, the release pull request after it) is two looks: reactions drawn as Messenger does (a round badge
+  on the bubble's bottom corner) and the call screens without the old "Gom" label and logo, on the web and in the app
+  (`CallScreen.kt`, so it needs `gom-1.5.0.apk`). H chose to release it alone so the app's call screen updates
+  **[stated: H, 2026-11-29]**. Seen in Chrome at phone width only.
 - Four add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed), #204
   (`sticker_packs.everywhere`, `sticker_pack_chats`, `sticker_pack_people`) and #210 (`pg_trgm`, `gom_unaccent`, the
   trigram index on messages, then `ANALYZE messages`). #210's index reads every message once: seconds at Gom's size, about
@@ -43,11 +44,9 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
-0. **The next release** (1.4.1 or 1.5.0, H's call): the reaction badge and the call screens above, plus whatever comes
-   next. Its release pull request follows `docs/releases.md` (`VERSION`, the entry there, and the first entry of the
-   app's "Có gì mới" in `vi.ts` and `en.ts`), then the emulator pass (the call screen is in the app), the APK on the build
-   VM (start and stop it with vmctl; delete the older APKs, though the `gomci` login cannot, so H does; never open the
-   netrc), staging, production, and the tag on H's word.
+0. **Release 1.5.0** (`docs/releases.md`): the release pull request, then the emulator pass (the call screen is in the
+   app), `gom-1.5.0.apk` on the build VM (start and stop it with vmctl; delete the older APKs, though the `gomci` login
+   cannot, so H does; never open the netrc), staging, production, and the tag on H's word.
 1. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
    bundle in a closed test (12 testers for 14 days, `docs/testers.md`), the listing and declarations, then production.
    Uploading from Gradle with a service account limited to test tracks comes after.

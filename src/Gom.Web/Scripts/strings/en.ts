@@ -806,6 +806,10 @@ export const en: Strings = {
     version: (version: string): string => `Version ${version}`,
     latest: (version: string): string => `Latest: v${version}`,
     releases: [
+      { version: '1.5.0', items: [
+        'A reaction is now a small round badge on the corner of the message, as in Messenger.',
+        'The call screen no longer shows the small Gom label at the top.',
+      ] },
       { version: '1.4.0', items: [
         'Write @name or @all to call someone in a group; a person named is still notified even if they muted it.',
         'Shows \u201Ctyping\u2026\u201D when someone is writing.',

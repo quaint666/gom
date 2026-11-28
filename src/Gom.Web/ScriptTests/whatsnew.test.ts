@@ -19,10 +19,10 @@ const newer = (a: string, b: string) => { const [x, y] = [parse(a), parse(b)]; r
 describe('the what’s new page', () => {
   it('lists every release from 1.0.0, the newest first, with the newest open and the others folded', () => {
     mountWhatsNew(root);
-    expect(versions()).toEqual(['1.4.0', '1.3.0', '1.2.1', '1.2.0', '1.1.0', '1.0.0']);
+    expect(versions()).toEqual(['1.5.0', '1.4.0', '1.3.0', '1.2.1', '1.2.0', '1.1.0', '1.0.0']);
     const open = [...root.querySelectorAll<HTMLDetailsElement>('details[data-release]')].map((d) => d.open);
-    expect(open).toEqual([true, false, false, false, false, false]);
-    expect(text(root.querySelector('[data-release="1.4.0"] summary')!)).toBe('Bản 1.4.0');
+    expect(open).toEqual([true, false, false, false, false, false, false]);
+    expect(text(root.querySelector('[data-release="1.5.0"] summary')!)).toBe('Bản 1.5.0');
     expect(root.querySelectorAll('[data-release="1.4.0"] li').length).toBeGreaterThan(3);
   });
 
@@ -31,7 +31,7 @@ describe('the what’s new page', () => {
     const old = root.querySelector<HTMLDetailsElement>('[data-release="1.0.0"]')!;
     old.querySelector('summary')!.click();
     old.open = true;   // what the browser does with the tap
-    expect(root.querySelector<HTMLDetailsElement>('[data-release="1.4.0"]')!.open).toBe(true);
+    expect(root.querySelector<HTMLDetailsElement>('[data-release="1.5.0"]')!.open).toBe(true);
     expect(old.open).toBe(true);
   });
 
@@ -47,6 +47,6 @@ describe('the what’s new page', () => {
     expect([...a].sort((x, y) => newer(y, x))).toEqual(a);
     expect(a.at(-1)).toBe('1.0.0');
     for (const r of [...vietnamese.whatsNew.releases, ...en.whatsNew.releases]) expect(r.items.length).toBeGreaterThan(0);
-    expect(latestRelease()).toBe('1.4.0');
+    expect(latestRelease()).toBe('1.5.0');
   });
 });
