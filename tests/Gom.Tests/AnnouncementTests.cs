@@ -160,7 +160,7 @@ public class AnnouncementTests(AppFixture app) : IClassFixture<AppFixture>
         var channel = await Channel();
         var (_, oc) = await app.Owner();
         await Say(oc, channel, "một");
-        await Say(oc, channel, "hai");
+        var last = (await Say(oc, channel, "hai")).GetProperty("seq").GetInt64();   // other tests write there too: count from this one
         var token = await app.NewInviteToken();
         using var joined = await app.Call(Post, $"/api/join/{token}", new { gomId = "n" + Guid.NewGuid().ToString("N")[..10], password = AppFixture.Password, displayName = "Mới" });
         Assert.Equal(HttpStatusCode.OK, joined.StatusCode);
@@ -168,9 +168,11 @@ public class AnnouncementTests(AppFixture app) : IClassFixture<AppFixture>
 
         var mine = (await Listed(cookie)).Single(c => c.GetProperty("kind").GetString() == "announce");
         Assert.Equal(0, mine.GetProperty("unread").GetInt32());
-        Assert.Equal(2, mine.GetProperty("lastSeq").GetInt64());
+        Assert.Equal(last, mine.GetProperty("lastSeq").GetInt64());
         using var history = await app.Call(Get, $"/api/conversations/{channel}/messages", cookie: cookie);
-        Assert.Equal(2, (await AppFixture.Json(history)).GetProperty("messages").GetArrayLength());
+        var bodies = (await AppFixture.Json(history)).GetProperty("messages").EnumerateArray().Select(m => m.GetProperty("body").GetString()).ToList();
+        Assert.Contains("một", bodies);   // what was said before they came is theirs to read
+        Assert.Contains("hai", bodies);
     }
 
     [Fact]
