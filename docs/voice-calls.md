@@ -166,7 +166,7 @@ the app's way.
 3. Browsers on phones too, iPhone included; the call says "Giữ Gom trên màn hình trong lúc gọi", since a browser in the
    background loses the microphone.
 4. `Permissions-Policy` becomes `microphone=(self)` (decision 42).
-5. Only the chat page takes calls; Settings, Friends, a group's page and the others are pages of their own, so going to one
+5. Only the chat page takes calls; Settings, Friends and the others are pages of their own, so going to one
    ends a call. During a call the page's own update waits, leaving asks first (the browser's question), and a page closed
    anyway hangs up on its way out so the other side is not left waiting.
 6. A ring made in the page (Web Audio, no sound file) and the tab's title; if the browser blocks the sound until the person has
