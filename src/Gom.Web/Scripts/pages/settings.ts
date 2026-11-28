@@ -12,6 +12,7 @@ import { appBar, avatar, codeField, errorBox, formatTime, passwordField } from '
 import { errorText, passwordHint } from '../text.js';
 import { LANGUAGES, language, rememberLanguage, say, type Language } from '../say.js';
 import { limits } from '../limits.js';
+import { latestRelease } from './whatsnew.js';
 import { chooseTakeCalls, rememberAppCalls, takesCallsHere } from '../calls/here.js';
 
 /** The choices for the colour scheme, in the order shown. */
@@ -287,12 +288,14 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       <ul class="nav"><li><button type="button" data-reload-app @click=${() => app.reload()}>
         <span class="lead-i">${icons.reload()}</span><span class="t"><b>${say.settings.reloadRow}</b><small data-versions>${say.settings.reloadSummary(app.version)}${app.appVersion?.() ? ` · ${say.settings.appVersion(app.appVersion()!)}` : ''}</small></span>
         </button></li>
-        ${app.source ? html`<li><a href=${app.source} target="_blank" rel="noopener" data-source-link><span class="lead-i">${icons.file()}</span>
-          <span class="t"><b>${say.settings.sourceRow}</b><small>${say.settings.sourceSummary}</small></span><span class="chev">${icons.chevron()}</span></a></li>` : nothing}</ul>`}
+        <li><a href="/whats-new" data-whats-new-link><span class="lead-i">${icons.sparkle()}</span>
+          <span class="t"><b>${say.whatsNew.title}</b><small>${say.whatsNew.latest(latestRelease())}</small></span><span class="chev">${icons.chevron()}</span></a></li></ul>`}
     <ul class="nav"><li><a href="/help" data-help-link><span class="lead-i">${icons.info()}</span><span class="t"><b>${say.help.link}</b></span>
       <span class="chev">${icons.chevron()}</span></a></li>
       <li><a href="/privacy" data-policy-link><span class="lead-i">${icons.shield()}</span><span class="t"><b>${say.settings.policyRow}</b></span>
-      <span class="chev">${icons.chevron()}</span></a></li></ul>
+      <span class="chev">${icons.chevron()}</span></a></li>
+      ${app?.source ? html`<li><a href=${app.source} target="_blank" rel="noopener" data-source-link><span class="lead-i">${icons.file()}</span>
+        <span class="t"><b>${say.settings.sourceRow}</b><small>${say.settings.sourceSummary}</small></span><span class="chev">${icons.chevron()}</span></a></li>` : nothing}</ul>
     <button class="btn secondary signout" type="button" data-signout @click=${signOut}>${icons.signOut()}${say.common.signOut}</button>`;
 
   /** The parts, each in the DOM and shown only when it is the one open (the owner's two are mounted when opened). */

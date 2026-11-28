@@ -161,6 +161,25 @@ describe('settings: reloading Gom', () => {
     expect(text(link)).toContain('Mã nguồn và báo lỗi');
   });
 
+  it('has a row under the version that names the latest release and opens the page, with its own icon', async () => {
+    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: '1.3.0', source: 'https://github.com/quaint666/gom', reload: vi.fn() });
+    await flush();
+    const row = root.querySelector<HTMLAnchorElement>('[data-whats-new-link]')!;
+    expect(row.getAttribute('href')).toBe('/whats-new');
+    expect(text(row)).toContain('Có gì mới');
+    expect(text(row)).toContain('Mới nhất: v1.4.0');
+    expect(row.closest('li')!.previousElementSibling!.querySelector('[data-reload-app]')).not.toBeNull();   // right under "Tải lại Gom"
+    expect(row.querySelector('.lead-i')!.innerHTML).not.toBe(root.querySelector('[data-source-link] .lead-i')!.innerHTML);
+  });
+
+  it('keeps the source-code row with the other links about Gom, after the setup guide and the policy', async () => {
+    mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: '1.3.0', source: 'https://github.com/quaint666/gom', reload: vi.fn() });
+    await flush();
+    const group = root.querySelector('[data-help-link]')!.closest('ul')!;
+    expect([...group.querySelectorAll('li > a')].map((a) => a.hasAttribute('data-help-link') ? 'help' : a.hasAttribute('data-policy-link') ? 'policy' : a.hasAttribute('data-source-link') ? 'source' : '?'))
+      .toEqual(['help', 'policy', 'source']);
+  });
+
   it('has no source row when none is configured, and no app version in a browser', async () => {
     mountSettings(root, api(), vi.fn(), undefined, undefined, fakeNav('/settings'), { version: '1.4.2', source: '', reload: vi.fn() });
     await flush();

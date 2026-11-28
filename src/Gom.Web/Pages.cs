@@ -68,6 +68,7 @@ public static class Pages
         new("/add/{gomId}", "add"),
         new("/privacy", "privacy"),
         new("/help", "help"),
+        new("/whats-new", "whatsnew"),
     ];
 
     /// <summary>

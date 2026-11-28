@@ -10,7 +10,7 @@ export const en: Strings = {
   locale: 'en-GB',
   titles: {
     signin: 'Sign in', join: 'Invitation', signup: 'Ask to join', reset: 'Reset password', settings: 'Settings', friends: 'Friends',
-    newgroup: 'New group', group: 'Group members', add: 'Add friend', owner: 'Invites and members', storage: 'Storage', privacy: 'Privacy policy', help: 'Setup guide',
+    newgroup: 'New group', group: 'Group members', add: 'Add friend', owner: 'Invites and members', storage: 'Storage', privacy: 'Privacy policy', help: 'Setup guide', whatsnew: 'What\u2019s new',
   },
   emojiGroups: {
     smileys: 'Smileys', people: 'People', nature: 'Animals and nature', food: 'Food and drink', travel: 'Travel and places',
@@ -797,6 +797,59 @@ export const en: Strings = {
     muteFor4h: 'For 4 hours',
     muteTill8: 'Until 8:00 in the morning',
     muteAlways: 'Until I turn them back on',
+  },
+  /** What changed in each release (pages/whatsnew.ts). */
+  whatsNew: {
+    /** "What's new": the page, and what changed in each release (newest first; the first is the latest, and Settings' row names it). */
+    title: 'What\u2019s new',
+    lead: 'What changed in each version of Gom, the newest at the top.',
+    back: 'Back to Settings',
+    version: (version: string): string => `Version ${version}`,
+    latest: (version: string): string => `Latest: v${version}`,
+    releases: [
+      { version: '1.4.0', items: [
+        'Write @name or @all to call someone in a group; a person named is still notified even if they muted it.',
+        'Shows \u201Ctyping\u2026\u201D when someone is writing.',
+        'On a phone: swipe a message to reply, double tap to heart it.',
+        'A reaction sits at the edge of the message bubble: on the left for your messages, on the right for others\u2019.',
+        'Tap a picture in a group to see that person. Copying a message shows a small note just above the message field.',
+        'The owner\u2019s Announcements channel: everyone reads and reacts, only the owner posts.',
+        'This What\u2019s new page.',
+      ] },
+      { version: '1.3.0', items: [
+        'Each group has a picture of its own, set by the leader or a deputy.',
+        'Gom\u2019s new mark.',
+        'A setup guide for notifications, the microphone and the battery, for each kind of device.',
+        'Opening old messages and searching a long history is much faster.',
+        'A new person sees a welcome page once.',
+        'For the owner: the page for managing Gom is five parts; invites and approving a request can add someone to a group; a sticker pack shows for everyone or only for people chosen.',
+      ] },
+      { version: '1.2.1', items: [
+        'A message with 2 to 5 pictures now shows in Firefox and Safari (iPhone).',
+        'A conversation opens at its newest message even when a picture above it loads late.',
+        'A quote of a message with only a picture, video or file says what it was; tap a quote to go to the message it answers.',
+      ] },
+      { version: '1.2.0', items: [
+        'Voice messages, and sound files you can play in the message.',
+        'Two-step sign-in (a 6-digit code from an authenticator app), each person\u2019s choice.',
+        'Disappearing messages, from 15 minutes to a week, per conversation.',
+        'Sticker packs the owner makes from their own pictures; eight gradient colours for your messages.',
+        'The search above the list finds friends and groups too.',
+        'Smoother page changes and menus; on a computer, a strip of the conversation\u2019s pictures under the picture viewer.',
+        'In the Android app: a tidier incoming-call screen that shows the caller\u2019s picture.',
+      ] },
+      { version: '1.1.0', items: [
+        'Voice calls between friends, one to one, on the web and in the Android app.',
+        'An incoming call rings on all your devices; each call leaves a line in the chat.',
+        'GIFs from the keyboard in the Android app.',
+        'The version number shows in Settings.',
+      ] },
+      { version: '1.0.0', items: [
+        'The first version: friends and one-to-one and group chat, with live delivery and sending while offline.',
+        'Replies, forwarding, pins, reactions, editing, taking a message back, and read receipts.',
+        'Groups with roles, invites and approval; Vietnamese, or English as each person\u2019s choice.',
+      ] },
+    ],
   },
   help: {
     link: 'Setup guide',

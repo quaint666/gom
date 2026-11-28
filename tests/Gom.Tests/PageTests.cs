@@ -12,7 +12,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         { "/", "home" }, { "/c/6f1d0b5e-0000-4000-8000-000000000000", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/welcome", "welcome" }, { "/sign-up", "signup" }, { "/reset/some-token", "reset" },
         { "/settings", "settings" }, { "/friends", "friends" }, { "/groups/new", "newgroup" }, { "/groups/6f1d0b5e-0000-4000-8000-000000000000", "group" }, { "/add/some_id", "add" },
         { "/settings/profile", "settings" }, { "/settings/appearance", "settings" }, { "/settings/account", "settings" }, { "/settings/invites", "settings" }, { "/settings/requests", "settings" }, { "/settings/members", "settings" }, { "/settings/stickers", "settings" }, { "/settings/contact", "settings" }, { "/settings/storage", "settings" },
-        { "/privacy", "privacy" }, { "/help", "help" },
+        { "/privacy", "privacy" }, { "/help", "help" }, { "/whats-new", "whatsnew" },
     };
 
     [Theory]
