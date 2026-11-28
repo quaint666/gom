@@ -2,6 +2,8 @@ import type { Strings } from './vi.js';
 
 /** "1 photo", "2 photos": English needs the one and the many; Vietnamese does not. */
 const count = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+/** An unread count as the list's badge shows it: past 99, "99+" (the server counts no further than 100). */
+const upTo99 = (n: number): string => (n > 99 ? '99+' : String(n));
 
 /** Every piece of text the pages show, in English. Same shape as vi.ts: a line missing here is a build error. */
 export const en: Strings = {
@@ -612,7 +614,7 @@ export const en: Strings = {
     sentVideo: 'Sent a video',
     pinnedMark: 'Pinned',
     mutedMark: 'Muted',
-    unreadCount: (n: number) => count(n, 'unread message', 'unread messages'),
+    unreadCount: (n: number) => `${upTo99(n)} ${n === 1 ? 'unread message' : 'unread messages'}`,
     markRead: 'Mark as read',
     markUnread: 'Mark as unread',
     optionsFor: (title: string | null) => `Options for ${title ?? 'this conversation'}`,
@@ -705,7 +707,7 @@ export const en: Strings = {
     notSent: 'Not sent.',
     resend: 'Send again',
     discard: 'Delete',
-    newMessages: (n: number) => count(n, 'new message', 'new messages'),
+    newMessages: (n: number) => `${upTo99(n)} ${n === 1 ? 'new message' : 'new messages'}`,
     newBelow: (n: number) => count(n, 'new message', 'new messages'),
     seenBy: (n: number) => `Seen by ${n}`,
     viewPicture: (n: number, of: number) => `View picture ${n} of ${of}`,

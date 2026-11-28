@@ -40,12 +40,10 @@ if (proxyHops > 0)
         o.KnownIPNetworks.Clear();
     });
 
-// Everything environment-specific comes from configuration, never from code.
-// GSS (Kerberos) encryption is never used, and Npgsql tries it first by default through the image's libgssapi_krb5, which
-// crashed the process now and then (CI's crash report, 2026-11-26). Off in code, whatever the setting says.
-var connectionString = new NpgsqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("ConnectionStrings:Default is not set."))
-    { GssEncryptionMode = GssEncryptionMode.Disable }.ConnectionString;
+// Everything environment-specific comes from configuration, never from code. ConnectionSettings turns GSS encryption off and
+// caps the pool unless the setting names a size.
+var connectionString = ConnectionSettings.For(builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("ConnectionStrings:Default is not set."));
 
 builder.Services.AddDbContext<GomDbContext>(options => options.UseNpgsql(connectionString));
 

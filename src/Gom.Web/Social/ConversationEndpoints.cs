@@ -19,6 +19,9 @@ public static class ConversationEndpoints
     /// <summary>The list carries only the start of the last message; history has the whole of it.</summary>
     public const int PreviewChars = 200;
 
+    /// <summary>The most unread messages a chat's count goes to (the page shows "99+" past 99).</summary>
+    private const int UnreadMost = 100;
+
     /// <summary>The longest a mute for a while may last; longer is "until turned back on". The choices offered end within a day.</summary>
     private static readonly TimeSpan LongestMute = TimeSpan.FromDays(7);
 
@@ -218,10 +221,11 @@ public static class ConversationEndpoints
                         // A call's line is the last thing too (Notices: a call is the one notice that is).
                         Call = db.Calls.Where(k => k.MessageId == x.Id).Select(k => new { k.CallerId, k.Outcome, k.CreatedAt, k.AnsweredAt, k.EndedAt }).FirstOrDefault(),
                     }).FirstOrDefault(),
-                // A notice is not unread, except a call this person missed (rang out, or found them busy).
-                Unread = db.Messages.Count(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null
+                // A notice is not unread, except a call this person missed (rang out, or found them busy). Counted no further than
+                // UnreadMost: the page shows "99+" past 99, and someone far behind in a big group would otherwise wait for every one.
+                Unread = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null
                     && (x.Notice == null || (x.Notice == NoticeKind.Call && db.Calls.Any(k => k.MessageId == x.Id && k.CalleeId == me && (k.Outcome == CallOutcome.Missed || k.Outcome == CallOutcome.Busy))))
-                    && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)),
+                    && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).Take(UnreadMost).Count(),
             }).ToListAsync(ct);
 
         // Pinned ones first, the latest pin on top. Hidden ones are listed too, marked, so a search can find them; the page leaves them out of view.

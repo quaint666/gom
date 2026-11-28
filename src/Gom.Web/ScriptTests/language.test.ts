@@ -170,3 +170,14 @@ describe('the API: the person\'s language', () => {
     expect(onLanguage).toHaveBeenCalledWith('en');
   });
 });
+
+describe('counts of unread messages', () => {
+  it('say "99+" past 99, as the badge does: the server counts no further than 100', () => {
+    expect(vietnamese.chat.unreadCount(7)).toBe('7 tin chưa đọc');
+    expect(vietnamese.chat.unreadCount(100)).toBe('99+ tin chưa đọc');
+    expect(vietnamese.chat.newMessages(100)).toBe('99+ tin nhắn mới');
+    expect(en.chat.unreadCount(1)).toBe('1 unread message');
+    expect(en.chat.unreadCount(100)).toBe('99+ unread messages');
+    expect(en.chat.newMessages(100)).toBe('99+ new messages');
+  });
+});

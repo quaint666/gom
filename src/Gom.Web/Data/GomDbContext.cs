@@ -32,10 +32,19 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<StickerPackChat> StickerPackChats => Set<StickerPackChat>();
     public DbSet<StickerPackPerson> StickerPackPeople => Set<StickerPackPerson>();
 
+    /// <summary>
+    /// The text without its accents ("Phở" is "Pho"), in the database: PostgreSQL's unaccent with its dictionary named, declared
+    /// immutable so an index can be built on it (migration SearchIndex). Only for use inside a query.
+    /// </summary>
+    public static string Unaccent(string text) => throw new InvalidOperationException("Only inside a database query.");
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         // Search ignores accents ("pho" finds "Phở"). The extension ships with PostgreSQL's contrib package and is trusted, so the database's own owner can create it.
         b.HasPostgresExtension("unaccent");
+        // Search finds words inside messages through a trigram index on gom_unaccent(body) (migration SearchIndex); trusted too.
+        b.HasPostgresExtension("pg_trgm");
+        b.HasDbFunction(typeof(GomDbContext).GetMethod(nameof(Unaccent))!).HasName("gom_unaccent");
 
         b.Entity<SiteSettings>(e =>
         {

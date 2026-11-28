@@ -24,4 +24,17 @@ public class ConfigTests(WebApplicationFactory<Program> factory) : IClassFixture
         var used = scope.ServiceProvider.GetRequiredService<GomDbContext>().Database.GetConnectionString();
         Assert.Equal(GssEncryptionMode.Disable, new NpgsqlConnectionStringBuilder(used).GssEncryptionMode);
     }
+
+    /// <summary>Npgsql's default pool (100) is also PostgreSQL's default most connections: a pile-up behind a lock took them all (decisions, 2026-11-28).</summary>
+    [Fact]
+    public void The_database_pool_is_capped_at_30_unless_the_connection_string_names_a_size()
+    {
+        using var scope = factory.Services.CreateScope();
+        var used = scope.ServiceProvider.GetRequiredService<GomDbContext>().Database.GetConnectionString();
+        Assert.Equal(30, new NpgsqlConnectionStringBuilder(used).MaxPoolSize);
+
+        Assert.Equal(30, new NpgsqlConnectionStringBuilder(ConnectionSettings.For("Host=db;Database=gom")).MaxPoolSize);
+        Assert.Equal(50, new NpgsqlConnectionStringBuilder(ConnectionSettings.For("Host=db;Database=gom;Maximum Pool Size=50")).MaxPoolSize);
+        Assert.Equal(100, new NpgsqlConnectionStringBuilder(ConnectionSettings.For("Host=db;Database=gom;MaxPoolSize=100")).MaxPoolSize);
+    }
 }

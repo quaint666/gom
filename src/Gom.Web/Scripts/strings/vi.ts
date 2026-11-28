@@ -2,6 +2,9 @@
  * Every piece of text the pages show, in Vietnamese: the one place to change a word. A text with something in it is a
  * function. Another language is a file of the same shape (`Strings`), so a missing line is a build error.
  */
+/** An unread count as the list's badge shows it: past 99, "99+" (the server counts no further than 100). */
+const upTo99 = (n: number): string => (n > 99 ? '99+' : String(n));
+
 export const vi = {
   /** Dates and numbers are written as this locale writes them. */
   locale: 'vi-VN',
@@ -616,7 +619,7 @@ export const vi = {
     sentVideo: 'Đã gửi một video',
     pinnedMark: 'Đã ghim',
     mutedMark: 'Đã tắt thông báo',
-    unreadCount: (n: number) => `${n} tin chưa đọc`,
+    unreadCount: (n: number) => `${upTo99(n)} tin chưa đọc`,
     markRead: 'Đánh dấu đã đọc',
     markUnread: 'Đánh dấu chưa đọc',
     optionsFor: (title: string | null) => `Tùy chọn cho ${title ?? 'cuộc trò chuyện'}`,
@@ -711,7 +714,7 @@ export const vi = {
     notSent: 'Chưa gửi được.',
     resend: 'Gửi lại',
     discard: 'Xóa',
-    newMessages: (n: number) => `${n} tin nhắn mới`,
+    newMessages: (n: number) => `${upTo99(n)} tin nhắn mới`,
     newBelow: (n: number) => `${n} tin mới`,
     seenBy: (n: number) => `Đã xem bởi ${n}`,
     // pictures

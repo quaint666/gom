@@ -271,7 +271,8 @@ public static class MessageEndpoints
         {
             // % _ and \ typed by a person are ordinary characters.
             var pattern = "%" + word.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-            found = found.Where(m => EF.Functions.ILike(EF.Functions.Unaccent(m.Body), EF.Functions.Unaccent(pattern), "\\"));
+            // gom_unaccent, not unaccent: the same, but declared immutable, so the trigram index on it can find the words.
+            found = found.Where(m => EF.Functions.ILike(GomDbContext.Unaccent(m.Body), GomDbContext.Unaccent(pattern), "\\"));
         }
         return found;
     }

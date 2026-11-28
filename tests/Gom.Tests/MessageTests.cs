@@ -520,6 +520,17 @@ public class MessageTests(AppFixture app) : IClassFixture<AppFixture>
         return (await AppFixture.Json(r)).EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == chat);
     }
 
+    /// <summary>The page shows "99+" past 99, so the count stops at 100: someone far behind in a big group is not kept waiting for it.</summary>
+    [Fact]
+    public async Task The_unread_count_goes_no_further_than_a_hundred()
+    {
+        var p = await NewPair();
+        await Seed(p.Chat, p.A, 99);
+        Assert.Equal(99, (await ListEntry(p.CookieB, p.Chat)).GetProperty("unread").GetInt32());
+        await Seed(p.Chat, p.A, 150);
+        Assert.Equal(100, (await ListEntry(p.CookieB, p.Chat)).GetProperty("unread").GetInt32());
+    }
+
     [Fact]
     public async Task The_list_shows_the_last_message_and_how_many_are_unread_by_you()
     {
