@@ -42,6 +42,35 @@ Between releases, staging may run newer code than its number says: the number mo
 
 ## What's new
 
+### 1.3.0 (28 November 2026)
+
+Everything from #199 to #211: what Google Play's testers need, Gom's new mark, a setup guide, and Gom kept fast and
+steady with a long history (measured on a copy with 10 million messages).
+
+**New**
+- The owner's page is five parts of Settings (invites, requests to join, members, sticker packs, contact), each with its
+  own page and a count on its row; refusing a request asks first; past links fold away (#200).
+- An invite link can add whoever joins to one of the owner's groups, and approving a request can too (#201).
+- A new account sees a welcome page once: what Gom is, and the way in (#202).
+- Groups have a picture of their own, set by the leader or a deputy (#203).
+- A sticker pack shows for everyone, or only for the people and in the chats the owner chooses; the server keeps to it
+  (#204).
+- Gom's new mark: a speech bubble with three dots, on the web and in the Android app (#205).
+- Where the code is and where to report a bug, a private way to report a security hole, and the app's version beside the
+  site's in Settings (#206).
+- A setup guide (`/help`): notifications, the microphone, and on Android the battery, for each kind of device; linked
+  from sign-in, joining, the welcome page and Settings (#209).
+
+**Fixes**
+- Background names fit their tiles; a 1:1 chat's header shows only the Gom ID; the question before disbanding stands
+  where its button was (#199).
+- Going to an older message (a quote, a pin, a search result) or an older picture loads in one go: 2,000 messages back
+  took 38 s on a slow phone, now under 5 (#208).
+- Searching a long conversation for a word it does not have took seconds; now a few hundredths. Unread counts past 99
+  show "99+" (#210).
+- Trimming old messages no longer holds up sending in those chats, and a group with a long history can be disbanded
+  (#211).
+
 ### 1.2.1 (28 November 2026)
 
 #196 and #197: fixes only.
