@@ -37,13 +37,17 @@ public static class Pages
     /// The parts of Settings, each at /settings/{code} (a phone shows one at a time, a wide screen the menu beside it); the owner's two
     /// are only for the owner, whose API checks it again. Scripts/pages/settings.ts lists the same codes; a test keeps them together.
     /// </summary>
-    public static readonly IReadOnlyList<string> SettingsSections = ["profile", "notifications", "appearance", "privacy", "account", "owner", "storage"];
+    public static readonly IReadOnlyList<string> SettingsSections = ["profile", "notifications", "appearance", "privacy", "account", "invites", "requests", "members", "stickers", "contact", "storage"];
 
-    /// <summary>Addresses that moved, kept so old links and bookmarks still land: the owner's pages are now parts of Settings.</summary>
+    /// <summary>
+    /// Addresses that moved, kept so old links and bookmarks still land: the owner's pages are parts of Settings, and the one owner's
+    /// part became five. An app from before that opens /settings/owner from a notice about a request to join, so it goes there.
+    /// </summary>
     public static readonly IReadOnlyDictionary<string, string> Moved = new Dictionary<string, string>
     {
-        ["/owner"] = "/settings/owner",
+        ["/owner"] = "/settings/invites",
         ["/owner/storage"] = "/settings/storage",
+        ["/settings/owner"] = "/settings/requests",
     };
 
     public static readonly IReadOnlyList<Page> All =

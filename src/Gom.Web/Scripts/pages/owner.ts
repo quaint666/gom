@@ -2,14 +2,31 @@ import { html, nothing, render } from 'lit-html';
 import type { Api, ContactMessage, CustomPack, Failure, Invite, Issued, JoinRequest, Member } from '../api.js';
 import * as icons from '../icons.js';
 import { matches } from '../search.js';
-import { appBar, errorBox, formatTime } from '../ui.js';
+import { errorBox, formatTime } from '../ui.js';
 import { limits } from '../limits.js';
 import { menuItem, menuPoint, menuView, placeMenu } from '../menu.js';
 import { say } from '../say.js';
 import { stickerUrl } from '../stickers.js';
 
-/** How many rows of a long list show before "Xem thêm". */
-const HANDFUL = 5;
+/**
+ * The owner's parts of Settings, each a page of its own at /settings/{code} (H: one long page made the lists hard to read and easy to
+ * press wrong). Storage is the sixth (storage.ts). Pages.cs and settings.ts list the same codes.
+ */
+export const OWNER_PARTS = ['invites', 'requests', 'members', 'stickers', 'contact'] as const;
+export type OwnerPart = typeof OWNER_PARTS[number];
+
+/** What the Settings menu says under each owner part, asked for when it is drawn and again after a change. */
+export interface OwnerCounts { activeInvites: number; waiting: number; signUpOpen: boolean; members: number; packs: number; contacts: number }
+
+export async function ownerCounts(api: Api): Promise<OwnerCounts | null> {
+  const [i, r, m, p, c] = await Promise.all([api.invites(), api.signUpRequests(), api.members(), api.stickerPacks(), api.contactMessages()]);
+  if (!i.ok || !r.ok || !m.ok || !p.ok || !c.ok) return null;
+  return {
+    activeInvites: i.data.filter((x) => x.status === 'active').length,
+    waiting: r.data.requests.filter((x) => !x.refused).length, signUpOpen: r.data.open,
+    members: m.data.filter((x) => !x.deleted).length, packs: p.data.length, contacts: c.data.messages.length,
+  };
+}
 
 const STATUS: Record<Invite['status'], string> = { active: say.owner.active, full: say.owner.full, revoked: say.owner.revoked, expired: say.owner.expired };
 
@@ -17,21 +34,26 @@ const STATUS: Record<Invite['status'], string> = { active: say.owner.active, ful
 const DAYS = [1, 7, 30] as const;
 const USES = [1, 10, 0] as const;
 
-/** The owner's page: make invites, see who joined, make a reset link for a member. */
-export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => void, origin: string): void {
+/**
+ * One owner part: make invites, answer requests to join, see members (a reset link, lock), sticker packs, or the contact form's
+ * messages. `changed` is told after anything that changes a count in the Settings menu.
+ */
+export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => void, origin: string, part: OwnerPart, changed: () => void = () => {}): void {
   let invites: Invite[] = [];
   let members: Member[] = [];
   let link: { url: string; note: string } | null = null;
   let copied = '';
   let error: Failure | null = null;
   let query = '';
+  /** Members: everyone, or only the locked ones. */
+  let only: 'all' | 'locked' = 'all';
   let days: number = limits().inviteDefaultDays;
   let uses: number = limits().inviteDefaultUses;
-  let moreInvites = false;
-  let moreMembers = false;
   /** Asking to join: whether it is open, and who asked (waiting first, then refused). */
   let signUpOpen = false;
   let requests: JoinRequest[] = [];
+  /** The request being refused: asked first, so a refusal is never one stray tap. */
+  let refusing: string | null = null;
   /** Messages from the privacy page's form, newest first. */
   let contacts: ContactMessage[] = [];
   /** The open "..." menu: whose row, and where it was opened (none on a phone, where it is a sheet). */
@@ -45,7 +67,6 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
 
   /** Sticker packs (H): make one, add pictures to it, take one out, or delete a pack. Stickers already sent still show. */
   const packsView = () => html`
-    <h2 class="section">${say.owner.stickers}</h2>
     <p class="hint">${say.owner.stickersNote}</p>
     ${errorBox(packError)}
     <form class="card" data-new-pack @submit=${(e: Event) => { e.preventDefault(); void createPack(); }}>
@@ -84,6 +105,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
     if (!result.ok) { packError = result; update(); return; }
     packName = '';
     await loadPacks();
+    changed();
   }
 
   /** One picture at a time, in the order picked; the first that fails says why, and the rest still go. */
@@ -109,6 +131,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
     deletingPack = null;
     if (!result.ok) { packError = result; update(); return; }
     await loadPacks();
+    changed();
   }
 
   /** The "..." of a row: opens its menu, which closes again to this button. */
@@ -164,30 +187,38 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       <p class="hint" role="status">${copied}</p>
     </div>`;
 
-  /** A handful of members, or everyone who matches what was typed. */
+  /** A request, with all its note: Approve is the button; Refuse asks first, in the row. */
   const requestRow = (r: JoinRequest) => html`
-    <li class="li" data-join-request=${r.gomId}>
+    <li class="li request" data-join-request=${r.gomId}>
       <div class="t"><b>${r.displayName}</b><small>@${r.gomId} · ${say.owner.askedAt(formatTime(r.requestedAt))}</small>
         <span class="request-note">${r.note}</span></div>
-      <div class="acts">
-        <button class="btn small" type="button" data-approve @click=${() => answer(() => api.approveJoin(r.gomId))}>${say.owner.approve}</button>
-        ${r.refused
-          ? html`<button class="btn secondary small" type="button" data-delete-request @click=${() => answer(() => api.deleteJoin(r.gomId))}>${say.owner.remove}</button>`
-          : html`<button class="btn secondary small" type="button" data-refuse @click=${() => answer(() => api.refuseJoin(r.gomId))}>${say.owner.refuse}</button>`}
-      </div>
+      ${refusing === r.gomId ? html`
+        <div class="ask" role="group" data-refuse-ask><p>${say.owner.refuseAsk(r.displayName)}</p>
+          <button class="btn small danger" type="button" data-refuse-yes @click=${() => { refusing = null; void answer(() => api.refuseJoin(r.gomId)); }}>${say.owner.refuse}</button>
+          <button class="btn secondary small" type="button" data-refuse-no @click=${() => { refusing = null; update(); }}>${say.common.no}</button></div>`
+      : html`
+        <div class="acts">
+          <button class="btn small" type="button" data-approve @click=${() => answer(() => api.approveJoin(r.gomId))}>${say.owner.approve}</button>
+          ${r.refused
+            ? html`<button class="btn secondary small" type="button" data-delete-request @click=${() => answer(() => api.deleteJoin(r.gomId))}>${say.owner.remove}</button>`
+            : html`<button class="btn secondary small" type="button" data-refuse @click=${() => { refusing = r.gomId; update(); }}>${say.owner.refuse}</button>`}
+        </div>`}
     </li>`;
+
+  /** A list that starts folded: past links, refused requests. Its count is in its title, so nothing hides unseen. */
+  const folded = (title: string, attr: string, body: unknown) => html`
+    <details class="fold" data-fold=${attr}><summary>${icons.chevron()}<span>${title}</span></summary>${body}</details>`;
 
   const requestsView = () => {
     const waiting = requests.filter((r) => !r.refused);
     const refused = requests.filter((r) => r.refused);
     return html`
-      <h2 class="section">${say.owner.signUp}</h2>
       <div class="pick" data-sign-up-switch><input type="checkbox" id="sign-up-open" data-sign-up-open .checked=${signUpOpen}
         @change=${(e: Event) => void setOpen((e.target as HTMLInputElement).checked)}><label for="sign-up-open">${say.owner.openSignUp}</label></div>
       ${waiting.length === 0 && !signUpOpen ? nothing : html`
-        <h3 class="section">${say.owner.waitingCount(waiting.length)}</h3>
+        <h2 class="section">${say.owner.waitingCount(waiting.length)}</h2>
         ${waiting.length === 0 ? html`<p class="hint" data-none-waiting>${say.owner.noneWaiting}</p>` : html`<ul class="list" data-waiting-list>${waiting.map(requestRow)}</ul>`}`}
-      ${refused.length === 0 ? nothing : html`<h3 class="section">${say.owner.refusedList}</h3><ul class="list" data-refused-list>${refused.map(requestRow)}</ul>`}`;
+      ${refused.length === 0 ? nothing : folded(say.owner.refusedCount(refused.length), 'refused', html`<ul class="list" data-refused-list>${refused.map(requestRow)}</ul>`)}`;
   };
 
   const contactRow = (c: ContactMessage) => html`
@@ -197,21 +228,14 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       <button class="btn secondary small" type="button" data-delete-contact @click=${() => answer(() => api.deleteContact(c.id))}>${say.owner.remove}</button>
     </li>`;
 
-  /** Shown only when there is something to read: the form is on the privacy page, and most days nobody writes. */
-  const contactsView = () => contacts.length === 0 ? nothing : html`
-    <h2 class="section">${say.owner.contactHeading}</h2>
+  const contactsView = () => html`
     <p class="hint">${say.owner.contactNote(limits().contactKeepDays)}</p>
-    <ul class="list" data-contact-list>${contacts.map(contactRow)}</ul>`;
+    ${contacts.length === 0 ? html`<p class="hint" data-no-contact>${say.owner.noContact}</p>` : html`<ul class="list" data-contact-list>${contacts.map(contactRow)}</ul>`}`;
 
-  const shownMembers = (): Member[] => {
-    if (query.trim() !== '') return members.filter((m) => matches(`${m.displayName} ${m.gomId}`, query));
-    return moreMembers || members.length <= HANDFUL ? members : members.slice(0, HANDFUL);
-  };
-
-  const view = () => html`
-    ${appBar({ title: say.owner.title, back: '/settings' })}
-    <div class="page">
-      ${errorBox(error)}
+  const invitesView = () => {
+    const active = invites.filter((i) => i.status === 'active');
+    const past = invites.filter((i) => i.status !== 'active');
+    return html`
       <div class="card invite-form">
         <div class="field"><label for="invite-days">${say.owner.validFor}</label>
           <select id="invite-days" name="days" @change=${(e: Event) => { days = Number((e.target as HTMLSelectElement).value); }}>
@@ -222,40 +246,59 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         <button class="btn" type="button" data-create-invite @click=${makeInvite}>${say.owner.makeInvite}</button>
       </div>
       ${linkBox()}
-      ${requestsView()}
-      ${contactsView()}
-      <h2 class="section">${say.owner.invites}</h2>
-      <ul class="list">${(moreInvites || invites.length <= HANDFUL ? invites : invites.slice(0, HANDFUL)).map(inviteRow)}</ul>
-      ${moreInvites || invites.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-invites @click=${() => { moreInvites = true; update(); }}>${say.friends.seeMoreCount(invites.length - HANDFUL)}</button>`}
-      <h2 class="section">${say.owner.members}</h2>
-      ${members.length <= HANDFUL ? nothing : html`
-        <div class="searchfield input">${icons.search()}
-          <input type="search" name="member-search" aria-label=${say.owner.findMembers} placeholder=${say.owner.findMembers} autocomplete="off" maxlength=${limits().nameChars}
-            .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>`}
-      ${shownMembers().length === 0 ? html`<p class="hint" data-no-member>${say.owner.noMember}</p>` : html`<ul class="list">${shownMembers().map(memberRow)}</ul>`}
-      ${query.trim() !== '' || moreMembers || members.length <= HANDFUL ? nothing : html`<button class="btn secondary" type="button" data-more-members @click=${() => { moreMembers = true; update(); }}>${say.friends.seeMoreCount(members.length - HANDFUL)}</button>`}
-      ${packsView()}
-    </div>
-    ${menuOf()}`;
+      ${active.length === 0 ? html`<p class="hint" data-no-active>${say.owner.noActive}</p>` : html`<ul class="list" data-active-invites>${active.map(inviteRow)}</ul>`}
+      ${past.length === 0 ? nothing : folded(say.owner.pastLinks(past.length), 'past', html`<ul class="list" data-past-invites>${past.map(inviteRow)}</ul>`)}`;
+  };
+
+  /** Everyone, or the locked ones, narrowed by what was typed (without accents). */
+  const shownMembers = (): Member[] => members.filter((m) => (only === 'all' || m.disabled) && (query.trim() === '' || matches(`${m.displayName} ${m.gomId}`, query)));
+
+  const membersView = () => {
+    const tab = (id: 'all' | 'locked', label: string, count: number) => html`
+      <button class="tab" type="button" role="tab" data-member-filter=${id} aria-selected=${only === id ? 'true' : 'false'}
+        @click=${() => { only = id; update(); }}>${label} <span class="count">${count}</span></button>`;
+    const shown = shownMembers();
+    return html`
+      ${linkBox()}
+      <div class="tabs" role="tablist" aria-label=${say.owner.members}>${tab('all', say.owner.everyone, members.length)}${tab('locked', say.owner.disabledTag, members.filter((m) => m.disabled).length)}</div>
+      <div class="searchfield input">${icons.search()}
+        <input type="search" name="member-search" aria-label=${say.owner.findMembers} placeholder=${say.owner.findMembers} autocomplete="off" maxlength=${limits().nameChars}
+          .value=${query} @input=${(e: Event) => { query = (e.target as HTMLInputElement).value; update(); }}></div>
+      ${shown.length === 0 ? html`<p class="hint" data-no-member>${say.owner.noMember}</p>` : html`<ul class="list" data-member-list>${shown.map(memberRow)}</ul>`}`;
+  };
+
+  const body = () => {
+    switch (part) {
+      case 'invites': return invitesView();
+      case 'requests': return requestsView();
+      case 'members': return membersView();
+      case 'stickers': return packsView();
+      case 'contact': return contactsView();
+    }
+  };
+
+  const view = () => html`<div class="page owner-part" data-owner-part=${part}>${errorBox(error)}${body()}</div>${menuOf()}`;
   const update = () => { render(view(), root); placeMenu(root.querySelector<HTMLElement>('[data-row-actions]'), menu?.at); };
 
   const show = (issued: Issued, note: string) => { link = { url: origin + issued.path, note }; copied = ''; error = null; };
 
+  /** What this part shows, and nothing else. */
   async function reload(): Promise<void> {
-    const [i, m, r, c] = await Promise.all([api.invites(), api.members(), api.signUpRequests(), api.contactMessages()]);
-    if (i.ok) invites = i.data; else error = i;
-    if (m.ok) members = m.data; else error = m;
-    if (r.ok) { signUpOpen = r.data.open; requests = r.data.requests; } else error = r;
-    if (c.ok) contacts = c.data.messages; else error = c;
+    if (part === 'stickers') { await loadPacks(); return; }
+    if (part === 'invites') { const i = await api.invites(); if (i.ok) invites = i.data; else error = i; }
+    if (part === 'members') { const m = await api.members(); if (m.ok) members = m.data; else error = m; }
+    if (part === 'requests') { const r = await api.signUpRequests(); if (r.ok) { signUpOpen = r.data.open; requests = r.data.requests; } else error = r; }
+    if (part === 'contact') { const c = await api.contactMessages(); if (c.ok) contacts = c.data.messages; else error = c; }
     update();
   }
 
-  /** Approve, refuse or delete a request; then everything again (an approved one is now a member). */
+  /** Approve, refuse or delete a request, or delete a message; then the list again, and the menu's count. */
   async function answer(act: () => Promise<{ ok: true } | Failure>): Promise<void> {
     error = null;
     const result = await act();
     if (!result.ok) error = result;
     await reload();
+    changed();
   }
 
   async function setOpen(open: boolean): Promise<void> {
@@ -263,6 +306,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
     const result = await api.setSignUpOpen(open);
     if (result.ok) signUpOpen = open; else error = result;
     update();
+    changed();
   }
 
   async function makeInvite(): Promise<void> {
@@ -270,6 +314,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
     if (!result.ok) { error = result; update(); return; }
     show(result.data, say.owner.inviteMade(days, uses === 0 ? say.owner.anyone : uses === 1 ? say.owner.onePerson : say.owner.upTo(uses)));
     await reload();
+    changed();
   }
 
   async function makeReset(gomId: string): Promise<void> {
@@ -290,6 +335,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
     const result = await api.revokeInvite(id);
     if (!result.ok) { error = result; update(); return; }
     await reload();
+    changed();
   }
 
   async function copyLink(): Promise<void> {
@@ -305,6 +351,6 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
       return;
     }
     if (!result.data.isOwner) { go('/'); return; }
-    await Promise.all([reload(), loadPacks()]);
+    await reload();
   });
 }

@@ -122,10 +122,10 @@ public static class PushEndpoints
         if (owner is not null)
         {
             if (!person.IsOwner || owner is not ("join" or "contact")) return Results.NotFound();
-            if (owner == "contact") return Results.Ok(new NoticeDto("Gom", say.ContactMessage, "/settings/owner", "contact"));
+            if (owner == "contact") return Results.Ok(new NoticeDto("Gom", say.ContactMessage, "/settings/contact", "contact"));
             var newest = level == PushLevel.Nothing ? null : await db.Users.AsNoTracking().Where(u => u.RequestedAt != null && u.RefusedAt == null)
                 .OrderByDescending(u => u.RequestedAt).Select(u => u.DisplayName).FirstOrDefaultAsync(ct);
-            return Results.Ok(new NoticeDto("Gom", newest is null ? say.JoinRequestUnnamed : say.JoinRequest(newest), "/settings/owner", "join-requests"));
+            return Results.Ok(new NoticeDto("Gom", newest is null ? say.JoinRequestUnnamed : say.JoinRequest(newest), "/settings/requests", "join-requests"));
         }
 
         if (call is { } callId)

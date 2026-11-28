@@ -3,7 +3,7 @@ import { live } from 'lit-html/directives/live.js';
 import { ref } from 'lit-html/directives/ref.js';
 import type { Api, Failure, Person, PushLevel, PushState, SessionInfo, TwoStepKey, User } from '../api.js';
 import * as icons from '../icons.js';
-import { mountOwner } from './owner.js';
+import { OWNER_PARTS, mountOwner, ownerCounts, type OwnerCounts, type OwnerPart } from './owner.js';
 import { mountStorage } from './storage.js';
 import { GRADIENTS, PALETTES, PATTERNS, applyBlack, applyPalette, chosenScheme, chooseScheme, rememberPattern, storedBlack, storedPalette, storedPattern, type Choice, type Palette, type Pattern } from '../theme.js';
 import type { Installer } from '../install.js';
@@ -19,11 +19,12 @@ const SCHEMES: ReadonlyArray<readonly [Choice, string]> = [['system', say.settin
 
 /**
  * The parts of Settings, each at /settings/{code}: a phone shows the menu, then one part with a way back; a wide screen shows the menu
- * beside the open part (Hồ sơ when none is). The owner's two are only for the owner. The server lists the same codes (Pages.cs).
+ * beside the open part (Hồ sơ when none is). The owner's parts are only for the owner. The server lists the same codes (Pages.cs).
  */
-export const SECTIONS = ['profile', 'notifications', 'appearance', 'privacy', 'account', 'owner', 'storage'] as const;
+export const SECTIONS = ['profile', 'notifications', 'appearance', 'privacy', 'account', ...OWNER_PARTS, 'storage'] as const;
 export type Section = typeof SECTIONS[number];
-const OWNER_ONLY: readonly Section[] = ['owner', 'storage'];
+const OWNER_ONLY: readonly Section[] = [...OWNER_PARTS, 'storage'];
+const isOwnerPart = (s: Section): s is OwnerPart => (OWNER_PARTS as readonly string[]).includes(s);
 
 /** The address bar, so a part has an address of its own and the back button leaves it. */
 export interface SettingsNav { path(): string; push(path: string): void; replace(path: string): void; onPop(callback: () => void): void }
@@ -81,6 +82,8 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   let pushBusy = false;
   /** What is typed to confirm deleting the account: the person's own Gom ID. */
   let confirmDelete = '';
+  /** The owner's counts under their menu rows (null: not known yet). */
+  let counts: OwnerCounts | null = null;
 
   const row = (s: SessionInfo) => html`
     <li class="li" data-session=${s.id}>
@@ -95,7 +98,8 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
   const openPart = (): Section => section ?? 'profile';
   const title = (s: Section): string => ({
     profile: say.settings.profile, notifications: say.settings.notifications, appearance: say.settings.appearanceAndLanguage,
-    privacy: say.settings.privacy, account: say.settings.account, owner: say.common.ownerPage, storage: say.settings.storage,
+    privacy: say.settings.privacy, account: say.settings.account, invites: say.owner.invites, requests: say.owner.signUp,
+    members: say.owner.members, stickers: say.owner.stickers, contact: say.owner.contactHeading, storage: say.settings.storage,
   })[s];
 
   /** Opens a part in place (no new page), with its own address; a click with a modifier key opens the link as a browser does. */
@@ -109,11 +113,16 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     root.querySelector<HTMLElement>('.settings-pane h1')?.focus?.();
   }
 
-  /** The owner's own page, mounted once into its part (its bar is hidden: the pane has one). */
-  function embed(el: Element | undefined, which: 'owner' | 'storage'): void {
+  /** An owner's part, mounted once into its place (its bar is hidden: the pane has one); a change there renews the menu's counts. */
+  function embed(el: Element | undefined, which: OwnerPart | 'storage'): void {
     if (!(el instanceof HTMLElement) || embedded.has(el)) return;
     embedded.add(el);
-    if (which === 'owner') mountOwner(el, api, go, location.origin); else mountStorage(el, api, go);
+    if (which === 'storage') mountStorage(el, api, go); else mountOwner(el, api, go, location.origin, which, () => void loadCounts());
+  }
+
+  async function loadCounts(): Promise<void> {
+    counts = await ownerCounts(api);
+    update();
   }
 
   /** Signed out meanwhile: to sign in, then back to this same part. */
@@ -236,14 +245,19 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       case 'appearance': return [SCHEMES.find(([v]) => v === scheme)?.[1] ?? '', say.settings.palettes[palette], LANGUAGES.find(([v]) => v === language)?.[1] ?? ''].join(' · ');
       case 'privacy': return say.settings.receiptsSummary(receipts);
       case 'account': return say.settings.accountSummary(sessions.length);
-      case 'owner': return say.settings.ownerSummary;
+      case 'invites': return counts === null ? '' : say.settings.invitesSummary(counts.activeInvites);
+      case 'requests': return counts === null ? '' : say.settings.requestsSummary(counts.waiting, counts.signUpOpen);
+      case 'members': return counts === null ? '' : say.settings.membersSummary(counts.members);
+      case 'stickers': return counts === null ? '' : say.settings.stickersSummary(counts.packs);
+      case 'contact': return counts === null ? '' : say.settings.contactSummary(counts.contacts);
       case 'storage': return say.settings.storageSummary;
       default: return '';
     }
   };
 
   const ICONS: Record<Section, () => TemplateResult> = {
-    profile: icons.users, notifications: icons.bell, appearance: icons.palette, privacy: icons.lock, account: icons.shield, owner: icons.users, storage: icons.disk,
+    profile: icons.users, notifications: icons.bell, appearance: icons.palette, privacy: icons.lock, account: icons.shield,
+    invites: icons.copy, requests: icons.users, members: icons.users, stickers: icons.smile, contact: icons.info, storage: icons.disk,
   };
 
   /** One row of the menu: a link to its part, the open one marked (a wide screen shows it beside the menu). */
@@ -259,7 +273,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       @click=${(e: MouseEvent) => open(e, 'profile')}>${avatar(u.displayName, false, true, u.avatar)}
       <span class="t"><b>${u.displayName}</b><small>@${u.gomId}</small></span><span class="chev">${icons.chevron()}</span></a>
     <ul class="nav">${(['notifications', 'appearance', 'privacy', 'account'] as const).map(navRow)}</ul>
-    ${u.isOwner ? html`<h2 class="section">${say.settings.ownerHeading}</h2><ul class="nav">${(['owner', 'storage'] as const).map(navRow)}</ul>` : nothing}
+    ${u.isOwner ? html`<h2 class="section">${say.settings.ownerHeading}</h2><ul class="nav">${OWNER_ONLY.map(navRow)}</ul>` : nothing}
     ${installer?.available() ? html`
       <ul class="nav"><li><button type="button" data-install-button @click=${installApp}>
         <span class="lead-i">${icons.phone()}</span><span class="t"><b>${say.settings.installRow}</b><small>${say.settings.installSummary}</small></span>
@@ -356,8 +370,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
       ${twoStepCard(u)}
       ${u.isOwner ? nothing : deleteCard(u)}`)}
     ${u.isOwner ? html`
-      ${part('owner', openPart() === 'owner' ? html`<div class="embed" ${ref((el) => embed(el, 'owner'))}></div>` : nothing)}
-      ${part('storage', openPart() === 'storage' ? html`<div class="embed" ${ref((el) => embed(el, 'storage'))}></div>` : nothing)}` : nothing}`;
+      ${OWNER_ONLY.map((s) => part(s, openPart() === s ? html`<div class="embed" ${ref((el) => embed(el, isOwnerPart(s) ? s : 'storage'))}></div>` : nothing))}` : nothing}`;
 
   const view = () => html`
     <div class="settings" data-open=${section ?? ''}>
@@ -628,6 +641,7 @@ export function mountSettings(root: HTMLElement, api: Api, go: (path: string) =>
     receipts = result.data.readReceipts !== false;
     const state = await api.pushState();
     if (state.ok) push = state.data;
+    if (user.isOwner) void loadCounts();
     await load();
   });
 }

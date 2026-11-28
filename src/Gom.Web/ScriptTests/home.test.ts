@@ -51,11 +51,11 @@ describe('settings page', () => {
   it('shows the owner tools link only to the owner', async () => {
     mountSettings(root, api(), vi.fn());
     await flush();
-    expect(root.querySelector('a[href="/settings/owner"]')).toBeNull();
+    expect(root.querySelector('a[href="/settings/invites"]')).toBeNull();
     const ownerRoot = document.createElement('div');
     mountSettings(ownerRoot, api({ me: vi.fn(async () => ok({ ...me, isOwner: true })) }), vi.fn());
     await flush();
-    expect(ownerRoot.querySelector('a[href="/settings/owner"]')).not.toBeNull();
+    expect(ownerRoot.querySelector('a[href="/settings/invites"]')).not.toBeNull();
     expect(ownerRoot.querySelector('a[href="/settings/storage"]')).not.toBeNull();
   });
 

@@ -12,7 +12,7 @@ public class InstallableTests(WebApplicationFactory<Program> factory) : IClassFi
     [InlineData("/")]
     [InlineData("/sign-in")]
     [InlineData("/settings")]
-    [InlineData("/settings/owner")]
+    [InlineData("/settings/invites")]
     public async Task Every_page_names_its_icon_manifest_and_colour(string path)
     {
         using var response = await factory.CreateClient().GetAsync(path);

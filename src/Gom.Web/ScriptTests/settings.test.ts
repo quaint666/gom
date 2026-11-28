@@ -52,7 +52,7 @@ describe('settings: the parts and their addresses', () => {
     expect(row('privacy')).toContain('Báo đã xem: bật');
     expect(row('account')).toContain('Mật khẩu · 2 thiết bị đang đăng nhập');
     expect(row('notifications')).toContain('Không có trên thiết bị này');
-    expect(root.querySelector('[data-section-link="owner"]')).toBeNull();
+    expect(root.querySelector('[data-section-link="invites"]')).toBeNull();
     expect(open()).toBe('');
   });
 
@@ -92,7 +92,7 @@ describe('settings: the parts and their addresses', () => {
     expect(root.querySelector('[data-part="account"] form[data-password]')).not.toBeNull();
   });
 
-  it('sends a member who reaches an owner part to the menu, and the owner sees both owner parts', async () => {
+  it('sends a member who reaches an owner part to the menu, and the owner sees every owner part', async () => {
     const nav = fakeNav('/settings/storage');
     mountSettings(root, api(), vi.fn(), undefined, undefined, nav);
     await flush();
@@ -104,9 +104,31 @@ describe('settings: the parts and their addresses', () => {
     document.body.append(ownerRoot);
     mountSettings(ownerRoot, api({ me: vi.fn(async () => ok({ ...me, isOwner: true })) }), vi.fn(), undefined, undefined, fakeNav('/settings'));
     await flush();
-    expect(ownerRoot.querySelector('[data-section-link="owner"]')).not.toBeNull();
-    expect(ownerRoot.querySelector('[data-section-link="storage"]')).not.toBeNull();
+    expect([...ownerRoot.querySelectorAll('[data-section-link]')].map((a) => a.getAttribute('data-section-link')).slice(-6))
+      .toEqual(['invites', 'requests', 'members', 'stickers', 'contact', 'storage']);
     expect(ownerRoot.querySelector('[data-delete-zone]')).toBeNull();   // the owner cannot delete the account
+  });
+
+  it("says under each owner part what is in it, and says it again after a change there", async () => {
+    const requests = vi.fn(async () => ok({ open: true, requests: [{ gomId: 'bi', displayName: 'Bi', note: 'chào', requestedAt: '2026-12-01T09:00:00Z', refused: false }] }));
+    const a = api({
+      me: vi.fn(async () => ok({ ...me, isOwner: true })),
+      invites: vi.fn(async () => ok([{ id: 'i1', createdAt: '2026-12-01T09:00:00Z', expiresAt: '2026-12-08T09:00:00Z', uses: 0, maxUses: 10, status: 'active', members: [] }])),
+      members: vi.fn(async () => ok([{ gomId: 'boss', displayName: 'Boss', isOwner: true, disabled: false, createdAt: '2026-11-01T00:00:00Z' }])),
+      signUpRequests: requests, stickerPacks: vi.fn(async () => ok([])), contactMessages: vi.fn(async () => ok({ messages: [] })),
+    });
+    mountSettings(root, a, vi.fn(), undefined, undefined, fakeNav('/settings/requests'));
+    await flush(); await flush();
+    const line = (s: string) => text(root.querySelector(`[data-section-link="${s}"]`)!);
+    expect(line('invites')).toContain('1 liên kết đang dùng');
+    expect(line('requests')).toContain('1 người chờ duyệt');
+    expect(line('members')).toContain('1 thành viên');
+    expect(line('stickers')).toContain('Chưa có bộ nào');
+    expect(line('contact')).toContain('Chưa có thư nào');
+    requests.mockImplementation(async () => ok({ open: true, requests: [] }));
+    root.querySelector<HTMLButtonElement>('[data-part="requests"] [data-approve]')!.click();
+    await flush(); await flush(); await flush();
+    expect(line('requests')).toContain('Đang mở, không ai chờ');
   });
 
   it('sends someone signed out to sign in, and back to the same part afterwards', async () => {
