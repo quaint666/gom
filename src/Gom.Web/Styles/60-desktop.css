@@ -110,3 +110,12 @@ button.gm-main { cursor: pointer; }
 .gm-btns { display: flex; gap: 8px; margin-block-start: 8px; }
 .gm-btns .btn { min-block-size: 40px; }
 .gnav .badge { flex: none; }
+/* The three round actions share the width, and a long label (English) wraps under its circle instead of pushing the panel wider. Beside the
+   thread the circles stand alone: each has its name as a tooltip and for a screen reader. */
+.info:has(.gtop) .info-actions { gap: 8px; }
+.info:has(.gtop) .info-actions .btn { flex: 1 1 0; min-inline-size: 0; text-align: center; overflow-wrap: anywhere; }
+@media (min-width: 1200px) {
+  .info:has(.gtop) .info-actions .lbl { display: none; }
+  .info:has(.gtop) .info-actions { gap: 20px; }
+  .info:has(.gtop) .info-actions .btn { flex: none; }
+}
