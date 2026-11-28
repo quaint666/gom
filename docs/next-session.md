@@ -14,7 +14,7 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
   thread and the group avatar that opens a card. The second, on 2026-11-29, is what H asked for after merging the first:
   #226 (a reaction on your own message at the bubble's left edge), the announcement channel (#227 the server with the
   migration `Announcements`: the kind's check constraint and a unique index, no row changes; #228 the page), "Có gì mới"
-  (#229, a page and a Settings row, releases from 1.0.0, no dates) and this docs sweep (#230). H asked for the APK and the
+  (#229, a page and a Settings row, releases from 1.0.0, no dates) and this docs sweep (#231). H asked for the APK and the
   release after those: `gom-1.4.0.apk`, built after the release commit, with every older APK deleted (H has them on Google
   Drive) **[stated: H, 2026-11-28 and 2026-11-29]**. It needs no APK to work **[verified: the server words notifications
   and the pages load from the server]**; H wants the app and the web to match. The second stack passes 1,147 page tests and
