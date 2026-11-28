@@ -17,14 +17,16 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
   on the bubble's bottom corner) and the call screens without the old "Gom" label and logo, on the web and in the app
   (`CallScreen.kt`, so it needs `gom-1.5.0.apk`). H chose to release it alone so the app's call screen updates
   **[stated: H, 2026-11-29]**. Seen in Chrome at phone width only. `gom-1.5.0.apk` is built (versionCode 10500; emulator
-  pass clean: no crash in logcat) and uploaded **[verified]**; the deploys and the tag `v1.5.0` on `403d503` wait for H.
-- Work after 1.5.0, stacked as #235 to #240 on `main` (2026-11-29, H's list): phone menus are list sheets (#235); a
+  pass clean: no crash in logcat) and uploaded **[verified]**. `v1.5.0` is tagged on `403d503` and published on GitHub (2026-11-29, after H deployed).
+- Release 1.6.0 (#235 to #241, all merged; `v1.6.0` on `0b3ddec`, published, deployed to staging and production by H;
+  `gom-1.6.0.apk` built, emulator launch clean: versionCode 10600, no crash, sign-in screen; it is the only APK on
+  Copyparty **[stated: H deleted the older ones]**) holds, from H's list: phone menus are list sheets (#235); a
   friend's menu opens from a long press or right-click and offers "Nhắn tin" and "Tạo nhóm với …" (#236); the 1:1
   header's picture opens the card, a group's name and picture open its information, the people icon is gone, and the info
   page slides in and out (#237); a group's information is edited in place, in the panel, 340 px wide (#238); "Quản lý
-  nhóm", disbanding and the deletion of the `/groups/{id}` page (#239); these docs (#240). Seen in Chrome at desktop and
-  phone width on a local app **[verified]**; they need `gom-1.6.0.apk` for the phone sheets to show in the app **[inferred:
-  they are web changes, the WebView loads them]**. 1,138 page tests and the server's page tests pass.
+  nhóm", disbanding and the deletion of the `/groups/{id}` page (#239); docs (#240) and the release (#241). Seen in Chrome at
+  desktop and phone width on a local app **[verified]**; web changes, so the WebView loads them without a new APK
+  **[inferred]**; not seen in the app. 1,138 page tests and 1,247 server tests pass.
 - Four add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed), #204
   (`sticker_packs.everywhere`, `sticker_pack_chats`, `sticker_pack_people`) and #210 (`pg_trgm`, `gom_unaccent`, the
   trigram index on messages, then `ANALYZE messages`). #210's index reads every message once: seconds at Gom's size, about
@@ -52,10 +54,8 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
-0. **Release 1.5.0** (`docs/releases.md`): staging, production, then the tag `v1.5.0` on `403d503` and the GitHub release
-   ("Gom 1.5.0", web live, Android app not on Google Play yet, no APK attached), on H's word. Then **release 1.6.0** for
-   #235 to #240 (a minor: new things for people; its pull request is #241), with its emulator pass and `gom-1.6.0.apk` (start and stop the build VM
-   with vmctl; the `gomci` login cannot delete older APKs, so H does; never open the netrc).
+0. Nothing is waiting from the releases: 1.5.0 and 1.6.0 are out. Release notes for a version after 1.6.0 start from the
+   `v1.6.0` tag; the build VM is started and stopped with vmctl, and H deletes older APKs by hand.
 1. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
    bundle in a closed test (12 testers for 14 days, `docs/testers.md`), the listing and declarations, then production.
    Uploading from Gradle with a service account limited to test tracks comes after.
