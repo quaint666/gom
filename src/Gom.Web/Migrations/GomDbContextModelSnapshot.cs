@@ -355,11 +355,16 @@ namespace Gom.Web.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_conversations_direct_key");
 
+                    b.HasIndex("Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ix_conversations_kind")
+                        .HasFilter("kind = 'announce'");
+
                     b.ToTable("conversations", null, t =>
                         {
                             t.HasCheckConstraint("ck_conversations_direct_key", "(kind = 'direct') = (direct_key IS NOT NULL)");
 
-                            t.HasCheckConstraint("ck_conversations_kind", "kind IN ('direct', 'group')");
+                            t.HasCheckConstraint("ck_conversations_kind", "kind IN ('direct', 'group', 'announce')");
 
                             t.HasCheckConstraint("ck_conversations_last_seq", "last_seq >= 0");
                         });

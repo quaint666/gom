@@ -33,7 +33,7 @@ public static class Disappearing
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
-        if (access.Kind == ConversationKind.Group && access.Role < GroupRole.Deputy) return Results.Json(new { error = "not_allowed" }, statusCode: StatusCodes.Status403Forbidden);
+        if (access.Kind == ConversationKind.Announce || access.Kind == ConversationKind.Group && access.Role < GroupRole.Deputy) return Results.Json(new { error = "not_allowed" }, statusCode: StatusCodes.Status403Forbidden);
         if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, id, me, ct))
             return Results.Json(new { error = "not_friends" }, statusCode: StatusCodes.Status403Forbidden);
 

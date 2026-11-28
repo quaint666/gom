@@ -73,6 +73,8 @@ public static class MessageEndpoints
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
         var kind = access.Kind;
+        if (!Announcements.MayPost(kind, http.User)) return Error(StatusCodes.Status403Forbidden, Announcements.OwnerOnly);
+        if (kind == ConversationKind.Announce && request.ReplyTo is not null) return Error(StatusCodes.Status400BadRequest, "invalid_reply");   // nobody answers there: it is read
 
         if (!Guid.TryParse(request.ClientId, out var clientId) || clientId == Guid.Empty) return Error(StatusCodes.Status400BadRequest, "invalid_client_id");
         var sender = new PersonDto(me, http.User.FindFirst(GomClaims.DisplayName)!.Value);

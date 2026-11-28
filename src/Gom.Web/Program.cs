@@ -138,6 +138,7 @@ builder.Services.AddAuthorization(o =>
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("Owner").Get<OwnerOptions>() ?? new OwnerOptions());
 builder.Services.AddSingleton<OwnerSeeder>();
 builder.Services.AddHostedService<OwnerSeedingService>();
+builder.Services.AddHostedService<Gom.Web.Chat.AnnouncementsSeedingService>();   // after the owner exists
 
 var app = builder.Build();
 

@@ -112,6 +112,7 @@ public static class AttachmentEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
+        if (!Announcements.MayPost(access.Kind, http.User)) return Error(StatusCodes.Status403Forbidden, Announcements.OwnerOnly);
         if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
 
         var slow = limiter.TryTake(me);
@@ -171,6 +172,7 @@ public static class AttachmentEndpoints
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
         if (access is null) return Results.NotFound();
+        if (!Announcements.MayPost(access.Kind, http.User)) return Error(StatusCodes.Status403Forbidden, Announcements.OwnerOnly);
         if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, id, me, ct)) return Error(StatusCodes.Status403Forbidden, "not_friends");
 
         var slow = limiter.TryTake(me);

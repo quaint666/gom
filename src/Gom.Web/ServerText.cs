@@ -11,6 +11,8 @@ public sealed class ServerText
 
     public required string NewMessage { get; init; }
     public required string Group { get; init; }
+    /// <summary>The announcement channel's name, and so a notification's title for what the owner posts there.</summary>
+    public required string Announcements { get; init; }
     /// <summary>What replaces a notification once its message is taken back.</summary>
     public required string Recalled { get; init; }
     public required string SentSticker { get; init; }
@@ -40,6 +42,7 @@ public sealed class ServerText
     {
         NewMessage = "Tin nhắn mới",
         Group = "Nhóm",
+        Announcements = "Thông báo",
         Recalled = "Tin nhắn đã được thu hồi",
         SentSticker = "Đã gửi 1 nhãn dán",
         MentionedYou = (name, what) => $"{name} đã nhắc đến bạn: {what}",
@@ -61,6 +64,7 @@ public sealed class ServerText
     {
         NewMessage = "New message",
         Group = "Group",
+        Announcements = "Announcements",
         Recalled = "This message was taken back",
         SentSticker = "Sent a sticker",
         MentionedYou = (name, what) => $"{name} mentioned you: {what}",

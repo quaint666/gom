@@ -47,7 +47,7 @@ public sealed class LiveDelivery(ConnectionRegistry registry, ILogger<LiveDelive
         try
         {
             var access = await Access.Of(db, conversation, person, ct);
-            if (access is null) return;
+            if (access is null || access.Kind == ConversationKind.Announce) return;   // nobody types in the announcements
             var name = await db.Users.AsNoTracking().Where(u => u.Id == person && u.ShareReadReceipts).Select(u => u.DisplayName).SingleOrDefaultAsync(ct);
             if (name is null) return;
             if (access.Kind == ConversationKind.Direct && !await MessageEndpoints.StillFriends(db, conversation, person, ct)) return;
