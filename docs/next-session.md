@@ -22,15 +22,15 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
 - Google Play: the first bundle (1.1.0) is built; H's developer account is still waiting for Google's identity check
   **[stated: H, 2026-11-27]**. How to find testers is in H's own outreach doc (not in the repository); how they get in is
   in `docs/testers.md`.
-- GitHub's private vulnerability reporting is off on the repository, so `SECURITY.md`'s link fails until H turns it on
-  **[verified: the API said `enabled: false`, 2026-11-28]**.
+- GitHub's private vulnerability reporting is on (default settings), so `SECURITY.md`'s link works **[stated: H; verified:
+  the API says `enabled: true`, 2026-11-28]**.
 
 ## 2. Work queue (agreed order)
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
 1. **Release 1.3.0** once the stack is merged: `VERSION`, "What's new" with the versions line (`docs/releases.md`),
-   staging, then production; the tag only when H says so. Then H turns on private vulnerability reporting.
+   staging, then production; the tag only when H says so.
 2. **The app's 1.3.0 build** (new icons, owner notice paths): staging and prod APKs on the build VM, the emulator pass
    (themed icon on, a notification's small icon), then the Play bundle.
 3. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
