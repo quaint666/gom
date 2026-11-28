@@ -11,7 +11,7 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
     {
         { "/", "home" }, { "/c/6f1d0b5e-0000-4000-8000-000000000000", "home" }, { "/sign-in", "signin" }, { "/join/some-token", "join" }, { "/sign-up", "signup" }, { "/reset/some-token", "reset" },
         { "/settings", "settings" }, { "/friends", "friends" }, { "/groups/new", "newgroup" }, { "/groups/6f1d0b5e-0000-4000-8000-000000000000", "group" }, { "/add/some_id", "add" },
-        { "/settings/profile", "settings" }, { "/settings/appearance", "settings" }, { "/settings/account", "settings" }, { "/settings/owner", "settings" }, { "/settings/storage", "settings" },
+        { "/settings/profile", "settings" }, { "/settings/appearance", "settings" }, { "/settings/account", "settings" }, { "/settings/invites", "settings" }, { "/settings/requests", "settings" }, { "/settings/members", "settings" }, { "/settings/stickers", "settings" }, { "/settings/contact", "settings" }, { "/settings/storage", "settings" },
         { "/privacy", "privacy" },
     };
 
@@ -41,8 +41,9 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
 
     /// <summary>The owner's pages moved into Settings: an old link or bookmark is sent on, not lost.</summary>
     [Theory]
-    [InlineData("/owner", "/settings/owner")]
+    [InlineData("/owner", "/settings/invites")]
     [InlineData("/owner/storage", "/settings/storage")]
+    [InlineData("/settings/owner", "/settings/requests")]
     public async Task The_owners_old_addresses_lead_to_their_part_of_settings(string from, string to)
     {
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
@@ -51,16 +52,22 @@ public class PageTests(WebApplicationFactory<Program> factory) : IClassFixture<W
         Assert.Equal(to, response.Headers.Location?.OriginalString);
     }
 
-    /// <summary>The server and the page know the same parts of Settings, in the same order.</summary>
+    /// <summary>The server and the page know the same parts of Settings, in the same order (the owner's parts listed in owner.ts).</summary>
     [Fact]
     public void The_server_and_the_settings_page_know_the_same_parts()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Gom.slnx"))) dir = dir.Parent;
-        var source = File.ReadAllText(Path.Combine(dir!.FullName, "src", "Gom.Web", "Scripts", "pages", "settings.ts"));
-        var list = Regex.Match(source, @"export const SECTIONS = \[([^\]]*)\]");
-        Assert.True(list.Success, "SECTIONS not found in settings.ts");
-        Assert.Equal(Gom.Web.Pages.SettingsSections, Regex.Matches(list.Groups[1].Value, "'([a-z]+)'").Select(m => m.Groups[1].Value));
+        var pages = Path.Combine(dir!.FullName, "src", "Gom.Web", "Scripts", "pages");
+        static string ListIn(string source, string name)
+        {
+            var list = Regex.Match(source, $@"export const {name} = \[([^\]]*)\]");
+            Assert.True(list.Success, $"{name} not found");
+            return list.Groups[1].Value;
+        }
+        var owner = ListIn(File.ReadAllText(Path.Combine(pages, "owner.ts")), "OWNER_PARTS");
+        var sections = ListIn(File.ReadAllText(Path.Combine(pages, "settings.ts")), "SECTIONS").Replace("...OWNER_PARTS", owner, StringComparison.Ordinal);
+        Assert.Equal(Gom.Web.Pages.SettingsSections, Regex.Matches(sections, "'([a-z]+)'").Select(m => m.Groups[1].Value));
     }
 
     /// <summary>The title is the page's to set, in its language (the script's string tables); until then every page is "Gom".</summary>

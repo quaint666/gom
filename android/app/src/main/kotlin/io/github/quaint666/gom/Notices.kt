@@ -28,7 +28,8 @@ object Notices {
     fun show(context: Context, push: Push) {
         val notice = words(push.noticePath) ?: when (push) {
             is Push.Message -> Notice("Gom", context.getString(R.string.new_message), "/c/${push.conversation}", push.conversation)
-            is Push.Owner -> Notice("Gom", context.getString(R.string.new_notice), "/settings/owner", if (push.kind == "join") "join-requests" else "contact")
+            is Push.Owner -> if (push.kind == "join") Notice("Gom", context.getString(R.string.new_notice), "/settings/requests", "join-requests")
+                else Notice("Gom", context.getString(R.string.new_notice), "/settings/contact", "contact")
             is Push.Recall -> return
         }
         post(context, notice, if (push is Push.Owner) OWNER else MESSAGES, (push as? Push.Message)?.message, silent = false)

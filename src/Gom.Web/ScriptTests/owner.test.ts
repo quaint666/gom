@@ -22,13 +22,13 @@ function api(extra = {}) {
 describe('owner page', () => {
   it('sends a member away', async () => {
     const go = vi.fn();
-    mountOwner(root, fakeApi({ me: vi.fn(async () => ok({ ...owner, isOwner: false })) }), go, 'https://gom.test');
+    mountOwner(root, fakeApi({ me: vi.fn(async () => ok({ ...owner, isOwner: false })) }), go, 'https://gom.test', 'invites');
     await flush();
     expect(go).toHaveBeenCalledWith('/');
   });
 
   it('lists invites with a status in words, and revokes only pending ones', async () => {
-    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'invites');
     await flush();
     const pending = root.querySelector('[data-invite="i1"]')!;
     const used = root.querySelector('[data-invite="i2"]')!;
@@ -43,7 +43,7 @@ describe('owner page', () => {
 
   it('revokes an invite and reloads', async () => {
     const a = api();
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'invites');
     await flush();
     root.querySelector<HTMLButtonElement>('[data-invite="i1"] button[data-row-more]')!.click();
     await flush();
@@ -58,7 +58,7 @@ describe('owner page', () => {
 
   it('creates an invite and shows the full link once, readable and copyable', async () => {
     const a = api({ createInvite: vi.fn(async () => ok({ id: 'i3', token: 'TOK', path: '/join/TOK', expiresAt: '2026-12-08T09:00:00Z' })) });
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'invites');
     await flush();
     root.querySelector<HTMLButtonElement>('button[data-create-invite]')!.click();
     await flush();
@@ -70,7 +70,7 @@ describe('owner page', () => {
 
   it('creates the invite with the days and the number of people that were chosen, and says so', async () => {
     const a = api({ createInvite: vi.fn(async () => ok({ id: 'i3', token: 'TOK', path: '/join/TOK', expiresAt: '2026-12-31T09:00:00Z' })) });
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'invites');
     await flush();
     const choose = (name: string, value: string) => { const sel = root.querySelector<HTMLSelectElement>(`select[name="${name}"]`)!; sel.value = value; sel.dispatchEvent(new Event('change', { bubbles: true })); };
     choose('days', '30'); choose('uses', '0');
@@ -87,7 +87,7 @@ describe('owner page', () => {
   });
 
   it('offers 1, 7 and 30 days and 1, 10 or any number of people, with 7 days and 10 people chosen', async () => {
-    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'invites');
     await flush();
     const days = root.querySelector<HTMLSelectElement>('select[name="days"]')!;
     const uses = root.querySelector<HTMLSelectElement>('select[name="uses"]')!;
@@ -101,7 +101,7 @@ describe('owner page', () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const a = api({ createInvite: vi.fn(async () => ok({ id: 'i3', token: 'TOK', path: '/join/TOK', expiresAt: '2026-12-08T09:00:00Z' })) });
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'invites');
     await flush();
     root.querySelector<HTMLButtonElement>('button[data-create-invite]')!.click();
     await flush();
@@ -118,7 +118,7 @@ describe('owner page', () => {
 
   it('makes a reset link for a member, not for the owner themself', async () => {
     const a = api({ resetLink: vi.fn(async () => ok({ token: 'RT', path: '/reset/RT', expiresAt: '2026-12-02T09:00:00Z' })) });
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'members');
     await flush();
     expect(root.querySelector('[data-member="boss"] button')).toBeNull();
     root.querySelector<HTMLButtonElement>('[data-member="minh"] button[data-row-more]')!.click();
@@ -132,7 +132,7 @@ describe('owner page', () => {
 
   it('shows a failure in words', async () => {
     const a = api({ createInvite: vi.fn(async () => fail('server', 500)) });
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'invites');
     await flush();
     root.querySelector<HTMLButtonElement>('button[data-create-invite]')!.click();
     await flush();
@@ -141,18 +141,19 @@ describe('owner page', () => {
 
   const crowd = Array.from({ length: 9 }, (_, n) => ({ gomId: `u${n}`, displayName: n === 7 ? 'Đào Mai' : `Người ${n}`, isOwner: false, disabled: false, createdAt: '2026-11-25T00:00:00Z' }));
 
-  it('shows a handful of members, the rest behind "Xem thêm"', async () => {
-    mountOwner(root, api({ members: vi.fn(async () => ok(crowd)) }), vi.fn(), 'https://gom.test');
-    await flush();
-    expect(root.querySelectorAll('[data-member]').length).toBe(5);
-    root.querySelector<HTMLButtonElement>('[data-more-members]')!.click();
+  it('lists every member on its own page, and narrows to the locked ones', async () => {
+    const people = crowd.map((m, n) => ({ ...m, disabled: n === 2 }));
+    mountOwner(root, api({ members: vi.fn(async () => ok(people)) }), vi.fn(), 'https://gom.test', 'members');
     await flush();
     expect(root.querySelectorAll('[data-member]').length).toBe(9);
-    expect(root.querySelector('[data-more-members]')).toBeNull();
+    expect(text(root.querySelector('[data-member-filter="locked"]')!)).toContain('1');
+    root.querySelector<HTMLButtonElement>('[data-member-filter="locked"]')!.click();
+    await flush();
+    expect([...root.querySelectorAll('[data-member]')].map((n) => n.getAttribute('data-member'))).toEqual(['u2']);
   });
 
   it('finds a member by name without accents, and says when nobody matches', async () => {
-    mountOwner(root, api({ members: vi.fn(async () => ok(crowd)) }), vi.fn(), 'https://gom.test');
+    mountOwner(root, api({ members: vi.fn(async () => ok(crowd)) }), vi.fn(), 'https://gom.test', 'members');
     await flush();
     const input = root.querySelector<HTMLInputElement>('input[name="member-search"]')!;
     input.value = 'dao mai';
@@ -165,20 +166,28 @@ describe('owner page', () => {
     expect(root.querySelector('[data-no-member]')).not.toBeNull();
   });
 
-  it('has no search when there are only a few members', async () => {
-    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+  it('always has a search, even for a few members', async () => {
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'members');
     await flush();
-    expect(root.querySelector('input[name="member-search"]')).toBeNull();
+    expect(root.querySelector('input[name="member-search"]')).not.toBeNull();
   });
 
-  it('shows a handful of invites too', async () => {
-    const many = Array.from({ length: 8 }, (_, n) => ({ id: `x${n}`, createdAt: '2026-12-01T09:00:00Z', expiresAt: '2026-12-08T09:00:00Z', uses: 0, maxUses: 10, status: 'active', members: [] }));
-    mountOwner(root, api({ invites: vi.fn(async () => ok(many)) }), vi.fn(), 'https://gom.test');
+  it('shows the working links, and the past ones folded under their count', async () => {
+    const many = Array.from({ length: 8 }, (_, n) => ({ id: `x${n}`, createdAt: '2026-12-01T09:00:00Z', expiresAt: '2026-12-08T09:00:00Z', uses: 0, maxUses: 10, status: n < 3 ? 'active' : 'expired', members: [] }));
+    mountOwner(root, api({ invites: vi.fn(async () => ok(many)) }), vi.fn(), 'https://gom.test', 'invites');
     await flush();
-    expect(root.querySelectorAll('[data-invite]').length).toBe(5);
-    root.querySelector<HTMLButtonElement>('[data-more-invites]')!.click();
+    expect(root.querySelectorAll('[data-active-invites] [data-invite]').length).toBe(3);
+    const past = root.querySelector<HTMLDetailsElement>('details[data-fold="past"]')!;
+    expect(past.open).toBe(false);
+    expect(text(past.querySelector('summary')!)).toContain('Liên kết cũ (5)');
+    expect(past.querySelectorAll('[data-invite]').length).toBe(5);
+  });
+
+  it('says so when no link is working', async () => {
+    mountOwner(root, api({ invites: vi.fn(async () => ok([])) }), vi.fn(), 'https://gom.test', 'invites');
     await flush();
-    expect(root.querySelectorAll('[data-invite]').length).toBe(8);
+    expect(root.querySelector('[data-no-active]')).not.toBeNull();
+    expect(root.querySelector('details[data-fold="past"]')).toBeNull();
   });
 });
 
@@ -186,9 +195,8 @@ describe('contact messages', () => {
   const note = { id: 'c1', body: 'Xin xóa ảnh\ncủa tôi', replyTo: 'an@example.com', createdAt: '2026-12-01T09:00:00Z' };
 
   it('lists what was written from the privacy page, with how to answer and how long it is kept', async () => {
-    mountOwner(root, api({ contactMessages: vi.fn(async () => ok({ messages: [note, { ...note, id: 'c2', replyTo: null }] })) }), vi.fn(), 'https://gom.test');
+    mountOwner(root, api({ contactMessages: vi.fn(async () => ok({ messages: [note, { ...note, id: 'c2', replyTo: null }] })) }), vi.fn(), 'https://gom.test', 'contact');
     await flush();
-    expect(text(root)).toContain('Thư liên hệ');
     expect(text(root)).toContain('Thư tự xóa sau 180 ngày');
     expect(text(root.querySelector('[data-contact="c1"]')!)).toContain('liên lạc: an@example.com');
     expect(root.querySelector('[data-contact="c1"] .request-note')?.textContent).toBe('Xin xóa ảnh\ncủa tôi');
@@ -198,7 +206,7 @@ describe('contact messages', () => {
   it('deletes one and asks again', async () => {
     const list = vi.fn(async () => ok({ messages: [note] }));
     const a = api({ contactMessages: list });
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'contact');
     await flush();
     root.querySelector<HTMLButtonElement>('[data-contact="c1"] [data-delete-contact]')!.click();
     await flush();
@@ -206,10 +214,10 @@ describe('contact messages', () => {
     expect(list).toHaveBeenCalledTimes(2);
   });
 
-  it('shows nothing about them when there are none', async () => {
-    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+  it('says when there are none', async () => {
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'contact');
     await flush();
-    expect(text(root)).not.toContain('Thư liên hệ');
+    expect(root.querySelector('[data-no-contact]')).not.toBeNull();
   });
 });
 
@@ -221,7 +229,7 @@ describe('owner page: sticker packs', () => {
     let packs: ReturnType<typeof pack>[] = [];
     const createStickerPack = vi.fn(async (name: string) => { packs = [{ ...pack([]), name }]; return ok(packs[0]); });
     const addSticker = vi.fn(async () => { packs = [pack()]; return ok({ id: 's1', code }); });
-    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok(packs)), createStickerPack, addSticker }), vi.fn(), 'https://gom.test');
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok(packs)), createStickerPack, addSticker }), vi.fn(), 'https://gom.test', 'stickers');
     await flush();
     const name = root.querySelector<HTMLInputElement>('#pack-name')!;
     name.value = 'Mèo nhà'; name.dispatchEvent(new Event('input', { bubbles: true }));
@@ -240,7 +248,7 @@ describe('owner page: sticker packs', () => {
   });
 
   it('says why a picture was turned away', async () => {
-    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([pack()])), addSticker: vi.fn(async () => fail('pack_full', 400)) }), vi.fn(), 'https://gom.test');
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([pack()])), addSticker: vi.fn(async () => fail('pack_full', 400)) }), vi.fn(), 'https://gom.test', 'stickers');
     await flush();
     const input = root.querySelector<HTMLInputElement>('[data-pack="p1"] input[type="file"]')!;
     Object.defineProperty(input, 'files', { value: [new File([new Uint8Array([1])], 'a.png')], configurable: true });
@@ -252,7 +260,7 @@ describe('owner page: sticker packs', () => {
   it('takes a sticker out, and deletes a pack only after asking', async () => {
     const deleteSticker = vi.fn(async () => ok(undefined));
     const deleteStickerPack = vi.fn(async () => ok(undefined));
-    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([pack()])), deleteSticker, deleteStickerPack }), vi.fn(), 'https://gom.test');
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([pack()])), deleteSticker, deleteStickerPack }), vi.fn(), 'https://gom.test', 'stickers');
     await flush();
     root.querySelector<HTMLButtonElement>('[data-pack-sticker="s1"] [data-remove-sticker]')!.click();
     await flush();

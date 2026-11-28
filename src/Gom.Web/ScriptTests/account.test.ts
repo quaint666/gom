@@ -140,7 +140,7 @@ describe('owner: switching members off and on', () => {
   };
 
   it('offers to lock an active member, to unlock a locked one, and nothing for the owner', async () => {
-    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'members');
     await flush();
     expect(root.querySelector('[data-member="boss"] button')).toBeNull();
     let menu = await menuOf('minh');
@@ -153,7 +153,7 @@ describe('owner: switching members off and on', () => {
   });
 
   it('opens the actions in a menu like the chat list\'s, named for the member, that closes once one is chosen', async () => {
-    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'members');
     await flush();
     const more = root.querySelector<HTMLButtonElement>('[data-member="minh"] button[data-row-more]')!;
     expect(more.getAttribute('aria-label')).toBe('Tùy chọn cho Minh');
@@ -175,7 +175,7 @@ describe('owner: switching members off and on', () => {
     ['"Đóng"', (m: HTMLElement) => m.querySelector<HTMLElement>('[data-close-menu]')!.click()],
   ] as const)('closes the menu on %s, back to its "⋯", doing nothing', async (_how, close) => {
     const a = api();
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'members');
     await flush();
     close(await menuOf('minh'));
     await flush();
@@ -186,7 +186,7 @@ describe('owner: switching members off and on', () => {
 
   it('disables a member and reloads the list', async () => {
     const a = api();
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'members');
     await flush();
     (await menuOf('minh')).querySelector<HTMLButtonElement>('button[data-disable]')!.click();
     await flush();
@@ -196,7 +196,7 @@ describe('owner: switching members off and on', () => {
 
   it('enables a member and reloads the list', async () => {
     const a = api();
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'members');
     await flush();
     (await menuOf('lan')).querySelector<HTMLButtonElement>('button[data-enable]')!.click();
     await flush();
@@ -206,7 +206,7 @@ describe('owner: switching members off and on', () => {
 
   it('shows a failure in words', async () => {
     const a = api({ disableMember: vi.fn(async () => fail('cannot_disable_owner')) });
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'members');
     await flush();
     (await menuOf('minh')).querySelector<HTMLButtonElement>('button[data-disable]')!.click();
     await flush();
@@ -412,7 +412,7 @@ describe('settings: deleting the account', () => {
   it('shows a deleted member to the owner as such, with nothing to press', async () => {
     const owner = { gomId: 'boss', displayName: 'Boss', isOwner: true };
     mountOwner(root, fakeApi({ me: vi.fn(async () => ok(owner)), invites: vi.fn(async () => ok([])),
-      members: vi.fn(async () => ok([{ gomId: 'lan', displayName: 'Tài khoản đã xóa', isOwner: false, disabled: true, deleted: true, createdAt: '2026-11-01T00:00:00Z' }])) }), vi.fn(), 'https://gom.test');
+      members: vi.fn(async () => ok([{ gomId: 'lan', displayName: 'Tài khoản đã xóa', isOwner: false, disabled: true, deleted: true, createdAt: '2026-11-01T00:00:00Z' }])) }), vi.fn(), 'https://gom.test', 'members');
     await flush();
     const row = [...root.querySelectorAll('li')].find((li) => text(li).includes('@lan'))!;
     expect(text(row)).toContain('Đã xóa');

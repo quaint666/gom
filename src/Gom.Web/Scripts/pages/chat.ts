@@ -825,7 +825,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <div class="scrim" data-gear-scrim @click=${() => dismissMenu(root, () => { gearOpen = false; update(); })}></div>
       <div class="gearmenu" role="menu" aria-label=${say.chat.account} @keydown=${(e: KeyboardEvent) => { if (e.key === 'Escape') dismissMenu(root, () => { gearOpen = false; update(); }); }}>
         <a class="mi" role="menuitem" href="/settings">${icons.gear()}<span>${say.common.settings}</span></a>
-        ${me?.isOwner ? html`<a class="mi" role="menuitem" href="/settings/owner">${icons.users()}<span>${say.common.ownerPage}</span></a>` : nothing}
+        ${me?.isOwner ? html`<a class="mi" role="menuitem" href="/settings/invites">${icons.users()}<span>${say.common.ownerPage}</span></a>` : nothing}
         <button class="mi" type="button" role="menuitem" data-signout @click=${() => void signOut()}>${icons.signOut()}<span>${say.common.signOut}</span></button>
       </div>` : nothing}`;
 
@@ -1004,11 +1004,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         </div>` : html`<button class="btn secondary danger-text" type="button" data-info-clear @click=${() => { infoClearing = true; update(); }}>${icons.trash()} ${say.chat.clear}</button>`}
     </div>`;
 
-  /** Under a 1:1 conversation's name: their Gom ID, and how many groups you share once their card has been fetched. */
+  /** Under a 1:1 conversation's name: their Gom ID only (H: the groups you share are in the info panel, so the line never wraps on a phone). */
   function peerLine(c: Conversation): string {
-    const shared = c.peer === null ? undefined : cards.get(c.peer.id)?.commonGroups.length;
     if (c.peer?.deleted) return say.chat.accountDeletedShort;
-    return [c.peer?.gomId ? `@${c.peer.gomId}` : '', shared ? say.chat.sharedGroups(shared) : ''].filter((x) => x !== '').join(' · ');
+    return c.peer?.gomId ? `@${c.peer.gomId}` : '';
   }
 
   /**
@@ -1481,7 +1480,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
     deps.clearNotifications?.(id);
     if (!t.loaded) void loadHistory(id);
-    // A 1:1 conversation says under the name how many groups you share: that comes from the person's card.
+    // A 1:1 conversation's info panel lists the groups you share: that comes from the person's card, asked for as it opens.
     if (c?.peer && !cards.has(c.peer.id)) void loadCard(c.peer.id);
     else markRead(id);
     if (infoOpen) { void loadMedia(id, 'image'); void loadMedia(id, 'file'); }

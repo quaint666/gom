@@ -375,6 +375,10 @@ describe('group page: leader and deputies', () => {
     await flush();
     click('[data-disband]'); await flush();
     expect(text(root)).toContain('Giải tán nhóm này?');
+    // The question takes the button's place, after "Rời nhóm", not before it.
+    expect(root.querySelector('[data-disband]')).toBeNull();
+    const leave = root.querySelector('[data-leave]')!;
+    expect(leave.compareDocumentPosition(root.querySelector('[data-confirm-sure]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(a.disband).not.toHaveBeenCalled();
     click('[data-confirm-sure]'); await flush();
     expect(a.disband).toHaveBeenCalledWith(G);

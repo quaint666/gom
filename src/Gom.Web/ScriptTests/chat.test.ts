@@ -4615,12 +4615,14 @@ describe("chat: someone's card", () => {
     expect(h.nav.path).toBe(`/c/${G}`);
   });
 
-  it("a 1:1 conversation's header says how many groups you share", async () => {
+  it("a 1:1 conversation's header says only the Gom ID; the groups you share stay in the info panel", async () => {
     const person = vi.fn(async () => ok(cardOf({ gomId: 'minh', friend: 'friends', commonGroups: [{ id: G, title: 'Nhà', memberCount: 3 }, { id: 'g2', title: 'Lớp', memberCount: 9 }] })));
     start({ path: `/c/${C2}`, chats: [chat(C2, 'Minh')], history: { [C2]: [] }, api: { person } });
     await flush(); await flush();
     expect(person).toHaveBeenCalledWith('u-minh');
-    expect(text(root.querySelector('[data-peer-card]')!)).toContain('@minh · 2 nhóm chung');
+    const line = text(root.querySelector('[data-peer-card]')!);
+    expect(line).toContain('@minh');
+    expect(line).not.toContain('nhóm chung');
   });
 
   it("a 1:1 conversation's header shows no Gom ID once you are no longer friends, and no stray @", async () => {
@@ -4629,7 +4631,7 @@ describe("chat: someone's card", () => {
     start({ path: `/c/${C2}`, chats: [former], history: { [C2]: [] }, api: { person } });
     await flush(); await flush();
     const line = text(root.querySelector('[data-peer-card]')!);
-    expect(line).toContain('1 nhóm chung');
+    expect(line).not.toContain('nhóm chung');
     expect(line).not.toContain('@');
   });
 

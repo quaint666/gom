@@ -144,7 +144,7 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
               ${leads() ? html`<button class="btn secondary small" type="button" data-unban @click=${() => run(() => api.unban(conversation, b.id))}>${say.group.unban}</button>` : nothing}
             </li>`)}</ul>` : nothing}
 
-        ${sure ? question(sure) : nothing}
+        ${sure && sure.kind !== 'disband' ? question(sure) : nothing}
 
         ${leads() && members.length > 1 ? html`
           <button class="btn secondary" type="button" disabled data-leave>${say.common.leaveGroup}</button>
@@ -155,7 +155,9 @@ export function mountGroup(root: HTMLElement, api: Api, go: (path: string) => vo
             <button class="btn" type="button" data-confirm-leave @click=${leave}>${say.common.leaveGroup}</button>
             <button class="btn secondary" type="button" data-cancel-leave @click=${() => { confirming = false; update(); }}>${say.chat.stay}</button>
           </div>` : html`<button class="btn secondary" type="button" data-leave @click=${() => { confirming = true; update(); }}>${say.common.leaveGroup}</button>`}
-        ${leads() ? html`<button class="btn secondary" type="button" data-disband @click=${() => { sure = { kind: 'disband' }; update(); }}>${say.group.disband}</button>` : nothing}`}
+        ${!leads() ? nothing : sure?.kind === 'disband' ? question(sure)
+          // The question stands where the button was (H: it showed above "Rời nhóm", away from what was pressed).
+          : html`<button class="btn secondary" type="button" data-disband @click=${() => { sure = { kind: 'disband' }; update(); }}>${say.group.disband}</button>`}`}
     </div>`;
   const update = () => render(view(), root);
 

@@ -199,6 +199,15 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .li .t small { color: var(--muted); font-size: 13px; }
 /* A row's buttons stay together when the row wraps. */
 .li .acts { display: flex; gap: 8px; }
+/* A question asked inside a row (refusing a request): the words on their own line, its two buttons under them. */
+.li .ask { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+.li .ask p { flex-basis: 100%; margin: 0; }
+/* An owner's list that starts folded (past links, refused requests): its title and count stay in view, a chevron that turns. */
+.fold { margin-block-start: 16px; }
+.fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; min-block-size: 44px; color: var(--muted); font-weight: 600; cursor: pointer; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold[open] > summary .i { transform: rotate(90deg); }
+.owner-part > .tabs, .owner-part > .searchfield { margin-block-end: 12px; }
 .tag { margin-inline-start: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 18px; vertical-align: middle; }
 .card { display: flex; flex-direction: column; gap: 6px; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
 .card .hint { margin: 0; }
@@ -620,7 +629,8 @@ a.mi { text-decoration: none; }
 .pattern-tile { position: relative; display: block; block-size: 76px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); cursor: pointer; }
 .pattern-tile input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
 .pattern-tile .backdrop { position: absolute; inset: 0; }
-.pattern-tile .name { position: absolute; inset-inline-start: 6px; inset-block-end: 6px; padding: 0 6px; border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; }
+/* The name keeps 6px from both sides of the tile: on a narrow phone tile a two-word name wraps, with room above and below. */
+.pattern-tile .name { position: absolute; inset-inline-start: 6px; inset-block-end: 6px; max-inline-size: calc(100% - 12px); box-sizing: border-box; padding: 2px 6px; border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 1.25; }
 .pattern-tile:has(input:checked) { outline: 3px solid var(--btn); outline-offset: 2px; }
 .pattern-tile:has(input:focus-visible) { outline: 3px solid var(--ring); outline-offset: 4px; }
 /* A conversation's own colour and background (its info panel): the same dots and tiles, "each person's own" first as a dashed ring. */

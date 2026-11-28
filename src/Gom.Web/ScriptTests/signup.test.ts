@@ -128,24 +128,36 @@ describe('the owner: requests to join', () => {
   });
 
   it('lists who is waiting with what they said, and the refused ones apart', async () => {
-    mountOwner(root, api(), vi.fn(), 'https://gom.test');
+    mountOwner(root, api(), vi.fn(), 'https://gom.test', 'requests');
     await flush(); await flush();
     expect(root.querySelector<HTMLInputElement>('[data-sign-up-open]')!.checked).toBe(true);
     expect(text(root)).toContain('Chờ duyệt (1)');
     expect(text(root.querySelector('[data-waiting-list]')!)).toContain('Con của cô Lan');
+    const refused = root.querySelector<HTMLDetailsElement>('details[data-fold="refused"]')!;
+    expect(refused.open).toBe(false);   // folded, its count in its title
+    expect(text(refused.querySelector('summary')!)).toContain('Đã từ chối (1)');
     expect(root.querySelector('[data-refused-list] [data-join-request="spam"] [data-delete-request]')).not.toBeNull();
     expect(root.querySelector('[data-waiting-list] [data-join-request="bi"] [data-refuse]')).not.toBeNull();
   });
 
   it('approves, refuses and deletes, then asks for everything again', async () => {
     const a = api();
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'requests');
     await flush(); await flush();
     root.querySelector<HTMLButtonElement>('[data-join-request="bi"] [data-approve]')!.click();
     await flush(); await flush();
     expect(a.approveJoin).toHaveBeenCalledWith('bi');
     expect(a.signUpRequests).toHaveBeenCalledTimes(2);
     root.querySelector<HTMLButtonElement>('[data-join-request="bi"] [data-refuse]')!.click();
+    await flush();
+    expect(a.refuseJoin).not.toHaveBeenCalled();   // asked first, in the row
+    expect(text(root.querySelector('[data-join-request="bi"] [data-refuse-ask]')!)).toContain('Từ chối Bi?');
+    root.querySelector<HTMLButtonElement>('[data-join-request="bi"] [data-refuse-no]')!.click();
+    await flush();
+    expect(root.querySelector('[data-refuse-ask]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-join-request="bi"] [data-refuse]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-join-request="bi"] [data-refuse-yes]')!.click();
     await flush(); await flush();
     expect(a.refuseJoin).toHaveBeenCalledWith('bi');
     root.querySelector<HTMLButtonElement>('[data-join-request="spam"] [data-delete-request]')!.click();
@@ -155,7 +167,7 @@ describe('the owner: requests to join', () => {
 
   it('opens and closes asking to join', async () => {
     const a = api({ signUpRequests: vi.fn(async () => ok({ open: false, requests: [] })) });
-    mountOwner(root, a, vi.fn(), 'https://gom.test');
+    mountOwner(root, a, vi.fn(), 'https://gom.test', 'requests');
     await flush(); await flush();
     expect(root.querySelector('[data-none-waiting]')).toBeNull();   // closed and nobody waiting: no empty list
     const box = root.querySelector<HTMLInputElement>('[data-sign-up-open]')!;

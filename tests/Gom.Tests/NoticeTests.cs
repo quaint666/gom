@@ -150,9 +150,9 @@ public class NoticeTests(CallFixture app) : IClassFixture<CallFixture>
         using (var r = await app.Call(HttpMethod.Post, "/api/sign-up", new { gomId = "bi_" + Guid.NewGuid().ToString("N")[..8], password = AppFixture.Password, displayName = name, note = "Con của cô Lan" }))
             Assert.Equal(HttpStatusCode.OK, r.StatusCode);
         var (_, join) = await Notice(owner, "owner=join");
-        Assert.Equal(("Gom", $"{name} xin tham gia Gom", "/settings/owner", "join-requests"), Parts(join));
+        Assert.Equal(("Gom", $"{name} xin tham gia Gom", "/settings/requests", "join-requests"), Parts(join));
         var (_, contact) = await Notice(owner, "owner=contact");
-        Assert.Equal(("Gom", "Có thư liên hệ mới", "/settings/owner", "contact"), Parts(contact));
+        Assert.Equal(("Gom", "Có thư liên hệ mới", "/settings/contact", "contact"), Parts(contact));
 
         var (_, someone) = await app.Member();
         Assert.Equal(HttpStatusCode.NotFound, (await Notice(someone, "owner=join")).Status);
