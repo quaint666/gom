@@ -19,8 +19,10 @@ app takes it as its version name.
 
 1. Each pull request carries one type label: `enhancement`, `bug`, `ci` or `documentation`. GitHub sorts a release's
    notes by it (`.github/release.yml`).
-2. When what is on `main` should go to the family, a pull request named "Release 1.1.0" changes `VERSION` and adds the
-   release's entry under "What's new" below.
+2. When what is on `main` should go to the family, a pull request named "Release 1.1.0" changes `VERSION`, adds the
+   release's entry under "What's new" below, and adds the same release, first, to the app's "Có gì mới" page
+   (`whatsNew` in `Scripts/strings/vi.ts` and `en.ts`, written for the people who use Gom, with no dates): Settings
+   names the first entry as the latest, and the page keeps every release from 1.0.0.
 3. That commit is deployed to staging, checked, and promoted to production.
 4. The commit production runs is tagged `v1.1.0`, and the release is published on GitHub with its generated notes. A tag
    is public and permanent, so it is made only when the owner says so. The notes start with the versions line (below).
