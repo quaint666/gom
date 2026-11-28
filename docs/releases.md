@@ -44,6 +44,34 @@ Between releases, staging may run newer code than its number says: the number mo
 
 ## What's new
 
+### 1.4.0 (29 November 2026)
+
+Everything from #216 to #231: how a message and its reactions look and answer on a phone, who is typing, mentions, the
+owner's announcement channel, and a page in the app that says what changed. The Android app needs nothing new to work
+(the pages and the notification words come from the server); `gom-1.4.0.apk` is built so the app's number matches.
+
+**New**
+- A reaction sits at its bubble's edge: the left edge on your own messages, the right edge on other people's (#218,
+  #226).
+- On a phone only: swipe a message to reply (#219) and double tap a message to heart it (#218).
+- "Bảo, Mai, Lan và 2 người khác đang nhập…": a line above the message field says who is typing, at most three names;
+  it follows the read-receipts switch (#220).
+- Mentions: write `@name` or `@all` in a group; the names are lit in the words, the chat list marks a mention, an
+  arrow takes you to the first one, and a named member is told even through a mute (never for `@all`, and not if they
+  blocked the writer). One migration, `Mentions` (#221, #222).
+- The announcement channel, "Thông báo": first in everyone's list, everyone is in it, only the owner writes, everyone
+  reads, reacts and may mute it; no replies, only the owner pins, and it cannot be hidden or deleted. One migration,
+  `Announcements` (#227, #228).
+- "Có gì mới": a page in the app with what changed in each release from 1.0.0 (newest open, older ones folded), and a
+  row in Settings under "Tải lại Gom" that names the latest (#229).
+- Copying a message says so in a small toast above the message field, and in a group the picture beside someone's
+  last message opens their card (#225).
+
+**Changes**
+- The stylesheet is built from files in `src/Gom.Web/Styles/` by `npm run build`; `gom.css` is no longer in git. People
+  see no difference (#216, #217).
+- In Settings, "Mã nguồn và báo lỗi" moved down beside the setup guide and the policy (#229).
+
 ### 1.3.0 (28 November 2026)
 
 Everything from #199 to #211: what Google Play's testers need, Gom's new mark, a setup guide, and Gom kept fast and
