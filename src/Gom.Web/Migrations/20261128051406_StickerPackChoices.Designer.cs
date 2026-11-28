@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Gom.Web.Migrations
 {
     [DbContext(typeof(GomDbContext))]
-    [Migration("20261128043504_StickerPackChats")]
-    partial class StickerPackChats
+    [Migration("20261128051406_StickerPackChoices")]
+    partial class StickerPackChoices
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -1144,6 +1144,25 @@ namespace Gom.Web.Migrations
                     b.ToTable("sticker_pack_chats", (string)null);
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.StickerPackPerson", b =>
+                {
+                    b.Property<Guid>("PackId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pack_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("PackId", "UserId")
+                        .HasName("pk_sticker_pack_people");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_sticker_pack_people_user_id");
+
+                    b.ToTable("sticker_pack_people", (string)null);
+                });
+
             modelBuilder.Entity("Gom.Web.Data.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1663,6 +1682,23 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_sticker_pack_chats_pack_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.StickerPackPerson", b =>
+                {
+                    b.HasOne("Gom.Web.Data.StickerPack", null)
+                        .WithMany()
+                        .HasForeignKey("PackId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_pack_people_pack_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_pack_people_user_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.User", b =>

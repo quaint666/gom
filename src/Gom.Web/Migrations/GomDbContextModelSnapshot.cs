@@ -1141,6 +1141,25 @@ namespace Gom.Web.Migrations
                     b.ToTable("sticker_pack_chats", (string)null);
                 });
 
+            modelBuilder.Entity("Gom.Web.Data.StickerPackPerson", b =>
+                {
+                    b.Property<Guid>("PackId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("pack_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("PackId", "UserId")
+                        .HasName("pk_sticker_pack_people");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_sticker_pack_people_user_id");
+
+                    b.ToTable("sticker_pack_people", (string)null);
+                });
+
             modelBuilder.Entity("Gom.Web.Data.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1660,6 +1679,23 @@ namespace Gom.Web.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_sticker_pack_chats_pack_id");
+                });
+
+            modelBuilder.Entity("Gom.Web.Data.StickerPackPerson", b =>
+                {
+                    b.HasOne("Gom.Web.Data.StickerPack", null)
+                        .WithMany()
+                        .HasForeignKey("PackId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_pack_people_pack_id");
+
+                    b.HasOne("Gom.Web.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_sticker_pack_people_user_id");
                 });
 
             modelBuilder.Entity("Gom.Web.Data.User", b =>

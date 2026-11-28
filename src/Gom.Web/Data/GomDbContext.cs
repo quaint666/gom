@@ -30,6 +30,7 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
     public DbSet<StickerPack> StickerPacks => Set<StickerPack>();
     public DbSet<CustomSticker> CustomStickers => Set<CustomSticker>();
     public DbSet<StickerPackChat> StickerPackChats => Set<StickerPackChat>();
+    public DbSet<StickerPackPerson> StickerPackPeople => Set<StickerPackPerson>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -237,6 +238,14 @@ public class GomDbContext(DbContextOptions<GomDbContext> options) : DbContext(op
             e.HasOne<StickerPack>().WithMany().HasForeignKey(x => x.PackId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Conversation>().WithMany().HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.ConversationId);
+        });
+        b.Entity<StickerPackPerson>(e =>
+        {
+            e.ToTable("sticker_pack_people");
+            e.HasKey(x => new { x.PackId, x.UserId });
+            e.HasOne<StickerPack>().WithMany().HasForeignKey(x => x.PackId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.UserId);
         });
         b.Entity<CustomSticker>(e =>
         {

@@ -237,11 +237,21 @@ public class StickerPack
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>Taken out of the picker; stickers of it already sent still show.</summary>
     public DateTimeOffset? DeletedAt { get; set; }
-    /// <summary>In every conversation's picker (true), or only in those the owner chose (<see cref="StickerPackChat"/>).</summary>
+    /// <summary>
+    /// In every conversation's picker (true), or only for the people (<see cref="StickerPackPerson"/>) and in the conversations
+    /// (<see cref="StickerPackChat"/>) the owner chose.
+    /// </summary>
     public bool Everywhere { get; set; } = true;
 }
 
-/// <summary>A conversation the owner chose for a pack that is not everywhere.</summary>
+/// <summary>Someone the owner chose for a pack that is not everywhere: they have it in every conversation they are in.</summary>
+public class StickerPackPerson
+{
+    public Guid PackId { get; set; }
+    public Guid UserId { get; set; }
+}
+
+/// <summary>A conversation the owner chose for a pack that is not everywhere: everyone in it has the pack there.</summary>
 public class StickerPackChat
 {
     public Guid PackId { get; set; }

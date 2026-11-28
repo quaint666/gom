@@ -68,9 +68,15 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let deletingPack: string | null = null;
   let packError: Failure | null = null;
   let packBusy = false;
-  /** Where each pack shows, as being chosen (saved with its own button), the owner's chats to choose from, and which pack was just saved. */
-  let where: Record<string, { everywhere: boolean; chats: string[] }> = {};
+  /**
+   * Where each pack shows, as being chosen (saved with its own button): the people who have it wherever they talk, and the owner's
+   * chats where everyone has it; who and which chats there are to choose from; what was typed to find a person; the pack just saved.
+   */
+  type Where = { everywhere: boolean; chats: string[]; people: string[] };
+  let where: Record<string, Where> = {};
   let chats: { id: string; title: string }[] = [];
+  let people: { gomId: string; name: string }[] = [];
+  let peopleQuery: Record<string, string> = {};
   let whereSaved: string | null = null;
 
   /** Sticker packs (H): make one, add pictures to it, take one out, or delete a pack. Stickers already sent still show. */
@@ -100,40 +106,54 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         : html`<button class="btn secondary danger-text" type="button" data-delete-pack @click=${() => { deletingPack = p.id; update(); }}>${say.owner.deletePack}</button>`}
       </div>`)}`;
 
-  /** Every chat, or only the chosen ones (from the owner's own chats: they cannot see others); saved with its button. */
+  /**
+   * Every chat, or only for the people and in the chats chosen (the owner's own chats: they cannot see others); saved with its button.
+   * A person chosen has the pack in every chat they are in, even one between two others.
+   */
   const whereView = (pack: string) => {
-    const w = where[pack] ?? { everywhere: true, chats: [] };
-    const set = (next: { everywhere: boolean; chats: string[] }) => { where = { ...where, [pack]: next }; whereSaved = null; update(); };
+    const w = where[pack] ?? { everywhere: true, chats: [], people: [] };
+    const set = (next: Where) => { where = { ...where, [pack]: next }; whereSaved = null; update(); };
+    const query = peopleQuery[pack] ?? '';
+    const found = people.filter((p) => query.trim() === '' || matches(`${p.name} ${p.gomId}`, query));
     return html`
       <fieldset class="pack-where" data-pack-where=${pack}>
         <legend>${say.owner.packWhere}</legend>
         <label class="check"><input type="radio" name=${`where-${pack}`} data-where-everywhere .checked=${w.everywhere} @change=${() => set({ ...w, everywhere: true })}> ${say.owner.everywhere}</label>
         <label class="check"><input type="radio" name=${`where-${pack}`} data-where-chosen .checked=${!w.everywhere} @change=${() => set({ ...w, everywhere: false })}> ${say.owner.onlyChosen}</label>
         ${w.everywhere ? nothing : html`
+          <p class="pack-sub">${say.owner.chosenPeople}</p>
+          <div class="searchfield input">${icons.search()}
+            <input type="search" aria-label=${say.owner.findMembers} placeholder=${say.owner.findMembers} autocomplete="off" maxlength=${limits().nameChars} data-where-find
+              .value=${query} @input=${(e: Event) => { peopleQuery = { ...peopleQuery, [pack]: (e.target as HTMLInputElement).value }; update(); }}></div>
+          <ul class="pack-chats">${found.map((p) => html`<li><label class="check"><input type="checkbox" data-where-person=${p.gomId} .checked=${w.people.includes(p.gomId)}
+            @change=${(e: Event) => set({ ...w, people: (e.target as HTMLInputElement).checked ? [...w.people, p.gomId] : w.people.filter((x) => x !== p.gomId) })}> ${p.name} <small>@${p.gomId}</small></label></li>`)}</ul>
+          <p class="pack-sub">${say.owner.chosenChats}</p>
           <ul class="pack-chats">${chats.map((c) => html`<li><label class="check"><input type="checkbox" data-where-chat=${c.id} .checked=${w.chats.includes(c.id)}
             @change=${(e: Event) => set({ ...w, chats: (e.target as HTMLInputElement).checked ? [...w.chats, c.id] : w.chats.filter((x) => x !== c.id) })}> ${c.title}</label></li>`)}</ul>
-          ${w.chats.length === 0 ? html`<p class="hint" data-where-none>${say.owner.noneChosen}</p>` : nothing}`}
+          ${w.chats.length === 0 && w.people.length === 0 ? html`<p class="hint" data-where-none>${say.owner.noneChosen}</p>` : nothing}`}
         <button class="btn secondary small" type="button" data-where-save ?disabled=${packBusy} @click=${() => void saveWhere(pack)}>${say.owner.saveWhere}</button>
         ${whereSaved === pack ? html`<span class="hint" role="status">${say.owner.whereSaved}</span>` : nothing}
       </fieldset>`;
   };
 
   async function saveWhere(pack: string): Promise<void> {
-    const w = where[pack] ?? { everywhere: true, chats: [] };
+    const w = where[pack] ?? { everywhere: true, chats: [], people: [] };
     packError = null;
-    const result = await api.setPackChats(pack, w.everywhere, w.everywhere ? [] : w.chats);
+    const result = await api.setPackWhere(pack, w.everywhere ? { everywhere: true, chats: [], people: [] } : w);
     if (!result.ok) { packError = result; update(); return; }
     whereSaved = pack;
     update();
   }
 
   async function loadPacks(): Promise<void> {
-    const [result, list] = await Promise.all([api.stickerPacks(), api.conversations()]);
+    const [result, list, everyone] = await Promise.all([api.stickerPacks(), api.conversations(), api.members()]);
     if (result.ok) {
       packs = result.data;
-      where = Object.fromEntries(packs.map((p) => [p.id, { everywhere: p.everywhere !== false, chats: p.chats ?? [] }]));
+      where = Object.fromEntries(packs.map((p) => [p.id, { everywhere: p.everywhere !== false, chats: p.chats ?? [], people: p.people ?? [] }]));
     } else packError = result;
     if (list.ok) chats = list.data.filter((c) => !c.hidden).map((c) => ({ id: c.id, title: c.title ?? '…' }));
+    // Members still using Gom; the owner has every pack already.
+    if (everyone.ok) people = everyone.data.filter((m) => !m.isOwner && !m.disabled && !m.deleted).map((m) => ({ gomId: m.gomId, name: m.displayName }));
     update();
   }
 

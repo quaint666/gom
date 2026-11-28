@@ -207,6 +207,8 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .pack-where legend { padding: 0; font-weight: 600; font-size: 14px; margin-block-end: 4px; }
 .pack-chats { list-style: none; margin: 0 0 0 28px; padding: 0; max-block-size: 240px; overflow-y: auto; }
 .pack-where .btn { align-self: flex-start; }
+.pack-where .pack-sub { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pack-where .check small { color: var(--muted); }
 .pack-where .check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; }
 .pack-where .check input { inline-size: 20px; block-size: 20px; accent-color: var(--btn); flex: none; }
 /* An owner's list that starts folded (past links, refused requests): its title and count stay in view, a chevron that turns. */

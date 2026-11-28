@@ -3,7 +3,10 @@ using System.Text.Json;
 
 namespace Gom.Tests;
 
-/// <summary>A sticker pack in every conversation, or only in those the owner chose (H): the picker and every send keep to it.</summary>
+/// <summary>
+/// A sticker pack in every conversation, or only for the people and in the conversations the owner chose (H): the picker and every
+/// send keep to it, and the owner has every pack.
+/// </summary>
 public class StickerPackChatTests(AppFixture app) : IClassFixture<AppFixture>
 {
     private static readonly HttpMethod Get = HttpMethod.Get, Post = HttpMethod.Post, Put = HttpMethod.Put;
@@ -29,10 +32,12 @@ public class StickerPackChatTests(AppFixture app) : IClassFixture<AppFixture>
         return (await app.OpenChat(cookie, a.GomId), ca, await app.OpenChat(cookie, b.GomId), cb);
     }
 
-    private async Task<HttpResponseMessage> Choose(Guid pack, bool everywhere, params Guid[] chats)
+    private async Task<HttpResponseMessage> Choose(Guid pack, bool everywhere, params Guid[] chats) => await Where(pack, everywhere, chats, []);
+
+    private async Task<HttpResponseMessage> Where(Guid pack, bool everywhere, Guid[] chats, string[] people)
     {
         var (_, owner) = await app.Owner();
-        return await app.Call(Put, $"/api/owner/sticker-packs/{pack}/chats", new { everywhere, chats }, owner);
+        return await app.Call(Put, $"/api/owner/sticker-packs/{pack}/where", new { everywhere, chats, people }, owner);
     }
 
     private async Task<bool> InPicker(string cookie, Guid chat, Guid pack)
@@ -91,5 +96,54 @@ public class StickerPackChatTests(AppFixture app) : IClassFixture<AppFixture>
 
         // Someone else asks about a chat they are not in: only what is everywhere.
         Assert.False(await InPicker(cx, chosen, pack));
+    }
+
+    [Fact]
+    public async Task A_person_chosen_has_the_pack_in_every_chat_they_are_in_even_one_the_owner_cannot_see()
+    {
+        var (pack, code) = await PackWithOne();
+        var (x, cx) = await app.Member();
+        var (y, cy) = await app.Member();
+        await app.Befriend(x, y);
+        var theirs = await app.OpenChat(cx, y.GomId);
+        using (var r = await Where(pack, false, [], [x.GomId])) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+
+        Assert.True(await InPicker(cx, theirs, pack));
+        Assert.False(await InPicker(cy, theirs, pack));   // the other one in the chat does not have it
+        using (var sent = await Send(cx, theirs, code)) Assert.Equal(HttpStatusCode.OK, sent.StatusCode);
+        using (var back = await Send(cy, theirs, code)) Assert.Equal(HttpStatusCode.BadRequest, back.StatusCode);
+
+        var (_, owner) = await app.Owner();
+        using var mine = await app.Call(Get, "/api/sticker-packs", cookie: owner);
+        var row = (await AppFixture.Json(mine)).EnumerateArray().Single(p => p.GetProperty("id").GetGuid() == pack);
+        Assert.Equal(x.GomId, Assert.Single(row.GetProperty("people").EnumerateArray()).GetString());
+
+        // Taken off the list: no longer in their picker, nor sent.
+        using (var r = await Where(pack, false, [], [])) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        Assert.False(await InPicker(cx, theirs, pack));
+        using (var after = await Send(cx, theirs, code)) Assert.Equal(HttpStatusCode.BadRequest, after.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_owner_has_every_pack_wherever_they_are()
+    {
+        var (pack, code) = await PackWithOne();
+        var (_, cookie) = await app.Owner();
+        var (chosen, _, other, _) = await TwoChats();
+        using (var r = await Choose(pack, false, chosen)) Assert.Equal(HttpStatusCode.NoContent, r.StatusCode);
+        Assert.True(await InPicker(cookie, other, pack));
+        using var sent = await Send(cookie, other, code);
+        Assert.Equal(HttpStatusCode.OK, sent.StatusCode);
+    }
+
+    [Fact]
+    public async Task Only_members_still_using_Gom_can_be_chosen()
+    {
+        var (pack, _) = await PackWithOne();
+        var locked = await app.AddUser(disabled: true);
+        using var refused = await Where(pack, false, [], [locked.GomId]);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        using var nobody = await Where(pack, false, [], ["no_such_person"]);
+        Assert.Equal(HttpStatusCode.BadRequest, nobody.StatusCode);
     }
 }

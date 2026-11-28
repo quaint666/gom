@@ -275,24 +275,39 @@ describe('owner page: sticker packs', () => {
     expect(text(root.querySelector('[data-pack="p1"]')!)).toContain('1/100 nhãn dán');
   });
 
-  it('shows a pack in every chat, or only in the chats ticked, saved with its button', async () => {
-    const setPackChats = vi.fn(async () => ok(undefined));
+  it('shows a pack for everyone, or only for the people and in the chats ticked, saved with its button', async () => {
+    const setPackWhere = vi.fn(async () => ok(undefined));
     const conversations = vi.fn(async () => ok([{ id: 'c1', kind: 'direct', title: 'Minh' }, { id: 'g1', kind: 'group', title: 'Nhà' }]));
-    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([{ ...pack(), everywhere: true, chats: [] }])), conversations, setPackChats }), vi.fn(), 'https://gom.test', 'stickers');
+    const people = [
+      { gomId: 'boss', displayName: 'Boss', isOwner: true, disabled: false, createdAt: '2026-11-01T00:00:00Z' },
+      { gomId: 'lan', displayName: 'Lan', isOwner: false, disabled: false, createdAt: '2026-11-01T00:00:00Z' },
+      { gomId: 'khoa', displayName: 'Khóa', isOwner: false, disabled: true, createdAt: '2026-11-01T00:00:00Z' },
+      { gomId: 'mai', displayName: 'Đào Mai', isOwner: false, disabled: false, createdAt: '2026-11-01T00:00:00Z' },
+    ];
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([{ ...pack(), everywhere: true, chats: [], people: [] }])), conversations, members: vi.fn(async () => ok(people)), setPackWhere }), vi.fn(), 'https://gom.test', 'stickers');
     await flush();
     const box = root.querySelector('[data-pack-where="p1"]')!;
     expect(box.querySelector<HTMLInputElement>('[data-where-everywhere]')!.checked).toBe(true);
-    expect(box.querySelector('[data-where-chat]')).toBeNull();
+    expect(box.querySelector('[data-where-chat], [data-where-person]')).toBeNull();
     const chosen = box.querySelector<HTMLInputElement>('[data-where-chosen]')!;
     chosen.checked = true; chosen.dispatchEvent(new Event('change', { bubbles: true }));
     await flush();
-    expect(root.querySelector('[data-where-none]')).not.toBeNull();   // nothing ticked yet: says it shows nowhere
+    expect(text(root.querySelector('[data-where-none]')!)).toContain('chỉ bạn dùng được');
+    // Members still using Gom, not the owner (who has every pack) nor someone locked.
+    expect([...root.querySelectorAll('[data-where-person]')].map((i) => i.getAttribute('data-where-person'))).toEqual(['lan', 'mai']);
+    const find = root.querySelector<HTMLInputElement>('[data-where-find]')!;
+    find.value = 'dao'; find.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    expect([...root.querySelectorAll('[data-where-person]')].map((i) => i.getAttribute('data-where-person'))).toEqual(['mai']);
+    const mai = root.querySelector<HTMLInputElement>('[data-where-person="mai"]')!;
+    mai.checked = true; mai.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
     const nha = root.querySelector<HTMLInputElement>('[data-where-chat="g1"]')!;
     nha.checked = true; nha.dispatchEvent(new Event('change', { bubbles: true }));
     await flush();
     root.querySelector<HTMLButtonElement>('[data-pack-where="p1"] [data-where-save]')!.click();
     await flush();
-    expect(setPackChats).toHaveBeenCalledWith('p1', false, ['g1']);
+    expect(setPackWhere).toHaveBeenCalledWith('p1', { everywhere: false, chats: ['g1'], people: ['mai'] });
     expect(text(root.querySelector('[data-pack-where="p1"]')!)).toContain('Đã lưu.');
   });
 
