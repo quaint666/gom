@@ -167,7 +167,7 @@ describe('settings: reloading Gom', () => {
     const row = root.querySelector<HTMLAnchorElement>('[data-whats-new-link]')!;
     expect(row.getAttribute('href')).toBe('/whats-new');
     expect(text(row)).toContain('Có gì mới');
-    expect(text(row)).toContain('Mới nhất: v1.4.0');
+    expect(text(row)).toContain('Mới nhất: v1.5.0');
     expect(row.closest('li')!.previousElementSibling!.querySelector('[data-reload-app]')).not.toBeNull();   // right under "Tải lại Gom"
     expect(row.querySelector('.lead-i')!.innerHTML).not.toBe(root.querySelector('[data-source-link] .lead-i')!.innerHTML);
   });

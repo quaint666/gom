@@ -44,6 +44,16 @@ Between releases, staging may run newer code than its number says: the number mo
 
 ## What's new
 
+### 1.5.0 (29 November 2026)
+
+Two looks changed after 1.4.0 (#233). The web side is live on deploy; the Android app needs this build for the call
+screen, so `gom-1.5.0.apk` is built.
+
+**Changes**
+- A reaction is a small round badge on the corner of its bubble, as Messenger draws it: the left corner on your own
+  messages, the right corner on other people's (#233).
+- The call screens, on the web and in the app, no longer show the small "Gom" label and logo at the top (#233).
+
 ### 1.4.0 (29 November 2026)
 
 Everything from #216 to #231: how a message and its reactions look and answer on a phone, who is typing, mentions, the

@@ -820,6 +820,10 @@ export const vi = {
     version: (version: string): string => `Bản ${version}`,
     latest: (version: string): string => `Mới nhất: v${version}`,
     releases: [
+      { version: '1.5.0', items: [
+        'Biểu cảm giờ là một hình tròn nhỏ ở góc tin nhắn, giống Messenger.',
+        'Màn hình cuộc gọi không còn dòng “Gom” nhỏ ở trên cùng.',
+      ] },
       { version: '1.4.0', items: [
         'Nhắn @tên hoặc @all để báo người trong nhóm; người được nhắc vẫn nhận thông báo dù đã tắt tiếng.',
         'Hiện “đang nhập…” khi ai đó đang gõ.',
