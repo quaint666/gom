@@ -1,50 +1,53 @@
 # Next session: where things stand and what comes next
 
-Written 2026-11-25, brought up to date on 2026-11-26 (after #133), 2026-11-27 (after #171) and 2026-11-28 (after #193).
+Written 2026-11-25, brought up to date on 2026-11-26 (after #133), 2026-11-27 (after #171) and 2026-11-28 (after #193,
+and again after #207).
 Claims are marked **[verified]** (seen in the code or real output), **[stated]** (someone said so; who is given), or
 **[inferred]** (reasoned, not tried).
 
 ## 1. Where things stand
 
-- Release 1.1.0 is tagged (`v1.1.0`, #173). Merged since: the CI check of the app when `VERSION` changes (#174), the
-  app's release build for Google Play (#175), and H's fourteen changes A to I (#177 to #186) and the group name box
-  (#188).
-- Open as a stack, to merge in this order: voice messages (#189, on `main`), two-step sign-in (#190), disappearing
-  messages (#191), a card closing with a tap outside and the info panel sliding out (#192), the owner's sticker packs
-  (#193), then this docs sweep with `VERSION` at 1.2.0. Each needs the one before it.
-- Three of them add migrations: #190 (`users.two_step_key`, `two_step_last_step`), #191 (`messages.expires_at`,
-  `conversations.disappear_seconds`, a check constraint widened) and #193 (`sticker_packs`, `custom_stickers`). The
-  image runs its migration bundle before each start.
-- Before this sweep, the stack passed 1,046 page tests and 1,129 server tests, and one pass in Chrome, Firefox and
-  WebKit on the local app (voice messages recorded in Chrome and Firefox; WebKit's Linux build has no `MediaRecorder`)
-  [verified, 2026-11-28].
-- The Android app: an APK from #186 (the new ringing screen) was built on the build VM and checked on the emulator
-  [verified]. Nothing in #189 to #193 changes the app, so that build covers 1.2.0 except its version number
-  [verified: their diffs].
-- Google Play: the first bundle (1.1.0) is built; H's developer account is still waiting for Google's identity check,
-  so the app cannot be created in Play Console yet [stated: H, 2026-11-27].
+- Release 1.2.1 is tagged (`v1.2.1`, #198) and runs on production and staging **[stated: H, 2026-11-28]**.
+- Open as a stack, to merge in this order, each on the one before: small fixes (#199), the owner's page split into
+  Settings parts (#200), an invite or approval that adds to a group (#201), the welcome page (#202), group pictures
+  (#203), sticker packs per chat (#204), the new mark (#205), the GitHub link, issue forms, `SECURITY.md` and the
+  versions line (#206), then this docs sweep (#207).
+- Three add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed) and #204
+  (`sticker_packs.everywhere`, `sticker_pack_chats`).
+- The top of the stack passed 1,068 page tests and 1,172 server tests, and a pass in Chrome at phone and desktop size on
+  the local app: the welcome page, the owner's parts, refusing, the tester link with its group, sticker choices, a group
+  picture and its line, the 1:1 header, the backgrounds, the privacy page's source section **[verified, 2026-11-28]**.
+- The Android app changes in #200 (the fallback paths of owner notices) and #205 (the launcher and status-bar icons):
+  it needs a build and an emulator pass before the next Play bundle **[verified: their diffs]**.
+- Google Play: the first bundle (1.1.0) is built; H's developer account is still waiting for Google's identity check
+  **[stated: H, 2026-11-27]**. How to find testers is in H's own outreach doc (not in the repository); how they get in is
+  in `docs/testers.md`.
+- GitHub's private vulnerability reporting is off on the repository, so `SECURITY.md`'s link fails until H turns it on
+  **[verified: the API said `enabled: false`, 2026-11-28]**.
 
 ## 2. Work queue (agreed order)
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
-1. **Release 1.2.0** once the stack is merged: staging, then production; the tag only when H says so. Then the app's
-   1.2.0 build (staging, prod, and the Play bundle) from the release commit.
-2. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
-   bundle in a closed test (12 testers for 14 days), the listing and declarations, then production. Uploading from
-   Gradle with a service account limited to test tracks comes after.
-3. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
+1. **Release 1.3.0** once the stack is merged: `VERSION`, "What's new" with the versions line (`docs/releases.md`),
+   staging, then production; the tag only when H says so. Then H turns on private vulnerability reporting.
+2. **The app's 1.3.0 build** (new icons, owner notice paths): staging and prod APKs on the build VM, the emulator pass
+   (themed icon on, a notification's small icon), then the Play bundle.
+3. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
+   bundle in a closed test (12 testers for 14 days, `docs/testers.md`), the listing and declarations, then production.
+   Uploading from Gradle with a service account limited to test tracks comes after.
+4. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
    with the link or text ready, then asks which conversation. Gom-only: Peekbox and Bloomy already call
    `navigator.share` **[stated: their sessions, 2026-11-25]**. Works only where Gom is installed **[inferred]**; to check
    against current docs before designing (GET or POST, text and links only or files too). The Android app needs its own
    share target too **[inferred]**.
-4. **A webhook that posts into a group.** A secret link per group posts plain text as a labelled bot. What operations
+5. **A webhook that posts into a group.** A secret link per group posts plain text as a labelled bot. What operations
    asked for: a plain-text POST, safe to send twice, a fast 2xx even when nobody is online, a rate limit per secret, and
    a secret that can be replaced without changing the group. Operations would use it only beside their own alerts (a
    digest of deploy results and a daily "all quiet" line), never instead, since Gom runs on a machine it would report
    on. Bloomy would send a new paid order, a delivery cut-off coming up, and a review to approve, beside its email
    **[stated: those sessions]**.
-5. **Link cards.** Only for https addresses on a list in configuration (the shops' own sites), with a timeout, a size
+6. **Link cards.** Only for https addresses on a list in configuration (the shops' own sites), with a timeout, a size
    limit and a stored copy; title, picture and description, no price (a campaign price would go stale). Operations'
    check of what the container can reach on the host's own network comes first **[stated: operations]**.
    Link previews for any address were built once and removed in #61; their worker is in the git history.
@@ -119,3 +122,7 @@ Later: a load test at the app's 512 MB memory limit with several people uploadin
 - Two-step sign-in with a real authenticator app on a phone (checked with codes computed in a script, and the QR code
   drawn), and `autocomplete="one-time-code"` offering the code from a notification.
 - The owner's sticker packs on a slow phone line, and a large animated sticker's memory on an old phone.
+- The background names on H's phone after #199: in Chrome at 390 px they fit on one line, so the wrapping case was not
+  seen again.
+- The owner's parts, the welcome page, group pictures and the sticker choices in Firefox and Safari (Chrome only).
+- The new launcher and status-bar icons on a phone or the emulator, with Android's themed icons on and off.
