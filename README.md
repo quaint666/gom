@@ -10,7 +10,7 @@ Needs the .NET 10 SDK, Node 22 or newer, and Docker.
 
     docker run -d --name gom-local-pg -p 127.0.0.1:5435:5432 -e POSTGRES_PASSWORD=dev postgres:19
     export ConnectionStrings__Default="Host=127.0.0.1;Port=5435;Username=postgres;Password=dev;Database=postgres"
-    (cd src/Gom.Web && npm install && npm run build)   # bundles the TypeScript to wwwroot/js/main.js
+    (cd src/Gom.Web && npm install && npm run build)   # bundles the TypeScript to wwwroot/js/main.js and joins Styles/*.css into wwwroot/css/gom.css
     dotnet test
     dotnet run --project src/Gom.Web --urls http://127.0.0.1:5080
     curl -sf http://127.0.0.1:5080/healthz

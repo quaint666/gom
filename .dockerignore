@@ -15,5 +15,6 @@ CLAUDE.local.md
 # Built by the "assets" stage; a local copy could be stale.
 src/Gom.Web/wwwroot/js
 src/Gom.Web/wwwroot/assets.json
+src/Gom.Web/wwwroot/css/gom.css
 src/Gom.Web/wwwroot/css/gom.*.css
 src/Gom.Web/wwwroot/theme-init.*.js
