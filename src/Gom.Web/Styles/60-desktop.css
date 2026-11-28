@@ -52,8 +52,10 @@
 .info-foot .btn .i { inline-size: 18px; block-size: 18px; }
 .th-head .wide { display: none; }
 @media (min-width: 900px) {
-  .info-sheet, .info-page-btn { display: none; }
   .th-head .wide { display: inline-grid; }
+}
+@media (min-width: 1200px) {
+  .info-sheet, .info-page-btn { display: none; }
 }
 /* With the panel open its ⓘ is filled: the circle (the icon's first path) in the text colour, the "i" cut out of it. */
 .ib[aria-pressed="true"].info-btn { color: var(--text); }

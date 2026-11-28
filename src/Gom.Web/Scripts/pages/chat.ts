@@ -8,7 +8,7 @@ import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, ini
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { menuItem, menuPoint, placeMenu as placeMenuAt } from '../menu.js';
-import { dismissMenu, leaveInfo, leaveThread, motionAllowed } from '../motion.js';
+import { dismissMenu, leaveInfo, leaveSheet, leaveThread, motionAllowed } from '../motion.js';
 import { swipeReady, swiped, SWIPE_READY } from '../swipe.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { markedExcerpt, matches, type Run } from '../search.js';
@@ -318,6 +318,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   /** A conversation's picture: a megaphone for the announcements, else its picture or initials. */
   const chatAvatar = (c: Conversation | undefined, size: '' | 'sm' | 'xl' = ''): TemplateResult => c?.kind === 'announce'
     ? html`<div class="av a1 ${size}" aria-hidden="true">${icons.megaphone()}</div>` : avatar(c?.title ?? '?', c ? pictureOf(c) : null, size);
+  /** The header's picture: in a one-to-one chat it opens the person's card, in a group the group's information, as the name beside it does. */
+  const headAvatar = (c: Conversation | undefined) => c?.peer ? html`<button class="av-btn" type="button" data-peer-card-pic aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>${chatAvatar(c)}</button>`
+    : c?.kind === 'group' ? html`<button class="av-btn" type="button" data-group-info-pic aria-label=${say.chat.groupInfo} @click=${openGroupInfo}>${chatAvatar(c)}</button>` : chatAvatar(c);
   const pictureOf = (c: Conversation): string | null | undefined => c.kind === 'group' ? c.avatar : c.peer?.avatar;
   const memberPicture = (conversation: string, userId: string): string | null | undefined => people.get(conversation)?.find((m) => m.id === userId)?.avatar;
 
@@ -926,6 +929,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     update();
   }
 
+  /** The group's name or picture: beside the thread on a wide screen the panel opens (and stays), below that the page does. */
+  function openGroupInfo(): void {
+    if (typeof matchMedia !== 'function' || matchMedia('(min-width: 1200px)').matches) { if (!infoOpen) setInfo(true); return; }
+    openInfoPage();
+  }
+
   /** The page's own back button: a step back in the history, as the back gesture is (the step back closes it). */
   function backFromInfoPage(): void { deps.nav.back(); }
 
@@ -1186,10 +1195,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         @drop=${(e: DragEvent) => { if (e.dataTransfer?.files.length) { e.preventDefault(); addFiles(openId!, [...e.dataTransfer.files]); } }}>
         <header class="th-head">
           <a class="ib back" href="/" aria-label=${say.common.back} @click=${onBack}>${icons.back()}</a>
-          ${chatAvatar(c)}
+          ${headAvatar(c)}
           ${c?.peer ? html`<button class="th-title as-link" type="button" data-peer-card aria-label=${say.chat.seeInfo(c.title ?? '')} @click=${() => openCard(c.peer!.id)}>
               <b>${c.title ?? '…'}</b><small>${peerLine(c)}</small></button>`
-            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'group' ? html`<small>${say.common.members(c.memberCount ?? 0)}</small>` : c?.kind === 'announce' ? html`<small>${say.chat.announcementsSub}</small>` : nothing}</div>`}
+            : c?.kind === 'group' ? html`<button class="th-title as-link" type="button" data-group-info aria-label=${say.chat.groupInfo} @click=${openGroupInfo}>
+              <b>${c.title ?? '…'}</b><small>${say.common.members(c.memberCount ?? 0)}</small></button>`
+            : html`<div class="th-title"><b>${c?.title ?? '…'}</b>${c?.kind === 'announce' ? html`<small>${say.chat.announcementsSub}</small>` : nothing}</div>`}
           ${c?.disappearSeconds ? html`<span class="th-timer" role="img" data-disappear-on aria-label=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}
             title=${say.chat.disappearIn(say.chat.lasts(c.disappearSeconds))}>${icons.clock()}</span>` : nothing}
           ${callable(c) ? html`<button class="ib" type="button" data-call-start aria-label=${say.calls.call} @click=${() => callIn(c)}>${icons.call()}</button>` : nothing}
@@ -1197,7 +1208,6 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
             @click=${() => { searching = searching ? null : { q: '', results: null, asked: '', ticket: 0 }; update(); if (searching) root.querySelector<HTMLInputElement>('.searchbar input')?.focus(); }}>${icons.search()}</button>
           <button class="ib wide" type="button" data-mute aria-pressed=${isMuted(c) ? 'true' : 'false'}
             aria-label=${isMuted(c) ? say.chat.unmuteAgain : say.common.mute} @click=${() => onBell(c)}>${isMuted(c) ? icons.bellOff() : icons.bell()}</button>`}
-          ${c?.kind === 'group' ? html`<a class="ib wide" href="/groups/${c.id}" aria-label=${say.chat.groupInfo}>${icons.users()}</a>` : nothing}
           ${c === undefined ? nothing : html`<button class="ib info-btn" type="button" data-info aria-label=${say.chat.info} aria-pressed=${infoOpen ? 'true' : 'false'} @click=${toggleInfo}>${icons.info()}</button>
             <button class="ib info-page-btn" type="button" data-info-page-open aria-label=${say.chat.info} @click=${openInfoPage}>${icons.info()}</button>`}
         </header>
@@ -3016,7 +3026,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   };
 
   // Back from the information page (its own step in the history) only closes it.
-  deps.nav.onPop(() => { infoPage = false; const id = idFromPath(); if (id === null) toList(); else show(id); });
+  deps.nav.onPop(() => {
+    const done = () => { infoPage = false; const id = idFromPath(); if (id === null) toList(); else show(id); };
+    // Stepping back from the information page slides it out, as it slid in.
+    if (infoPage && idFromPath() === openId) leaveSheet(root.querySelector('.info-sheet'), done); else done();
+  });
   document.addEventListener('visibilitychange', () => {
     if (!deps.visible()) return;
     live?.retryNow();

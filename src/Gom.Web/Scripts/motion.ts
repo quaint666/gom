@@ -42,3 +42,9 @@ export function leaveThread(pane: Element | null, done: () => void): void {
   if (typeof matchMedia !== 'function' || !matchMedia('(max-width: 899.98px)').matches) { done(); return; }
   leave(pane, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(40%)', opacity: 0 }], 200, done);
 }
+
+/** The information page on a phone going back to the thread: it slides out to the right, as it slid in. On a wide screen there is none. */
+export function leaveSheet(page: Element | null, done: () => void): void {
+  if (typeof matchMedia !== 'function' || !matchMedia('(max-width: 1199.98px)').matches) { done(); return; }
+  leave(page, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(40%)', opacity: 0 }], 200, done);
+}

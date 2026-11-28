@@ -78,3 +78,5 @@ button.item { inline-size: 100%; border-block: 0; border-inline-end: 0; backgrou
 .th-title small { color: var(--muted); font-size: 13px; }
 button.th-title { display: block; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 button.th-title:hover b { text-decoration: underline; }
+/* The header's picture as a button: it looks as the picture does. */
+.av-btn { display: inline-grid; flex: none; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }

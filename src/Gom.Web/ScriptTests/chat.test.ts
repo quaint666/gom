@@ -1206,13 +1206,13 @@ describe('chat: groups', () => {
     sender: from === 'mom' ? { id: 'u-mom', displayName: 'Mẹ' } : from === 'minh' ? { id: 'u-minh', displayName: 'Minh' } : { id: 'u-ba', displayName: 'Chị Ba' },
   });
 
-  it('shows the group name, its size and a link to its members', async () => {
+  it('shows the group name and its size, and no separate link to a members page', async () => {
     start({ path: `/c/${G1}`, chats: [group()], history: { [G1]: [gmsg(1, 'minh')] } });
     await flush();
     const head = root.querySelector('.th-head')!;
     expect(text(head)).toContain('Gia đình');
     expect(text(head)).toContain('4 thành viên');
-    expect(head.querySelector(`a[href="/groups/${G1}"]`)).not.toBeNull();
+    expect(head.querySelector(`a[href^="/groups/"]`)).toBeNull();
     expect(text(head)).not.toContain('@');
   });
 
@@ -5193,6 +5193,15 @@ describe("chat: someone's card", () => {
     expect(card()!.querySelector('[data-card-message]')).toBeNull();
   });
 
+  it('opens the same card from the header\'s picture as from the name', async () => {
+    start({ path: `/c/${C2}`, chats: [chat(C2, 'Minh')], history: { [C2]: [msg(1, 'minh', 'chào', at(10, 1), C2)] },
+      api: { person: vi.fn(async () => ok(cardOf({ gomId: 'minh', friend: 'friends' }))) } });
+    await flush();
+    await click('[data-peer-card-pic]');
+    expect(card()).not.toBeNull();
+    expect(text(card()!)).toContain('Minh');
+  });
+
   it('lists the groups you share, and one opens that group', async () => {
     const h = start({ path: `/c/${C2}`, chats: [group, chat(C2, 'Minh')], history: { [C2]: [msg(1, 'minh', 'chào', at(10, 1), C2)], [G]: [] },
       api: { person: vi.fn(async () => ok(cardOf({ gomId: 'minh', friend: 'friends' }))) } });
@@ -6013,14 +6022,46 @@ describe('chat: the information page on a phone', () => {
   };
   const page = () => root.querySelector<HTMLElement>('[data-info-page]');
 
-  it('keeps room in the header: search, mute and the group\'s page are marked for wide screens only, and an info button opens the page', async () => {
+  it('keeps room in the header: search and mute are marked for wide screens only, there is no members icon, and an info button opens the page', async () => {
     start({ path: `/c/${G}`, chats: [{ id: G, kind: 'group', title: 'Nhà', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 2 }], api: { groupMembers: vi.fn(async () => ok([])) } });
     await flush();
     const head = root.querySelector('.th-head')!;
     expect(head.querySelector('[data-search]')!.classList.contains('wide')).toBe(true);
     expect(head.querySelector('[data-mute]')!.classList.contains('wide')).toBe(true);
-    expect(head.querySelector(`a[href="/groups/${G}"]`)!.classList.contains('wide')).toBe(true);
+    expect(head.querySelector(`a[href^="/groups/"]`)).toBeNull();
     expect(head.querySelector('[data-info-page-open]')).not.toBeNull();
+  });
+
+  const groupChat = { id: G, kind: 'group' as const, title: 'Nhà', peer: null, lastSeq: 0, lastReadSeq: 0, unread: 0, lastMessage: null, memberCount: 2 };
+  const startGroup = () => start({ path: `/c/${G}`, chats: [groupChat], api: { groupMembers: vi.fn(async () => ok([])) } });
+
+  it.each(['[data-group-info]', '[data-group-info-pic]'])('a group\'s %s opens its information page on a phone, as a step in the history', async (sel) => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q === '(max-width: 899.98px)', media: q }));
+    try {
+      const h = startGroup();
+      await flush();
+      root.querySelector<HTMLButtonElement>(sel)!.click();
+      await flush();
+      expect(page()).not.toBeNull();
+      expect(h.nav.push).toHaveBeenLastCalledWith(`/c/${G}#info`);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it.each(['[data-group-info]', '[data-group-info-pic]'])('a group\'s %s opens the panel beside the thread on a wide screen, and a second tap leaves it open', async (sel) => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q === '(min-width: 1200px)', media: q }));
+    localStorage.removeItem('gom-info');
+    try {
+      const h = startGroup();
+      await flush();
+      expect(root.querySelector('[data-info-panel]')).toBeNull();
+      root.querySelector<HTMLButtonElement>(sel)!.click();
+      await flush();
+      expect(root.querySelector('[data-info-panel]')).not.toBeNull();
+      root.querySelector<HTMLButtonElement>(sel)!.click();
+      await flush();
+      expect(root.querySelector('[data-info-panel]')).not.toBeNull();
+      expect(h.nav.push).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('opens as a step in the history, shows search and mute, and the back button steps back to the thread', async () => {
