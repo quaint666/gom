@@ -211,7 +211,8 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .pack-where .btn { align-self: flex-start; }
 .pack-where .pack-sub { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 .pack-where .check small { color: var(--muted); }
-.pack-where .check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; }
+.pack-where .check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; margin: 0; font-weight: 400; font-size: 15px; }
+.pack-where .check input { margin: 0; }
 .pack-where .check input { inline-size: 20px; block-size: 20px; accent-color: var(--btn); flex: none; }
 /* An owner's list that starts folded (past links, refused requests): its title and count stay in view, a chevron that turns. */
 .fold { margin-block-start: 16px; }
