@@ -1,28 +1,21 @@
 # Next session: where things stand and what comes next
 
 Written 2026-11-25, brought up to date on 2026-11-26 (after #133), 2026-11-27 (after #171) and 2026-11-28 (after #193,
-and again for release 1.3.0, for the 1.4.0 stack, and for what H added to it on 2026-11-29).
+and again for release 1.3.0, for the 1.4.0 stack, for what H added to it, and after the 1.4.0 release on 2026-11-29).
 Claims are marked **[verified]** (seen in the code or real output), **[stated]** (someone said so; who is given), or
 **[inferred]** (reasoned, not tried).
 
 ## 1. Where things stand
 
-- Release 1.4.0 (a minor: new things for people) is two stacks on `main`, merged by H all at once on GitHub. The first
-  (#216 to #223, merged) is the stylesheet built from `src/Gom.Web/Styles/` (two pull requests, byte-identical to the old
-  file), a reaction at its bubble's edge and a double tap to heart, swipe to reply, "is typing", mentions (the server's
-  part, then the page's), and a docs sweep; it added one migration, `Mentions`. #225 (merged) is the copy toast over the
-  thread and the group avatar that opens a card. The second, on 2026-11-29, is what H asked for after merging the first:
-  #226 (a reaction on your own message at the bubble's left edge), the announcement channel (#227 the server with the
-  migration `Announcements`: the kind's check constraint and a unique index, no row changes; #228 the page), "Có gì mới"
-  (#229, a page and a Settings row, releases from 1.0.0, no dates) and this docs sweep (#231). H asked for the APK and the
-  release after those: `gom-1.4.0.apk`, built after the release commit, with every older APK deleted (H has them on Google
-  Drive) **[stated: H, 2026-11-28 and 2026-11-29]**. It needs no APK to work **[verified: the server words notifications
-  and the pages load from the server]**; H wants the app and the web to match. The second stack passes 1,147 page tests and
-  1,252 server tests; #227's generated migration designer file is most of its size.
-- Release 1.3.0 is #199 to #211, all on `main` (#201 to #211 through #214: stacked pull requests merge into the one below
-  unless each is moved onto `main` first, since merged branches are not deleted here). Its release pull request sets
-  `VERSION`; then staging, production, and the tag on H's word. 1.2.1 (`v1.2.1`) is what production ran before it
-  **[stated: H, 2026-11-28]**.
+- Release 1.4.0 is out (2026-11-29): `v1.4.0` is tagged on the merge of #232 (`6ca2d06`), published on GitHub, deployed to
+  staging and production, and `gom-1.4.0.apk` (a production-flavour debug build, emulator pass clean) is the only APK left
+  on Copyparty **[stated: H, 2026-11-29]**. It holds #216 to #232: the stylesheet split into files, a reaction at its
+  bubble's edge, double tap to heart, swipe to reply, "is typing", mentions, the announcement channel ("Thông báo"),
+  "Có gì mới", the copy toast and the group avatar that opens a card; migrations `Mentions` and `Announcements`. It
+  passes 1,147 page tests and 1,252 server tests. Release 1.3.0 (#199 to #211, `v1.3.0`) ran in production before it.
+- After 1.4.0, on a branch of its own (not released yet): reactions drawn as Messenger does (a round badge on the
+  bubble's bottom corner) and the call screens without the old "Gom" label and logo, on the web and in the app
+  (`CallScreen.kt`, so it needs a new APK). Seen in Chrome at phone width only.
 - Four add migrations: #201 (`one_time_links.group_id`), #203 (`conversations.avatar_id`, notice 10 allowed), #204
   (`sticker_packs.everywhere`, `sticker_pack_chats`, `sticker_pack_people`) and #210 (`pg_trgm`, `gom_unaccent`, the
   trigram index on messages, then `ANALYZE messages`). #210's index reads every message once: seconds at Gom's size, about
@@ -50,32 +43,26 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
-0. **Release 1.4.0**: after the second stack is merged, a "Release 1.4.0" pull request: `VERSION`, the entry in
-   `docs/releases.md`, and "1.4.0" is already the first entry of the app's "Có gì mới" (`whatsNew` in the strings; check
-   its lines still say what shipped). Then the emulator pass, `gom-1.4.0.apk` on the build VM (start and stop it with
-   vmctl; delete the older APKs; never open the netrc), staging, production, and the tag on H's word. Entry's gist,
-   **New**: reactions at the bubble's edge (left on your own messages); double tap to heart and swipe to reply on a phone;
-   "typing…"; mentions with `@name` and `@all` (a named member is told even through a mute); the announcement channel
-   ("Thông báo": everyone reads, only the owner writes); the "Có gì mới" page; a toast for copying and a group
-   picture that opens its owner's card; the stylesheet is split into files (nothing changes for people).
-1. **Release 1.3.0**: deploy the release commit to staging, then production; the tag only when H says so.
-2. **The app's 1.3.0 build** (new icons, owner notice paths): staging and prod APKs on the build VM, the emulator pass
-   (themed icon on, a notification's small icon), then the APK for the family and the Play bundle.
-3. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
+0. **The next release** (1.4.1 or 1.5.0, H's call): the reaction badge and the call screens above, plus whatever comes
+   next. Its release pull request follows `docs/releases.md` (`VERSION`, the entry there, and the first entry of the
+   app's "Có gì mới" in `vi.ts` and `en.ts`), then the emulator pass (the call screen is in the app), the APK on the build
+   VM (start and stop it with vmctl; delete the older APKs, though the `gomci` login cannot, so H does; never open the
+   netrc), staging, production, and the tag on H's word.
+1. **The app on Google Play**, once Google has checked H's identity: the app created with Play's own signing key, the
    bundle in a closed test (12 testers for 14 days, `docs/testers.md`), the listing and declarations, then production.
    Uploading from Gradle with a service account limited to test tracks comes after.
-4. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
+2. **Share into Gom.** Gom registers as a share target in its manifest, so "Share" on a phone lists Gom and opens it
    with the link or text ready, then asks which conversation. Gom-only: Peekbox and Bloomy already call
    `navigator.share` **[stated: their sessions, 2026-11-25]**. Works only where Gom is installed **[inferred]**; to check
    against current docs before designing (GET or POST, text and links only or files too). The Android app needs its own
    share target too **[inferred]**.
-5. **A webhook that posts into a group.** A secret link per group posts plain text as a labelled bot. What operations
+3. **A webhook that posts into a group.** A secret link per group posts plain text as a labelled bot. What operations
    asked for: a plain-text POST, safe to send twice, a fast 2xx even when nobody is online, a rate limit per secret, and
    a secret that can be replaced without changing the group. Operations would use it only beside their own alerts (a
    digest of deploy results and a daily "all quiet" line), never instead, since Gom runs on a machine it would report
    on. Bloomy would send a new paid order, a delivery cut-off coming up, and a review to approve, beside its email
    **[stated: those sessions]**.
-6. **Link cards.** Only for https addresses on a list in configuration (the shops' own sites), with a timeout, a size
+4. **Link cards.** Only for https addresses on a list in configuration (the shops' own sites), with a timeout, a size
    limit and a stored copy; title, picture and description, no price (a campaign price would go stale). Operations'
    check of what the container can reach on the host's own network comes first **[stated: operations]**.
    Link previews for any address were built once and removed in #61; their worker is in the git history.
@@ -149,6 +136,8 @@ the queue.
 
 ## 4. Not verified yet
 
+- The reaction badge on a phone's own browser and in the app's page, with three or more reactions wrapping, and the call screen
+  without its label on the emulator (the app's change is untested; the web's is seen in Chrome only).
 - The announcement channel and "Có gì mới" on a real phone, and an announcement's notification (its title and the owner's
   words); seen: Chrome at phone and desktop widths as a member and as the owner, against a real server.
 - Swipe to reply, double tap, the "@" list with a phone's keyboard, and a mention's notification on a real phone. Seen:
