@@ -4,7 +4,7 @@ regular repeats). Run it after changing a motif, then look at the backgrounds in
 
     python3 design/patterns.py
 
-A motif is drawn around (0, 0) within about 26 px. The page tints a tile through a mask (see .backdrop in gom.css), so only the shape
+A motif is drawn around (0, 0) within about 26 px. The page tints a tile through a mask (see .backdrop in Styles/30-thread.css), so only the shape
 counts: lines are black, and keep their width at every size (vector-effect). Everything is written as attributes, never a <style>,
 so a tile never depends on how a browser treats a style sheet inside an image under the page's Content-Security-Policy. A motif near an edge is drawn again on the
 other side, so the tile repeats without a seam.

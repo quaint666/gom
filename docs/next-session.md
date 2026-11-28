@@ -1,12 +1,21 @@
 # Next session: where things stand and what comes next
 
 Written 2026-11-25, brought up to date on 2026-11-26 (after #133), 2026-11-27 (after #171) and 2026-11-28 (after #193,
-and again for release 1.3.0).
+and again for release 1.3.0, and for the 1.4.0 stack).
 Claims are marked **[verified]** (seen in the code or real output), **[stated]** (someone said so; who is given), or
 **[inferred]** (reasoned, not tried).
 
 ## 1. Where things stand
 
+- Release 1.4.0 (a minor: new things for people) is the stack on top of #215, merged all at once on GitHub: the stylesheet
+  built from `src/Gom.Web/Styles/` (two pull requests, byte-identical to the old file), a reaction under its bubble's
+  right edge and a double tap to heart, swipe to reply, "is typing", mentions (the server's part, then the page's), and
+  a docs sweep. It needs no APK **[verified: the server words notifications and the pages load from the server]**, but H
+  asked for one so the app and the web match: `gom-1.4.0.apk`, built after the release commit, with every older APK
+  deleted (H has them on Google Drive) **[stated: H, 2026-11-28]**. It adds one migration, `Mentions`
+  (`messages.mentions uuid[]` and `mentions_all`, both with constant defaults, so no row changes). The stack passes 1,128
+  page tests and 1,231 server tests; its generated migration designer file is most of the size of the mentions pull
+  request.
 - Release 1.3.0 is #199 to #211, all on `main` (#201 to #211 through #214: stacked pull requests merge into the one below
   unless each is moved onto `main` first, since merged branches are not deleted here). Its release pull request sets
   `VERSION`; then staging, production, and the tag on H's word. 1.2.1 (`v1.2.1`) is what production ran before it
@@ -38,6 +47,10 @@ Claims are marked **[verified]** (seen in the code or real output), **[stated]**
 
 Each is discussed first (design, decisions, what cannot be verified), then built.
 
+0. **Release 1.4.0**: after the stack is merged, a "Release 1.4.0" pull request (`VERSION`, the entry in
+   `docs/releases.md`), then the APK, staging, production and the tag on H's word. Entry's gist, **New**: reactions under
+   the bubble's edge; double tap to heart and swipe to reply on a phone; "typing…"; mentions with `@name` and `@all`
+   (a named member is told even through a mute); the stylesheet is split into files (nothing changes for people).
 1. **Release 1.3.0**: deploy the release commit to staging, then production; the tag only when H says so.
 2. **The app's 1.3.0 build** (new icons, owner notice paths): staging and prod APKs on the build VM, the emulator pass
    (themed icon on, a notification's small icon), then the APK for the family and the Play bundle.
@@ -71,6 +84,14 @@ the queue.
 
 ## 3. Known limits
 
+- "Typing…" is only a hint: a page that is behind misses it, it needs both people to share their reading (the
+  read-receipts switch), and a typing frame over the server's pace is dropped quietly.
+- A mention is "@" and the member's name as written when it was sent: a member who changed their name since, or left,
+  shows as plain words (the chat still lists it as a mention for the person it named). Two members with the same name are
+  told apart by the id the sender chose, not by the words.
+- `@all` rings no one through a mute; only a named member does (not if they blocked the writer). Adding `@all` in an
+  edit tells no one.
+- The mention arrow sits at the top corner of the thread, not the bottom as the mockup had it.
 - An invite link is shown once; lost, it is revoked and made again.
 - The trim notice says "Ảnh và tệp gửi trước …" whatever the filters were; each trimmed file shows its own placeholder.
 - A page that receives a trim notice reloads that conversation from its newest page, so someone scrolled far up lands at
@@ -114,6 +135,9 @@ the queue.
 
 ## 4. Not verified yet
 
+- Swipe to reply, double tap, the "@" list with a phone's keyboard, and a mention's notification on a real phone. Seen:
+  real touch events in Chrome (CDP) and an iPhone profile in WebKit, two browsers live for typing and mentions; headless
+  Firefox on a computer has no touch, so its swipe was not seen. Both gestures were written to need no APK.
 - A real long press on a phone (the row menu's one second, and that Android shows no link menu of its own); headless
   Firefox has no hover, so Firefox's mouse path (the "⋯" under the pointer) was not seen either.
 - Helium itself: the fix follows its issue tracker and fakes in tests; neither Helium nor Brave is installed here.

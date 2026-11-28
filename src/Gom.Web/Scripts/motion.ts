@@ -1,6 +1,6 @@
 /**
  * Things that leave the screen, moving out instead of vanishing: a menu dismissed, a phone's conversation going back to the list. What
- * comes in is CSS's (gom.css, under prefers-reduced-motion: no-preference). None of it runs when the device asks for less motion, nor
+ * comes in is CSS's (Styles/50-motion.css, under prefers-reduced-motion: no-preference). None of it runs when the device asks for less motion, nor
  * where the browser cannot animate an element (then it goes at once, as before).
  */
 

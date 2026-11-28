@@ -156,7 +156,7 @@ app.UseMiddleware<SecurityHeaders>();
 app.UseStaticFiles(new StaticFileOptions
 {
     // A fingerprinted file never changes under its name: kept for a year. Fonts, stickers and backgrounds are kept a week: one
-    // that is redrawn gets a new address (a background ?v=N in gom.css), or browsers show the old one until then.
+    // that is redrawn gets a new address (a background ?v=N in Styles/30-thread.css), or browsers show the old one until then.
     OnPrepareResponse = c => c.Context.Response.Headers.CacheControl =
         Assets.IsFingerprinted(c.File.Name) ? "public, max-age=31536000, immutable"
         : c.File.Name.EndsWith(".woff2", StringComparison.Ordinal) || c.Context.Request.Path.StartsWithSegments("/stickers") || c.Context.Request.Path.StartsWithSegments("/patterns") ? "public, max-age=604800" : "no-cache",

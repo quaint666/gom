@@ -31,10 +31,10 @@ the owner approves. Then fix in small batches, one branch and pull request each,
    send leaves no gap and no second row; fan-out only after commit; history, sync and unread agree (joined_seq,
    recalls, removals). Two sends at once, the same send twice, a recall racing a send.
 2. **Sockets.** One bounded queue and one writer loop per socket; a slow client is closed (1013) and resyncs from its
-   cursor; limits per user; Origin on the upgrade; membership checked on delivery, so a person removed from a group stops
+   cursor; limits per user (and a "typing" frame over its pace is dropped, never an error or a close); Origin on the upgrade; membership checked on delivery, so a person removed from a group stops
    receiving at once; what a socket does when the session ends (4401) and when the database is down.
 3. **Privacy.** The Gom ID appears only to self and friends; a sender is `{id, displayName}`; blocks hide; read receipts
-   are one switch both ways; a removed or left member sees nothing after. Search every response DTO for a field that
+   are one switch both ways, and "typing…" follows it; a mention names a member by the name the group already sees, never a Gom ID; a removed or left member sees nothing after. Search every response DTO for a field that
    leaks.
 4. **Auth and sessions.** Cookie flags, Origin on every state change, no state change on GET, rate limits, what a locked
    or disabled account can still do, password and invite handling, session end on reset.
@@ -57,7 +57,7 @@ the owner approves. Then fix in small batches, one branch and pull request each,
     bytes deleted only after its row's commit; the cleanup of uploads nobody sent.
 12. **Notifications.** The RFC 8291 encryption against the RFC's worked example; a notification carries no more than its
     device chose (the words, the names, or only "Tin nhắn mới"), and a message taken back replaces it;
-    who is pushed (not the sender, not muted, not removed, not someone who joined or cleared after it; a device with Gom open
+    who is pushed (not the sender, not muted unless named in a mention and not blocking the writer, not removed, not someone who joined or cleared after it; a device with Gom open
     is pushed too, by H's choice); a 404 or 410 deletes the subscription; a slow push service never delays a send; only
     known push hosts are accepted; a browser with no push service (Helium) gets words, not a switch that never finishes.
 13. **Owner tools and deletion.** Deleting your own account (what stays, what goes, the leader handing over); the storage

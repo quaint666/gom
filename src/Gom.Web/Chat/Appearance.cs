@@ -1,7 +1,7 @@
 namespace Gom.Web.Chat;
 
 /// <summary>
-/// The colours a person can choose for their pages. A code names a block in gom.css (<c>:root[data-palette="sea"]</c>; the default has
+/// The colours a person can choose for their pages. A code names a block in the stylesheet (`Styles/00-tokens.css`; <c>:root[data-palette="sea"]</c>; the default has
 /// none: it is the :root accent), and Scripts/theme.ts lists the same codes in the same order; a test keeps the three together.
 /// </summary>
 public static class Appearance

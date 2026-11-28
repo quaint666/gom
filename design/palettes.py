@@ -1,10 +1,10 @@
-"""Makes the accent block of a new colour for gom.css from one button colour, and checks its contrast.
+"""Makes the accent block of a new colour for the stylesheet (Styles/00-tokens.css) from one button colour, and checks its contrast.
 
     python3 design/palettes.py jade '#1E6B66'
 
 The first six colours (sage to graphite) were picked by hand; jade to rice came from this. Light mode mixes the button colour with
 white (tints) and black (the text on a tint); dark mode mixes it with the dark background. Every pair a page draws text on must be at
-least 4.5 to 1 (WCAG AA); the server's tests check the blocks in gom.css again, so this is only a first look.
+least 4.5 to 1 (WCAG AA); the server's tests check the blocks in the stylesheet again, so this is only a first look.
 """
 import sys
 
