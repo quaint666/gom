@@ -171,6 +171,10 @@ public class Message
     public Guid? NoticeTargetId { get; set; }
     /// <summary>When it is deleted for good (sent in a conversation with disappearing messages on); null: kept.</summary>
     public DateTimeOffset? ExpiresAt { get; set; }
+    /// <summary>The members it mentions (see <see cref="Chat.Mentions"/>). Not a database key: the person may have left the group since.</summary>
+    public Guid[] Mentions { get; set; } = [];
+    /// <summary>It says "@all": it mentions everyone in the group.</summary>
+    public bool MentionsAll { get; set; }
 }
 
 public enum EventKind { Created, Deleted, Updated }

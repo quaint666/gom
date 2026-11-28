@@ -21,6 +21,8 @@ public static class ConversationEndpoints
 
     /// <summary>The most unread messages a chat's count goes to (the page shows "99+" past 99).</summary>
     private const int UnreadMost = 100;
+    /// <summary>How many unread messages are looked through for one that mentions this person (as far as the count goes).</summary>
+    private const int MentionScan = UnreadMost;
 
     /// <summary>The longest a mute for a while may last; longer is "until turned back on". The choices offered end within a day.</summary>
     private static readonly TimeSpan LongestMute = TimeSpan.FromDays(7);
@@ -226,6 +228,10 @@ public static class ConversationEndpoints
                 Unread = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq && x.SenderId != me && x.DeletedAt == null
                     && (x.Notice == null || (x.Notice == NoticeKind.Call && db.Calls.Any(k => k.MessageId == x.Id && k.CalleeId == me && (k.Outcome == CallOutcome.Missed || k.Outcome == CallOutcome.Busy))))
                     && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).Take(UnreadMost).Count(),
+                // The oldest unread message that names this person (or says "@all"), looked for among the first MentionScan unread ones.
+                FirstMention = db.Messages.Where(x => x.ConversationId == c.Id && x.Seq > m.LastReadSeq).OrderBy(x => x.Seq).Take(MentionScan)
+                    .Where(x => x.DeletedAt == null && x.Notice == null && (x.MentionsAll || x.Mentions.Contains(me))
+                        && !db.Hides.Any(h => h.UserId == me && h.MessageId == x.Id)).Select(x => new { x.Seq, x.Id }).FirstOrDefault(),
             }).ToListAsync(ct);
 
         // Pinned ones first, the latest pin on top. Hidden ones are listed too, marked, so a search can find them; the page leaves them out of view.
@@ -241,6 +247,10 @@ public static class ConversationEndpoints
             lastSeq = r.LastSeq,
             lastReadSeq = r.LastReadSeq,
             unread = r.Unread,
+            // Someone wrote your name (or "@all") in what you have not read: the list marks it, and the thread jumps to the first one.
+            mentioned = r.FirstMention is not null,
+            firstMentionSeq = r.FirstMention?.Seq,
+            firstMentionId = r.FirstMention?.Id,
             muted = r.Muted || r.MutedUntil > now,
             mutedUntil = r.MutedUntil > now ? r.MutedUntil : null,
             joinApproval = r.Kind == ConversationKind.Group && r.JoinApproval,

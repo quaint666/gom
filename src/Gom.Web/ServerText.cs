@@ -14,6 +14,12 @@ public sealed class ServerText
     /// <summary>What replaces a notification once its message is taken back.</summary>
     public required string Recalled { get; init; }
     public required string SentSticker { get; init; }
+    /// <summary>A group message that names the person told: who wrote and what it says.</summary>
+    public required Func<string, string, string> MentionedYou { get; init; }
+    /// <summary>A group message that says "@all": who wrote and what it says.</summary>
+    public required Func<string, string, string> MentionedAll { get; init; }
+    /// <summary>At the level that names nobody, a message that names the person told.</summary>
+    public required string MentionedYouUnnamed { get; init; }
     /// <summary>The owner's notification of a request to join: with the name, and without (the "nothing" level).</summary>
     public required Func<string, string> JoinRequest { get; init; }
     public required string JoinRequestUnnamed { get; init; }
@@ -36,6 +42,9 @@ public sealed class ServerText
         Group = "Nhóm",
         Recalled = "Tin nhắn đã được thu hồi",
         SentSticker = "Đã gửi 1 nhãn dán",
+        MentionedYou = (name, what) => $"{name} đã nhắc đến bạn: {what}",
+        MentionedAll = (name, what) => $"{name} nhắc mọi người: {what}",
+        MentionedYouUnnamed = "Có người nhắc đến bạn",
         JoinRequest = name => $"{name} xin tham gia Gom",
         JoinRequestUnnamed = "Có người xin tham gia Gom",
         ContactMessage = "Có thư liên hệ mới",
@@ -54,6 +63,9 @@ public sealed class ServerText
         Group = "Group",
         Recalled = "This message was taken back",
         SentSticker = "Sent a sticker",
+        MentionedYou = (name, what) => $"{name} mentioned you: {what}",
+        MentionedAll = (name, what) => $"{name} mentioned everyone: {what}",
+        MentionedYouUnnamed = "Someone mentioned you",
         JoinRequest = name => $"{name} asks to join Gom",
         JoinRequestUnnamed = "Someone asks to join Gom",
         ContactMessage = "New message from the contact form",

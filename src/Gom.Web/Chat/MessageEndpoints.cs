@@ -12,13 +12,13 @@ namespace Gom.Web.Chat;
 /// <summary>Sending, history and read position. The database is the truth; nothing here depends on a live connection.</summary>
 public static class MessageEndpoints
 {
-    public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null, List<Guid>? Attachments = null, string? Sticker = null);
+    public sealed record SendRequest(string? ClientId, string? Body, Guid? ReplyTo = null, List<Guid>? Attachments = null, string? Sticker = null, List<Guid>? Mentions = null);
     public sealed record ReactRequest(string? Emoji);
-    public sealed record EditRequest(string? Body);
+    public sealed record EditRequest(string? Body, List<Guid>? Mentions = null);
     public sealed record ReadRequest(long? Seq);
     /// <summary>Who wrote a message: a name and an opaque id, never the Gom ID (members who are not friends do not see each other's).</summary>
     public sealed record PersonDto(Guid Id, string DisplayName);
-    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, NoticeDto? Notice = null, string? Sticker = null, DateTimeOffset? ExpiresAt = null);
+    public sealed record MessageDto(Guid Id, long Seq, Guid ConversationId, Guid ClientId, PersonDto Sender, string Body, DateTimeOffset CreatedAt, bool Deleted = false, ReplyDto? Reply = null, IReadOnlyList<ReactionDto>? Reactions = null, DateTimeOffset? EditedAt = null, IReadOnlyList<AttachmentEndpoints.AttachmentDto>? Attachments = null, NoticeDto? Notice = null, string? Sticker = null, DateTimeOffset? ExpiresAt = null, IReadOnlyList<Guid>? Mentions = null, bool MentionsAll = false);
 
     /// <summary>The hard stop in UTF-16 units (the column size). A single "character" can be an endless run of combining marks, so counting characters alone is not enough.</summary>
     private const int MaxUnits = 16000;
@@ -44,7 +44,8 @@ public static class MessageEndpoints
 
     internal static MessageDto ToDto(Message m, PersonDto sender, ReplyDto? reply = null, IReadOnlyList<ReactionDto>? reactions = null, MessageExtras? extras = null) =>
         new(m.Id, m.Seq, m.ConversationId, m.ClientId, sender, m.Notice is null ? m.Body : "", m.CreatedAt, m.DeletedAt != null, reply, m.DeletedAt != null ? null : reactions, m.DeletedAt != null ? null : m.EditedAt,
-            m.DeletedAt != null ? null : extras?.Attachments, extras?.Notice, m.DeletedAt != null ? null : m.Sticker, m.ExpiresAt);
+            m.DeletedAt != null ? null : extras?.Attachments, extras?.Notice, m.DeletedAt != null ? null : m.Sticker, m.ExpiresAt,
+            m.DeletedAt != null || m.Mentions.Length == 0 ? null : m.Mentions, m.DeletedAt == null && m.MentionsAll);
 
     // ---- what a message may contain
 
@@ -111,6 +112,7 @@ public static class MessageEndpoints
             return Error(StatusCodes.Status429TooManyRequests, "too_many_messages");
         }
 
+        var (mentioned, mentionsAll) = await Mentions.Resolve(db, id, kind, me, body, request.Mentions, ct);
         var now = clock.GetUtcNow();
         Message message;
         // One transaction: take the next number, store the message and its event, move the sender's read position. Then commit.
@@ -126,7 +128,7 @@ public static class MessageEndpoints
             // Disappearing messages: the deadline is fixed now, from the setting as it is at this moment (the row is locked by the UPDATE).
             var lasts = await db.Conversations.Where(c => c.Id == id).Select(c => c.DisappearSeconds).SingleAsync(ct);
             message = new Message { Id = Guid.NewGuid(), ConversationId = id, Seq = seq, SenderId = me, ClientId = clientId, Body = body, Sticker = request.Sticker, CreatedAt = now, ReplyToId = request.ReplyTo,
-                ExpiresAt = lasts is { } s ? now.AddSeconds(s) : null };
+                Mentions = mentioned, MentionsAll = mentionsAll, ExpiresAt = lasts is { } s ? now.AddSeconds(s) : null };
             db.Messages.Add(message);
             db.Events.Add(new MessageEvent { ConversationId = id, Seq = seq, Kind = EventKind.Created, MessageId = message.Id, CreatedAt = now });
             try
@@ -229,7 +231,7 @@ public static class MessageEndpoints
         var sender = new PersonDto(me, http.User.FindFirst(GomClaims.DisplayName)!.Value);
         await live.PublishAsync(db, seq, "deleted", ToDto(new Message { Id = messageId, ConversationId = id, Seq = found.Seq, SenderId = me, ClientId = found.ClientId, Body = "", CreatedAt = found.CreatedAt, DeletedAt = now }, sender));
         // Devices that showed its words get their notification replaced, so the words do not stay on a lock screen.
-        push.Enqueue(new Push.PushJob(id, found.Seq, me, sender.DisplayName, 0, 0, MessageId: messageId, Recalled: true));
+        push.Enqueue(new Push.PushJob(id, found.Seq, me, sender.DisplayName, 0, 0, MessageId: messageId, Recalled: true, Mentioned: found.Mentions));
         return Results.NoContent();
     }
 
@@ -360,7 +362,7 @@ public static class MessageEndpoints
     /// message shows that it was edited. The old words are not kept. Writing the same words again changes nothing.
     /// </summary>
     private static async Task<IResult> Edit(Guid id, Guid messageId, EditRequest request, HttpContext http, GomDbContext db, TimeProvider clock,
-        SendLimiter limiter, LiveDelivery live, IOptions<ChatOptions> options, CancellationToken ct)
+        SendLimiter limiter, LiveDelivery live, Push.PushQueue push, IOptions<ChatOptions> options, CancellationToken ct)
     {
         var me = GomClaims.User(http.User);
         var access = await Access.Of(db, id, me, ct);
@@ -381,6 +383,7 @@ public static class MessageEndpoints
             return Error(StatusCodes.Status429TooManyRequests, "too_many_messages");
         }
 
+        var (mentioned, mentionsAll) = await Mentions.Resolve(db, id, access.Kind, me, body, request.Mentions, ct);
         var now = clock.GetUtcNow();
         long seq;
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
@@ -388,12 +391,19 @@ public static class MessageEndpoints
             await db.Database.ExecuteSqlAsync($"SELECT 1 FROM conversations WHERE id = {id} FOR UPDATE", ct);
             // Only while it is still there and still yours: a recall may have come while this waited for the lock.
             var changed = await db.Messages.Where(m => m.Id == messageId && m.DeletedAt == null && m.Body != body)
-                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Body, body).SetProperty(m => m.EditedAt, (DateTimeOffset?)now), ct);
+                .ExecuteUpdateAsync(s => s.SetProperty(m => m.Body, body).SetProperty(m => m.EditedAt, (DateTimeOffset?)now)
+                    .SetProperty(m => m.Mentions, mentioned).SetProperty(m => m.MentionsAll, mentionsAll), ct);
             if (changed == 0) return Results.NoContent();
             seq = await NextUpdate(db, id, messageId, now, ct);
             await tx.CommitAsync(ct);
         }
         await PublishUpdate(db, found, seq, me, ct, live);
+        // Only a person newly mentioned is told, and only of the mention (everyone else heard of the message when it was sent); "@all"
+        // added later tells no one, as "@all" never rings through a mute.
+        var added = mentioned.Except(found.Mentions).ToArray();
+        if (added.Length > 0)
+            push.Enqueue(new Push.PushJob(id, found.Seq, me, http.User.FindFirst(GomClaims.DisplayName)!.Value, 0, 0, Text: Replies.Snippet(body), MessageId: messageId,
+                Mentioned: added, OnlyMentioned: true));
         return Results.NoContent();
     }
 

@@ -63,15 +63,20 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         var chat = await db.Conversations.AsNoTracking().Where(c => c.Id == job.ConversationId).Select(c => new { c.Kind, c.Title }).SingleOrDefaultAsync(ct);
         if (chat is null) return;
 
+        // A member who muted the conversation is still told of a message that names them, unless they blocked its writer.
+        var named = job.Mentioned?.ToArray() ?? [];
+        var onlyNamed = job.OnlyMentioned;
         var told =
             from m in db.Members
             where m.ConversationId == job.ConversationId && m.UserId != job.SenderId && m.JoinedSeq < job.Seq
-                && !m.Muted && (m.MutedUntil == null || m.MutedUntil <= now)
+                && (!onlyNamed || named.Contains(m.UserId))
+                && ((!m.Muted && (m.MutedUntil == null || m.MutedUntil <= now))
+                    || (named.Contains(m.UserId) && !db.Blocks.Any(b => b.BlockerId == m.UserId && b.BlockedId == job.SenderId)))
             join u in db.Users on m.UserId equals u.Id
             where u.DisabledAt == null
             join s in db.Sessions on m.UserId equals s.UserId
             where s.RevokedAt == null && s.ExpiresAt > now
-            select new { Session = s.Id, u.Language };
+            select new { Session = s.Id, u.Language, Person = m.UserId };
         // Only a device that showed the words has anything to take back.
         await TellAppsAsync(db, told.Select(t => t.Session), onlyWords: job.Recalled,
             new() { ["t"] = job.Recalled ? "recall" : "message", ["c"] = job.ConversationId.ToString(), ["m"] = job.MessageId.ToString() }, high: !job.Recalled, ct);
@@ -80,7 +85,7 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
             from t in told
             join p in db.PushSubscriptions on t.Session equals p.SessionId
             where !job.Recalled || p.Level == PushLevel.Words
-            select new { p.Id, p.Endpoint, p.P256dh, p.Auth, p.Level, t.Language }).AsNoTracking().ToListAsync(ct);
+            select new { p.Id, p.Endpoint, p.P256dh, p.Auth, p.Level, t.Language, t.Person }).AsNoTracking().ToListAsync(ct);
         if (devices.Count == 0) return;
 
         var topic = Base64Url.EncodeToString(job.ConversationId.ToByteArray());   // 22 characters: RFC 8030 allows up to 32
@@ -88,9 +93,10 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
         {
             // In the language of the person the device belongs to.
             var say = ServerText.For(d.Language);
-            var (title, body) = Words(job, chat.Kind, chat.Title, say, words: d.Level == PushLevel.Words);
+            var mention = job.MentionOf(d.Person);
+            var (title, body) = Words(job, chat.Kind, chat.Title, say, words: d.Level == PushLevel.Words, mention);
             object payload = job.Recalled ? new { c = job.ConversationId, m = job.MessageId, title, body = say.Recalled, recalled = true }
-                : d.Level == PushLevel.Nothing ? new { c = job.ConversationId, m = job.MessageId, title = "Gom", body = say.NewMessage, recalled = false }
+                : d.Level == PushLevel.Nothing ? new { c = job.ConversationId, m = job.MessageId, title = "Gom", body = NamelessWords(say, mention), recalled = false }
                 : new { c = job.ConversationId, m = job.MessageId, title, body, recalled = false };
             await SendAsync(db, d.Id, d.Endpoint, d.P256dh, d.Auth, payload, job.Recalled ? "normal" : "high", topic, now, ct);
         }
@@ -206,7 +212,7 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
     /// What a notification says: the conversation, who wrote (in a group), and what kind of message it is; with <paramref name="words"/>
     /// (a device that chose to see them), the message's own words when it has some.
     /// </summary>
-    public static (string Title, string Body) Words(PushJob job, ConversationKind kind, string? groupTitle, ServerText say, bool words = false)
+    public static (string Title, string Body) Words(PushJob job, ConversationKind kind, string? groupTitle, ServerText say, bool words = false, Mention mention = Mention.None)
     {
         var what = words && job.Text.Length > 0 ? job.Text : job.Sticker ? say.SentSticker : (job.Images, job.Files, job.Videos) switch
         {
@@ -217,6 +223,14 @@ public sealed class PushSender(PushQueue queue, IServiceScopeFactory scopes, IPu
             (var i, var f, > 0) => say.SentAttachments(i + f + job.Videos),
             _ => say.NewMessage,
         };
-        return kind == ConversationKind.Group ? (groupTitle ?? say.Group, $"{job.SenderName}: {what}") : (job.SenderName, what);
+        return kind == ConversationKind.Group ? (groupTitle ?? say.Group, mention switch
+        {
+            Mention.You => say.MentionedYou(job.SenderName, what),
+            Mention.All => say.MentionedAll(job.SenderName, what),
+            _ => $"{job.SenderName}: {what}",
+        }) : (job.SenderName, what);
     }
+
+    /// <summary>What a notification says at the level that names nobody: "a new message", or that someone named this person.</summary>
+    public static string NamelessWords(ServerText say, Mention mention) => mention == Mention.You ? say.MentionedYouUnnamed : say.NewMessage;
 }
