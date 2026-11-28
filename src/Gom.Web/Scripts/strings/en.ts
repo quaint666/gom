@@ -774,6 +774,11 @@ export const en: Strings = {
     typing: (names: string, shown: number, others: number) => `${names}${others > 0 ? ` and ${count(others, 'other', 'others')}` : ''} ${shown + others === 1 ? 'is' : 'are'} typing…`,
     /** In a one-to-one chat the header already names the person. */
     typingDirect: 'typing…',
+    /** The "@" list: the row that mentions everyone, the list's name, the list's mark for a mention, and the arrow that goes to one. */
+    mentionAll: 'Notify the whole group',
+    mentionList: 'Mention someone',
+    mentionedYou: 'You were mentioned',
+    toMention: 'Go to the message that mentions you',
     yourself: 'yourself',
     cancelReply: 'Cancel reply',
     attach: 'Attach a file',

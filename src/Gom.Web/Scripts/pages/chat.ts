@@ -62,7 +62,7 @@ export interface ChatDeps {
 /** Remembered per device (browser storage) once "Để sau" is tapped: the banner does not come back there. */
 const PUSH_LATER = 'gom-push-later';
 
-export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply; attachments?: Attachment[]; sticker?: string }
+export interface OutboxItem { conversation: string; clientId: string; body: string; createdAt: string; replyTo?: Reply; attachments?: Attachment[]; sticker?: string; mentions?: string[] }
 
 /** How long to wait before asking again after the server said "slow down". */
 const SLOW_RETRY_MS = 1000;
@@ -228,6 +228,12 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const typers = new Map<string, Map<string, { name: string; timer: number }>>();
   /** When this page last said that you are typing, per conversation. */
   const typedAt = new Map<string, number>();
+  /** The members chosen from the "@" list for the message being written, per conversation: who, and the name written for them. */
+  const picked = new Map<string, Map<string, string>>();
+  /** The "@" being typed in the message field: where it starts, what follows it, and which choice is lit. */
+  let mention: { conversation: string; at: number; query: string; sel: number } | null = null;
+  /** For a conversation opened with a mention in what was unread: the first such message, until it is brought into view. */
+  const mentionAt = new Map<string, { id: string }>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
   /** Your friends, asked for when a search above the list starts, so it finds a friend you have not written to yet. */
@@ -326,6 +332,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="l1">${c.pinned ? html`<span class="pin-mark" role="img" aria-label=${say.chat.pinnedMark}>${icons.pin()}</span>` : nothing}<span class="nm">${c.title ?? '…'}</span>${c.palette ? html`<span class="look-dot" data-palette=${c.palette} role="img" aria-label=${say.chat.ownLook}></span>` : nothing}${c.lastMessage ? html`<span class="tm">${listTime(c.lastMessage.createdAt, deps.now())}</span>` : nothing}</div>
         <div class="l2"><span class="pv ${c.lastMessage?.call && missedByMe(c.lastMessage.call, me?.id ?? '') ? 'missed-call' : ''}">${c.lastMessage?.call ? (c.lastMessage.call.callerId === me?.id ? icons.callOut() : icons.callIn()) : nothing}${preview(c)}</span>
           ${isMuted(c) ? html`<span class="mute-mark" role="img" aria-label=${say.chat.mutedMark}>${icons.bellOff()}</span>` : nothing}
+          ${c.mentioned ? html`<span class="badge at" data-mentioned role="img" aria-label=${say.chat.mentionedYou}>@</span>` : nothing}
           ${c.unread > 0 ? html`<span class="badge ${isMuted(c) ? 'muted' : ''}" aria-label=${say.chat.unreadCount(c.unread)}>${c.unread > 99 ? '99+' : c.unread}</span>`
             : c.markedUnread ? html`<span class="badge dot ${isMuted(c) ? 'muted' : ''}" data-marked-unread role="img" aria-label=${say.chat.markUnread}></span>` : nothing}</div>
       </div></a>
@@ -427,8 +434,45 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ? html`<span class="q-stk"><img src=${stickerUrl(r.sticker)} alt="">${say.common.sticker}</span>` : html`<span>${quoted(r)}</span>`}</button>`;
 
   /** The words of a message, with every http or https address made into a link that opens in a new tab and tells that site nothing about this one. */
-  const words = (body: string) => linkify(body).map((p) => 'url' in p
-    ? html`<a class="ext" href=${p.url} target="_blank" rel="noopener noreferrer nofollow">${p.text}</a>` : p.text);
+  const words = (body: string, m?: ChatMessage) => linkify(body).flatMap((p) => 'url' in p
+    ? [html`<a class="ext" href=${p.url} target="_blank" rel="noopener noreferrer nofollow">${p.text}</a>`] : m === undefined ? [p.text] : withMentions(p.text, m));
+
+  /** Whether a message from someone else names you, or says "@all". */
+  const mentionsMe = (m: ChatMessage): boolean => m.sender.id !== me?.id && m.deleted !== true && (m.mentionsAll === true || m.mentions?.includes(me?.id ?? '') === true);
+
+  /**
+   * The names a message mentions as they are written ("@" and the member's name now; a member who has left, or changed their name since,
+   * is plain words): "@all" and each member named, with who it is. Yours, and "@all", are lit; someone else's is a name that opens their card.
+   */
+  function mentionTargets(m: ChatMessage): Map<string, { id: string | null; lit: boolean }> {
+    const out = new Map<string, { id: string | null; lit: boolean }>();
+    if (m.mentionsAll === true) out.set('@all', { id: null, lit: true });
+    for (const id of m.mentions ?? []) {
+      const name = id === me?.id ? me.displayName : people.get(m.conversationId)?.find((p) => p.id === id)?.displayName;
+      if (name !== undefined) out.set(`@${name}`.toLowerCase(), { id, lit: id === me?.id });
+    }
+    return out;
+  }
+
+  /** A run of words cut where it names someone: not run into the word before or after, as the server counts them. */
+  function withMentions(text: string, m: ChatMessage): Array<string | TemplateResult> {
+    const targets = mentionTargets(m);
+    if (targets.size === 0) return [text];
+    const names = [...targets.keys()].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${names.join('|')})(?![\\p{L}\\p{N}_])`, 'giu');
+    const out: Array<string | TemplateResult> = [];
+    let from = 0;
+    for (const hit of text.matchAll(pattern)) {
+      const target = targets.get(hit[0].toLowerCase());
+      if (target === undefined) continue;
+      if (hit.index > from) out.push(text.slice(from, hit.index));
+      out.push(target.lit || target.id === null ? html`<span class="mention lit" data-mention-me>${hit[0]}</span>`
+        : html`<button class="mention other" type="button" data-mention=${target.id} @click=${(e: Event) => { e.stopPropagation(); openCard(target.id!); }}>${hit[0]}</button>`);
+      from = hit.index + hit[0].length;
+    }
+    if (from < text.length) out.push(text.slice(from));
+    return out;
+  }
 
   /** Moving pictures someone paused or played here; any other plays, unless the device asks for less motion. */
   const movingChoice = new Map<string, boolean>();
@@ -682,7 +726,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   const bubble = (item: Extract<ThreadItem, { kind: 'msg' }>, group: boolean, seen: string | null, tick: Tick): TemplateResult => {
     const m = item.msg;
     const others = group && !item.mine;
-    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${m.sticker && !m.deleted ? 'sticker' : ''} ${!m.deleted && !m.sticker && !m.reply && !m.attachments?.length && onlyEmoji(m.body) ? 'jumbo' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''}`;
+    const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${m.sticker && !m.deleted ? 'sticker' : ''} ${!m.deleted && !m.sticker && !m.reply && !m.attachments?.length && onlyEmoji(m.body) ? 'jumbo' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''} ${mentionsMe(m) ? 'mentioned' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
     // A phone: a round arrow that comes in beside the message as it is dragged (see swipeMove).
@@ -704,7 +748,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         <div class="bcol">
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => { pressStart(e, m, hasMenu); swipeStart(e, m, item.mine, hasMenu); }}
           @pointermove=${(e: PointerEvent) => { pressMove(e); swipeMove(e); }} @pointerup=${(e: PointerEvent) => { swipeEnd(true); tapEnd(e, m); pressEnd(); }}
-          @pointercancel=${() => { swipeEnd(false); pressEnd(); }} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply, m.conversationId) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
+          @pointercancel=${() => { swipeEnd(false); pressEnd(); }} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply, m.conversationId) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body, m)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">${say.chat.edited}</span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? say.chat.sending : say.chat.waiting}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? say.chat.seen : say.chat.delivered}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${chips(m)}
         </div>
@@ -1153,6 +1197,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${pinBar(t)}
         <div class="backdrop" data-pattern=${c?.pattern ?? storedPattern()}>
         <div class="msgs" @scroll=${(e: Event) => onScroll(openId!, e.target as HTMLElement)}>
+          ${mentionAt.has(c?.id ?? '') ? html`<button class="tomention" type="button" data-to-mention aria-label=${say.chat.toMention}
+            @click=${() => { const at = mentionAt.get(openId!); mentionAt.delete(openId!); if (at !== undefined) void reveal({ id: at.id, conversationId: openId! }); }}>@</button>` : nothing}
           ${t.hasMore ? html`<button class="btn secondary small more" type="button" data-older ?disabled=${t.loading} @click=${() => void loadOlder(openId!)}>${say.chat.older}</button>` : nothing}
           ${repeat(items, (i) => i.key, (i) => threadItem(i, group, seen, tick))}
         </div>
@@ -1164,6 +1210,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${cardView()}
         ${c === undefined ? nothing : typingLine(c.id, c.kind)}
+        ${mentionView()}
         ${c?.peer?.deleted ? html`
           <p class="closed-note" role="status" data-peer-deleted>${say.chat.peerDeletedNote}</p>` : html`
           ${t.editing === null ? nothing : html`
@@ -1188,7 +1235,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
                 @change=${(e: Event) => { const input = e.target as HTMLInputElement; addFiles(openId!, [...(input.files ?? [])]); input.value = ''; }}>` : nothing}
             <div class="field">
             <textarea name="message" rows="1" data-kept aria-label=${say.chat.typeMessage} placeholder=${say.chat.typeMessage} autocomplete="off" enterkeyhint="enter"
-              .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @paste=${(e: ClipboardEvent) => onPaste(e)}
+              .value=${liveValue(t.draft)} @input=${onDraft} @keydown=${onKey} @click=${(e: Event) => watchMention(e.target as HTMLTextAreaElement)} @keyup=${(e: KeyboardEvent) => { if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') watchMention(e.target as HTMLTextAreaElement); }} @paste=${(e: ClipboardEvent) => onPaste(e)}
               @focus=${() => { if (picker !== null) { picker = null; update(); } }}></textarea>
             ${t.editing === null ? html`<button class="ib picker-btn" type="button" data-picker-toggle aria-label=${say.chat.picker} aria-expanded=${picker !== null ? 'true' : 'false'}
               @click=${togglePicker}>${icons.smile()}</button>` : nothing}
@@ -1467,6 +1514,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const hadNew = t.below;
     t.stick = box.scrollHeight - box.scrollTop - box.clientHeight < GAP_NEAR_BOTTOM_PX;
     if (t.stick) t.below = 0;
+    // The arrow to a mention goes once that message has come into view.
+    const at = mentionAt.get(id);
+    const target = at === undefined ? null : box.querySelector<HTMLElement>(`[data-msg="${at.id}"]`);
+    if (target !== null) {
+      const [row, view] = [target.getBoundingClientRect(), box.getBoundingClientRect()];
+      if (row.bottom > view.top && row.top < view.bottom) { mentionAt.delete(id); update(); }
+    }
     // The arrow to the end shows while you are away from it: the page is drawn again when that changes, not on every scroll.
     if (wasStuck !== t.stick || hadNew !== t.below) update();
   }
@@ -1477,8 +1531,73 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const wasEmpty = threadOf(openId).draft.trim() === '';
     setDraft(openId, field.value);
     if (field.value.trim() !== '' && threadOf(openId).editing === null) sayTyping(openId);
+    watchMention(field);
     if (wasEmpty !== (field.value.trim() === '') && deps.recordVoice !== undefined) update();   // the send button and the microphone trade places
   }
+
+  // ---- mentions: the "@" list in the message field
+
+  /** What the list offers: "@all" first (anyone in the group may use it), then the other members, narrowed by what is typed (no accents needed). */
+  function mentionChoices(): Array<{ kind: 'all' } | { kind: 'member'; id: string; name: string; conversation: string }> {
+    if (mention === null) return [];
+    const q = mention.query;
+    const members = (people.get(mention.conversation) ?? []).filter((p) => !p.isMe && matches(p.displayName, q));
+    return [...(matches(`all ${say.chat.mentionAll}`, q) ? [{ kind: 'all' as const }] : []),
+      ...members.slice(0, 8).map((p) => ({ kind: 'member' as const, id: p.id, name: p.displayName, conversation: mention!.conversation }))];
+  }
+
+  /** Opens the list when the caret is just after an "@" that begins a word (at the start, or after a space or punctuation), in a group; closes it otherwise. */
+  function watchMention(field: HTMLTextAreaElement): void {
+    const id = openId;
+    if (id === null || chatOf(id)?.kind !== 'group') { if (mention !== null) { mention = null; update(); } return; }
+    const found = /(?:^|[\s(\[{"'.,;:!?])@([^\s@]{0,30})$/u.exec(field.value.slice(0, field.selectionStart));
+    if (found === null) { if (mention !== null) { mention = null; update(); } return; }
+    const at = field.selectionStart - found[1]!.length - 1;
+    void loadPeople(id);
+    mention = { conversation: id, at, query: found[1]!, sel: mention?.at === at ? mention.sel : 0 };
+    update();
+  }
+
+  /** Puts the choice in the words where the "@" was: "@" and the name (the server keeps it as a mention only while it is written so). */
+  function pickMention(choice: { kind: 'all' } | { kind: 'member'; id: string; name: string }): void {
+    if (mention === null) return;
+    const { conversation, at } = mention;
+    const field = root.querySelector<HTMLTextAreaElement>('.composer textarea');
+    if (field === null) return;
+    const written = choice.kind === 'all' ? '@all' : `@${choice.name}`;
+    const value = `${field.value.slice(0, at)}${written} ${field.value.slice(field.selectionStart)}`;
+    if (choice.kind === 'member') {
+      let chosen = picked.get(conversation);
+      if (chosen === undefined) picked.set(conversation, chosen = new Map());
+      chosen.set(choice.id, choice.name);
+    }
+    setDraft(conversation, value);
+    mention = null;
+    update();
+    const caret = at + written.length + 1;
+    field.focus();
+    field.setSelectionRange(caret, caret);
+  }
+
+  /** The members to send as mentioned: those chosen whose name is still written in the words. Forgets the choices. */
+  function mentionIds(id: string, body: string): string[] {
+    const chosen = picked.get(id);
+    picked.delete(id);
+    if (chosen === undefined) return [];
+    const low = body.toLowerCase();
+    return [...chosen].filter(([, name]) => low.includes(`@${name.toLowerCase()}`)).map(([who]) => who);
+  }
+
+  const mentionView = (): TemplateResult | typeof nothing => {
+    const choices = mentionChoices();
+    if (mention === null || mention.conversation !== openId || choices.length === 0) return nothing;
+    const lit = Math.min(mention.sel, choices.length - 1);
+    return html`<ul class="mention-pop" role="listbox" aria-label=${say.chat.mentionList} data-mention-list>${choices.map((ch, i) => html`
+      <li role="option" aria-selected=${i === lit ? 'true' : 'false'}><button type="button" class="mi-pick ${i === lit ? 'sel' : ''}" data-mention-pick=${ch.kind === 'all' ? 'all' : ch.id}
+        @pointerdown=${(e: Event) => e.preventDefault()} @click=${() => pickMention(ch)}>${ch.kind === 'all'
+          ? html`<span class="av sm all" aria-hidden="true">@</span><span>${say.chat.mentionAll} <small>· @all</small></span>`
+          : html`${avatar(ch.name, memberPicture(ch.conversation, ch.id), 'sm')}<span>${ch.name}</span>`}</button></li>`)}</ul>`;
+  };
 
   /** Tells the others that you are typing, at most every `TYPING_REPEAT_MS`. Not when you have turned read receipts off (it is the same switch). */
   function sayTyping(id: string): void {
@@ -1527,6 +1646,17 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   function onKey(e: KeyboardEvent): void {
+    if (mention !== null && !e.isComposing) {
+      const choices = mentionChoices();
+      if (choices.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        mention.sel = (Math.min(mention.sel, choices.length - 1) + (e.key === 'ArrowDown' ? 1 : choices.length - 1)) % choices.length;
+        update();
+        return;
+      }
+      if (choices.length > 0 && (e.key === 'Enter' || e.key === 'Tab')) { e.preventDefault(); pickMention(choices[Math.min(mention.sel, choices.length - 1)]!); return; }
+      if (e.key === 'Escape') { mention = null; update(); return; }
+    }
     // Enter sends on a keyboard; Shift+Enter is a new line; a word still being composed (Telex, VNI) must not be cut off.
     if (e.key !== 'Enter' || e.shiftKey || e.isComposing || deps.coarsePointer() || openId === null) return;
     e.preventDefault();
@@ -1546,6 +1676,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const c = chatOf(id);
     if (c?.hidden) unhide(c);
     if (c !== undefined) { t.lastReadAtOpen = c.lastReadSeq; t.unreadAtOpen = c.unread; }
+    if (c?.mentioned && c.firstMentionId) mentionAt.set(id, { id: c.firstMentionId }); else mentionAt.delete(id);
     t.stick = true;
     t.jump = t.unreadAtOpen > 0;
     t.below = 0;
@@ -1635,6 +1766,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     c.lastReadSeq = Math.max(c.lastReadSeq, newest);
     c.unread = 0;
     c.markedUnread = false;
+    c.mentioned = false;
+    c.firstMentionSeq = null;
+    c.firstMentionId = null;
     update();
     void api.markRead(id, newest);
   }
@@ -1695,6 +1829,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         };
         const toRead = call ? missedByMe(call, me?.id ?? '') : message.sender.id !== me?.id && message.deleted !== true;
         if (toRead && !(conversation === openId && deps.visible())) c.unread++;
+        if (toRead && mentionsMe(message)) {
+          // Not yet read: the list marks it; and in the thread, if you are reading further up, the arrow takes you to it.
+          if (!(conversation === openId && deps.visible())) { c.mentioned = true; c.firstMentionSeq ??= message.seq; c.firstMentionId ??= message.id; }
+          else if (!threadOf(conversation).stick && !mentionAt.has(conversation)) mentionAt.set(conversation, { id: message.id });
+        }
         c.hidden = false;   // something new was said: a hidden conversation is back, as the server has it
         chats = [c, ...(chats ?? []).filter((x) => x !== c)];
       }
@@ -2103,6 +2242,9 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     t.editing = { id: m.id };
     t.replying = null;
     t.draft = m.body;
+    const known = new Map<string, string>();
+    for (const who of m.mentions ?? []) { const name = who === me?.id ? me.displayName : people.get(m.conversationId)?.find((p) => p.id === who)?.displayName; if (name !== undefined) known.set(who, name); }
+    picked.set(m.conversationId, known);
     update();
     const field = root.querySelector<HTMLTextAreaElement>('.composer textarea');
     field?.focus();
@@ -2113,7 +2255,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const body = t.draft.trim();
     if (t.editing === null || body === '') return;
     const target = t.editing.id;
-    const result = await api.edit(id, target, body);
+    const mentions = mentionIds(id, body);
+    const result = mentions.length > 0 ? await api.edit(id, target, body, mentions) : await api.edit(id, target, body);
     if (!result.ok) { error = result; update(); return; }   // what was typed stays, so it can be tried again
     error = null;
     t.editing = null;
@@ -2662,7 +2805,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   function persist(): void {
     if (outbox === null) return;
     outbox.save([...threads].flatMap(([id, t]) => t.pending.filter((p) => p.state !== 'failed')
-      .map((p) => ({ conversation: id, clientId: p.clientId, body: p.body, createdAt: p.createdAt, ...(p.reply ? { replyTo: p.reply } : {}), ...(p.attachments && p.attachments.length > 0 ? { attachments: p.attachments } : {}), ...(p.sticker ? { sticker: p.sticker } : {}) }))));
+      .map((p) => ({ conversation: id, clientId: p.clientId, body: p.body, createdAt: p.createdAt, ...(p.reply ? { replyTo: p.reply } : {}), ...(p.attachments && p.attachments.length > 0 ? { attachments: p.attachments } : {}), ...(p.sticker ? { sticker: p.sticker } : {}), ...(p.mentions && p.mentions.length > 0 ? { mentions: p.mentions } : {}) }))));
   }
 
   async function send(id: string): Promise<void> {
@@ -2672,9 +2815,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const ready = t.tray.filter((i) => i.state === 'done' && i.attachment !== undefined).map((i) => i.attachment!);
     if ((body === '' && ready.length === 0) || me === null) return;
     if (t.tray.some((i) => i.state !== 'done')) return;   // still going up, or failed: remove or retry it first
+    const mentions = mentionIds(id, body);
     setDraft(id, '');
     t.tray = [];
-    await post(id, { body, ...(ready.length > 0 ? { attachments: ready } : {}) });
+    await post(id, { body, ...(ready.length > 0 ? { attachments: ready } : {}), ...(mentions.length > 0 ? { mentions } : {}) });
   }
 
   /** Sends a sticker at once (as the answer, if one is being written). Like words, it waits behind anything still on its way. */
@@ -2685,7 +2829,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   }
 
   /** Puts a message of yours in the conversation, as the answer if one is being written, and sends it. */
-  async function post(id: string, what: { body: string; attachments?: Attachment[]; sticker?: string }): Promise<void> {
+  async function post(id: string, what: { body: string; attachments?: Attachment[]; sticker?: string; mentions?: string[] }): Promise<void> {
     const t = threadOf(id);
     const reply = t.replying;
     t.replying = null;
@@ -2716,6 +2860,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         update();
         const files = p.attachments?.map((a) => a.id) ?? [];
         const result = p.sticker ? await api.sendSticker(id, p.clientId, p.sticker, p.reply?.id)
+          : p.mentions && p.mentions.length > 0 ? await api.send(id, p.clientId, p.body, p.reply?.id, files.length > 0 ? files : undefined, p.mentions)
           : files.length > 0 ? await api.send(id, p.clientId, p.body, p.reply?.id, files) : await api.send(id, p.clientId, p.body, p.reply?.id);
         if (result.ok) {
           t.failures = 0;
@@ -2793,7 +2938,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       if (chatOf(item.conversation) === undefined) continue;   // no longer in that conversation: let it go
       threadOf(item.conversation).pending.push({
         id: item.clientId, clientId: item.clientId, seq: 0, conversationId: item.conversation,
-        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued', ...(item.replyTo ? { reply: item.replyTo } : {}), ...(item.attachments && item.attachments.length > 0 ? { attachments: item.attachments } : {}), ...(item.sticker ? { sticker: item.sticker } : {}),
+        sender: { id: me.id, displayName: me.displayName }, body: item.body, createdAt: item.createdAt, state: 'queued', ...(item.replyTo ? { reply: item.replyTo } : {}), ...(item.attachments && item.attachments.length > 0 ? { attachments: item.attachments } : {}), ...(item.sticker ? { sticker: item.sticker } : {}), ...(item.mentions && item.mentions.length > 0 ? { mentions: item.mentions } : {}),
       });
     }
     persist();

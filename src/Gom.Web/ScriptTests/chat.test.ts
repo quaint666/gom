@@ -2883,6 +2883,210 @@ describe('chat: pinned messages', () => {
   });
 });
 
+describe('chat: mentions', () => {
+  const G = '44444444-4444-4444-8444-444444444444';
+  const group = (extra: Partial<Conversation> = {}): Conversation => ({ id: G, kind: 'group', title: 'Nhóm nhà', peer: null, lastSeq: 2, lastReadSeq: 2, unread: 0, lastMessage: null, memberCount: 3, ...extra });
+  const person = (id: string, displayName: string, isMe = false) => ({ id, displayName, isMe, isFriend: false, gomId: null, request: 'none' as const, role: 'member' as const });
+  const members = [person('u-mom', 'Mẹ', true), person('u-minh', 'Minh'), person('u-lan', 'Lan Đào')];
+  const open = (messages: ChatMessage[] = [msg(1, 'minh', 'chào cả nhà', at(10), G)], chats: Conversation[] = [group()], api: Record<string, unknown> = {}) =>
+    start({ path: `/c/${G}`, chats, history: { [G]: messages }, api: { groupMembers: vi.fn(async () => ok(members)), person: vi.fn(async () => ok({ id: 'u-lan', displayName: 'Lan Đào', gomId: null, friend: 'none', commonGroups: [] })), ...api } });
+  const field = () => root.querySelector<HTMLTextAreaElement>('.composer textarea')!;
+  const typeAt = async (value: string, caret = value.length) => {
+    const f = field();
+    f.value = value;
+    f.setSelectionRange(caret, caret);
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+  };
+  const choices = () => [...root.querySelectorAll('[data-mention-pick]')].map((b) => b.getAttribute('data-mention-pick'));
+  const press = async (key: string) => { field().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); await flush(); };
+
+  it('opens a list when "@" starts a word in a group: "everyone" first, then the other members', async () => {
+    open();
+    await flush();
+    await typeAt('@');
+    expect(choices()).toEqual(['all', 'u-minh', 'u-lan']);   // not yourself
+    expect(root.querySelector('[data-mention-list]')!.getAttribute('aria-label')).toBe('Nhắc đến ai đó');
+    expect(text(root.querySelector('[data-mention-pick="all"]')!)).toContain('Báo cho cả nhóm');
+  });
+
+  it('narrows the list as you type, with no accents or capitals needed', async () => {
+    open();
+    await flush();
+    await typeAt('ơi @DAO');
+    expect(choices()).toEqual(['u-lan']);
+    await typeAt('ơi @mi');
+    expect(choices()).toEqual(['u-minh']);
+    await typeAt('ơi @al');
+    expect(choices()).toEqual(['all']);
+  });
+
+  it('opens only for an "@" that begins a word, with the name straight after it', async () => {
+    open();
+    await flush();
+    await typeAt('mail a@');
+    expect(choices()).toEqual([]);
+    await typeAt('@ ');
+    expect(choices()).toEqual([]);
+    await typeAt('xin chào, @');
+    expect(choices()).toHaveLength(3);
+    await typeAt('(@');
+    expect(choices()).toHaveLength(3);
+  });
+
+  it('opens in no one-to-one chat', async () => {
+    start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 1 })], history: { [C1]: [msg(1, 'minh')] }, api: {} });
+    await flush();
+    await typeAt('@');
+    expect(root.querySelector('[data-mention-list]')).toBeNull();
+  });
+
+  it('puts "@" and the name where the "@" was when one is chosen, and sends that member with the message', async () => {
+    const h = open();
+    await flush();
+    await typeAt('ơi @Mi nhé', 'ơi @Mi'.length);
+    root.querySelector<HTMLButtonElement>('[data-mention-pick="u-minh"]')!.click();
+    await flush();
+    expect(field().value).toBe('ơi @Minh  nhé');
+    expect(root.querySelector('[data-mention-list]')).toBeNull();
+    expect(field().selectionStart).toBe('ơi @Minh '.length);
+    field().form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(h.api.send).toHaveBeenCalledWith(G, expect.any(String), 'ơi @Minh  nhé', undefined, undefined, ['u-minh']);
+  });
+
+  it('chooses with the keyboard: the arrows move, Enter takes, Escape closes', async () => {
+    open();
+    await flush();
+    await typeAt('@');
+    await press('ArrowDown');
+    expect(root.querySelector('.mi-pick.sel')!.getAttribute('data-mention-pick')).toBe('u-minh');
+    await press('ArrowDown'); await press('ArrowDown');
+    expect(root.querySelector('.mi-pick.sel')!.getAttribute('data-mention-pick')).toBe('all');   // round again
+    await press('ArrowUp');
+    expect(root.querySelector('.mi-pick.sel')!.getAttribute('data-mention-pick')).toBe('u-lan');
+    await press('Enter');
+    expect(field().value).toBe('@Lan Đào ');
+    await typeAt('@');
+    await press('Escape');
+    expect(root.querySelector('[data-mention-list]')).toBeNull();
+  });
+
+  it('inserts "@all" for the everyone row, and sends no member for it', async () => {
+    const h = open();
+    await flush();
+    await typeAt('@');
+    root.querySelector<HTMLButtonElement>('[data-mention-pick="all"]')!.click();
+    await flush();
+    expect(field().value).toBe('@all ');
+    field().form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(h.api.send).toHaveBeenCalledWith(G, expect.any(String), '@all', undefined);
+  });
+
+  it('sends no member whose name was taken out of the words again', async () => {
+    const h = open();
+    await flush();
+    await typeAt('@');
+    root.querySelector<HTMLButtonElement>('[data-mention-pick="u-minh"]')!.click();
+    await flush();
+    await typeAt('thôi, không nhắc nữa');
+    field().form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(h.api.send).toHaveBeenCalledWith(G, expect.any(String), 'thôi, không nhắc nữa', undefined);
+  });
+
+  it('keeps the mentions of a message you change, and sends the change with them', async () => {
+    const mine = { ...msg(1, 'mom', '@Minh ơi', at(10), G), mentions: ['u-minh'] };
+    const h = open([mine]);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    await typeAt('@Minh ơi, đến chưa');
+    field().form!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+    expect(h.api.edit).toHaveBeenCalledWith(G, 'id1', '@Minh ơi, đến chưa', ['u-minh']);
+  });
+
+  it('lights a mention of you, outlines the message, and makes someone else\'s a name that opens their card', async () => {
+    const h = open([
+      { ...msg(1, 'minh', 'ơi @Mẹ xem nhé', at(10), G), mentions: ['u-mom'] },
+      { ...msg(2, 'minh', 'còn @Lan Đào thì sao', at(10), G), mentions: ['u-lan'] },
+    ]);
+    await flush();
+    const mine = root.querySelector('[data-msg="id1"]')!;
+    expect(mine.classList.contains('mentioned')).toBe(true);
+    expect(text(mine.querySelector('[data-mention-me]')!)).toBe('@Mẹ');
+    const other = root.querySelector('[data-msg="id2"]')!;
+    expect(other.classList.contains('mentioned')).toBe(false);
+    expect(other.querySelector('[data-mention-me]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-msg="id2"] [data-mention="u-lan"]')!.click();
+    await flush();
+    expect(h.api.person).toHaveBeenCalledWith('u-lan');
+  });
+
+  it('lights "@all" for everyone but the writer, and leaves plain a name that is no longer a member or no longer matches', async () => {
+    open([
+      { ...msg(1, 'minh', '@all họp tối nay', at(10), G), mentionsAll: true },
+      { ...msg(2, 'mom', '@all ăn cơm', at(10), G), mentionsAll: true },
+      { ...msg(3, 'minh', 'ơi @Cũ Tên', at(10), G), mentions: ['u-gone'] },
+    ]);
+    await flush();
+    expect(root.querySelector('[data-msg="id1"]')!.classList.contains('mentioned')).toBe(true);
+    expect(root.querySelector('[data-msg="id1"] [data-mention-me]')).not.toBeNull();
+    expect(root.querySelector('[data-msg="id2"]')!.classList.contains('mentioned')).toBe(false);   // your own
+    expect(root.querySelector('[data-msg="id3"] .mention')).toBeNull();
+    expect(text(root.querySelector('[data-msg="id3"] .txt')!)).toContain('@Cũ Tên');
+  });
+
+  it('does not light a name that is only part of a longer word', async () => {
+    open([{ ...msg(1, 'minh', '@Mẹo hay, a@Mẹ.com', at(10), G), mentions: ['u-mom'] }]);
+    await flush();
+    expect(root.querySelector('[data-msg="id1"] .mention')).toBeNull();
+  });
+
+  it('marks the list with an "@" beside the unread count until the chat is read', async () => {
+    start({ path: '/', chats: [group({ unread: 3, lastReadSeq: 0, mentioned: true, firstMentionSeq: 2, firstMentionId: 'id2' })], history: { [G]: [msg(1, 'minh', 'a', at(10), G), msg(2, 'minh', 'b', at(10), G)] }, api: {} });
+    await flush();
+    expect(root.querySelector(`[data-chat="${G}"] [data-mentioned]`)).not.toBeNull();
+    expect(root.querySelector(`[data-chat="${G}"] .badge:not(.at)`)).not.toBeNull();
+  });
+
+  it('marks the list for a mention that arrives in a chat that is not open, and not for one that does not name you', async () => {
+    const h = start({ path: '/', chats: [group({ lastSeq: 1 })], history: {}, api: {} });
+    await flush();
+    h.handlers().event(G, created({ ...msg(2, 'minh', 'xin chào', at(10), G) }));
+    await flush();
+    expect(root.querySelector(`[data-chat="${G}"] [data-mentioned]`)).toBeNull();
+    h.handlers().event(G, created({ ...msg(3, 'minh', '@Mẹ ơi', at(10), G), mentions: ['u-mom'] }));
+    await flush();
+    expect(root.querySelector(`[data-chat="${G}"] [data-mentioned]`)).not.toBeNull();
+  });
+
+  it('opens at a chat with an unread mention with an arrow that takes you to it, once, and the list mark goes with reading', async () => {
+    const h = open([msg(1, 'minh', 'a', at(10), G), { ...msg(2, 'minh', '@Mẹ ơi', at(10), G), mentions: ['u-mom'] }, msg(3, 'minh', 'c', at(10), G)],
+      [group({ lastSeq: 3, lastReadSeq: 0, unread: 3, mentioned: true, firstMentionSeq: 2, firstMentionId: 'id2' })]);
+    await flush();
+    const arrow = root.querySelector<HTMLButtonElement>('[data-to-mention]')!;
+    expect(arrow).not.toBeNull();
+    expect(arrow.getAttribute('aria-label')).toBe('Đến tin nhắn có nhắc đến bạn');
+    arrow.click();
+    await flush();
+    expect(root.querySelector('[data-to-mention]')).toBeNull();
+    expect(root.querySelector('[data-msg="id2"]')!.classList.contains('found')).toBe(true);
+    expect(h.api.markRead).toHaveBeenCalled();
+    expect(root.querySelector(`[data-chat="${G}"] [data-mentioned]`)).toBeNull();   // read now: the list's mark is gone
+  });
+
+  it('shows no arrow when the chat has no unread mention', async () => {
+    open();
+    await flush();
+    expect(root.querySelector('[data-to-mention]')).toBeNull();
+  });
+});
+
 describe('chat: who is typing', () => {
   const base = [msg(1, 'minh', 'tin của Minh')];
   const open = (kind: 'direct' | 'group' = 'group', meExtra: Record<string, unknown> = {}) => {

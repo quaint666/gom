@@ -25,6 +25,20 @@
 /* three dots that rise in turn; they sit still for a device that asks for less motion (see 50-motion.css) */
 .typing .dots { display: inline-flex; align-items: center; gap: 4px; }
 .typing .dots i { inline-size: 6px; block-size: 6px; border-radius: 50%; background: currentColor; opacity: .6; }
+/* mentions: a name written for someone, the list that offers them, the mark on a message that names you, and the arrow to the first one */
+.mention { font-weight: 600; border-radius: 6px; padding-inline: 3px; }
+.mention.lit { background: var(--tint); color: var(--tint-text); }
+.out .mention.lit { background: var(--mine-quote, rgb(0 0 0 / .12)); color: var(--mine-ink, inherit); }
+button.mention { padding: 0; border: 0; background: none; color: var(--link); font: inherit; font-weight: 600; cursor: pointer; }
+.out button.mention { color: var(--mine-ink, var(--link)); text-decoration: underline; }
+.mrow.mentioned .bub { box-shadow: 0 0 0 2px var(--btn); }
+.mention-pop { list-style: none; margin: 0 8px 4px; padding: 4px; max-block-size: 40vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 -2px 12px rgb(0 0 0 / .12); }
+.mi-pick { display: flex; align-items: center; gap: 10px; inline-size: 100%; min-block-size: 44px; padding: 4px 10px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; text-align: start; cursor: pointer; }
+.mi-pick.sel, .mi-pick:hover { background: var(--tint); }
+.mi-pick small { color: var(--link); }
+.av.all { background: var(--btn); color: var(--on-btn); font-weight: 700; }
+.badge.at { background: #c9a227; color: #111; }
+.tomention { position: sticky; inset-block-start: 8px; align-self: flex-end; z-index: 3; flex: none; margin-block-end: -40px; display: inline-grid; place-items: center; inline-size: 40px; block-size: 40px; padding: 0; border: 0; border-radius: 50%; background: #c9a227; color: #111; font: inherit; font-size: 18px; font-weight: 700; box-shadow: 0 2px 8px rgb(0 0 0 / .25); cursor: pointer; }
 .msgs .more { align-self: center; margin-block-end: 8px; }
 .day { align-self: center; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 12px; margin-block: 6px 10px; }
 .newdiv { display: flex; align-items: center; gap: 10px; margin-block: 10px 8px; color: var(--tint-text); font-size: 12px; font-weight: 600; }
