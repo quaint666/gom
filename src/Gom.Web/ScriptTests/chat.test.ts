@@ -2883,6 +2883,124 @@ describe('chat: pinned messages', () => {
   });
 });
 
+describe('chat: swipe to reply on a phone', () => {
+  const base = [msg(1, 'minh', 'tin của Minh'), msg(2, 'mom', 'tin của mẹ')];
+  const open = (coarse = true) => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 2 })], history: { [C1]: base }, api: {} });
+    h.coarse.value = coarse;
+    return h;
+  };
+  const bub = (id: string) => root.querySelector(`[data-msg="${id}"] .bub`)!;
+  const rowOf = (id: string) => root.querySelector<HTMLElement>(`[data-msg="${id}"]`)!;
+  const at = (type: string, x: number, y = 100, pointerType = 'touch') =>
+    Object.assign(new Event(type, { bubbles: true }), { pointerType, clientX: x, clientY: y });
+  const drag = (id: string, dx: number, dy = 0, lift = true) => {
+    bub(id).dispatchEvent(at('pointerdown', 200));
+    for (let i = 1; i <= 10; i++) bub(id).dispatchEvent(at('pointermove', 200 + dx * i / 10, 100 + dy * i / 10));
+    if (lift) bub(id).dispatchEvent(at('pointerup', 200 + dx, 100 + dy));
+  };
+  const replying = () => root.querySelector('[data-replybar]');
+
+  it('replies to someone else\'s message dragged right past the ready distance', async () => {
+    open();
+    await flush();
+    drag('id1', 80);
+    await flush();
+    expect(replying()).not.toBeNull();
+    expect(text(replying()!)).toContain('tin của Minh');
+  });
+
+  it('replies to your own message dragged left', async () => {
+    open();
+    await flush();
+    drag('id2', -80);
+    await flush();
+    expect(replying()).not.toBeNull();
+    expect(text(replying()!)).toContain('tin của mẹ');
+  });
+
+  it('does not reply when it is let go before the ready distance', async () => {
+    open();
+    await flush();
+    drag('id1', 40);
+    await flush();
+    expect(replying()).toBeNull();
+    expect(rowOf('id1').classList.contains('swiping')).toBe(false);
+  });
+
+  it('does not reply for a drag the wrong way, or one that is mostly up or down (a scroll)', async () => {
+    open();
+    await flush();
+    drag('id1', -90);
+    drag('id2', 90);
+    await flush();
+    expect(replying()).toBeNull();
+    drag('id1', 90, 120, false);   // far enough across, but further down: a scroll, so the row stays put
+    expect(rowOf('id1').classList.contains('swiping')).toBe(false);
+    bub('id1').dispatchEvent(at('pointerup', 290, 220));
+    await flush();
+    expect(replying()).toBeNull();
+  });
+
+  it('moves the row with the finger while dragged, shows the arrow, and leaves nothing behind after', async () => {
+    open();
+    await flush();
+    drag('id1', 50, 0, false);
+    const row = rowOf('id1');
+    expect(row.classList.contains('swiping')).toBe(true);
+    expect(row.style.getPropertyValue('--swipe')).toBe('50px');
+    expect(row.hasAttribute('data-swipe-ready')).toBe(false);
+    bub('id1').dispatchEvent(at('pointermove', 280));
+    expect(row.hasAttribute('data-swipe-ready')).toBe(true);
+    bub('id1').dispatchEvent(at('pointerup', 280));
+    expect(row.classList.contains('swiping')).toBe(false);
+    expect(row.style.getPropertyValue('--swipe')).toBe('');
+    expect(row.hasAttribute('data-swipe-ready')).toBe(false);
+  });
+
+  it('a touch the browser takes away (it began scrolling) replies to nothing', async () => {
+    open();
+    await flush();
+    drag('id1', 90, 0, false);
+    bub('id1').dispatchEvent(at('pointercancel', 290));
+    await flush();
+    expect(replying()).toBeNull();
+    expect(rowOf('id1').classList.contains('swiping')).toBe(false);
+  });
+
+  it('is for a phone only: a mouse, or a screen with no touch, drags nothing', async () => {
+    open();
+    await flush();
+    bub('id1').dispatchEvent(at('pointerdown', 200, 100, 'mouse'));
+    for (let i = 1; i <= 10; i++) bub('id1').dispatchEvent(at('pointermove', 200 + 9 * i, 100, 'mouse'));
+    bub('id1').dispatchEvent(at('pointerup', 290, 100, 'mouse'));
+    await flush();
+    expect(replying()).toBeNull();
+    expect(root.querySelector('.swipe-ico')).not.toBeNull();   // drawn, but only shown while dragged
+  });
+
+  it('draws no arrow where there is no touch screen, and does nothing there', async () => {
+    open(false);
+    await flush();
+    expect(root.querySelector('.swipe-ico')).toBeNull();
+    drag('id1', 90);
+    await flush();
+    expect(replying()).toBeNull();
+  });
+
+  it('a drag is not also a long press or a double tap', async () => {
+    const h = open();
+    await flush();
+    bub('id1').dispatchEvent(at('pointerdown', 200));
+    const timer = h.timers[h.timers.length - 1]!;
+    for (let i = 1; i <= 10; i++) bub('id1').dispatchEvent(at('pointermove', 200 + 9 * i));
+    expect(timer.live).toBe(false);   // the hold was cancelled by the drag
+    bub('id1').dispatchEvent(at('pointerup', 290));
+    await flush();
+    expect(h.api.react).not.toHaveBeenCalled();
+  });
+});
+
 describe('chat: reactions', () => {
   const minhReacts = (emoji: string, who = [{ id: 'u-minh', displayName: 'Minh' }]) => ({ emoji, users: who });
   const base = [msg(1, 'minh', 'tin của Minh'), msg(2, 'mom', 'tin của mẹ')];

@@ -8,7 +8,8 @@ import { avatarTone, buildThread, callLength, callPreview, callTitle, clock, ini
 import type { LiveControl, LiveHandlers } from '../chat/live.js';
 import * as icons from '../icons.js';
 import { menuItem, menuPoint, placeMenu as placeMenuAt } from '../menu.js';
-import { dismissMenu, leaveInfo, leaveThread } from '../motion.js';
+import { dismissMenu, leaveInfo, leaveThread, motionAllowed } from '../motion.js';
+import { swipeReady, swiped, SWIPE_READY } from '../swipe.js';
 import { avatarUrl, errorBox } from '../ui.js';
 import { markedExcerpt, matches, type Run } from '../search.js';
 import { clip, errorText, formatSize, tooManyAttachments } from '../text.js';
@@ -674,6 +675,8 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const classes = `mrow ${item.mine ? 'out' : 'in'} ${item.first ? 'first' : ''} ${item.last ? 'last' : ''} ${m.deleted ? 'recalled' : ''} ${m.sticker && !m.deleted ? 'sticker' : ''} ${!m.deleted && !m.sticker && !m.reply && !m.attachments?.length && onlyEmoji(m.body) ? 'jumbo' : ''} ${found === m.id ? 'found' : ''} ${fresh.has(m.id) ? 'fresh' : ''}`;
     // A message that has arrived has a menu (answer, copy, and for your own, take back): not one still on its way, nor one taken back.
     const hasMenu = m.state === undefined && m.deleted !== true;
+    // A phone: a round arrow that comes in beside the message as it is dragged (see swipeMove).
+    const swipeIcon = hasMenu && deps.coarsePointer() ? html`<span class="swipe-ico" aria-hidden="true">${icons.reply()}</span>` : nothing;
     const tools = hasMenu ? html`
       <div class="tools" role="group" aria-label=${say.chat.messageOptions}>
         <button class="ib small" type="button" data-quick-reply aria-label=${say.chat.reply} @click=${() => startReply(m)}>${icons.reply()}</button>
@@ -685,11 +688,13 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     const showTime = item.last || sending || m.editedAt !== undefined && m.editedAt !== null && !m.deleted;
     return html`
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
+        ${swipeIcon}
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm') : html`<div class="sp"></div>`) : nothing}
         <div class="bcol">
-        <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
-          @pointermove=${pressMove} @pointerup=${(e: PointerEvent) => { tapEnd(e, m); pressEnd(); }} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply, m.conversationId) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
+        <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => { pressStart(e, m, hasMenu); swipeStart(e, m, item.mine, hasMenu); }}
+          @pointermove=${(e: PointerEvent) => { pressMove(e); swipeMove(e); }} @pointerup=${(e: PointerEvent) => { swipeEnd(true); tapEnd(e, m); pressEnd(); }}
+          @pointercancel=${() => { swipeEnd(false); pressEnd(); }} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply, m.conversationId) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">${say.chat.edited}</span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? say.chat.sending : say.chat.waiting}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? say.chat.seen : say.chat.delivered}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
         ${chips(m)}
         </div>
@@ -1969,6 +1974,53 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (press === null) return;
     deps.timer.clear(press.timer);
     press = null;
+  }
+
+  /**
+   * Swipe to reply (a phone): a finger that drags a message sideways, someone else's to the right and your own to the left, moves it
+   * with the finger and brings in a round reply arrow on the side it leaves; letting go past `SWIPE_READY` starts the reply, as
+   * "Trả lời" in the menu does. A finger that first moves up or down is scrolling, and one that moves the other way is not a swipe.
+   * The row moves through a custom property (the page's policy allows no style attribute) and only while it is dragged.
+   */
+  let swipe: { row: HTMLElement; m: Shown; mine: boolean; x: number; y: number; moved: number; live: boolean } | null = null;
+
+  function swipeStart(e: PointerEvent, m: Shown, mine: boolean, hasMenu: boolean): void {
+    swipeEnd(false);
+    if (!hasMenu || e.pointerType !== 'touch' || !deps.coarsePointer()) return;
+    const row = (e.currentTarget as Element | null)?.closest<HTMLElement>('.mrow') ?? null;
+    if (row !== null) swipe = { row, m, mine, x: e.clientX, y: e.clientY, moved: 0, live: false };
+  }
+
+  function swipeMove(e: PointerEvent): void {
+    if (swipe === null) return;
+    const dx = e.clientX - swipe.x;
+    const dy = e.clientY - swipe.y;
+    if (!swipe.live) {
+      if (Math.hypot(dx, dy) <= PRESS_SLOP_PX) return;
+      if (Math.abs(dy) >= Math.abs(dx) || swiped(dx, swipe.mine) === 0) { swipe = null; return; }
+      swipe.live = true;
+      lastTap = null;
+      swipe.row.classList.add('swiping');
+    }
+    swipe.moved = swiped(dx, swipe.mine);
+    swipe.row.style.setProperty('--swipe', `${swipe.mine ? -swipe.moved : swipe.moved}px`);
+    swipe.row.style.setProperty('--swipe-on', String(Math.min(1, swipe.moved / SWIPE_READY)));
+    swipe.row.toggleAttribute('data-swipe-ready', swipeReady(swipe.moved));
+  }
+
+  /** The finger lifted (`release`) or the touch was taken away (a scroll the browser started, a call). */
+  function swipeEnd(release: boolean): void {
+    const s = swipe;
+    swipe = null;
+    if (s === null || !s.live) return;
+    const from = s.mine ? -s.moved : s.moved;
+    s.row.classList.remove('swiping');
+    s.row.removeAttribute('data-swipe-ready');
+    s.row.style.removeProperty('--swipe');
+    s.row.style.removeProperty('--swipe-on');
+    // The row comes back: it was moved only while dragged, so there is nothing left to undo at rest.
+    if (typeof s.row.animate === 'function' && motionAllowed()) s.row.animate([{ left: `${from}px` }, { left: '0px' }], { duration: 160, easing: 'ease-out' });
+    if (release && swipeReady(s.moved)) startReply(s.m);
   }
 
   /** Two taps on one message this close together (in milliseconds) are a double tap. */
