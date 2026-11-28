@@ -15,6 +15,8 @@ const me = { id: 'u-mom', gomId: 'mom', displayName: 'Mẹ', isOwner: false };
 const C1 = '11111111-1111-4111-8111-111111111111';
 const C2 = '22222222-2222-4222-8222-222222222222';
 const NOW = new Date(Date.UTC(2026, 11, 10, 12, 30));
+/** How far the page's clock has moved on from NOW (a test sets it to make time pass). */
+const later = { ms: 0 };
 const at = (hh: number, mm = 0) => new Date(Date.UTC(2026, 11, 10, hh, mm)).toISOString();
 
 const msg = (seq: number, from: 'mom' | 'minh', body = `m${seq}`, when = at(10, seq), conv = C1): ChatMessage => ({
@@ -48,6 +50,7 @@ interface Harness {
 
 function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbox']['items']; path?: string; chats?: Conversation[]; history?: Record<string, ChatMessage[]>; hasMore?: boolean; api?: Record<string, unknown>; pusher?: Pusher; prepareVideo?: ChatDeps['prepareVideo']; recordVoice?: ChatDeps['recordVoice']; drafts?: Map<string, string>; keyboardImages?: ChatDeps['keyboardImages']; calls?: ChatDeps['calls']; callsOn?: boolean } = {}): Harness {
   const history = opts.history ?? {};
+  later.ms = 0;
   const api = fakeApi({
     me: vi.fn(async () => ok(opts.callsOn ? { ...me, calls: true } : me)),
     // A fresh copy each time, as a real server gives: the page changes what it is handed.
@@ -93,7 +96,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     outbox: () => ({ load: () => outbox.items.map((i) => ({ ...i })), save: (items) => { outbox.items = items.map((i) => ({ ...i })); outbox.saves++; } }),
     live: (h) => { captured = h; return live as unknown as LiveControl; },
     nav: { path: () => nav.path, push: nav.push, replace: nav.replace, back: nav.back, onPop: (cb) => { popCallback = cb; } },
-    now: () => NOW,
+    now: () => new Date(NOW.getTime() + later.ms),
     newId: () => `new-${++n}`,
     coarsePointer: () => coarse.value,
     visible: () => visible.value,
@@ -2931,6 +2934,104 @@ describe('chat: reactions', () => {
     root.querySelector<HTMLButtonElement>('[data-chip="❤️"]')!.click();
     await flush();
     expect(h.api.unreact).toHaveBeenCalledWith(C1, 'id1');
+  });
+
+  describe('a double tap with a finger', () => {
+    const touch = (target: Element, type: 'pointerdown' | 'pointerup', pointerType = 'touch') =>
+      target.dispatchEvent(Object.assign(new Event(type, { bubbles: true }), { pointerType, clientX: 100, clientY: 100 }));
+    const bub = (id: string) => row(id).querySelector('.bub')!;
+    const tap = (target: Element, pointerType = 'touch') => { touch(target, 'pointerdown', pointerType); touch(target, 'pointerup', pointerType); };
+
+    it('hearts the message', async () => {
+      const h = open();
+      await flush();
+      tap(bub('id1'));
+      later.ms = 200;
+      tap(bub('id1'));
+      await flush();
+      expect(h.api.react).toHaveBeenCalledTimes(1);
+      expect(h.api.react).toHaveBeenCalledWith(C1, 'id1', '❤️');
+    });
+
+    it('does nothing for one tap, or for two that are too far apart', async () => {
+      const h = open();
+      await flush();
+      tap(bub('id1'));
+      later.ms = 301;
+      tap(bub('id1'));
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for a tap on one message and then on another', async () => {
+      const h = open();
+      await flush();
+      tap(bub('id1'));
+      tap(bub('id2'));
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('replaces another reaction of yours, and never takes the heart back', async () => {
+      const h = open({}, [{ ...base[0]!, reactions: [minhReacts('👍', [{ id: 'u-minh', displayName: 'Minh' }])] }, base[1]!]);
+      await flush();
+      tap(bub('id1')); tap(bub('id1'));
+      await flush();
+      expect(h.api.react).toHaveBeenCalledWith(C1, 'id1', '❤️');
+      h.api.react.mockClear();
+      const hearted = open({}, [{ ...base[0]!, reactions: [minhReacts('❤️', [{ id: 'u-mom', displayName: 'Mẹ' }, { id: 'u-minh', displayName: 'Minh' }])] }, base[1]!]);
+      await flush();
+      tap(bub('id1')); tap(bub('id1'));
+      await flush();
+      expect(hearted.api.react).not.toHaveBeenCalled();
+      expect(hearted.api.unreact).not.toHaveBeenCalled();
+    });
+
+    it('leaves a tap with a meaning of its own alone: a link, a button', async () => {
+      const h = open({}, [{ ...base[0]!, body: 'xem https://example.com/a nhé' }, base[1]!]);
+      await flush();
+      const link = row('id1').querySelector('a')!;
+      expect(link).not.toBeNull();
+      tap(link); tap(link);
+      tap(row('id1').querySelector('button[data-sender], .bub')!); // a plain tap after them is only a first tap
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('is for a finger only, not a mouse', async () => {
+      const h = open();
+      await flush();
+      tap(bub('id1'), 'mouse'); tap(bub('id1'), 'mouse');
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('does not count a hold (the menu opened) as a tap', async () => {
+      const h = open();
+      await flush();
+      touch(bub('id1'), 'pointerdown');
+      h.timers[h.timers.length - 1]!.fn();   // 450 ms passed: the menu is open
+      touch(bub('id1'), 'pointerup');
+      tap(bub('id1'));
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+
+    it('does not heart a message that is not there yet or was taken back', async () => {
+      const h = open({ send: vi.fn(async () => fail('network', 0)) }, [{ ...base[0]!, deleted: true, body: '' }, base[1]!]);
+      await flush();
+      tap(bub('id1')); tap(bub('id1'));
+      await flush();
+      expect(h.api.react).not.toHaveBeenCalled();
+    });
+  });
+
+  it('puts the chips inside the message row, in the same column as the bubble, so they can sit at its edge', async () => {
+    open({}, [{ ...base[0]!, reactions: [minhReacts('👍')] }, base[1]!]);
+    await flush();
+    const chips = root.querySelector('[data-msg="id1"] .bcol > .reacts');
+    expect(chips).not.toBeNull();
+    expect(chips!.previousElementSibling!.classList.contains('bub')).toBe(true);
   });
 
   it('says why when the server refuses', async () => {

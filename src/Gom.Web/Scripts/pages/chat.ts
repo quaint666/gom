@@ -167,6 +167,8 @@ interface Thread {
 
 /** The reactions the server accepts, in the order they are offered. */
 const EMOJI = ['👍', '❤️', '😆', '😮', '😢', '😡'] as const;
+/** What a double tap on a message chooses. */
+const HEART = EMOJI[1];
 const CONVERSATION_PATH = /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const GAP_NEAR_BOTTOM_PX = 80;
 /** A busy or failing server is tried this many times before the message is called failed. A bad network is waited out for ever. */
@@ -394,7 +396,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
 
   /** The reactions under a message: each emoji with how many chose it; yours is marked, and tapping a chip is choosing it or taking yours back. */
   const chips = (m: Shown) => m.deleted || !m.reactions || m.reactions.length === 0 ? nothing : html`
-    <div class="reacts ${m.sender.id === me?.id ? 'out' : 'in'}">${m.reactions.map((r) => {
+    <div class="reacts">${m.reactions.map((r) => {
       const mine = r.users.some((u) => u.id === me?.id);
       return html`<button class="chip ${mine ? 'mine' : ''}" type="button" data-chip=${r.emoji} aria-pressed=${mine ? 'true' : 'false'}
         aria-label=${`${r.emoji}: ${r.users.map((u) => u.id === me?.id ? say.common.you : u.displayName).join(', ')}`}
@@ -685,12 +687,14 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
       <div class=${classes} data-msg=${m.id} data-state=${m.state ?? 'sent'}>
         ${item.mine ? tools : nothing}
         ${others ? (item.last ? avatar(m.sender.displayName, memberPicture(m.conversationId, m.sender.id), 'sm') : html`<div class="sp"></div>`) : nothing}
+        <div class="bcol">
         <div class="bub" title=${clock(m.createdAt)} @contextmenu=${(e: MouseEvent) => onContext(e, m, hasMenu)} @pointerdown=${(e: PointerEvent) => pressStart(e, m, hasMenu)}
-          @pointermove=${pressMove} @pointerup=${pressEnd} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply, m.conversationId) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
+          @pointermove=${pressMove} @pointerup=${(e: PointerEvent) => { tapEnd(e, m); pressEnd(); }} @pointercancel=${pressEnd} @pointerleave=${pressEnd}>${others && item.first ? html`<button class="sender" type="button" data-sender=${m.sender.id} @click=${(e: MouseEvent) => { e.stopPropagation(); openCard(m.sender.id); }}>${m.sender.displayName}</button>` : nothing}${m.deleted ? html`<span class="txt gone">${recalledText(item.mine, others ? m.sender.displayName : null)}</span>` : html`${m.reply ? quote(m.reply, m.conversationId) : nothing}${m.sticker ? html`<img class="stk" data-sticker=${m.sticker} src=${stickerUrl(m.sticker)} alt=${say.common.stickerNamed(stickerName(m.sticker))} width="120" height="120" draggable="false">` : nothing}${attachmentsOf(m)}${m.body === '' ? nothing : html`<span class="txt">${words(m.body)}</span>`}`}
           ${showTime ? html`<span class="ts">${m.editedAt && !m.deleted ? html`<span class="edited">${say.chat.edited}</span>` : nothing}${sending ? html`<span class="sending" role="img" aria-label=${m.state === 'sending' ? say.chat.sending : say.chat.waiting}>${icons.clock()}</span>` : clock(m.createdAt)}${tick === null ? nothing : html` <span class=${`tick t-${tick}`} role="img" aria-label=${tick === 'seen' ? say.chat.seen : say.chat.delivered}>${tick === 'seen' ? icons.checks() : icons.check()}</span>`}</span>` : html`<span class="sr-only">${clock(m.createdAt)}</span>`}</div>
+        ${chips(m)}
+        </div>
         ${!item.mine ? tools : nothing}
       </div>
-      ${chips(m)}
       ${seen === null ? nothing : html`<div class="seen">${icons.checks()}<span>${seen}</span></div>`}
       ${m.state === 'queued' ? html`<div class="queued-note">${m.error?.error === 'network' || m.error === undefined ? say.chat.willSendOnline : say.chat.willRetry}</div>` : nothing}
       ${m.state === 'failed' ? html`
@@ -1965,6 +1969,26 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (press === null) return;
     deps.timer.clear(press.timer);
     press = null;
+  }
+
+  /** Two taps on one message this close together (in milliseconds) are a double tap. */
+  const DOUBLE_TAP_MS = 300;
+  let lastTap: { id: string; at: number } | null = null;
+
+  /**
+   * A double tap with a finger hearts the message, as Messenger does: it adds ❤️ (and replaces another reaction of yours) and never takes
+   * one back. A tap that has a meaning of its own (a picture, a link, a quote, a button, a player) is not counted. Called as the finger
+   * lifts, before the press is ended: a press is kept only for a finger, and still there means it was a plain tap, not a hold or a scroll.
+   */
+  function tapEnd(e: PointerEvent, m: Shown): void {
+    if (press === null) return;
+    const first = lastTap;
+    lastTap = null;
+    if ((e.target as Element | null)?.closest?.('a, button, video, audio')) return;
+    const at = deps.now().getTime();
+    if (first === null || first.id !== m.id || at - first.at > DOUBLE_TAP_MS) { lastTap = { id: m.id, at }; return; }
+    if (m.reactions?.some((r) => r.emoji === HEART && r.users.some((u) => u.id === me?.id))) return;
+    void setReaction(m, HEART);
   }
 
   // ---- editing
