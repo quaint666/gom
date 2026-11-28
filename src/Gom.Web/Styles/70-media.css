@@ -1,0 +1,146 @@
+/* pictures and files in a message */
+/* --media-w: how wide pictures and videos may be. --w and --r, set by the page from a picture's or video's own size, give it its place
+   before it has loaded, so the conversation does not move under the reader. */
+.pics, .vid { --media-w: 320px; }
+.pics { --pic-h: 360px; display: grid; gap: 3px; margin: 0 0 4px; max-inline-size: var(--media-w); border-radius: 10px; overflow: hidden; }
+.pics.n1 { grid-template-columns: 1fr; }
+.pics.n2, .pics.n4 { grid-template-columns: 1fr 1fr; }
+.pics.n3, .pics.n5 { grid-template-columns: 1fr 1fr 1fr; }
+.pics.n1 { inline-size: fit-content; }
+.pics.n1 .pic { inline-size: auto; }
+.pic { display: block; padding: 0; border: 0; background: var(--border); cursor: zoom-in; inline-size: 100%; overflow: hidden; }
+.pic img { display: block; inline-size: 100%; block-size: auto; object-fit: cover; }
+.pics:not(.n1) .pic { aspect-ratio: 1; }
+.pics:not(.n1) .pic img { block-size: 100%; }
+/* A grid is as wide as it may be: with only percentages inside, Firefox and Safari made it 0 wide, so its pictures did not show. */
+.pics:not(.n1) { inline-size: var(--media-w); max-inline-size: 100%; }
+.pic.moving { position: relative; cursor: default; }
+.pic-open { display: block; padding: 0; border: 0; background: none; inline-size: 100%; block-size: 100%; cursor: zoom-in; }
+.moving-toggle { position: absolute; inset-block-end: 6px; inset-inline-start: 6px; display: flex; align-items: center; gap: 4px; min-block-size: 36px;
+  padding: 0 10px 0 8px; border: 0; border-radius: 18px; background: rgb(0 0 0 / .6); color: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.moving-toggle .i { inline-size: 16px; block-size: 16px; }
+/* A picture or file the owner trimmed: its place stays, saying so, with nothing to open. */
+.pic.removed { display: grid; place-items: center; min-block-size: 96px; padding: 8px; cursor: default; border: 1px dashed var(--border); background: transparent; color: var(--muted); font-size: 12px; text-align: center; }
+.pics.n1 .pic.removed { inline-size: 200px; }
+.filecard.removed { border: 1px dashed var(--border); background: transparent; color: var(--muted); }
+/* A video in its message: the browser's player at the video's own shape, at most as wide as pictures and not taller than most of
+   the screen, with how long it is in a corner until it plays. */
+.vid { position: relative; inline-size: fit-content; max-inline-size: min(var(--media-w), 100%); margin: 0 0 4px; border-radius: 10px; overflow: hidden; background: #000; }
+.vid video { display: block; inline-size: min(var(--w), var(--media-w), calc(60vh * var(--r))); max-inline-size: 100%; block-size: auto; max-block-size: 60vh; }
+.vid-len { position: absolute; inset-block-start: 6px; inset-inline-end: 6px; padding: 2px 6px; border-radius: 6px; background: rgb(0 0 0 / .6); color: #fff; font-size: 12px; font-weight: 600; pointer-events: none; }
+.vid:has(video:playing) .vid-len { display: none; }   /* where :playing is known; elsewhere the length stays */
+.pic.removed.vid { inline-size: 200px; }
+/* A play mark over a video's picture: in the tray and in the side panel's grid. */
+.tray-play { position: absolute; inset: 0; margin: auto; display: grid; place-items: center; inline-size: 32px; block-size: 32px; border-radius: 50%; background: rgb(0 0 0 / .55); color: #fff; pointer-events: none; }
+.tray-play .i { inline-size: 18px; block-size: 18px; }
+.info-media .vtile { position: relative; background: #000; }
+.filecard.removed:hover { background: transparent; }
+/* One picture at its own shape (--w, --r), so it has its place before it loads; without them, auto. */
+.pics.n1 .pic img { max-block-size: var(--pic-h); inline-size: min(var(--w), var(--media-w), calc(var(--pic-h) * var(--r))); max-inline-size: 100%; }
+.filecard { display: flex; align-items: center; gap: 10px; min-inline-size: 200px; padding: 8px 10px; margin-block: 2px; border-radius: 10px; background: color-mix(in srgb, var(--surface) 70%, transparent); color: var(--text); text-decoration: none; }
+.filecard:hover { background: var(--hover); }
+/* A sound file (chat/audio.ts): play or pause, how far it has played, and a save button; in your own colour, on your own messages. */
+.audiocard { display: flex; align-items: center; gap: 10px; min-inline-size: 240px; max-inline-size: 320px; padding: 6px 4px 6px 6px; margin-block: 2px; }
+.audiocard .pb { display: grid; place-items: center; flex: none; inline-size: 40px; block-size: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--btn); color: var(--on-btn); cursor: pointer; }
+.audiocard .pb .i { inline-size: 18px; block-size: 18px; fill: currentColor; }
+.audiocard .when-playing, .audiocard[data-playing] .when-paused { display: none; }
+.audiocard[data-playing] .when-playing { display: contents; }
+.audiocard .when-paused { display: contents; }
+.audiocard .mid { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: 2px; }
+.audiocard b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audiocard small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.out .audiocard small { color: var(--mine-soft, var(--muted)); }
+.audiocard .seek { inline-size: 100%; margin: 0; accent-color: var(--link); }
+.out .audiocard .seek { accent-color: var(--mine-ink, var(--link)); }
+.audiocard audio { display: none; }
+.filecard .fi { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
+.filecard b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filecard small { color: var(--muted); }
+.appwarn { display: flex; gap: 6px; align-items: flex-start; max-inline-size: 320px; margin-block: 4px 2px; padding: 6px 8px; border: 1px solid var(--warn-border); border-radius: 10px;
+  background: var(--warn-bg); color: var(--warn-text); font-size: 12.5px; line-height: 1.35; }
+.appwarn svg { inline-size: 16px; block-size: 16px; flex: none; margin-block-start: 1px; }
+.mrow .bub:has(> .pics:only-child), .mrow .bub:has(> .pics:first-child:nth-last-child(2)) { padding: 4px; }
+.mrow .bub > .pics:only-child { margin-block-end: 0; }
+
+/* what is chosen for the next message */
+.atray { display: flex; gap: 8px; padding: 8px 12px; overflow-x: auto; flex: none; background: var(--surface); border-block-start: 1px solid var(--border); }
+.tray-item { position: relative; flex: none; inline-size: 84px; block-size: 84px; border-radius: 10px; overflow: hidden; background: var(--bg); border: 1px solid var(--border); }
+.tray-item img { inline-size: 100%; block-size: 100%; object-fit: cover; display: block; }
+.tray-file { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; inline-size: 100%; block-size: 100%; padding: 6px; font-size: 11px; color: var(--muted); text-align: center; }
+.tray-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
+.tray-item progress { position: absolute; inset-inline: 6px; inset-block-end: 6px; inline-size: calc(100% - 12px); block-size: 6px; }
+.tray-item.failed { inline-size: 220px; border-color: var(--err-border); background: var(--err-bg); color: var(--err-text); }
+.tray-err { padding: 8px; font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+.tray-x { position: absolute; inset-block-start: 2px; inset-inline-end: 2px; inline-size: 26px; block-size: 26px; background: rgb(0 0 0 / .55); color: #fff; }
+.tray-x .i { inline-size: 14px; block-size: 14px; }
+.file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.composer .attach { flex: none; }
+/* Recording a voice message: in the composer's place, throw away · a red dot and the time · send. */
+.recbar { align-items: center; }
+.recbar .rec-dot { inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--err-border); flex: none; }
+.recbar .rec-time { flex: 1; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) { .recbar .rec-dot { animation: blink 1s steps(2, jump-none) infinite; } }
+@keyframes blink { 50% { opacity: .25; } }
+/* Where the composer was, in a one-to-one conversation whose other person deleted their account. */
+.closed-note { margin: 0; padding: 14px 16px max(14px, env(safe-area-inset-bottom)); background: var(--surface); border-block-start: 1px solid var(--border); color: var(--muted); font-size: 14px; text-align: center; }
+
+/* the big picture: a modal dialog over everything, with a strip of pictures that the browser scrolls and snaps one at a time */
+.viewer { position: fixed; inset: 0; inline-size: 100vw; block-size: 100dvh; max-inline-size: none; max-block-size: none; margin: 0; padding: 0; border: 0;
+  background: #000; color: #fff; outline: 0; overflow: hidden; overscroll-behavior: contain; }
+.viewer::backdrop { background: transparent; overflow: hidden; overscroll-behavior: contain; }
+.vtrack { display: flex; inline-size: 100%; block-size: 100%; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
+  scrollbar-width: none; touch-action: pan-x pinch-zoom; outline: 0; }
+.vtrack::-webkit-scrollbar { display: none; }
+.vslide { flex: 0 0 100%; scroll-snap-align: center; scroll-snap-stop: always; display: grid; place-items: center; padding-block: 56px 96px; }
+.viewer .vimg { max-inline-size: 100%; max-block-size: calc(100dvh - 152px); inline-size: auto; block-size: auto; object-fit: contain; }
+.viewer-bar { position: absolute; inset-block-start: 0; inset-inline: 0; display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 8px 12px; z-index: 1;
+  background: linear-gradient(rgb(0 0 0 / .55), transparent); }
+.viewer-bar span { margin-inline-end: auto; font-size: 14px; }
+.viewer .ib { color: #fff; background: rgb(255 255 255 / .12); }
+.viewer .ib:hover { background: rgb(255 255 255 / .25); color: #fff; }
+.viewer .vprev, .viewer .vnext { position: absolute; inset-block-start: 50%; translate: 0 -50%; z-index: 1; }
+.viewer .vprev { inset-inline-start: 12px; }
+.viewer .vnext { inset-inline-end: 12px; }
+.viewer-foot { position: absolute; inset-block-end: 0; inset-inline: 0; padding: 20px 16px max(12px, env(safe-area-inset-bottom)); z-index: 1;
+  background: linear-gradient(transparent, rgb(0 0 0 / .65)); pointer-events: none; }
+.vwho { display: flex; align-items: baseline; gap: 8px; }
+.vwho small { color: rgb(255 255 255 / .75); }
+.vcap { margin: 4px 0 0; max-block-size: 4.5em; overflow-y: auto; overflow-wrap: anywhere; pointer-events: auto; }
+.vcap a { color: #fff; }
+/* On a computer, every picture of the conversation small along the bottom, the current one outlined; a click goes to it. A phone
+   swipes instead, and has no room for it. */
+.vthumbs { display: none; }
+@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
+  .viewer:has(.vthumbs) .vslide { padding-block-end: 172px; }
+  .viewer:has(.vthumbs) .vimg { max-block-size: calc(100dvh - 228px); }
+  .viewer:has(.vthumbs) .viewer-foot { inset-block-end: 76px; }
+  .vthumbs { position: absolute; inset-inline: 0; inset-block-end: 0; z-index: 2; display: flex; gap: 6px; padding: 10px 16px 12px; overflow-x: auto; scrollbar-width: thin; background: rgb(0 0 0 / .55); }
+  .vthumbs::before, .vthumbs::after { content: ""; margin: auto; }   /* centred while they fit; from the start once they scroll */
+  .vthumb { position: relative; flex: none; inline-size: 56px; block-size: 56px; padding: 0; border: 2px solid transparent; border-radius: 8px; overflow: hidden; background: #222; opacity: .55; cursor: pointer; }
+  .vthumb:hover { opacity: .85; }
+  .vthumb[aria-current="true"] { opacity: 1; border-color: #fff; }
+  .vthumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+  .vthumb .tray-play { inline-size: 24px; block-size: 24px; }
+}
+@media (pointer: coarse) { .viewer .vprev, .viewer .vnext { display: none; } }
+
+/* the panel beside a thread: pictures and files shared so far */
+.info-media { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.info-media .pic { aspect-ratio: 1; border-radius: 6px; }
+.info-media .pic img { block-size: 100%; }
+
+/* an address in a message */
+a.ext { color: var(--link); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+a.ext:hover { text-decoration-thickness: 2px; }
+
+/* the card under a message for its first address */
+
+/* the owner's form for a new invite */
+.invite-form { display: grid; gap: 12px; }
+select { inline-size: 100%; min-block-size: 44px; padding-inline: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; font-size: 16px; }
+select:focus-visible { outline-offset: 0; }
+.invite small { display: block; color: var(--muted); }
+
+/* a line in a group's thread: who was added, who left, a new name */
+.call-row { display: flex; margin-block: 4px; }
+.call-row.out { justify-content: flex-end; }

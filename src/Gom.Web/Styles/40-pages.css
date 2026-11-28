@@ -1,0 +1,82 @@
+/* the app header, with the Gom button that goes home */
+.brand { flex: 1; display: flex; align-items: center; gap: 8px; min-block-size: 44px; padding-inline: 8px; color: var(--text); font-size: 18px; font-weight: 700; text-decoration: none; border-radius: 10px; }
+.brand .i { color: var(--link); inline-size: 26px; block-size: 26px; }
+.brand:hover { background: var(--hover); }
+.welcome { color: var(--muted); }
+.welcome h2 { color: var(--text); }
+
+/* search fields (the list of conversations, contacts, the group picker) */
+.searchfield { min-block-size: 40px; border-radius: 20px; background: var(--bg); color: var(--muted); }
+.searchfield .i { inline-size: 18px; block-size: 18px; }
+.searchfield input { min-block-size: 38px; font-size: 16px; }
+.list-search { margin: 8px 14px; }
+.searchbar .searchfield { min-block-size: 36px; border-radius: 18px; padding-inline: 12px; }
+.searchbar .searchfield input { min-block-size: 34px; font-size: 16px; }
+.searchfield:focus-within { box-shadow: none; outline: 2px solid var(--ring); outline-offset: 1px; }
+.clear { display: inline-grid; place-items: center; inline-size: 28px; block-size: 28px; flex: none; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; }
+.clear:hover { background: var(--hover); color: var(--text); }
+.clear .i { inline-size: 16px; block-size: 16px; }
+.nomatch { padding: 14px; text-align: center; }
+
+/* contacts: two tabs, a handful of rows */
+.addbox > summary { list-style: none; cursor: pointer; }
+.addbox > summary::-webkit-details-marker { display: none; }
+.addbox[open] > summary { margin-block-end: 8px; }
+.addbox .card { margin-block-end: 8px; }
+.tabs { display: flex; gap: 4px; padding: 4px; background: var(--tint); border-radius: 12px; }
+.tab { flex: 1; min-block-size: 40px; border: 0; border-radius: 9px; background: none; color: var(--tint-text); font: inherit; font-weight: 600; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
+.tab .count { color: var(--muted); font-weight: 400; }
+.person { flex-wrap: wrap; gap: 8px; color: var(--text); text-decoration: none; }
+.person:is(a):hover { background: var(--hover); }
+.rowmain { flex: 1; min-inline-size: 0; display: flex; align-items: center; gap: 12px; min-block-size: 48px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.rowmain .t { flex: 1; min-inline-size: 0; }
+.rowmain .t b, .person .t b { display: block; }
+.person .t { flex: 1; min-inline-size: 0; }
+.person .t small { color: var(--muted); font-size: 13px; }
+.pick label span { min-inline-size: 0; overflow-wrap: anywhere; }
+[role="tabpanel"] { display: flex; flex-direction: column; gap: 14px; }
+
+/* settings: the profile card and the choice of appearance */
+.profile { display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+.profile .t b { display: block; font-size: 18px; overflow-wrap: anywhere; }
+.profile .t small { color: var(--muted); }
+.choices { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.choices legend { padding: 0; }
+.choice { display: flex; align-items: center; gap: 12px; min-block-size: 48px; padding-inline: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.choice input { inline-size: 22px; block-size: 22px; accent-color: var(--btn); flex: none; }
+.choice label { flex: 1; min-block-size: 44px; display: flex; align-items: center; gap: 10px; margin: 0; font-weight: 400; }
+.choice:has(input:checked) { border-color: var(--btn); background: var(--tint); }
+/* The colours in Settings: each dot carries its palette's code, so it takes that block (in 00-tokens.css): a colour is written once. */
+.swatches { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; }
+.swatches legend { padding: 0; margin-block-end: 8px; }
+.swatches .hint { grid-column: 1 / -1; }
+.swatch { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-block-size: 44px; font-size: 12.5px; color: var(--muted); text-align: center; cursor: pointer; }
+.swatch input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
+.swatch .dot { inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--mine, var(--btn)); box-shadow: inset 0 0 0 1px rgb(0 0 0 / .08); }
+.swatch:has(input:checked) { color: var(--text); font-weight: 600; }
+.swatch:has(input:checked) .dot { outline: 3px solid var(--btn); outline-offset: 2px; }
+.swatch:has(input:focus-visible) .dot { outline: 3px solid var(--ring); outline-offset: 4px; }
+/* The backgrounds in Settings: each tile is the same .backdrop the conversation draws. */
+.patterns { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.patterns legend { padding: 0; margin-block-end: 8px; }
+.patterns .hint { grid-column: 1 / -1; }
+.pattern-tile { position: relative; display: block; block-size: 76px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); cursor: pointer; }
+.pattern-tile input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
+.pattern-tile .backdrop { position: absolute; inset: 0; }
+/* The name keeps 6px from both sides of the tile: on a narrow phone tile a two-word name wraps, with room above and below. */
+.pattern-tile .name { position: absolute; inset-inline-start: 6px; inset-block-end: 6px; max-inline-size: calc(100% - 12px); box-sizing: border-box; padding: 2px 6px; border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 1.25; }
+.pattern-tile:has(input:checked) { outline: 3px solid var(--btn); outline-offset: 2px; }
+.pattern-tile:has(input:focus-visible) { outline: 3px solid var(--ring); outline-offset: 4px; }
+/* A conversation's own colour and background (its info panel): the same dots and tiles, "each person's own" first as a dashed ring. */
+.look h2 { margin: 0 0 4px; font-size: 18px; }
+.look .tabs { margin-block: 12px; }
+.look-body { margin-block-end: 14px; }
+.look .btn { inline-size: 100%; }
+.swatch .dot.each { background: none; box-shadow: none; border: 2px dashed var(--muted); }
+.look-dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--btn); flex: none; align-self: center; }
+
+/* pressed states: a touch answers at once */
+.item:active, .mi:active, .brand:active, .person:is(a):active { background: var(--press); }
+.ib:active, .clear:active { background: var(--press); }
+
