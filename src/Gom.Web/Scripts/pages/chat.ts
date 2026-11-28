@@ -172,6 +172,12 @@ const EMOJI = ['👍', '❤️', '😆', '😮', '😢', '😡'] as const;
 const HEART = EMOJI[1];
 const CONVERSATION_PATH = /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const GAP_NEAR_BOTTOM_PX = 80;
+/** "Is typing" stays on screen this long after the last sign of it (the page repeats the sign while its person types). */
+const TYPING_SHOWN_MS = 5000;
+/** While someone types, their page says so this often (the server allows one about every 2.5 s). */
+const TYPING_REPEAT_MS = 3000;
+/** The most names the typing line gives; the rest are counted. */
+const TYPING_NAMES = 3;
 /** A busy or failing server is tried this many times before the message is called failed. A bad network is waited out for ever. */
 const MAX_SERVER_TRIES = 5;
 const MAX_RETRY_WAIT_MS = 30_000;
@@ -218,6 +224,10 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let found: string | null = null;
   /** Conversations whose catch-up the server turned away and that are waiting to ask again. */
   const slowWaiting = new Set<string>();
+  /** Who is typing, per conversation, in the order they began (the line does not shuffle), each with the timer that ends it. */
+  const typers = new Map<string, Map<string, { name: string; timer: number }>>();
+  /** When this page last said that you are typing, per conversation. */
+  const typedAt = new Map<string, number>();
   /** What is typed in the search above the list of conversations. */
   let filter = '';
   /** Your friends, asked for when a search above the list starts, so it finds a friend you have not written to yet. */
@@ -1153,6 +1163,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         ${t.below > 0 ? html`<button class="jump" type="button" data-jump-bottom @click=${() => { t.below = 0; t.stick = true; update(); }}>${icons.down()}<span>${say.chat.newBelow(t.below)}</span></button>` : nothing}
         ${forwarding === null ? nothing : forwardPanel(forwarding)}
         ${cardView()}
+        ${c === undefined ? nothing : typingLine(c.id, c.kind)}
         ${c?.peer?.deleted ? html`
           <p class="closed-note" role="status" data-peer-deleted>${say.chat.peerDeletedNote}</p>` : html`
           ${t.editing === null ? nothing : html`
@@ -1465,8 +1476,48 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     if (openId === null) return;
     const wasEmpty = threadOf(openId).draft.trim() === '';
     setDraft(openId, field.value);
+    if (field.value.trim() !== '' && threadOf(openId).editing === null) sayTyping(openId);
     if (wasEmpty !== (field.value.trim() === '') && deps.recordVoice !== undefined) update();   // the send button and the microphone trade places
   }
+
+  /** Tells the others that you are typing, at most every `TYPING_REPEAT_MS`. Not when you have turned read receipts off (it is the same switch). */
+  function sayTyping(id: string): void {
+    if (me?.readReceipts === false) return;
+    const now = deps.now().getTime();
+    const last = typedAt.get(id);
+    if (last !== undefined && now - last < TYPING_REPEAT_MS) return;
+    typedAt.set(id, now);
+    live?.typing(id);
+  }
+
+  /** Someone else is typing here: shown until `TYPING_SHOWN_MS` pass with no further sign, or their message arrives. */
+  function showTyping(conversation: string, userId: string, name: string): void {
+    if (userId === me?.id || me?.readReceipts === false) return;
+    let here = typers.get(conversation);
+    if (here === undefined) typers.set(conversation, here = new Map());
+    const before = here.get(userId);
+    if (before !== undefined) deps.timer.clear(before.timer);
+    here.set(userId, { name, timer: deps.timer.set(() => stopTyping(conversation, userId), TYPING_SHOWN_MS) });   // an old key keeps its place
+    if (conversation === openId) update();
+  }
+
+  function stopTyping(conversation: string, userId: string): void {
+    const here = typers.get(conversation);
+    const who = here?.get(userId);
+    if (here === undefined || who === undefined) return;
+    deps.timer.clear(who.timer);
+    here.delete(userId);
+    if (conversation === openId) update();
+  }
+
+  /** The line above the message field. Its height is always there (nothing moves when it fills); a one-to-one chat leaves out the name. */
+  const typingLine = (id: string, kind: Conversation['kind']): TemplateResult | typeof nothing => {
+    if (me?.readReceipts === false) return nothing;
+    const who = [...(typers.get(id)?.values() ?? [])];
+    const text = who.length === 0 ? '' : kind === 'direct' ? say.chat.typingDirect
+      : say.chat.typing(who.slice(0, TYPING_NAMES).map((w) => w.name).join(', '), Math.min(who.length, TYPING_NAMES), Math.max(0, who.length - TYPING_NAMES));
+    return html`<div class="typing" data-typing role="status">${who.length === 0 ? nothing : html`<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span>${text}</span>`}</div>`;
+  };
 
   /** The words in the message field, kept for a reload too; not while they are a sent message's being changed. */
   function setDraft(id: string, text: string): void {
@@ -2765,7 +2816,11 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
         if (t?.loaded) { live?.sync(openId, t.cursor); void fetchReads(openId); }
       });
     },
-    event: (conversation, event) => apply(conversation, event),
+    event: (conversation, event) => {
+      if (event.kind === 'created') stopTyping(conversation, event.message.sender.id);   // what they were writing has arrived
+      apply(conversation, event);
+    },
+    typing: (conversation, userId, name) => showTyping(conversation, userId, name),
     conversations() {
       void refreshList();
       if (openId !== null) void fetchReads(openId);   // a switch may have been flipped by someone

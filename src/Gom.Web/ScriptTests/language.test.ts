@@ -39,6 +39,14 @@ describe('the English words', () => {
     for (const [key, text] of english) expect(text.trim(), key).not.toBe('');
   });
 
+  it('say who is typing in English, with "is" for one and "are" for more, and count the rest', () => {
+    expect(en.chat.typing('Bảo', 1, 0)).toBe('Bảo is typing…');
+    expect(en.chat.typing('Bảo, Mai', 2, 0)).toBe('Bảo, Mai are typing…');
+    expect(en.chat.typing('Bảo, Mai, Lan', 3, 1)).toBe('Bảo, Mai, Lan and 1 other are typing…');
+    expect(en.chat.typing('Bảo, Mai, Lan', 3, 2)).toBe('Bảo, Mai, Lan and 2 others are typing…');
+    expect(en.chat.typingDirect).toBe('typing…');
+  });
+
   it('count in English: one, or many', () => {
     expect(en.common.members(1)).toBe('1 member');
     expect(en.common.members(2)).toBe('2 members');

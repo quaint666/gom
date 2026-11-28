@@ -34,7 +34,7 @@ const withLast = (m: ChatMessage, extra: Partial<Conversation> = {}) =>
 interface Harness {
   api: ReturnType<typeof fakeApi>;
   handlers: () => LiveHandlers;
-  live: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; sync: ReturnType<typeof vi.fn>; retryNow: ReturnType<typeof vi.fn> };
+  live: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; sync: ReturnType<typeof vi.fn>; typing: ReturnType<typeof vi.fn>; retryNow: ReturnType<typeof vi.fn> };
   nav: { path: string; push: ReturnType<typeof vi.fn>; replace: ReturnType<typeof vi.fn>; back: ReturnType<typeof vi.fn<() => void>>; pop: () => void; history: string[] };
   go: ReturnType<typeof vi.fn>;
   visible: { value: boolean };
@@ -59,7 +59,7 @@ function start(opts: { lastSeq?: Record<string, number>; outbox?: Harness['outbo
     ...(opts.api ?? {}),
   });
   let captured: LiveHandlers | null = null;
-  const live = { start: vi.fn(), stop: vi.fn(), sync: vi.fn(), retryNow: vi.fn() };
+  const live = { start: vi.fn(), stop: vi.fn(), sync: vi.fn(), typing: vi.fn(), retryNow: vi.fn() };
   let popCallback: () => void = () => undefined;
   // Like the browser's history: the path is location.pathname (no #part), and going back fires the pop handler.
   const nav = {
@@ -2880,6 +2880,125 @@ describe('chat: pinned messages', () => {
     expect(history).toHaveBeenCalledTimes(2);
     expect(history).toHaveBeenLastCalledWith(C1, 2, 'id1');
     expect(root.querySelector('[data-msg="id1"]')!.classList.contains('found')).toBe(true);
+  });
+});
+
+describe('chat: who is typing', () => {
+  const base = [msg(1, 'minh', 'tin của Minh')];
+  const open = (kind: 'direct' | 'group' = 'group', meExtra: Record<string, unknown> = {}) => {
+    const chats = [chat(C1, 'Minh', { lastSeq: 1, kind })];
+    return start({ path: `/c/${C1}`, chats, history: { [C1]: base }, api: { me: vi.fn(async () => ok({ ...me, ...meExtra })) } });
+  };
+  const line = () => root.querySelector('[data-typing]')!;
+  const typing = (h: Harness, name: string, id = `u-${name}`) => h.handlers().typing?.(C1, id, name);
+  const field = () => root.querySelector<HTMLTextAreaElement>('.composer textarea')!;
+  const type = (text: string) => { const f = field(); f.value = text; f.dispatchEvent(new Event('input', { bubbles: true })); };
+
+  it('shows who is typing in a group, in the order they began, above the message field', async () => {
+    const h = open();
+    await flush();
+    expect(text(line())).toBe('');
+    typing(h, 'Bảo'); typing(h, 'Mai');
+    await flush();
+    expect(text(line())).toBe('Bảo, Mai đang nhập…');
+    expect(line().compareDocumentPosition(root.querySelector('.composer')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    typing(h, 'Bảo');   // a repeat keeps its place
+    await flush();
+    expect(text(line())).toBe('Bảo, Mai đang nhập…');
+  });
+
+  it('gives at most three names, then how many more', async () => {
+    const h = open();
+    await flush();
+    for (const n of ['Bảo', 'Mai', 'Lan']) typing(h, n);
+    await flush();
+    expect(text(line())).toBe('Bảo, Mai, Lan đang nhập…');
+    typing(h, 'Hà'); typing(h, 'Sơn');
+    await flush();
+    expect(text(line())).toBe('Bảo, Mai, Lan và 2 người khác đang nhập…');
+  });
+
+  it('says only "đang nhập…" in a one-to-one chat, where the header names them', async () => {
+    const h = open('direct');
+    await flush();
+    typing(h, 'Minh');
+    await flush();
+    expect(text(line())).toBe('đang nhập…');
+  });
+
+  it('stops showing someone after five seconds with no sign, and a new sign starts the five again', async () => {
+    const h = open();
+    await flush();
+    typing(h, 'Bảo');
+    await flush();
+    const first = h.timers.filter((t) => t.ms === 5000 && t.live);
+    expect(first).toHaveLength(1);
+    typing(h, 'Bảo');                       // the timer is replaced, not added to
+    expect(h.timers.filter((t) => t.ms === 5000 && t.live)).toHaveLength(1);
+    expect(first[0]!.live).toBe(false);
+    h.timers.filter((t) => t.ms === 5000 && t.live)[0]!.fn();
+    await flush();
+    expect(text(line())).toBe('');
+  });
+
+  it('stops showing someone the moment their message arrives', async () => {
+    const h = open();
+    await flush();
+    typing(h, 'Minh', 'u-minh');
+    await flush();
+    expect(text(line())).not.toBe('');
+    h.handlers().event(C1, { seq: 2, kind: 'created', message: msg(2, 'minh', 'xong rồi') });
+    await flush();
+    expect(text(line())).toBe('');
+  });
+
+  it('ignores your own typing, and shows nothing for a conversation that is not open', async () => {
+    const h = open();
+    await flush();
+    typing(h, 'Mẹ', 'u-mom');
+    h.handlers().typing?.('another-chat', 'u-x', 'Xa');
+    await flush();
+    expect(text(line())).toBe('');
+  });
+
+  it('shows nothing, and keeps no room for it, when you have turned read receipts off', async () => {
+    const h = open('group', { readReceipts: false });
+    await flush();
+    typing(h, 'Bảo');
+    await flush();
+    expect(root.querySelector('[data-typing]')).toBeNull();
+  });
+
+  it('tells the others that you are typing, at most every three seconds, and not for an empty field', async () => {
+    const h = open();
+    await flush();
+    type('');
+    expect(h.live.typing).not.toHaveBeenCalled();
+    type('x');
+    expect(h.live.typing).toHaveBeenCalledWith(C1);
+    type('xy'); type('xyz');
+    expect(h.live.typing).toHaveBeenCalledTimes(1);
+    later.ms = 3000;
+    type('xyzw');
+    expect(h.live.typing).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not say you are typing with read receipts off', async () => {
+    const h = open('group', { readReceipts: false });
+    await flush();
+    type('x');
+    expect(h.live.typing).not.toHaveBeenCalled();
+  });
+
+  it('does not say you are typing while you change a sent message', async () => {
+    const h = start({ path: `/c/${C1}`, chats: [chat(C1, 'Minh', { lastSeq: 1, kind: 'group' })], history: { [C1]: [msg(1, 'mom', 'của mình')] }, api: {} });
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-msg="id1"] button[data-menu]')!.click();
+    await flush();
+    root.querySelector<HTMLButtonElement>('button[data-edit]')!.click();
+    await flush();
+    type('đã sửa');
+    expect(h.live.typing).not.toHaveBeenCalled();
   });
 });
 

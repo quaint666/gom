@@ -22,6 +22,8 @@ public static class Frames
     public static byte[] Hidden(Guid conversation, Guid message) => Json(new { t = "hidden", c = conversation, m = message });
     /// <summary>"This person deleted the conversation for themself up to here": their other devices drop what they hold of it.</summary>
     public static byte[] Cleared(Guid conversation, long seq) => Json(new { t = "cleared", c = conversation, seq });
+    /// <summary>"This person is typing here": shown for a few seconds by the page, never kept. <paramref name="name"/> is their display name.</summary>
+    public static byte[] Typing(Guid conversation, Guid person, string name) => Json(new { t = "typing", c = conversation, u = person, n = name });
     /// <summary>"Still here", sent every few seconds. The page closes and reconnects if nothing at all arrives for a minute.</summary>
     public static byte[] Heartbeat() => Json(new { t = "hb" });
     /// <summary>"The pinned messages of this conversation changed": ask for them again.</summary>

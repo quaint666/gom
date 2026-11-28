@@ -32,6 +32,10 @@ public sealed class ChatOptions
     public double SyncPerSecond { get; set; } = 2;
     /// <summary>Requests turned away in a row before the socket is closed (1013); a request that is let through starts the count again. A page that waits as told never gets near this.</summary>
     public int MaxSlowSyncs { get; set; } = 5;
+    /// <summary>How many "typing" frames one socket may send in a quick burst. A page sends one every few seconds while its person types, so this is plenty.</summary>
+    public int TypingBurst { get; set; } = 3;
+    /// <summary>After the burst, how many more per second. A frame over the limit is dropped without a word: it is only a hint, so it never costs the socket anything.</summary>
+    public double TypingPerSecond { get; set; } = 0.4;
     /// <summary>How many messages may be pinned in one conversation.</summary>
     public int MaxPins { get; set; } = 3;
     /// <summary>How many conversations one person may pin to the top of their list.</summary>

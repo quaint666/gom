@@ -5,12 +5,16 @@
   .btn:active, .ib:active, .mi:active { transform: scale(.97); }
   @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
   @keyframes pop { from { opacity: 0; transform: scale(.92); } }
+  @keyframes typing-dot { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
   @keyframes sheet { from { transform: translateY(24px); opacity: 0; } }
   @keyframes fade { from { opacity: 0; } }
   .viewer { animation: fade .15s var(--ease); }
   @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }
   .mrow.fresh { animation: rise .18s var(--ease); }
   .chip { animation: pop .15s var(--ease); }
+  .typing .dots i { animation: typing-dot 1.2s ease-in-out infinite; }
+  .typing .dots i:nth-child(2) { animation-delay: .15s; }
+  .typing .dots i:nth-child(3) { animation-delay: .3s; }
   .scrim { animation: fade .15s var(--ease); }
   .menu { animation: sheet .2s var(--ease); }
   .tick { transition: color var(--dur) var(--ease), opacity var(--dur) var(--ease); }

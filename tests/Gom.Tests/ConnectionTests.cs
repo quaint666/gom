@@ -91,4 +91,29 @@ public class ConnectionTests
 
         Assert.Equal(4401, sink.ClosedWith);
     }
+
+    [Fact]
+    public async Task A_frame_that_may_be_lost_is_dropped_when_the_queue_is_full_and_never_closes_the_socket()
+    {
+        var sink = new FakeSink { Blocked = true };
+        var conn = Make(sink, capacity: 3);
+        var writer = conn.RunWriter();
+        var results = new List<bool>();
+        for (var i = 0; i < 10; i++) results.Add(conn.TryEnqueueLossy(Frame(i.ToString())));
+
+        Assert.Contains(false, results);                         // some were dropped
+        await Task.Delay(200);
+        Assert.False(sink.Closed.Task.IsCompleted);              // but the socket was not closed for it
+        sink.Gate.SetResult();
+        conn.Finish();
+        await writer.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void A_frame_that_may_be_lost_is_refused_once_the_connection_is_closing()
+    {
+        var conn = Make(new FakeSink());
+        conn.Close(1008, "test");
+        Assert.False(conn.TryEnqueueLossy(Frame("x")));
+    }
 }

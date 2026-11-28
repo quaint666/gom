@@ -217,7 +217,7 @@ export const en: Strings = {
     scheme: 'Colour scheme',
     privacy: 'Privacy',
     receipts: 'Let others know when I have seen their messages',
-    receiptsNote: 'If you turn this off, you will not see when others have seen yours either.',
+    receiptsNote: 'If you turn this off, you will not see when others have seen yours either. This covers "typing…" too.',
     security: 'Security',
     currentPassword: 'Current password',
     newPassword: 'New password',
@@ -770,6 +770,10 @@ export const en: Strings = {
     editing: 'Editing message',
     cancelEdit: 'Cancel editing',
     replyingTo: (name: string) => `Replying to ${name}`,
+    /** Who is typing in a group: the names shown (joined with ", ", `shown` of them), then how many more. */
+    typing: (names: string, shown: number, others: number) => `${names}${others > 0 ? ` and ${count(others, 'other', 'others')}` : ''} ${shown + others === 1 ? 'is' : 'are'} typing…`,
+    /** In a one-to-one chat the header already names the person. */
+    typingDirect: 'typing…',
     yourself: 'yourself',
     cancelReply: 'Cancel reply',
     attach: 'Attach a file',
