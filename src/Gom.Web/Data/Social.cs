@@ -237,6 +237,15 @@ public class StickerPack
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>Taken out of the picker; stickers of it already sent still show.</summary>
     public DateTimeOffset? DeletedAt { get; set; }
+    /// <summary>In every conversation's picker (true), or only in those the owner chose (<see cref="StickerPackChat"/>).</summary>
+    public bool Everywhere { get; set; } = true;
+}
+
+/// <summary>A conversation the owner chose for a pack that is not everywhere.</summary>
+public class StickerPackChat
+{
+    public Guid PackId { get; set; }
+    public Guid ConversationId { get; set; }
 }
 
 /// <summary>One of the owner's stickers: its picture is in the blob store under its id, as kept (a WebP, or a moving GIF or WebP as sent).</summary>

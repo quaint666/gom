@@ -200,6 +200,7 @@ public static class GroupEndpoints
         // Its picture's file goes with it.
         if (await db.Conversations.Where(c => c.Id == id).Select(c => c.AvatarId).SingleOrDefaultAsync(ct) is { } picture) files.Add(picture);
         await db.Attachments.Where(a => a.ConversationId == id).ExecuteDeleteAsync(ct);
+        await db.StickerPackChats.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);
         // An invite that added people to it still works, without the group.
         await db.Links.Where(l => l.GroupId == id).ExecuteUpdateAsync(s => s.SetProperty(l => l.GroupId, (Guid?)null), ct);
         await db.JoinRequests.Where(x => x.ConversationId == id).ExecuteDeleteAsync(ct);

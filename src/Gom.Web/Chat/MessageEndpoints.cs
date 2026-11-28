@@ -81,7 +81,7 @@ public static class MessageEndpoints
         if (existing is not null) return await Same(db, existing, id, sender, access.SeesAfter, ct);
 
         // A sticker is the whole message: no words and no files with it.
-        if (request.Sticker is not null && (!await StickerPacks.MaySend(db, request.Sticker, ct) || !string.IsNullOrWhiteSpace(request.Body) || request.Attachments is { Count: > 0 }))
+        if (request.Sticker is not null && (!await StickerPacks.MaySend(db, request.Sticker, id, ct) || !string.IsNullOrWhiteSpace(request.Body) || request.Attachments is { Count: > 0 }))
             return Error(StatusCodes.Status400BadRequest, "invalid_sticker");
         // A message may be only pictures and files; then its words may be empty. Otherwise it needs words.
         var attached = request.Attachments?.Distinct().ToList() ?? [];

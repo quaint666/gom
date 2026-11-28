@@ -32,7 +32,8 @@ export type Result<T> = { ok: true; data: T } | Failure;
 export type Standing = 'member' | 'pending' | 'refused';
 export interface User { id: string; gomId: string; displayName: string; isOwner: boolean; readReceipts?: boolean; uploads?: boolean; avatar?: string | null; standing?: Standing; language?: Language; palette?: string; pattern?: string; calls?: boolean; appCalls?: boolean; twoStep?: boolean }
 /** Someone asking to join, as the owner sees them. */
-export interface CustomPack { id: string; name: string; stickers: { id: string; code: string }[] }
+/** One of the owner's packs: in every picker, or only in the chosen conversations (`chats`, sent to the owner only). */
+export interface CustomPack { id: string; name: string; everywhere?: boolean; chats?: string[] | null; stickers: { id: string; code: string }[] }
 export interface TwoStepKey { key: string; uri: string; qr: string }
 export interface JoinRequest { gomId: string; displayName: string; note: string; requestedAt: string; refused: boolean }
 /** A message to the owner from the privacy page's form. */
@@ -200,7 +201,9 @@ export interface Api {
   /** Makes this picture your profile picture (the server keeps a square from its middle); the answer is its id. */
   setAvatar(picture: Blob): Promise<Result<{ avatar: string }>>;
   /** The owner's sticker packs, in everyone's picker after Gom's own. */
-  stickerPacks(): Promise<Result<CustomPack[]>>;
+  /** With a conversation: its picker. Without: the packs that are everywhere, or for the owner every pack with where it shows. */
+  stickerPacks(conversation?: string): Promise<Result<CustomPack[]>>;
+  setPackChats(pack: string, everywhere: boolean, chats: string[]): Promise<Result<void>>;
   createStickerPack(name: string): Promise<Result<CustomPack>>;
   deleteStickerPack(id: string): Promise<Result<void>>;
   addSticker(pack: string, picture: Blob): Promise<Result<{ id: string; code: string }>>;
@@ -435,7 +438,8 @@ export function createApi(fetchFn: typeof fetch = (input, init) => fetch(input, 
     twoStepOff: (code, password) => call('POST', '/api/me/two-step/off', { code, password }),
     deleteAccount: (gomId) => call('DELETE', '/api/me', { gomId }),
     setAvatar: (picture) => call('PUT', '/api/me/avatar', picture),
-    stickerPacks: () => call('GET', '/api/sticker-packs'),
+    stickerPacks: (conversation) => call('GET', conversation === undefined ? '/api/sticker-packs' : `/api/sticker-packs?conversation=${enc(conversation)}`),
+    setPackChats: (pack, everywhere, chats) => call('PUT', `/api/owner/sticker-packs/${enc(pack)}/chats`, { everywhere, chats }),
     createStickerPack: (name) => call('POST', '/api/owner/sticker-packs', { name }),
     deleteStickerPack: (id) => call('DELETE', `/api/owner/sticker-packs/${enc(id)}`),
     addSticker: (pack, picture) => call('POST', `/api/owner/sticker-packs/${enc(pack)}/stickers`, picture),

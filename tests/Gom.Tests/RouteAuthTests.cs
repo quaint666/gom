@@ -46,7 +46,7 @@ public class RouteAuthTests(AppFixture app) : IClassFixture<AppFixture>
         "POST /api/owner/sticker-packs", "POST /api/owner/sticker-packs/{id:guid}/stickers",
         "POST /api/owner/trim/files", "POST /api/owner/trim/files/preview", "POST /api/owner/trim/messages", "POST /api/owner/trim/messages/preview",
         "POST /api/users/{gomId}/disable", "POST /api/users/{gomId}/enable", "POST /api/users/{gomId}/reset-link",
-        "PUT /api/sign-up-open",
+        "PUT /api/owner/sticker-packs/{id:guid}/chats", "PUT /api/sign-up-open",
     ];
 
     /// <summary>

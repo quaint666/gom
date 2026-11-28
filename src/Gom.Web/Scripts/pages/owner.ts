@@ -68,6 +68,10 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
   let deletingPack: string | null = null;
   let packError: Failure | null = null;
   let packBusy = false;
+  /** Where each pack shows, as being chosen (saved with its own button), the owner's chats to choose from, and which pack was just saved. */
+  let where: Record<string, { everywhere: boolean; chats: string[] }> = {};
+  let chats: { id: string; title: string }[] = [];
+  let whereSaved: string | null = null;
 
   /** Sticker packs (H): make one, add pictures to it, take one out, or delete a pack. Stickers already sent still show. */
   const packsView = () => html`
@@ -85,6 +89,7 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         ${p.stickers.length === 0 ? nothing : html`<div class="stk-grid">${p.stickers.map((s) => html`
           <div class="stk-own" data-pack-sticker=${s.id}><img src=${stickerUrl(s.code)} alt="" width="56" height="56" loading="lazy" draggable="false">
             <button class="ib tray-x" type="button" aria-label=${say.owner.removeSticker} data-remove-sticker @click=${() => void removeSticker(s.id)}>${icons.close()}</button></div>`)}</div>`}
+        ${whereView(p.id)}
         <label class="btn secondary ${packBusy ? 'busy' : ''}" data-add-stickers>${icons.image()} ${say.owner.addStickers}
           <input class="file-input" type="file" accept="image/png,image/webp,image/jpeg,image/gif" multiple ?disabled=${packBusy}
             @change=${(e: Event) => { const input = e.target as HTMLInputElement; void addStickers(p.id, [...(input.files ?? [])]); input.value = ''; }}></label>
@@ -95,9 +100,40 @@ export function mountOwner(root: HTMLElement, api: Api, go: (path: string) => vo
         : html`<button class="btn secondary danger-text" type="button" data-delete-pack @click=${() => { deletingPack = p.id; update(); }}>${say.owner.deletePack}</button>`}
       </div>`)}`;
 
+  /** Every chat, or only the chosen ones (from the owner's own chats: they cannot see others); saved with its button. */
+  const whereView = (pack: string) => {
+    const w = where[pack] ?? { everywhere: true, chats: [] };
+    const set = (next: { everywhere: boolean; chats: string[] }) => { where = { ...where, [pack]: next }; whereSaved = null; update(); };
+    return html`
+      <fieldset class="pack-where" data-pack-where=${pack}>
+        <legend>${say.owner.packWhere}</legend>
+        <label class="check"><input type="radio" name=${`where-${pack}`} data-where-everywhere .checked=${w.everywhere} @change=${() => set({ ...w, everywhere: true })}> ${say.owner.everywhere}</label>
+        <label class="check"><input type="radio" name=${`where-${pack}`} data-where-chosen .checked=${!w.everywhere} @change=${() => set({ ...w, everywhere: false })}> ${say.owner.onlyChosen}</label>
+        ${w.everywhere ? nothing : html`
+          <ul class="pack-chats">${chats.map((c) => html`<li><label class="check"><input type="checkbox" data-where-chat=${c.id} .checked=${w.chats.includes(c.id)}
+            @change=${(e: Event) => set({ ...w, chats: (e.target as HTMLInputElement).checked ? [...w.chats, c.id] : w.chats.filter((x) => x !== c.id) })}> ${c.title}</label></li>`)}</ul>
+          ${w.chats.length === 0 ? html`<p class="hint" data-where-none>${say.owner.noneChosen}</p>` : nothing}`}
+        <button class="btn secondary small" type="button" data-where-save ?disabled=${packBusy} @click=${() => void saveWhere(pack)}>${say.owner.saveWhere}</button>
+        ${whereSaved === pack ? html`<span class="hint" role="status">${say.owner.whereSaved}</span>` : nothing}
+      </fieldset>`;
+  };
+
+  async function saveWhere(pack: string): Promise<void> {
+    const w = where[pack] ?? { everywhere: true, chats: [] };
+    packError = null;
+    const result = await api.setPackChats(pack, w.everywhere, w.everywhere ? [] : w.chats);
+    if (!result.ok) { packError = result; update(); return; }
+    whereSaved = pack;
+    update();
+  }
+
   async function loadPacks(): Promise<void> {
-    const result = await api.stickerPacks();
-    if (result.ok) packs = result.data; else packError = result;
+    const [result, list] = await Promise.all([api.stickerPacks(), api.conversations()]);
+    if (result.ok) {
+      packs = result.data;
+      where = Object.fromEntries(packs.map((p) => [p.id, { everywhere: p.everywhere !== false, chats: p.chats ?? [] }]));
+    } else packError = result;
+    if (list.ok) chats = list.data.filter((c) => !c.hidden).map((c) => ({ id: c.id, title: c.title ?? '…' }));
     update();
   }
 

@@ -275,6 +275,27 @@ describe('owner page: sticker packs', () => {
     expect(text(root.querySelector('[data-pack="p1"]')!)).toContain('1/100 nhãn dán');
   });
 
+  it('shows a pack in every chat, or only in the chats ticked, saved with its button', async () => {
+    const setPackChats = vi.fn(async () => ok(undefined));
+    const conversations = vi.fn(async () => ok([{ id: 'c1', kind: 'direct', title: 'Minh' }, { id: 'g1', kind: 'group', title: 'Nhà' }]));
+    mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([{ ...pack(), everywhere: true, chats: [] }])), conversations, setPackChats }), vi.fn(), 'https://gom.test', 'stickers');
+    await flush();
+    const box = root.querySelector('[data-pack-where="p1"]')!;
+    expect(box.querySelector<HTMLInputElement>('[data-where-everywhere]')!.checked).toBe(true);
+    expect(box.querySelector('[data-where-chat]')).toBeNull();
+    const chosen = box.querySelector<HTMLInputElement>('[data-where-chosen]')!;
+    chosen.checked = true; chosen.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(root.querySelector('[data-where-none]')).not.toBeNull();   // nothing ticked yet: says it shows nowhere
+    const nha = root.querySelector<HTMLInputElement>('[data-where-chat="g1"]')!;
+    nha.checked = true; nha.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-pack-where="p1"] [data-where-save]')!.click();
+    await flush();
+    expect(setPackChats).toHaveBeenCalledWith('p1', false, ['g1']);
+    expect(text(root.querySelector('[data-pack-where="p1"]')!)).toContain('Đã lưu.');
+  });
+
   it('says why a picture was turned away', async () => {
     mountOwner(root, api({ stickerPacks: vi.fn(async () => ok([pack()])), addSticker: vi.fn(async () => fail('pack_full', 400)) }), vi.fn(), 'https://gom.test', 'stickers');
     await flush();

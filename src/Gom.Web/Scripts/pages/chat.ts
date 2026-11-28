@@ -241,12 +241,20 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
   let undoHide: { id: string; timer: number } | null = null;
   /** The pack of stickers shown: -1 is "Gần đây" (the ones this device sent lately). */
   let stickerPack = -1;
-  /** The owner's packs, asked for the first time the stickers are shown (null: not yet), after Gom's own in the picker. */
+  /**
+   * The owner's packs for the open conversation (a pack may be only in some), asked for the first time its stickers are shown, after
+   * Gom's own in the picker; `packsFor` says which conversation they are for.
+   */
   let customPacks: CustomPack[] | null = null;
+  let packsFor: string | null = null;
   function loadCustomPacks(): void {
-    if (customPacks !== null) return;
-    customPacks = [];
-    void api.stickerPacks().then((r) => { if (r.ok) { customPacks = r.data.filter((p) => p.stickers.length > 0); update(); } else customPacks = null; });
+    const id = openId;
+    if (id === null || (packsFor === id && customPacks !== null)) return;
+    packsFor = id; customPacks = [];
+    void api.stickerPacks(id).then((r) => {
+      if (packsFor !== id) return;
+      if (r.ok) { customPacks = r.data.filter((p) => p.stickers.length > 0); update(); } else customPacks = null;
+    });
   }
   /** The group of emoji shown: -1 is "Gần đây". */
   let emojiGroup = recentEmoji().length > 0 ? -1 : 0;
@@ -1204,7 +1212,7 @@ export function mountChat(root: HTMLElement, api: Api, go: (path: string) => voi
     // Gom's own packs, then the owner's.
     const packs: { name: string; codes: readonly string[] }[] = [
       ...STICKER_PACKS.map((p) => ({ name: say.stickerPacks[p.key], codes: p.codes })),
-      ...(customPacks ?? []).map((p) => ({ name: p.name, codes: p.stickers.map((s) => s.code) })),
+      ...(packsFor === openId ? customPacks ?? [] : []).map((p) => ({ name: p.name, codes: p.stickers.map((s) => s.code) })),
     ];
     const pack = stickerPack === -1 && recent.length === 0 ? 0 : stickerPack;
     const shown = pack === -1 ? recent : packs[pack]?.codes ?? [];

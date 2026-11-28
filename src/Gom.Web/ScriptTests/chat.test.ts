@@ -4782,6 +4782,22 @@ describe('chat: stickers', () => {
     expect(root.querySelector<HTMLImageElement>(`.msgs img.stk[data-sticker="${mine}"]`)!.getAttribute('src')).toBe('/api/stickers/0f8fad5bd9cb469fa16570867728950e');
     await toggle(); await toggle();
     expect(stickerPacks).toHaveBeenCalledTimes(1);   // asked for once
+    expect(stickerPacks).toHaveBeenCalledWith(C1);
+  });
+
+  it("asks for each conversation's own packs, since a pack may be only in some", async () => {
+    const mine = 'c-0f8fad5bd9cb469fa16570867728950e';
+    const stickerPacks = vi.fn(async (conversation?: string) => ok(conversation === C1 ? [{ id: 'p1', name: 'Mèo nhà', stickers: [{ id: '0f8fad5bd9cb469fa16570867728950e', code: mine }] }] : []));
+    open({ stickerPacks });
+    await flush();
+    await toggle(); await flush();
+    expect([...panel()!.querySelectorAll('[data-sticker-pack]')].map((b) => b.getAttribute('aria-label'))).toContain('Mèo nhà');
+    root.querySelector<HTMLAnchorElement>(`a[data-chat="${C2}"]`)!.click();
+    await flush();
+    if (panel() === null) await toggle();
+    await flush();
+    expect(stickerPacks).toHaveBeenLastCalledWith(C2);
+    expect([...panel()!.querySelectorAll('[data-sticker-pack]')].map((b) => b.getAttribute('aria-label'))).not.toContain('Mèo nhà');
   });
 
   it('sends a sticker at once with a tap, shows it as a picture while it goes, and keeps the panel open', async () => {

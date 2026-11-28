@@ -202,6 +202,13 @@ form { display: flex; flex-direction: column; gap: 14px; }
 /* A question asked inside a row (refusing a request): the words on their own line, its two buttons under them. */
 .li .ask { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
 .li .ask p { flex-basis: 100%; margin: 0; }
+/* Where a sticker pack shows: every chat, or a list of the owner's chats to tick. */
+.pack-where { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pack-where legend { padding: 0; font-weight: 600; font-size: 14px; margin-block-end: 4px; }
+.pack-chats { list-style: none; margin: 0 0 0 28px; padding: 0; max-block-size: 240px; overflow-y: auto; }
+.pack-where .btn { align-self: flex-start; }
+.pack-where .check { display: flex; align-items: center; gap: 10px; min-block-size: 44px; }
+.pack-where .check input { inline-size: 20px; block-size: 20px; accent-color: var(--btn); flex: none; }
 /* An owner's list that starts folded (past links, refused requests): its title and count stay in view, a chevron that turns. */
 .fold { margin-block-start: 16px; }
 .fold > summary { list-style: none; display: flex; align-items: center; gap: 8px; min-block-size: 44px; color: var(--muted); font-weight: 600; cursor: pointer; }
